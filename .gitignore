@@ -1,0 +1,11 @@
+node_modules/
+.next/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+.turbo/
+agent/usejunction
+agent/dist/
+packages/db/prisma/migrations/**/migration_lock.toml
