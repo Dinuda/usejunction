@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifySessionToken } from "@/lib/session-edge";
 
 const PUBLIC_API_PREFIXES = [
   "/api/enroll",
@@ -26,18 +25,6 @@ export async function middleware(req: NextRequest) {
 
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();
-  }
-
-  const token = req.cookies.get("uj_session")?.value;
-  const email = token ? await verifySessionToken(token) : null;
-
-  if (!email) {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-    const login = new URL("/login", req.url);
-    login.searchParams.set("from", pathname);
-    return NextResponse.redirect(login);
   }
 
   return NextResponse.next();
