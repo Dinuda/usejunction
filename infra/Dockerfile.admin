@@ -8,6 +8,14 @@ COPY packages/db/package.json ./packages/db/
 COPY apps/admin/package.json ./apps/admin/
 RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 
+FROM base AS migrate
+WORKDIR /app/prisma-migrate
+COPY packages/db/prisma ./prisma
+COPY packages/db/package.json ./
+RUN npm install prisma@6.19.3 @prisma/client@6.19.3 tsx@4.22.4
+ENV DATABASE_URL=postgresql://usejunction:usejunction@postgres:5432/usejunction
+RUN npx prisma generate
+
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
@@ -20,12 +28,24 @@ RUN pnpm --filter @usejunction/admin build
 
 FROM base AS runner
 WORKDIR /app
+RUN apk add --no-cache curl
 ENV NODE_ENV=production
 ENV PORT=3001
+ENV HOSTNAME=0.0.0.0
 COPY --from=builder /app/apps/admin/.next/standalone ./
 COPY --from=builder /app/apps/admin/.next/static ./apps/admin/.next/static
 COPY --from=builder /app/apps/admin/public ./apps/admin/public
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
+COPY --from=migrate /app/prisma-migrate ./prisma-migrate
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "aarch64" ]; then ENGINE=libquery_engine-linux-musl-arm64-openssl-3.0.x.so.node; \
+    else ENGINE=libquery_engine-linux-musl-openssl-3.0.x.so.node; fi && \
+    mkdir -p node_modules/.prisma node_modules/@prisma && \
+    cp -r prisma-migrate/node_modules/.prisma/client node_modules/.prisma/client && \
+    cp -r prisma-migrate/node_modules/@prisma/client node_modules/@prisma/client && \
+    cp "prisma-migrate/node_modules/.prisma/client/$ENGINE" apps/admin/.next/server/ 2>/dev/null || \
+    cp prisma-migrate/node_modules/.prisma/client/libquery_engine-*.so.node apps/admin/.next/server/ && \
+    cp prisma-migrate/node_modules/.prisma/client/schema.prisma apps/admin/.next/server/
+COPY infra/docker-entrypoint-admin.sh /docker-entrypoint-admin.sh
+RUN chmod +x /docker-entrypoint-admin.sh
 EXPOSE 3001
-CMD ["node", "apps/admin/server.js"]
+CMD ["/docker-entrypoint-admin.sh"]

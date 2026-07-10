@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/usejunction/agent/internal/config"
@@ -150,7 +152,18 @@ func Enroll(baseURL string, req EnrollRequest) (*EnrollResponse, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("enroll failed: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		msg := strings.TrimSpace(string(body))
+		if msg != "" {
+			var errResp struct {
+				Error string `json:"error"`
+			}
+			if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
+				msg = errResp.Error
+			}
+			return nil, fmt.Errorf("enroll failed: %s", msg)
+		}
+		return nil, fmt.Errorf("enroll failed: HTTP %d", resp.StatusCode)
 	}
 	var out EnrollResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {

@@ -4,6 +4,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "UseJunction — AI Coding Observability",
   description: "Track usage, cost, latency, and configuration health across AI coding tools.",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

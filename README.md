@@ -4,11 +4,82 @@ Open-source observability for AI coding tools. Track usage, cost, latency, and c
 
 ## Quick start
 
+### Full Docker (recommended)
+
+Run the entire stack in Docker — admin on **:3011** (host; configurable via `ADMIN_HOST_PORT`), Langfuse on **:3000**, LiteLLM on **:4000**.
+
+```bash
+cp .env.example .env
+# Step A (optional): add provider keys to test real LiteLLM completions
+#   OPENAI_API_KEY=sk-...
+#   ANTHROPIC_API_KEY=sk-ant-...
+# Without keys, full-stack E2E still passes by verifying the ingest API directly.
+#   INGEST_SECRET=change-me-ingest-secret
+
+cd infra
+docker compose build admin
+docker compose up -d
+docker compose ps   # wait until all services are healthy
+```
+
+If port 3011 is taken, pick another host port:
+
+```bash
+ADMIN_HOST_PORT=3020 docker compose up -d
+ADMIN_URL=http://localhost:3020 ./run-e2e.sh
+```
+
+**Step B — Langfuse project keys (one-time):**
+
+1. Open http://localhost:3000 → create account → create project
+2. Copy **Public Key** and **Secret Key** into root `.env`:
+   ```
+   LANGFUSE_PUBLIC_KEY=pk-lf-...
+   LANGFUSE_SECRET_KEY=sk-lf-...
+   ```
+3. Restart LiteLLM: `cd infra && docker compose restart litellm`
+
+The admin container runs `prisma db push` and seeds `seed-org` + a demo enrollment token on first start.
+
+**Verify end-to-end** (from repo root or `infra/`):
+
+```bash
+# from repo root
+chmod +x scripts/full-stack-e2e.sh
+./scripts/full-stack-e2e.sh
+
+# or from infra/ (uses ADMIN_HOST_PORT, default 3011)
+chmod +x run-e2e.sh
+./run-e2e.sh
+```
+
+Or send a manual gateway request (use a user id from **Developers** page):
+
+```bash
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer sk-usejunction-master" \
+  -H "Content-Type: application/json" \
+  -H "x-usejunction-user: <userId>" \
+  -H "x-usejunction-tool: codex" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"ping"}]}'
+```
+
+Check http://localhost:3011/requests for the row and http://localhost:3000 for the Langfuse trace.
+
+| Service | URL |
+|---------|-----|
+| Admin UI | http://localhost:3011 (`admin@example.com` / `admin`) |
+| Langfuse | http://localhost:3000 |
+| LiteLLM | http://localhost:4000 |
+| Postgres (host) | localhost:5433 |
+
+### Hybrid local dev
+
 ### 1. Start infrastructure
 
 ```bash
 cp .env.example .env
-# Add OPENAI_API_KEY and/or ANTHROPIC_API_KEY to .env
+# Optional: OPENAI_API_KEY and/or ANTHROPIC_API_KEY for real gateway completions
 
 cd infra
 docker compose up -d postgres langfuse-db litellm-db

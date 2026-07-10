@@ -48,6 +48,8 @@ services:
     depends_on:
       langfuse-db:
         condition: service_healthy
+    env_file:
+      - ../.env
     ports:
       - "3000:3000"
     environment:
@@ -60,11 +62,16 @@ services:
 
   litellm:
     image: ghcr.io/berriai/litellm:main-stable
+    platform: linux/amd64
     depends_on:
       litellm-db:
         condition: service_healthy
       langfuse:
         condition: service_started
+      admin:
+        condition: service_healthy
+    env_file:
+      - ../.env
     ports:
       - "4000:4000"
     volumes:
@@ -91,15 +98,24 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    env_file:
+      - ../.env
     ports:
-      - "3001:3001"
+      - "${ADMIN_HOST_PORT:-3011}:3001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3001/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     environment:
+      HOSTNAME: "0.0.0.0"
       DATABASE_URL: postgresql://usejunction:usejunction@postgres:5432/usejunction
       INGEST_SECRET: ${INGEST_SECRET:-change-me-ingest-secret}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me-in-production}
-      NEXTAUTH_URL: http://localhost:3001
+      NEXTAUTH_URL: http://localhost:${ADMIN_HOST_PORT:-3011}
       NEXT_PUBLIC_LANGFUSE_URL: http://localhost:3000
       LITELLM_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-usejunction-master}

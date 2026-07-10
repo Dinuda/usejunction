@@ -12,6 +12,26 @@ INGEST_SECRET = os.environ.get("USEJUNCTION_INGEST_SECRET", "change-me-ingest-se
 ORG_ID = os.environ.get("USEJUNCTION_ORG_ID", "seed-org")
 
 
+def _extract_trace_id(kwargs: dict, metadata: dict) -> Optional[str]:
+    for key in ("trace_id", "generation_id", "langfuse_trace_id"):
+        value = metadata.get(key)
+        if value:
+            return str(value)
+
+    logging_obj = kwargs.get("standard_logging_object") or {}
+    if isinstance(logging_obj, dict):
+        for key in ("trace_id", "id"):
+            value = logging_obj.get(key)
+            if value:
+                return str(value)
+
+    litellm_call_id = kwargs.get("litellm_call_id")
+    if litellm_call_id:
+        return str(litellm_call_id)
+
+    return None
+
+
 def _header_value(headers: Optional[dict], key: str) -> Optional[str]:
     if not headers:
         return None
@@ -72,7 +92,7 @@ class UseJunctionLogger:
             latency_ms = int((end_time - start_time).total_seconds() * 1000)
 
         cost = kwargs.get("response_cost") or 0
-        trace_id = metadata.get("trace_id") or metadata.get("generation_id")
+        trace_id = _extract_trace_id(kwargs, metadata)
 
         payload = {
             "orgId": ORG_ID,

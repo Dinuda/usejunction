@@ -6,6 +6,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/ingest/",
   "/api/devices/",
   "/api/auth/login",
+  "/api/health",
 ];
 
 function isPublicApi(path: string) {
@@ -43,5 +44,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|favicon.svg).*)"],
 };

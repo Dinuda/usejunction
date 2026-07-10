@@ -17,6 +17,7 @@ model_list:
 litellm_settings:
   drop_params: true
   set_verbose: false
+  forward_headers_to_metadata: true
   success_callback: ["langfuse", "usejunction_callback.usejunction_logger"]
   failure_callback: ["langfuse", "usejunction_callback.usejunction_logger"]
   callbacks:
