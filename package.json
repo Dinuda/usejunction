@@ -3,11 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "pnpm --filter @usejunction/admin dev",
-    "build": "pnpm --filter @usejunction/db generate && pnpm --filter @usejunction/admin build",
-    "db:generate": "pnpm --filter @usejunction/db generate",
-    "db:migrate": "pnpm --filter @usejunction/db migrate",
-    "db:seed": "pnpm --filter @usejunction/db seed",
-    "db:push": "pnpm --filter @usejunction/db push"
+    "build": "pnpm --filter @usejunction/admin build"
   },
   "engines": {
     "node": ">=20"

@@ -9,3 +9,5 @@ dist/
 agent/usejunction
 agent/dist/
 packages/db/prisma/migrations/**/migration_lock.toml
+.vercel
+.env*.local
