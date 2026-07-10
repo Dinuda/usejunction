@@ -31,21 +31,18 @@ esac
 
 mkdir -p "$INSTALL_DIR"
 
-# For MVP: build from source if binary not published
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BINARY="$INSTALL_DIR/usejunction"
-if [[ -f "$(dirname "$0")/../agent/main.go" ]]; then
+
+if [[ -f "$SCRIPT_DIR/agent/main.go" ]]; then
   echo "Building agent from source..."
-  (cd "$(dirname "$0")/../agent" && go build -o "$BINARY" .)
-elif command -v go >/dev/null 2>&1 && [[ -d "$(dirname "$0")/agent" ]]; then
-  (cd "$(dirname "$0")/agent" && go build -o "$BINARY" .)
+  (cd "$SCRIPT_DIR/agent" && go build -o "$BINARY" .)
+elif command -v go >/dev/null 2>&1 && [[ -f "$SCRIPT_DIR/../agent/main.go" ]]; then
+  echo "Building agent from source..."
+  (cd "$SCRIPT_DIR/../agent" && go build -o "$BINARY" .)
 else
-  echo "Downloading usejunction agent (placeholder — build from repo for MVP)..."
-  if ! command -v go >/dev/null 2>&1; then
-    echo "Go is required to build the agent. Install Go 1.22+ and re-run."
-    exit 1
-  fi
-  REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-  (cd "$REPO_ROOT/agent" && go build -o "$BINARY" .)
+  echo "Go is required to build the agent from this repo. Install Go 1.22+ and re-run from the UseJunction checkout."
+  exit 1
 fi
 
 chmod +x "$BINARY"

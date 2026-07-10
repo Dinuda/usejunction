@@ -1,0 +1,233 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  teams                Team[]
+  users                User[]
+  devices              Device[]
+  toolInstallations    ToolInstallation[]
+  localModels          LocalModel[]
+  requestMetadata      RequestMetadata[]
+  enrollmentTokens     EnrollmentToken[]
+  toolAccounts         ToolAccount[]
+  quotaSnapshots       QuotaSnapshot[]
+  localUsageAggregates LocalUsageAggregate[]
+
+  @@map("organizations")
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  orgId     String   @map("org_id")
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization     Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  users            User[]
+  enrollmentTokens EnrollmentToken[]
+
+  @@map("teams")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  orgId     String   @map("org_id")
+  name      String
+  email     String
+  teamId    String?  @map("team_id")
+  role      String   @default("developer")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization         Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  team                 Team?                 @relation(fields: [teamId], references: [id])
+  devices              Device[]
+  toolInstallations    ToolInstallation[]
+  localModels          LocalModel[]
+  requestMetadata      RequestMetadata[]
+  toolAccounts         ToolAccount[]
+  localUsageAggregates LocalUsageAggregate[]
+
+  @@unique([orgId, email])
+  @@map("users")
+}
+
+model Device {
+  id           String   @id @default(cuid())
+  orgId        String   @map("org_id")
+  userId       String   @map("user_id")
+  hostname     String
+  os           String
+  architecture String
+  agentVersion String   @map("agent_version")
+  lastSeenAt   DateTime @default(now()) @map("last_seen_at")
+  status       String   @default("online")
+  deviceToken  String   @unique @map("device_token")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  organization         Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  toolInstallations    ToolInstallation[]
+  localModels          LocalModel[]
+  requestMetadata      RequestMetadata[]
+  toolAccounts         ToolAccount[]
+  quotaSnapshots       QuotaSnapshot[]
+  localUsageAggregates LocalUsageAggregate[]
+
+  @@map("devices")
+}
+
+model ToolInstallation {
+  id            String   @id @default(cuid())
+  orgId         String   @map("org_id")
+  userId        String   @map("user_id")
+  deviceId      String   @map("device_id")
+  toolName      String   @map("tool_name")
+  detected      Boolean  @default(false)
+  configured    Boolean  @default(false)
+  configPath    String?  @map("config_path")
+  version       String?
+  lastCheckedAt DateTime @default(now()) @map("last_checked_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, toolName])
+  @@map("tool_installations")
+}
+
+model LocalModel {
+  id         String   @id @default(cuid())
+  orgId      String   @map("org_id")
+  userId     String   @map("user_id")
+  deviceId   String   @map("device_id")
+  provider   String
+  modelName  String   @map("model_name")
+  size       String?
+  running    Boolean  @default(false)
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, provider, modelName])
+  @@map("local_models")
+}
+
+model RequestMetadata {
+  id            String   @id @default(cuid())
+  orgId         String   @map("org_id")
+  userId        String?  @map("user_id")
+  deviceId      String?  @map("device_id")
+  toolName      String?  @map("tool_name")
+  provider      String?
+  model         String?
+  inputTokens   Int      @default(0) @map("input_tokens")
+  outputTokens  Int      @default(0) @map("output_tokens")
+  totalTokens   Int      @default(0) @map("total_tokens")
+  estimatedCost Float    @default(0) @map("estimated_cost")
+  latencyMs     Int      @default(0) @map("latency_ms")
+  status        String   @default("success")
+  traceId       String?  @map("trace_id")
+  source        String   @default("gateway")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id])
+  device       Device?      @relation(fields: [deviceId], references: [id])
+
+  @@index([orgId, createdAt])
+  @@index([userId])
+  @@index([model])
+  @@index([toolName])
+  @@map("request_metadata")
+}
+
+model EnrollmentToken {
+  id        String    @id @default(cuid())
+  orgId     String    @map("org_id")
+  teamId    String?   @map("team_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  team         Team?        @relation(fields: [teamId], references: [id])
+
+  @@map("enrollment_tokens")
+}
+
+model ToolAccount {
+  id          String   @id @default(cuid())
+  orgId       String   @map("org_id")
+  userId      String   @map("user_id")
+  deviceId    String   @map("device_id")
+  toolName    String   @map("tool_name")
+  email       String?
+  plan        String?
+  loginMethod String   @default("unknown") @map("login_method")
+  authPresent Boolean  @default(false) @map("auth_present")
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, toolName])
+  @@map("tool_accounts")
+}
+
+model QuotaSnapshot {
+  id               String    @id @default(cuid())
+  orgId            String    @map("org_id")
+  deviceId         String?   @map("device_id")
+  toolName         String    @map("tool_name")
+  windowType       String    @map("window_type")
+  usedPercent      Float?    @map("used_percent")
+  resetAt          DateTime? @map("reset_at")
+  creditsRemaining Float?    @map("credits_remaining")
+  source           String    @default("cli_rpc")
+  updatedAt        DateTime  @default(now()) @map("updated_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  device       Device?      @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, toolName, windowType])
+  @@map("quota_snapshots")
+}
+
+model LocalUsageAggregate {
+  id              String   @id @default(cuid())
+  orgId           String   @map("org_id")
+  userId          String   @map("user_id")
+  deviceId        String   @map("device_id")
+  date            DateTime @db.Date
+  toolName        String   @map("tool_name")
+  model           String   @default("")
+  inputTokens     Int      @default(0) @map("input_tokens")
+  outputTokens    Int      @default(0) @map("output_tokens")
+  cacheReadTokens Int      @default(0) @map("cache_read_tokens")
+  estimatedCost   Float    @default(0) @map("estimated_cost")
+  source          String   @default("local_scan")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, date, toolName, model])
+  @@index([orgId, userId, date, toolName])
+  @@map("local_usage_aggregates")
+}
