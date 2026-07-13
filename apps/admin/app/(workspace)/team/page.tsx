@@ -1,4 +1,4 @@
-import { Shell, StatusBadge } from "@/components/app-shell";
+import { StatusBadge } from "@/components/app-shell";
 import { DeveloperToolInventory } from "@/components/developers/developer-tool-inventory";
 import {
   EnrollMachineDialog,
@@ -21,7 +21,7 @@ export default async function TeamPage() {
   const empty = data.devices.length === 0;
 
   return (
-    <Shell active="/team">
+    <>
       <div className="mb-10 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">
@@ -86,6 +86,6 @@ export default async function TeamPage() {
           )}
         </section>
       )}
-    </Shell>
+    </>
   );
 }

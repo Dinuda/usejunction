@@ -1,4 +1,3 @@
-import { Shell } from "@/components/app-shell";
 import { SubscriptionInventory } from "@/components/tools/subscription-inventory";
 import { getDashboardTools } from "@/lib/queries/dashboard/tools";
 import { getMeOverview } from "@/lib/queries/me/overview";
@@ -24,7 +23,7 @@ export default async function ToolsPage() {
   if (role === "developer") {
     const personal = await getMeOverview(orgId, userId, role);
     return (
-      <Shell active="/tools">
+      <>
         <ToolsHeader personal />
         <div className="grid gap-8 sm:grid-cols-2">
           <div className="border-l-2 border-primary/40 pl-4">
@@ -54,7 +53,7 @@ export default async function ToolsPage() {
             )) : <p className="py-4 text-sm text-muted-foreground">Connect a computer to detect your tools.</p>}
           </div>
         </section>
-      </Shell>
+      </>
     );
   }
   let data: Awaited<ReturnType<typeof getDashboardTools>> | null = null;
@@ -67,7 +66,7 @@ export default async function ToolsPage() {
   }
 
   return (
-    <Shell active="/tools">
+    <>
       <ToolsHeader />
 
       {err && (
@@ -77,6 +76,6 @@ export default async function ToolsPage() {
       )}
 
       <SubscriptionInventory detected={data} />
-    </Shell>
+    </>
   );
 }

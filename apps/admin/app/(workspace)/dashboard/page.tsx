@@ -4,7 +4,6 @@ import { OverviewChart } from "@/components/dashboard/overview-chart";
 import { DashboardSetupPanel } from "@/components/dashboard/setup-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Shell } from "@/components/app-shell";
 import { cn } from "@/lib/utils";
 import { getDashboardOverview, type DashboardRange } from "@/lib/queries/dashboard/overview";
 import { getMeOverview } from "@/lib/queries/me/overview";
@@ -87,7 +86,7 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
   const firstName = data.developer.name.split(" ")[0] || "there";
 
   return (
-    <Shell active="/dashboard">
+    <>
       <div className="mb-10">
         <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">Hey {firstName}.</h1>
         <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
@@ -156,7 +155,7 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
           </div>
         </>
       )}
-    </Shell>
+    </>
   );
 }
 
@@ -180,7 +179,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const empty = data && !data.hasActivity && data.coverage.devices === 0;
 
   return (
-    <Shell active="/dashboard">
+    <>
       <div className="mb-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">
@@ -373,6 +372,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           )}
         </>
       ) : null}
-    </Shell>
+    </>
   );
 }

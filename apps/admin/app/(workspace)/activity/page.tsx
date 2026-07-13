@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Shell, StatusBadge } from "@/components/app-shell";
+import { StatusBadge } from "@/components/app-shell";
 import { cn } from "@/lib/utils";
 import { getDashboardRequests } from "@/lib/queries/dashboard/requests";
 import { getDashboardUsage } from "@/lib/queries/dashboard/usage";
@@ -82,7 +82,7 @@ export default async function ActivityPage() {
     const tokens = Number(BigInt(personal.usage30d.inputTokens) + BigInt(personal.usage30d.outputTokens));
 
     return (
-      <Shell active="/activity">
+      <>
         <div className="mb-10">
           <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">Your usage.</h1>
           <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
@@ -102,7 +102,7 @@ export default async function ActivityPage() {
             Your personal activity is visible to you. UseJunction stores counts, latency, and cost — never prompts or responses.
           </p>
         </section>
-      </Shell>
+      </>
     );
   }
 
@@ -117,7 +117,7 @@ export default async function ActivityPage() {
   const recent = requests.requests.slice(0, 8);
 
   return (
-    <Shell active="/activity">
+    <>
       <div className="mb-10">
         <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">Usage and requests.</h1>
         <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
@@ -180,6 +180,6 @@ export default async function ActivityPage() {
           )}
         </section>
       </div>
-    </Shell>
+    </>
   );
 }
