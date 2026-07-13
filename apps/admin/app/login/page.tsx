@@ -8,7 +8,7 @@ export const metadata = {
 
 export default function LoginPage() {
   return (
-    <AuthShell eyebrow="Workspace access" title="Sign in to UseJunction." description="Continue to your workspace, team devices, and AI coding insights.">
+    <AuthShell title="Sign in to UseJunction." description="Continue to your workspace, team devices, and AI coding insights.">
       <Suspense><LoginForm /></Suspense>
     </AuthShell>
   );

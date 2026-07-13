@@ -1,5 +1,6 @@
 import { randomBytes } from "crypto";
 import { prisma } from "@usejunction/db";
+import { trialEndsAtFromNow } from "@/lib/billing/entitlements";
 
 function slugify(value: string) {
   return value
@@ -25,7 +26,9 @@ export async function createWorkspace(user: WorkspaceUser, options?: { name?: st
   const name = options?.name?.trim() || suggestedWorkspaceName(user.email);
   const slug = `${slugify(name)}-${randomBytes(2).toString("hex")}`;
   const organization = await prisma.$transaction(async (tx) => {
-    const org = await tx.organization.create({ data: { name, slug, plan: "community" } });
+    const org = await tx.organization.create({
+      data: { name, slug, plan: "trial", trialEndsAt: trialEndsAtFromNow() },
+    });
     const team = await tx.team.create({ data: { orgId: org.id, name: "Platform" } });
     await tx.organizationMembership.create({ data: { userId: user.id, orgId: org.id, role: "owner" } });
     await tx.developer.create({

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
+import { assertCanEnrollDevice } from "@/lib/billing/status";
 import { generateDeviceToken } from "@/lib/auth";
 import { hashOpaqueToken } from "@/lib/security";
 
@@ -38,6 +39,12 @@ export async function POST(req: NextRequest) {
     }
 
     const orgId = enrollment.orgId;
+
+    const enrollmentCheck = await assertCanEnrollDevice(orgId);
+    if (!enrollmentCheck.allowed) {
+      return NextResponse.json({ error: enrollmentCheck.message }, { status: 403 });
+    }
+
     const deviceToken = generateDeviceToken();
     const device = await prisma
       .$transaction(async (tx) => {

@@ -109,7 +109,7 @@ export function SubscriptionInventory({ detected }: { detected: DashboardToolsDa
               key={String(label)}
               className={cn(
                 "pl-4",
-                index === 3 ? "border-l-2 border-brand-yellow bg-brand-yellow/20 py-3 pr-4" : "border-l-2 border-primary/40",
+                index === 3 ? "border-l-2 border-brand-yellow-dark bg-brand-yellow-pale py-3 pr-4" : "border-l-2 border-border-strong",
               )}
             >
               <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</p>

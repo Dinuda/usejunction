@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { getOrgBillingStatus } from "@/lib/billing/status";
 import { getWorkspaceContext, type OrganizationRole } from "@/lib/workspace-context";
 import { BrandLogo } from "@/components/brand-logo";
+import { PlanStatusCard } from "@/components/billing/plan-status-card";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { WorkspaceUserMenu } from "@/components/workspace-user-menu";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
@@ -40,11 +43,19 @@ const developerNav = [
   ["/activity", "My activity"],
 ] as const;
 
-export function AppSidebar({ active, role }: { active: string; role: OrganizationRole | null }) {
+export function AppSidebar({
+  active,
+  role,
+  billing,
+}: {
+  active: string;
+  role: OrganizationRole | null;
+  billing: Awaited<ReturnType<typeof getOrgBillingStatus>> | null;
+}) {
   const nav = role === "owner" || role === "admin" ? adminNav : developerNav;
 
   return (
-    <Sidebar collapsible="none" variant="sidebar" className="border-r">
+    <Sidebar collapsible="none" variant="sidebar" className="h-svh border-r">
       <SidebarHeader className="border-b p-4">
         <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden">
           <BrandLogo className="h-8 w-auto" />
@@ -67,16 +78,22 @@ export function AppSidebar({ active, role }: { active: string; role: Organizatio
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      {billing && (
+        <SidebarFooter className="mt-auto shrink-0 border-t-0 p-2 pt-0">
+          <PlanStatusCard billing={billing} />
+        </SidebarFooter>
+      )}
     </Sidebar>
   );
 }
 
 export async function Shell({ active, children }: { active: string; children: React.ReactNode }) {
   const ctx = await getWorkspaceContext();
+  const billing = ctx?.orgId ? await getOrgBillingStatus(ctx.orgId, ctx.role) : null;
 
   return (
     <SidebarProvider defaultOpen>
-      <AppSidebar active={active} role={ctx?.role ?? null} />
+      <AppSidebar active={active} role={ctx?.role ?? null} billing={billing} />
       <SidebarInset>
         <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
           <div className="min-w-0 flex-1">
@@ -127,9 +144,9 @@ export function StatCard({ label, value, sub }: { label: string; value: string |
 export function StatusBadge({ children, variant = "default" }: { children: React.ReactNode; variant?: "default" | "success" | "warning" | "error" }) {
   const classes = {
     default: "border-border bg-muted text-muted-foreground",
-    success: "border-green-200 bg-green-50 text-green-800",
-    warning: "border-amber-200 bg-amber-50 text-amber-800",
-    error: "border-red-200 bg-red-50 text-red-800",
+    success: "border-success/30 bg-success/10 text-success",
+    warning: "border-warning/30 bg-warning/10 text-[#9a5f0d]",
+    error: "border-destructive/30 bg-destructive/10 text-destructive",
   };
   return <Badge variant="outline" className={cn("text-[0.65rem] uppercase tracking-[0.08em]", classes[variant])}>{children}</Badge>;
 }

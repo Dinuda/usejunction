@@ -326,7 +326,7 @@ export function HeroTileBackground() {
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse 70% 55% at 78% 22%, color-mix(in srgb, #0891b2 14%, transparent), transparent 68%), radial-gradient(ellipse 45% 40% at 12% 88%, color-mix(in srgb, #e5e5e5 55%, transparent), transparent 62%)",
+            "radial-gradient(ellipse 70% 55% at 78% 22%, color-mix(in srgb, #08758a 12%, transparent), transparent 68%), radial-gradient(ellipse 45% 40% at 12% 88%, color-mix(in srgb, #e2e3dd 55%, transparent), transparent 62%)",
         }}
       />
     </div>

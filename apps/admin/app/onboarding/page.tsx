@@ -32,7 +32,6 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
 
   return (
     <AuthFrame
-      eyebrow="Workspace setup"
       title="Let’s get your workspace ready."
       description="Connect one computer or invite your team. You can do the other step whenever you’re ready."
     >

@@ -24,8 +24,7 @@ export default async function TeamPage() {
     <Shell active="/team">
       <div className="mb-10 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-primary">Roster</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-[2.15rem]">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">
             {empty ? "Build your roster." : "Who's on the roster."}
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
@@ -41,9 +40,8 @@ export default async function TeamPage() {
 
       {empty ? (
         <div className="mt-10">
-          <div className="relative mb-8 overflow-hidden border bg-brand-yellow/70 p-6 sm:p-8">
-            <div className="absolute inset-0 opacity-25 text-brand-charcoal [background-image:linear-gradient(to_right,currentColor_1px,transparent_1px),linear-gradient(to_bottom,currentColor_1px,transparent_1px)] [background-size:3rem_3rem]" />
-            <p className="relative max-w-lg text-2xl font-semibold leading-[1.05] tracking-[-0.03em] text-brand-charcoal sm:text-3xl">
+          <div className="uj-grid-texture relative mb-8 overflow-hidden border border-border bg-brand-yellow p-6 text-brand-yellow-dark sm:p-8 [--uj-grid-opacity:0.09]">
+            <p className="relative max-w-lg text-2xl font-semibold leading-[1.05] tracking-[-0.03em] sm:text-3xl">
               Make model decisions based on evidence.
             </p>
           </div>

@@ -95,7 +95,7 @@ export function ProductWalkthrough() {
                 </p>
               </div>
 
-              <Card className="h-full border-primary/30 bg-primary p-0 text-primary-foreground shadow-none">
+              <Card className="uj-grid-texture uj-grid-texture-strong h-full border-primary-dark bg-primary p-0 text-primary-foreground shadow-none [--uj-grid-opacity:0.1]">
                 <CardHeader className="border-b border-primary-foreground/20 px-4 py-3">
                   <CardTitle className="flex items-center justify-between font-mono text-[0.65rem] uppercase tracking-[0.14em]">
                     UseJunction / live view

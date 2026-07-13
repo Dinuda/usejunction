@@ -113,8 +113,8 @@ export function DeviceConnectCard({
   if (device && !addingAnother && !forceEnroll) {
     const tools = device.toolInstallations ?? [];
     return (
-      <div className="border border-emerald-200 bg-emerald-50/40 p-5">
-        <p className="font-mono text-[0.65rem] uppercase tracking-[0.14em] text-emerald-800">Connected</p>
+      <div className="border border-success/30 bg-success/10 p-5">
+        <p className="font-mono text-[0.65rem] uppercase tracking-[0.14em] text-success">Connected</p>
         <p className="mt-3 text-sm font-medium">{device.hostname}</p>
         <p className="mt-1 text-xs text-muted-foreground">
           {device.os} · last seen {new Date(device.lastSeenAt).toLocaleString()}

@@ -195,10 +195,22 @@ export function DeveloperToolInventory({ showSummary = true }: { showSummary?: b
       )}
 
       {error && (
-        <div role="alert" className="bg-rose-50 px-4 py-3 text-sm text-rose-800">
+        <div role="alert" className="bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}
+
+      <section>
+        <div className="mb-4 flex items-end justify-between gap-3 border-b pb-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Team members.</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {developers.length
+                ? `${developers.length} on the roster · assign plans from above`
+                : "Invite people, then assign plans here."}
+            </p>
+          </div>
+        </div>
 
       {canBulkAssign && selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-3 bg-primary/5 px-4 py-3">
@@ -230,8 +242,7 @@ export function DeveloperToolInventory({ showSummary = true }: { showSummary?: b
 
       {!developers.length ? (
         <div className="bg-primary/5 px-5 py-10">
-          <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-primary">Empty roster</p>
-          <p className="mt-2 text-sm text-muted-foreground">Invite people, then assign plans here.</p>
+          <p className="text-sm text-muted-foreground">Invite people, then assign plans here.</p>
         </div>
       ) : (
         <ul className="divide-y divide-border/70">
@@ -270,7 +281,7 @@ export function DeveloperToolInventory({ showSummary = true }: { showSummary?: b
                       developer.manualPlans.map((plan) => (
                         <span
                           key={plan.id}
-                          className="inline-flex items-center gap-1.5 bg-brand-yellow/35 py-1 pr-2.5 pl-1 text-xs font-medium text-brand-charcoal"
+                          className="inline-flex items-center gap-1.5 bg-brand-yellow-pale py-1 pr-2.5 pl-1 text-xs font-medium text-brand-yellow-dark"
                         >
                           <ToolLogoTile
                             tool={plan.template.toolKey ?? plan.toolName}
@@ -301,9 +312,9 @@ export function DeveloperToolInventory({ showSummary = true }: { showSummary?: b
                 </div>
 
                 {expanded && (
-                  <div className="mb-4 border border-cyan-200/80 bg-cyan-50/70 p-4">
+                  <div className="mb-4 border border-primary/20 bg-primary-pale p-4">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="font-mono text-[0.65rem] uppercase tracking-[0.12em] text-cyan-800">
+                      <p className="font-mono text-[0.65rem] uppercase tracking-[0.12em] text-primary-dark">
                         Plans for {developer.name}
                       </p>
                       {!adding && (
@@ -349,7 +360,7 @@ export function DeveloperToolInventory({ showSummary = true }: { showSummary?: b
                     )}
 
                     {adding ? (
-                      <div className="mt-4 space-y-3 bg-cyan-100/60 px-3 py-3">
+                      <div className="mt-4 space-y-3 bg-primary-pale/80 px-3 py-3">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-sm font-medium">Add a seat or plan</p>
                           <Button variant="ghost" size="sm" onClick={() => setAddingFor(null)}>
@@ -380,6 +391,7 @@ export function DeveloperToolInventory({ showSummary = true }: { showSummary?: b
           })}
         </ul>
       )}
+      </section>
 
       <AddSubscriptionSheet
         open={addSubscriptionOpen}

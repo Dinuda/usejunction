@@ -26,7 +26,7 @@ function Delta({ value, inverse = false }: { value: number | null; inverse?: boo
   if (value === null) return <span className="text-xs text-muted-foreground">—</span>;
   const good = inverse ? value <= 0 : value >= 0;
   return (
-    <span className={cn("text-xs font-medium tabular-nums", good ? "text-emerald-700" : "text-rose-700")}>
+    <span className={cn("text-xs font-medium tabular-nums", good ? "text-success" : "text-destructive")}>
       {value >= 0 ? "+" : ""}
       {value.toFixed(0)}%
     </span>
@@ -37,19 +37,14 @@ function RangePicker({ range }: { range: DashboardRange }) {
   return (
     <div className="flex items-center gap-1 rounded-md border bg-card p-1" aria-label="Date range">
       {([7, 30, 90] as DashboardRange[]).map((value) => (
-        <Button
-          key={value}
-          asChild
-          size="sm"
-          variant={range === value ? "default" : "ghost"}
-        >
+        <Button key={value} asChild size="sm" variant="ghost">
           <Link
             href={`/dashboard?range=${value}`}
             className={cn(
               "h-8 rounded-md px-3 text-xs font-semibold uppercase tracking-[0.08em]",
               range === value
-                ? "!text-white"
-                : "text-foreground hover:bg-muted hover:text-foreground",
+                ? "!bg-secondary !text-foreground hover:!bg-secondary hover:!text-foreground"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
             {value}d
@@ -74,7 +69,7 @@ function Kpi({
   accent?: boolean;
 }) {
   return (
-    <div className={cn("border-l-2 pl-4", accent ? "border-brand-yellow bg-brand-yellow/20 py-3 pr-4" : "border-primary/40")}>
+    <div className={cn("border-l-2 pl-4", accent ? "border-brand-yellow-dark bg-brand-yellow-pale py-3 pr-4" : "border-border-strong")}>
       <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
       <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{value}</p>
       {delta !== undefined && (
@@ -94,8 +89,7 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
   return (
     <Shell active="/dashboard">
       <div className="mb-10">
-        <p className="text-sm font-medium text-primary">Your devices</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-[2.15rem]">Hey {firstName}.</h1>
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">Hey {firstName}.</h1>
         <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
           Your machines, tools, and last 30 days of traffic.
         </p>
@@ -132,7 +126,7 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
                       variant="outline"
                       className={cn(
                         "font-mono text-[0.65rem] uppercase tracking-[0.08em]",
-                        device.status === "online" && "border-emerald-200 bg-emerald-50 text-emerald-800",
+                        device.status === "online" && "border-success/30 bg-success/10 text-success",
                       )}
                     >
                       {device.status}
@@ -189,8 +183,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     <Shell active="/dashboard">
       <div className="mb-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="text-sm font-medium text-primary">{empty ? "Get signal" : "Home"}</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-[2.15rem]">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">
             {empty ? "Nothing reporting yet." : "Spend, traffic, coverage."}
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
@@ -203,7 +196,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </div>
 
       {error ? (
-        <div className="flex flex-wrap items-center gap-3 border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+        <div className="flex flex-wrap items-center gap-3 border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <CircleAlert className="size-4 shrink-0" />
           <span className="flex-1">{error}</span>
           <Button asChild variant="outline" size="sm">
@@ -212,8 +205,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       ) : empty ? (
         <div>
-          <div className="relative mb-10 overflow-hidden border bg-primary p-6 text-primary-foreground sm:p-8">
-            <div className="absolute inset-0 opacity-20 [background-image:linear-gradient(to_right,currentColor_1px,transparent_1px),linear-gradient(to_bottom,currentColor_1px,transparent_1px)] [background-size:3rem_3rem] text-white" />
+          <div className="uj-grid-texture uj-grid-texture-strong relative mb-10 overflow-hidden border border-primary-dark bg-primary p-6 text-primary-foreground sm:p-8 [--uj-grid-opacity:0.1]">
             <p className="relative max-w-lg text-2xl font-semibold leading-[1.05] tracking-[-0.03em] sm:text-3xl">
               Visibility before control.
             </p>
@@ -263,7 +255,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                         <span
                           className={cn(
                             "mt-1 size-2 shrink-0 rounded-full",
-                            item.severity === "error" ? "bg-rose-600" : "bg-amber-500",
+                            item.severity === "error" ? "bg-destructive" : "bg-warning",
                           )}
                         />
                         <span className="min-w-0 flex-1">
@@ -355,13 +347,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
           {data.failures.length > 0 && (
             <section className="mt-10">
-              <div className="mb-4 border-b border-rose-200 pb-3">
+              <div className="mb-4 border-b border-destructive/30 pb-3">
                 <h2 className="text-lg font-semibold tracking-tight">Failed requests.</h2>
               </div>
               <ul className="divide-y">
                 {data.failures.map((failure) => (
                   <li key={failure.id} className="flex flex-wrap items-center gap-3 py-3">
-                    <span className="size-2 rounded-full bg-rose-600" />
+                    <span className="size-2 rounded-full bg-destructive" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">
                         {failure.tool} · {failure.model}
@@ -370,7 +362,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                         {failure.developer} · {new Date(failure.createdAt).toLocaleString()}
                       </p>
                     </div>
-                    <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[0.65rem] uppercase tracking-[0.08em] text-rose-700">
+                    <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-[0.65rem] uppercase tracking-[0.08em] text-destructive">
                       {failure.status}
                     </Badge>
                     <span className="text-xs tabular-nums text-muted-foreground">{failure.latencyMs}ms</span>

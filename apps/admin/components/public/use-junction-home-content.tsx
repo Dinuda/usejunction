@@ -2,7 +2,6 @@ import { ArrowRight, Check, Github, LockKeyhole, Server, ShieldCheck } from "luc
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { HeroSection } from "@/components/public/hero-section";
 import { ProductWalkthrough } from "@/components/public/product-walkthrough";
 import { ToolLogosStrip } from "@/components/public/tool-logos-strip";
@@ -36,34 +35,37 @@ const faqs = [
   ["What data does UseJunction collect?", "The agent and gateway record metadata such as tool, model, tokens, latency, estimated cost, device, and status. Prompts and responses are not stored by default."],
   ["Can we self-host it?", "Yes. UseJunction is open source and designed for infrastructure your team controls. Deploy the admin app and supporting services with the repository’s Docker or local setup."],
   ["Which tools are supported?", "The current MVP tracks Codex, Claude Code, Cursor, Continue, Cline, Roo Code, Copilot, Ollama, LM Studio, and related local runtimes."],
-  ["Is Team available today?", "Community is available now. Team workflows and Enterprise capabilities are clearly marked as coming soon while the observability foundation is built."],
+  ["Is Team available today?", "Yes. New organizations start on a 14-day trial, then can upgrade to Team at $12 per developer per month for unlimited devices and full observability."],
 ] as const;
 
 const plans = [
   {
     name: "Community",
-    label: "Available now",
+    label: "Free tier",
     price: "$0",
-    description: "The self-hosted foundation for teams that need visibility first.",
+    period: "forever",
+    description: "Self-hosted MIT or the free tier after your trial ends.",
     cta: "Sign up free",
     href: siteConfig.signupUrl,
-    featured: true,
-    features: ["MIT-licensed and self-hosted", "Organization dashboard", "Usage, cost, and request visibility", "Device and configuration health"],
+    featured: false,
+    features: ["MIT-licensed and self-hosted", "Up to 10 enrolled devices", "Usage, cost, and request visibility", "Device and configuration health"],
   },
   {
     name: "Team",
-    label: "Coming soon",
-    price: "Soon",
-    description: "Shared workflows and controls for growing platform teams.",
-    cta: "Join Team waitlist",
-    href: `${siteConfig.signupUrl}?intent=team`,
-    featured: false,
-    features: ["Everything in Community", "Shared team workflows", "Extended reporting and retention", "Planned team controls"],
+    label: null,
+    price: "$12",
+    period: "per developer / month",
+    description: "Unlimited devices and full observability for growing platform teams.",
+    cta: "Get started",
+    href: siteConfig.signupUrl,
+    featured: true,
+    features: ["Everything in Community", "Unlimited enrolled devices", "Per-developer cost attribution", "Latency, errors, and personal key detection"],
   },
   {
     name: "Enterprise",
     label: "Talk to us",
     price: "Custom",
+    period: "annual agreement",
     description: "A deployment conversation for organizations with specific requirements.",
     cta: "Contact us",
     href: "/contact?intent=enterprise",
@@ -129,7 +131,7 @@ export function UseJunctionHomeContent() {
         </div>
       </section>
 
-      <section className="border-b border-border bg-brand-yellow/40 py-20 lg:py-24">
+      <section className="border-b border-border bg-brand-yellow-pale py-20 lg:py-24">
         <div className="mx-auto grid w-full max-w-7xl gap-10 px-5 lg:grid-cols-[0.8fr_1.2fr] lg:items-center lg:px-8">
           <div><p className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Open source / self-hosted</p><h2 className={sectionTitleClass}>Your data stays close to your team.</h2></div>
           <div className="grid gap-4 sm:grid-cols-3">
@@ -144,61 +146,102 @@ export function UseJunctionHomeContent() {
             <p className="font-mono text-xs uppercase tracking-[0.16em] text-primary">Pricing</p>
             <h2 className={sectionTitleClass}>Start with visibility. Grow into control.</h2>
             <p className="mt-5 text-base leading-7 text-muted-foreground md:text-lg md:leading-8">
-              Community is available now. Future plans are shown honestly, with no checkout or hidden feature claims.
+              Start free, then upgrade to Team when you need unlimited device coverage.
             </p>
           </div>
-          <div className="mt-12 grid border border-border lg:grid-cols-3">
+          <div className="mt-12 grid gap-6 lg:grid-cols-3 lg:items-center">
             {plans.map((plan) => (
-              <Card
+              <article
                 key={plan.name}
                 className={cn(
-                  "border-0 border-b p-0 shadow-none last:border-b-0 lg:border-b-0 lg:border-r lg:last:border-r-0",
-                  plan.featured ? "bg-primary text-primary-foreground" : "bg-card text-card-foreground"
+                  "relative flex flex-col overflow-hidden rounded-none border",
+                  plan.featured
+                    ? "border-primary bg-primary text-primary-foreground shadow-md lg:-my-5 lg:min-h-[30rem]"
+                    : "border-border bg-card text-card-foreground",
                 )}
               >
-                <CardHeader className="border-b p-6 lg:p-7">
-                  <div className="flex items-center justify-between gap-4">
-                    <CardTitle className="text-lg">{plan.name}</CardTitle>
-                    <Badge
-                      variant={plan.featured ? "secondary" : "outline"}
-                      className={plan.featured ? "border-transparent bg-primary-foreground text-primary" : undefined}
-                    >
-                      {plan.label}
-                    </Badge>
+                <div
+                  className={cn(
+                    "relative flex flex-1 flex-col",
+                    plan.featured ? "p-8 lg:p-10" : "p-6 lg:p-7",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <h3 className="text-lg font-semibold tracking-tight">{plan.name}</h3>
+                    {plan.label ? (
+                      <Badge
+                        variant="outline"
+                        className="rounded-none border-border bg-background text-[0.65rem] uppercase tracking-[0.08em] text-muted-foreground"
+                      >
+                        {plan.label}
+                      </Badge>
+                    ) : null}
                   </div>
-                  <p className={cn("mt-3 text-sm leading-6", plan.featured ? "text-primary-foreground/80" : "text-muted-foreground")}>
+
+                  <p
+                    className={cn(
+                      "mt-3 text-sm leading-6",
+                      plan.featured ? "text-primary-foreground/80" : "text-muted-foreground",
+                    )}
+                  >
                     {plan.description}
                   </p>
-                  <div className="mt-6 font-mono text-2xl">{plan.price}</div>
-                </CardHeader>
-                <CardContent className="p-6 lg:p-7">
-                  <ul className="space-y-2.5">
+
+                  <div
+                    className={cn(
+                      "mt-6 border-b pb-6",
+                      plan.featured ? "border-primary-foreground/20" : "border-border",
+                    )}
+                  >
+                    <p className="font-mono text-3xl font-semibold tracking-tight">{plan.price}</p>
+                    <p
+                      className={cn(
+                        "mt-1 text-xs uppercase tracking-[0.08em]",
+                        plan.featured ? "text-primary-foreground/65" : "text-muted-foreground",
+                      )}
+                    >
+                      {plan.period}
+                    </p>
+                  </div>
+
+                  <ul className="mt-6 space-y-3">
                     {plan.features.map((feature) => (
-                      <li key={feature} className="flex gap-3 text-sm">
-                        <Check className="mt-0.5 size-4 shrink-0" />
+                      <li key={feature} className="flex gap-3 text-sm leading-6">
+                        <Check
+                          className={cn(
+                            "mt-0.5 size-4 shrink-0",
+                            plan.featured ? "text-primary-foreground" : "text-primary",
+                          )}
+                        />
                         {feature}
                       </li>
                     ))}
                   </ul>
-                </CardContent>
-                <CardFooter className="p-6 pt-0 lg:p-7 lg:pt-0">
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-full",
-                      plan.featured
-                        ? "border-primary-foreground/25 bg-primary-foreground text-primary hover:bg-primary-foreground/90 hover:text-primary"
-                        : "bg-background text-foreground hover:bg-muted"
+
+                  <div className={cn("mt-auto", plan.featured ? "pt-10" : "pt-8")}>
+                    {plan.featured ? (
+                      <a
+                        href={plan.href}
+                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-none bg-white px-4 text-sm font-semibold text-primary transition-opacity hover:opacity-90"
+                      >
+                        <span>{plan.cta}</span>
+                        <ArrowRight className="size-4 shrink-0" />
+                      </a>
+                    ) : (
+                      <Button
+                        className="h-10 w-full rounded-none border-border bg-background font-semibold text-foreground hover:bg-muted"
+                        variant="outline"
+                        asChild
+                      >
+                        <a href={plan.href}>
+                          {plan.cta}
+                          <ArrowRight />
+                        </a>
+                      </Button>
                     )}
-                    asChild
-                  >
-                    <a href={plan.href}>
-                      {plan.cta}
-                      <ArrowRight />
-                    </a>
-                  </Button>
-                </CardFooter>
-              </Card>
+                  </div>
+                </div>
+              </article>
             ))}
           </div>
         </div>

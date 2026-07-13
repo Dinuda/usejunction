@@ -10,10 +10,7 @@ export function DashboardSetupPanel({ canInvite = true }: { canInvite?: boolean 
   return (
     <div className={canInvite ? "grid gap-8 lg:grid-cols-2" : "max-w-xl"}>
       <section>
-        <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-primary">
-          {canInvite ? "Step 1" : "Connect"}
-        </p>
-        <h2 className="mt-3 text-xl font-semibold tracking-tight">Connect this machine.</h2>
+        <h2 className="text-xl font-semibold tracking-tight">Connect this machine.</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Copy the command, run it in Terminal. We mark the device online when enroll succeeds.
         </p>
@@ -27,8 +24,7 @@ export function DashboardSetupPanel({ canInvite = true }: { canInvite?: boolean 
       </section>
       {canInvite && (
         <section>
-          <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-primary">Step 2</p>
-          <h2 className="mt-3 text-xl font-semibold tracking-tight">Invite the team.</h2>
+          <h2 className="text-xl font-semibold tracking-tight">Invite the team.</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             They get a join link, sign in, and run the same connect flow on their machines.
           </p>

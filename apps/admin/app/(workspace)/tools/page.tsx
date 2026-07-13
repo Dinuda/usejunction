@@ -7,8 +7,7 @@ import { requireWorkspaceRole } from "@/lib/workspace-context";
 function ToolsHeader({ personal = false }: { personal?: boolean }) {
   return (
     <div className="mb-10">
-      <p className="text-sm font-medium text-primary">{personal ? "Your workspace" : "Inventory"}</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-[2.15rem]">
+      <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">
         {personal ? "Your tools, in one place." : "Tools, seats, spend."}
       </h1>
       <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
@@ -33,7 +32,7 @@ export default async function ToolsPage() {
             <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{personal.developer.reportedTools.length}</p>
             <p className="mt-2 text-xs text-muted-foreground">Reported by your devices</p>
           </div>
-          <div className="border-l-2 border-brand-yellow bg-brand-yellow/20 py-3 pr-4 pl-4">
+          <div className="border-l-2 border-brand-yellow-dark bg-brand-yellow-pale py-3 pr-4 pl-4">
             <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">Assigned plans</p>
             <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{personal.developer.assignedPlans.length}</p>
             <p className="mt-2 text-xs text-muted-foreground">Available to you</p>

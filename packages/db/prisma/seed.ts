@@ -11,6 +11,8 @@ async function main() {
     create: {
       id: "seed-org",
       name: "Demo Engineering",
+      plan: "trial",
+      trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
     },
   });
 

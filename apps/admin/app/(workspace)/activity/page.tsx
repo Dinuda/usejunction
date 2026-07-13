@@ -40,7 +40,7 @@ function Kpi({
   accent?: boolean;
 }) {
   return (
-    <div className={cn("border-l-2 pl-4", accent ? "border-brand-yellow bg-brand-yellow/20 py-3 pr-4" : "border-primary/40")}>
+    <div className={cn("border-l-2 pl-4", accent ? "border-brand-yellow-dark bg-brand-yellow-pale py-3 pr-4" : "border-border-strong")}>
       <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
       <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{value}</p>
       {sub && <p className="mt-2 text-xs text-muted-foreground">{sub}</p>}
@@ -84,8 +84,7 @@ export default async function ActivityPage() {
     return (
       <Shell active="/activity">
         <div className="mb-10">
-          <p className="text-sm font-medium text-primary">Activity</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-[2.15rem]">Your usage.</h1>
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">Your usage.</h1>
           <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
             Personal traffic over the last 30 days. Metadata only — prompts are never stored.
           </p>
@@ -120,8 +119,7 @@ export default async function ActivityPage() {
   return (
     <Shell active="/activity">
       <div className="mb-10">
-        <p className="text-sm font-medium text-primary">Activity</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-[2.15rem]">Usage and requests.</h1>
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">Usage and requests.</h1>
         <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
           Last 30 days of traffic, broken down by model and recent request metadata.
         </p>

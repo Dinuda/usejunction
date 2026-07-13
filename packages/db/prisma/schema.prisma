@@ -9,11 +9,18 @@ datasource db {
 }
 
 model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique @default(cuid())
-  plan      String   @default("community")
-  createdAt DateTime @default(now()) @map("created_at")
+  id                         String    @id @default(cuid())
+  name                       String
+  slug                       String    @unique @default(cuid())
+  plan                       String    @default("trial")
+  trialEndsAt                DateTime? @map("trial_ends_at")
+  subscriptionStatus         String?   @map("subscription_status")
+  lemonSqueezyCustomerId     String?   @map("lemon_squeezy_customer_id")
+  lemonSqueezySubscriptionId String?   @map("lemon_squeezy_subscription_id")
+  lemonSqueezyVariantId      String?   @map("lemon_squeezy_variant_id")
+  billingEmail               String?   @map("billing_email")
+  currentPeriodEnd           DateTime? @map("current_period_end")
+  createdAt                  DateTime  @default(now()) @map("created_at")
 
   teams                Team[]
   developers           Developer[]

@@ -20,8 +20,7 @@ export function TeamConnectPanel() {
 
   return (
     <section className="max-w-2xl">
-      <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-primary">Connect</p>
-      <h2 className="mt-3 text-xl font-semibold tracking-tight">Enroll the first machine.</h2>
+      <h2 className="text-xl font-semibold tracking-tight">Enroll the first machine.</h2>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
         Run the command in Terminal. The machine appears here when enrollment completes.
       </p>
@@ -57,7 +56,6 @@ export function InvitePeopleDialog() {
       </DialogTrigger>
       <DialogContent className="max-w-xl gap-5 sm:max-w-xl">
         <DialogHeader>
-          <p className="font-mono text-[0.65rem] uppercase tracking-[0.12em] text-primary">Grow the roster</p>
           <DialogTitle>Invite people.</DialogTitle>
           <DialogDescription>
             Send a secure join link. They can connect their machine after signing in.

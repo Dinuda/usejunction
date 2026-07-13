@@ -6,8 +6,8 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 type Point = { date: string; requests: number; cost: number; previousRequests: number; previousCost: number };
 
 const chartConfig = {
-  requests: { label: "Requests", color: "#0e7490" },
-  previousRequests: { label: "Previous period", color: "#94a3b8" },
+  requests: { label: "Requests", color: "#08758a" },
+  previousRequests: { label: "Previous period", color: "#8a8c85" },
 } satisfies ChartConfig;
 
 export function OverviewChart({ data }: { data: Point[] }) {
