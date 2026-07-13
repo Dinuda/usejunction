@@ -112,10 +112,15 @@ services:
       HOSTNAME: "0.0.0.0"
       DATABASE_URL: postgresql://usejunction:usejunction@postgres:5432/usejunction
       INGEST_SECRET: ${INGEST_SECRET:-change-me-ingest-secret}
+      CRON_SECRET: ${CRON_SECRET:-development-cron}
+      INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY:-}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+      USEJUNCTION_ALLOW_INSECURE_DEVELOPMENT: ${USEJUNCTION_ALLOW_INSECURE_DEVELOPMENT:-true}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me-in-production}
       NEXTAUTH_URL: http://localhost:${ADMIN_HOST_PORT:-3001}
+      AUTH_TRUST_HOST: ${AUTH_TRUST_HOST:-true}
       INTERNAL_APP_URL: http://127.0.0.1:3001
       NEXT_PUBLIC_LANGFUSE_URL: http://localhost:3000
       LITELLM_URL: http://litellm:4000

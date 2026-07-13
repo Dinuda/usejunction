@@ -29,7 +29,7 @@ export function HeroSection() {
 
   return (
     <section
-      className="relative overflow-hidden"
+      className="hero-atmosphere relative overflow-hidden"
       style={{ paddingTop: "14rem", paddingBottom: "7rem", borderBottom: "none" }}
     >
       <HeroTileBackground />
@@ -37,14 +37,22 @@ export function HeroSection() {
       <div className="public-container relative z-10 w-full">
         <div className="grid gap-10 lg:grid-cols-[38fr_62fr] lg:items-start lg:gap-10 xl:gap-12">
           <motion.div
-            className="min-w-0"
+            className="relative isolate min-w-0"
             variants={reduceMotion ? undefined : container}
             initial={reduceMotion ? false : "hidden"}
             animate="show"
           >
+            <div
+              className="pointer-events-none absolute -inset-x-6 -inset-y-8 -z-10"
+              style={{
+                background:
+                  "linear-gradient(105deg, #fafafa 0%, #fafafa 55%, rgba(250, 250, 250, 0.72) 78%, transparent 100%)",
+              }}
+              aria-hidden
+            />
             <motion.h1
               variants={item}
-              className="text-[2.5rem] font-bold leading-[1.04] tracking-[-0.025em] sm:text-5xl lg:text-[3.1rem] xl:text-[3.4rem]"
+              className="text-[2.15rem] font-bold leading-[1.06] tracking-[-0.025em] sm:text-4xl lg:text-[2.75rem] xl:text-[3rem]"
             >
               See every AI coding tool your team uses —{" "}
               <span className="public-headline-emphasis">before you try to control it</span>

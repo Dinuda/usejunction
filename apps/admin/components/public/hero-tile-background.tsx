@@ -16,7 +16,7 @@ import {
   OpenAI,
   OpenCode,
   RooCode,
-} from "@lobehub/icons";
+} from "@/lib/tool-icons";
 import type { ComponentType, CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useReducedMotion } from "framer-motion";
@@ -65,16 +65,6 @@ type LogoTile = {
 };
 
 const LOGO_TILES: LogoTile[] = [
-  { col: 1, row: 4, Icon: Cursor, borderColor: mutedBorder(BRAND_COLORS.Cursor, 0.3), subtle: true },
-  { col: 2, row: 7, Icon: Codex, borderColor: mutedBorder(BRAND_COLORS.Codex, 0.3), subtle: true },
-  { col: 4, row: 11, Icon: Ollama, borderColor: mutedBorder(BRAND_COLORS.Ollama, 0.3), subtle: true },
-  { col: 6, row: 5, Icon: Cline, borderColor: mutedBorder(BRAND_COLORS.Cline, 0.3), subtle: true },
-  { col: 1, row: 15, Icon: ClaudeCode, borderColor: mutedBorder(BRAND_COLORS.ClaudeCode, 0.3), subtle: true },
-  { col: 3, row: 22, Icon: Anthropic, borderColor: mutedBorder(BRAND_COLORS.Anthropic, 0.3), subtle: true },
-  { col: 5, row: 27, Icon: RooCode, borderColor: mutedBorder(BRAND_COLORS.RooCode, 0.3), subtle: true },
-  { col: 7, row: 18, Icon: GithubCopilot, borderColor: mutedBorder(BRAND_COLORS.GithubCopilot, 0.3), subtle: true },
-  { col: 2, row: 30, Icon: Groq, borderColor: mutedBorder(BRAND_COLORS.Groq, 0.3), subtle: true },
-  { col: 8, row: 24, Icon: OpenCode, borderColor: mutedBorder(BRAND_COLORS.OpenCode, 0.3), subtle: true },
   { col: 31, row: 4, Icon: Cursor, borderColor: mutedBorder(BRAND_COLORS.Cursor) },
   { col: 37, row: 8, Icon: ClaudeCode, borderColor: mutedBorder(BRAND_COLORS.ClaudeCode) },
   { col: 44, row: 5, Icon: OpenAI, borderColor: mutedBorder(BRAND_COLORS.OpenAI) },
@@ -327,9 +317,16 @@ export function HeroTileBackground() {
       <div
         className="absolute inset-y-0 left-0"
         style={{
-          width: "38%",
+          width: "52%",
           background:
-            "linear-gradient(to right, rgba(250, 250, 250, 0.45) 0%, rgba(250, 250, 250, 0.18) 70%, transparent 100%)",
+            "linear-gradient(to right, #fafafa 0%, #fafafa 42%, rgba(250, 250, 250, 0.92) 58%, rgba(250, 250, 250, 0.55) 72%, transparent 100%)",
+        }}
+      />
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 70% 55% at 78% 22%, color-mix(in srgb, #0891b2 14%, transparent), transparent 68%), radial-gradient(ellipse 45% 40% at 12% 88%, color-mix(in srgb, #e5e5e5 55%, transparent), transparent 62%)",
         }}
       />
     </div>

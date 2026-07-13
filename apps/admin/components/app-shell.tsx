@@ -1,139 +1,172 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { getWorkspaceContext, type OrganizationRole } from "@/lib/workspace-context";
+import { BrandLogo } from "@/components/brand-logo";
+import { WorkspaceSwitcher } from "@/components/workspace-switcher";
+import { WorkspaceUserMenu } from "@/components/workspace-user-menu";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+} from "@/components/ui/sidebar";
+import {
+  Table as ShadcnTable,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
-const nav = [
-  { href: "/dashboard", label: "Overview" },
-  { href: "/developers", label: "Developers" },
-  { href: "/devices", label: "Devices" },
-  { href: "/tools", label: "Tools" },
-  { href: "/usage", label: "Usage" },
-  { href: "/requests", label: "Requests" },
-  { href: "/config-health", label: "Config Health" },
-  { href: "/local-models", label: "Local Models" },
-];
+const adminNav = [
+  ["/dashboard", "Home"],
+  ["/team", "Team"],
+  ["/tools", "Tools"],
+  ["/activity", "Activity"],
+] as const;
 
-export function Sidebar({ active }: { active: string }) {
+const developerNav = [
+  ["/dashboard", "Home"],
+  ["/tools", "My tools"],
+  ["/activity", "My activity"],
+] as const;
+
+export function AppSidebar({ active, role }: { active: string; role: OrganizationRole | null }) {
+  const nav = role === "owner" || role === "admin" ? adminNav : developerNav;
+
   return (
-    <aside className="w-56 shrink-0 border-r border-zinc-800 bg-[#0d0d14] p-4 min-h-screen">
-      <div className="mb-8">
-        <div className="text-lg font-semibold tracking-tight text-cyan-400">UseJunction</div>
-        <div className="text-xs text-zinc-500">AI coding observability</div>
+    <Sidebar collapsible="none" variant="sidebar" className="border-r">
+      <SidebarHeader className="border-b p-4">
+        <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden">
+          <BrandLogo className="h-8 w-auto" />
+        </Link>
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {nav.map(([href, label]) => (
+                <SidebarMenuItem key={href}>
+                  <SidebarMenuButton asChild isActive={active === href} tooltip={label}>
+                    <Link href={href} aria-current={active === href ? "page" : undefined}>
+                      <span>{label}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+    </Sidebar>
+  );
+}
+
+export async function Shell({ active, children }: { active: string; children: React.ReactNode }) {
+  const ctx = await getWorkspaceContext();
+
+  return (
+    <SidebarProvider defaultOpen>
+      <AppSidebar active={active} role={ctx?.role ?? null} />
+      <SidebarInset>
+        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
+          <div className="min-w-0 flex-1">
+            <WorkspaceSwitcher
+              organizations={ctx?.organizations ?? []}
+              currentOrgId={ctx?.orgId ?? null}
+            />
+          </div>
+          <WorkspaceUserMenu
+            name={ctx?.name}
+            email={ctx?.email}
+            image={ctx?.image}
+            role={ctx?.role}
+          />
+        </header>
+        <div className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <div className="mx-auto w-full max-w-[1440px]">{children}</div>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
+  );
+}
+
+export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: React.ReactNode }) {
+  return (
+    <div className="mb-8 flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-end sm:justify-between">
+      <div className="space-y-2">
+        <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
+        {description && <p className="max-w-2xl text-sm text-muted-foreground">{description}</p>}
       </div>
-      <nav className="space-y-1">
-        {nav.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn(
-              "block rounded-md px-3 py-2 text-sm transition-colors",
-              active === item.href
-                ? "bg-cyan-500/10 text-cyan-400"
-                : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
-            )}
-          >
-            {item.label}
-          </Link>
-        ))}
-      </nav>
-    </aside>
-  );
-}
-
-export function Shell({ active, children }: { active: string; children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-screen">
-      <Sidebar active={active} />
-      <main className="flex-1 p-8">{children}</main>
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }
 
-export function PageHeader({ title, description }: { title: string; description?: string }) {
+export function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
-    <div className="mb-8">
-      <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-      {description && <p className="mt-1 text-sm text-zinc-500">{description}</p>}
-    </div>
+    <Card className="gap-0 py-0 shadow-none">
+      <CardContent className="p-4">
+        <div className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</div>
+        <div className="mt-3 text-2xl font-semibold tracking-tight">{value}</div>
+        {sub && <div className="mt-1 text-xs text-muted-foreground">{sub}</div>}
+      </CardContent>
+    </Card>
   );
 }
 
-export function StatCard({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string | number;
-  sub?: string;
-}) {
-  return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
-      <div className="text-xs uppercase tracking-wide text-zinc-500">{label}</div>
-      <div className="mt-2 text-2xl font-semibold">{value}</div>
-      {sub && <div className="mt-1 text-xs text-zinc-500">{sub}</div>}
-    </div>
-  );
-}
-
-export function StatusBadge({
-  children,
-  variant = "default",
-}: {
-  children: React.ReactNode;
-  variant?: "default" | "success" | "warning" | "error";
-}) {
-  const colors = {
-    default: "bg-zinc-800 text-zinc-300",
-    success: "bg-emerald-500/10 text-emerald-400",
-    warning: "bg-amber-500/10 text-amber-400",
-    error: "bg-red-500/10 text-red-400",
+export function StatusBadge({ children, variant = "default" }: { children: React.ReactNode; variant?: "default" | "success" | "warning" | "error" }) {
+  const classes = {
+    default: "border-border bg-muted text-muted-foreground",
+    success: "border-green-200 bg-green-50 text-green-800",
+    warning: "border-amber-200 bg-amber-50 text-amber-800",
+    error: "border-red-200 bg-red-50 text-red-800",
   };
-  return (
-    <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-medium", colors[variant])}>
-      {children}
-    </span>
-  );
+  return <Badge variant="outline" className={cn("text-[0.65rem] uppercase tracking-[0.08em]", classes[variant])}>{children}</Badge>;
 }
 
-export function Table({
-  headers,
-  rows,
-}: {
-  headers: string[];
-  rows: (string | React.ReactNode)[][];
-}) {
+export function Table({ headers, rows }: { headers: string[]; rows: (string | React.ReactNode)[][] }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-zinc-800">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-zinc-800 bg-zinc-900/80">
-            {headers.map((h) => (
-              <th key={h} className="px-4 py-3 text-left font-medium text-zinc-400">
-                {h}
-              </th>
+    <div className="w-full overflow-x-auto border border-border bg-card">
+      <ShadcnTable>
+        <TableHeader>
+          <TableRow>
+            {headers.map((header) => (
+              <TableHead key={header} className="h-11 whitespace-nowrap px-4 text-[0.65rem] font-medium uppercase tracking-[0.08em]">
+                {header}
+              </TableHead>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.length === 0 ? (
-            <tr>
-              <td colSpan={headers.length} className="px-4 py-8 text-center text-zinc-500">
+            <TableRow>
+              <TableCell colSpan={headers.length} className="h-24 text-center text-sm text-muted-foreground">
                 No data yet
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ) : (
-            rows.map((row, i) => (
-              <tr key={i} className="border-b border-zinc-800/50 hover:bg-zinc-900/30">
-                {row.map((cell, j) => (
-                  <td key={j} className="px-4 py-3">
+            rows.map((row, index) => (
+              <TableRow key={index}>
+                {row.map((cell, cellIndex) => (
+                  <TableCell key={cellIndex} className="whitespace-nowrap px-4 py-3 text-sm">
                     {cell}
-                  </td>
+                  </TableCell>
                 ))}
-              </tr>
+              </TableRow>
             ))
           )}
-        </tbody>
-      </table>
+        </TableBody>
+      </ShadcnTable>
     </div>
   );
 }

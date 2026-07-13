@@ -1,80 +1,59 @@
 "use client";
 
 import { useState } from "react";
+import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const from = searchParams.get("from") ?? "/dashboard";
-
+  const verified = searchParams.get("verified") === "1";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setError(null);
     setLoading(true);
-
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      if (res.ok) {
-        router.push(from);
-        router.refresh();
-      } else {
-        const data = await res.json();
-        setError(data.error ?? "Login failed");
-      }
-    } catch {
-      setError("Network error — please try again");
-    } finally {
-      setLoading(false);
+    const result = await signIn("credentials", { email, password, redirect: false, callbackUrl: from });
+    setLoading(false);
+    if (result?.error) {
+      setError("We could not sign you in. Check your details and verify your email first.");
+      return;
     }
+    router.push(from);
+    router.refresh();
   }
 
+  async function signInWithProvider(provider: "github" | "google" | "microsoft-entra-id") {
+    await signIn(provider, { callbackUrl: from });
+  }
+
+  const identityProviders = [
+    { id: "google" as const, label: "Google", enabled: process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true" },
+    { id: "microsoft-entra-id" as const, label: "Microsoft", enabled: process.env.NEXT_PUBLIC_MICROSOFT_AUTH_ENABLED === "true" },
+    { id: "github" as const, label: "GitHub", enabled: process.env.NEXT_PUBLIC_GITHUB_AUTH_ENABLED === "true" },
+  ].filter((provider) => provider.enabled);
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="block text-xs font-medium text-zinc-400 mb-1.5">Email</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          autoComplete="email"
-          placeholder="admin@example.com"
-          className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-        />
-      </div>
-      <div>
-        <label className="block text-xs font-medium text-zinc-400 mb-1.5">Password</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          autoComplete="current-password"
-          placeholder="••••••••"
-          className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-        />
-      </div>
-      {error && (
-        <p className="rounded-md bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400">{error}</p>
-      )}
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full rounded-md bg-cyan-500 px-4 py-2.5 text-sm font-medium text-zinc-950 transition-colors hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {loading ? "Signing in…" : "Sign in"}
-      </button>
-    </form>
+    <div className="space-y-5">
+      {verified && <Alert><AlertDescription>Your email is verified. Sign in to open your dashboard.</AlertDescription></Alert>}
+      <form onSubmit={handleSubmit} className="space-y-4" aria-busy={loading}>
+        <div className="space-y-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="you@company.com" /></div>
+        <div className="space-y-2"><div className="flex items-center justify-between"><Label htmlFor="password">Password</Label><a className="text-xs text-muted-foreground hover:text-primary" href="/forgot-password">Forgot password?</a></div><Input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" /></div>
+        {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+        <Button type="submit" className="w-full" disabled={loading}>{loading ? "Signing in…" : "Sign in"}</Button>
+      </form>
+      {identityProviders.length > 0 && <><div className="flex items-center gap-3"><Separator className="flex-1" /><span className="font-mono text-[0.65rem] uppercase tracking-[0.12em] text-muted-foreground">or</span><Separator className="flex-1" /></div><div className="grid gap-2">{identityProviders.map((provider) => <Button key={provider.id} type="button" variant="outline" className="w-full" onClick={() => signInWithProvider(provider.id)}>Continue with {provider.label}</Button>)}</div></>}
+      <p className="text-center text-sm text-muted-foreground">New to UseJunction? <a href="/signup" className="text-foreground underline underline-offset-4">Create an account</a></p>
+    </div>
   );
 }

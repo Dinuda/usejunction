@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
-import { requireAdminSession, getDefaultOrgId } from "@/lib/auth";
+import { requireOrgRole } from "@/lib/rbac";
 
 export async function GET(req: NextRequest) {
-  const auth = await requireAdminSession(req);
+  const auth = await requireOrgRole(req, ["owner", "admin"]);
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const orgId = getDefaultOrgId();
+    const orgId = auth.orgId;
+    if (!orgId) return NextResponse.json({ error: "organization setup required" }, { status: 409 });
     const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
     const gatewayByUser = await prisma.requestMetadata.groupBy({
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
       _sum: { inputTokens: true, outputTokens: true, estimatedCost: true },
     });
 
-    const users = await prisma.user.findMany({
+    const users = await prisma.developer.findMany({
       where: { orgId },
       select: { id: true, name: true, email: true },
     });

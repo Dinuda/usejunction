@@ -11,10 +11,13 @@ datasource db {
 model Organization {
   id        String   @id @default(cuid())
   name      String
+  slug      String   @unique @default(cuid())
+  plan      String   @default("community")
   createdAt DateTime @default(now()) @map("created_at")
 
   teams                Team[]
-  users                User[]
+  developers           Developer[]
+  memberships          OrganizationMembership[]
   devices              Device[]
   toolInstallations    ToolInstallation[]
   localModels          LocalModel[]
@@ -23,6 +26,20 @@ model Organization {
   toolAccounts         ToolAccount[]
   quotaSnapshots       QuotaSnapshot[]
   localUsageAggregates LocalUsageAggregate[]
+  planInterests        PlanInterest[]
+  domains              OrganizationDomain[]
+  invites              OrganizationInvite[]
+  providerConnections  ProviderConnection[]
+  providerSyncRuns     ProviderSyncRun[]
+  externalIdentities   ExternalIdentity[]
+  seatAssignments      SeatAssignment[]
+  repositories         Repository[]
+  usageDaily           UsageDaily[]
+  toolClaims           DeveloperToolClaim[]
+  telemetryEndpoint    TelemetryEndpoint?
+  billingPlanTemplates BillingPlanTemplate[]
+  planAssignments      DeveloperPlanAssignment[]
+  auditLogs            AuditLog[]
 
   @@map("organizations")
 }
@@ -34,20 +51,21 @@ model Team {
   createdAt DateTime @default(now()) @map("created_at")
 
   organization     Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  users            User[]
+  users            Developer[]
   enrollmentTokens EnrollmentToken[]
 
   @@map("teams")
 }
 
-model User {
-  id        String   @id @default(cuid())
-  orgId     String   @map("org_id")
-  name      String
-  email     String
-  teamId    String?  @map("team_id")
-  role      String   @default("developer")
-  createdAt DateTime @default(now()) @map("created_at")
+model Developer {
+  id         String   @id @default(cuid())
+  orgId      String   @map("org_id")
+  name       String
+  email      String
+  teamId     String?  @map("team_id")
+  authUserId String?  @map("auth_user_id")
+  role       String   @default("developer")
+  createdAt  DateTime @default(now()) @map("created_at")
 
   organization         Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
   team                 Team?                 @relation(fields: [teamId], references: [id])
@@ -57,8 +75,16 @@ model User {
   requestMetadata      RequestMetadata[]
   toolAccounts         ToolAccount[]
   localUsageAggregates LocalUsageAggregate[]
+  authUser             User?                 @relation(fields: [authUserId], references: [id], onDelete: SetNull)
+  enrollmentTokens     EnrollmentToken[]
+  externalIdentities   ExternalIdentity[]
+  seatAssignments      SeatAssignment[]
+  toolClaims           DeveloperToolClaim[]
+  usageDaily           UsageDaily[]
+  planAssignments      DeveloperPlanAssignment[]
 
   @@unique([orgId, email])
+  @@unique([orgId, authUserId])
   @@map("users")
 }
 
@@ -76,13 +102,14 @@ model Device {
   createdAt    DateTime @default(now()) @map("created_at")
 
   organization         Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                 Developer             @relation(fields: [userId], references: [id], onDelete: Cascade)
   toolInstallations    ToolInstallation[]
   localModels          LocalModel[]
   requestMetadata      RequestMetadata[]
   toolAccounts         ToolAccount[]
   quotaSnapshots       QuotaSnapshot[]
   localUsageAggregates LocalUsageAggregate[]
+  usageDaily           UsageDaily[]
 
   @@map("devices")
 }
@@ -100,7 +127,7 @@ model ToolInstallation {
   lastCheckedAt DateTime @default(now()) @map("last_checked_at")
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         Developer    @relation(fields: [userId], references: [id], onDelete: Cascade)
   device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@unique([deviceId, toolName])
@@ -119,7 +146,7 @@ model LocalModel {
   lastSeenAt DateTime @default(now()) @map("last_seen_at")
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         Developer    @relation(fields: [userId], references: [id], onDelete: Cascade)
   device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@unique([deviceId, provider, modelName])
@@ -145,7 +172,7 @@ model RequestMetadata {
   createdAt     DateTime @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  user         User?        @relation(fields: [userId], references: [id])
+  user         Developer?   @relation(fields: [userId], references: [id])
   device       Device?      @relation(fields: [deviceId], references: [id])
 
   @@index([orgId, createdAt])
@@ -156,16 +183,18 @@ model RequestMetadata {
 }
 
 model EnrollmentToken {
-  id        String    @id @default(cuid())
-  orgId     String    @map("org_id")
-  teamId    String?   @map("team_id")
-  tokenHash String    @unique @map("token_hash")
-  expiresAt DateTime  @map("expires_at")
-  usedAt    DateTime? @map("used_at")
-  createdAt DateTime  @default(now()) @map("created_at")
+  id          String    @id @default(cuid())
+  orgId       String    @map("org_id")
+  teamId      String?   @map("team_id")
+  developerId String?   @map("developer_id")
+  tokenHash   String    @unique @map("token_hash")
+  expiresAt   DateTime  @map("expires_at")
+  usedAt      DateTime? @map("used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   team         Team?        @relation(fields: [teamId], references: [id])
+  developer    Developer?   @relation(fields: [developerId], references: [id], onDelete: Cascade)
 
   @@map("enrollment_tokens")
 }
@@ -183,7 +212,7 @@ model ToolAccount {
   updatedAt   DateTime @default(now()) @map("updated_at")
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         Developer    @relation(fields: [userId], references: [id], onDelete: Cascade)
   device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@unique([deviceId, toolName])
@@ -224,10 +253,437 @@ model LocalUsageAggregate {
   source          String   @default("local_scan")
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         Developer    @relation(fields: [userId], references: [id], onDelete: Cascade)
   device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@unique([deviceId, date, toolName, model])
   @@index([orgId, userId, date, toolName])
   @@map("local_usage_aggregates")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  accounts          Account[]
+  sessions          Session[]
+  memberships       OrganizationMembership[]
+  actionTokens      AuthActionToken[]
+  planInterests     PlanInterest[]
+  developerProfiles Developer[]
+
+  @@map("auth_users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("auth_accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("auth_sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("auth_verification_tokens")
+}
+
+model OrganizationMembership {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  orgId     String   @map("org_id")
+  role      String   @default("developer")
+  onboardingCompletedAt   DateTime? @map("onboarding_completed_at")
+  setupChecklistDismissedAt DateTime? @map("setup_checklist_dismissed_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+  @@map("organization_memberships")
+}
+
+model AuthActionToken {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  type       String
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type, createdAt])
+  @@map("auth_action_tokens")
+}
+
+model PlanInterest {
+  id        String   @id @default(cuid())
+  plan      String
+  email     String
+  name      String?
+  company   String?
+  message   String?
+  status    String   @default("new")
+  userId    String?  @map("user_id")
+  orgId     String?  @map("org_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organization Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+
+  @@index([email, plan])
+  @@map("plan_interests")
+}
+
+model OrganizationDomain {
+  id               String    @id @default(cuid())
+  orgId            String    @map("org_id")
+  domain           String    @unique
+  verificationHash String    @map("verification_hash")
+  verifiedAt       DateTime? @map("verified_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@map("organization_domains")
+}
+
+model OrganizationInvite {
+  id              String    @id @default(cuid())
+  orgId           String    @map("org_id")
+  email           String
+  role            String    @default("developer")
+  tokenHash       String    @unique @map("token_hash")
+  expiresAt       DateTime  @map("expires_at")
+  acceptedAt      DateTime? @map("accepted_at")
+  invitedByUserId String    @map("invited_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, email])
+  @@map("organization_invites")
+}
+
+model ProviderConnection {
+  id                    String    @id @default(cuid())
+  orgId                 String    @map("org_id")
+  provider              String
+  product               String    @default("")
+  method                String
+  status                String    @default("pending")
+  externalOrgId         String?   @map("external_org_id")
+  credentialCiphertext  String?   @map("credential_ciphertext") @db.Text
+  credentialFingerprint String?   @map("credential_fingerprint")
+  credentialVersion     Int       @default(1) @map("credential_version")
+  config                Json?
+  permissions           Json?
+  lastSyncedAt          DateTime? @map("last_synced_at")
+  nextSyncAt            DateTime? @map("next_sync_at")
+  leaseUntil            DateTime? @map("lease_until")
+  lastError             String?   @map("last_error") @db.Text
+  createdByUserId       String    @map("created_by_user_id")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  organization       Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  syncRuns           ProviderSyncRun[]
+  externalIdentities ExternalIdentity[]
+  seatAssignments    SeatAssignment[]
+  usageDaily         UsageDaily[]
+
+  @@unique([orgId, provider, product])
+  @@index([status, nextSyncAt, leaseUntil])
+  @@map("provider_connections")
+}
+
+model ProviderSyncRun {
+  id           String    @id @default(cuid())
+  orgId        String    @map("org_id")
+  connectionId String    @map("connection_id")
+  status       String    @default("running")
+  startedAt    DateTime  @default(now()) @map("started_at")
+  finishedAt   DateTime? @map("finished_at")
+  cursor       String?
+  counts       Json?
+  error        String?   @db.Text
+
+  organization Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  connection   ProviderConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId, startedAt])
+  @@map("provider_sync_runs")
+}
+
+model ExternalIdentity {
+  id             String   @id @default(cuid())
+  orgId          String   @map("org_id")
+  developerId    String?  @map("developer_id")
+  connectionId   String?  @map("connection_id")
+  provider       String
+  externalUserId String   @map("external_user_id")
+  email          String?
+  displayName    String?  @map("display_name")
+  source         String   @default("vendor_verified")
+  matchedBy      String?  @map("matched_by")
+  observedAt     DateTime @default(now()) @map("observed_at")
+  metadata       Json?
+
+  organization Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  developer    Developer?          @relation(fields: [developerId], references: [id], onDelete: SetNull)
+  connection   ProviderConnection? @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, provider, externalUserId])
+  @@index([orgId, email])
+  @@map("external_identities")
+}
+
+model SeatAssignment {
+  id             String    @id @default(cuid())
+  orgId          String    @map("org_id")
+  connectionId   String    @map("connection_id")
+  developerId    String?   @map("developer_id")
+  externalUserId String    @map("external_user_id")
+  provider       String
+  product        String
+  plan           String?
+  status         String    @default("active")
+  source         String    @default("vendor_verified")
+  assignedAt     DateTime? @map("assigned_at")
+  lastActivityAt DateTime? @map("last_activity_at")
+  observedAt     DateTime  @default(now()) @map("observed_at")
+  metadata       Json?
+
+  organization Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  connection   ProviderConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  developer    Developer?         @relation(fields: [developerId], references: [id], onDelete: SetNull)
+
+  @@unique([connectionId, externalUserId])
+  @@index([orgId, developerId])
+  @@map("seat_assignments")
+}
+
+model Repository {
+  id        String   @id @default(cuid())
+  orgId     String   @map("org_id")
+  host      String
+  owner     String
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  usageDaily   UsageDaily[]
+
+  @@unique([orgId, host, owner, name])
+  @@map("repositories")
+}
+
+model UsageDaily {
+  id              String   @id @default(cuid())
+  orgId           String   @map("org_id")
+  developerId     String?  @map("developer_id")
+  deviceId        String?  @map("device_id")
+  connectionId    String?  @map("connection_id")
+  repositoryId    String?  @map("repository_id")
+  date            DateTime @db.Date
+  provider        String
+  product         String   @default("")
+  toolName        String   @default("") @map("tool_name")
+  model           String   @default("")
+  source          String
+  sourceRef       String?  @map("source_ref")
+  verified        Boolean  @default(false)
+  requests        Int      @default(0)
+  sessions        Int      @default(0)
+  inputTokens     BigInt   @default(0) @map("input_tokens")
+  outputTokens    BigInt   @default(0) @map("output_tokens")
+  cacheReadTokens BigInt   @default(0) @map("cache_read_tokens")
+  activeSeconds   BigInt   @default(0) @map("active_seconds")
+  suggestedLines  BigInt   @default(0) @map("suggested_lines")
+  acceptedLines   BigInt   @default(0) @map("accepted_lines")
+  addedLines      BigInt   @default(0) @map("added_lines")
+  deletedLines    BigInt   @default(0) @map("deleted_lines")
+  commits         Int      @default(0)
+  pullRequests    Int      @default(0) @map("pull_requests")
+  costMicros      BigInt   @default(0) @map("cost_micros")
+  dedupeKey       String   @map("dedupe_key")
+  observedAt      DateTime @default(now()) @map("observed_at")
+  metadata        Json?
+
+  organization Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  developer    Developer?          @relation(fields: [developerId], references: [id], onDelete: SetNull)
+  device       Device?             @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  connection   ProviderConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  repository   Repository?         @relation(fields: [repositoryId], references: [id], onDelete: SetNull)
+
+  @@unique([orgId, dedupeKey])
+  @@index([orgId, date, source])
+  @@index([orgId, developerId, date])
+  @@index([orgId, repositoryId, date])
+  @@map("usage_daily")
+}
+
+model DeveloperToolClaim {
+  id          String   @id @default(cuid())
+  orgId       String   @map("org_id")
+  developerId String   @map("developer_id")
+  toolName    String   @map("tool_name")
+  source      String   @default("employee_reported")
+  enabled     Boolean  @default(true)
+  observedAt  DateTime @default(now()) @map("observed_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  developer    Developer    @relation(fields: [developerId], references: [id], onDelete: Cascade)
+
+  @@unique([developerId, toolName, source])
+  @@index([orgId, toolName])
+  @@map("developer_tool_claims")
+}
+
+model BillingPlanTemplate {
+  id                           String   @id @default(cuid())
+  orgId                        String   @map("org_id")
+  provider                     String
+  product                      String
+  toolName                     String   @map("tool_name")
+  name                         String
+  tier                         String?
+  toolKey                      String?  @map("tool_key")
+  catalogPlanKey               String?  @map("catalog_plan_key")
+  billingCadence               String   @default("monthly") @map("billing_cadence")
+  seatCapacity                 Int      @default(1) @map("seat_capacity")
+  priceSource                  String   @default("manual") @map("price_source")
+  priceVerifiedAt              DateTime? @map("price_verified_at") @db.Date
+  customPrice                  Boolean  @default(true) @map("custom_price")
+  providerSourceUrl            String?  @map("provider_source_url")
+  currency                     String   @default("USD")
+  monthlySeatMicros            BigInt   @default(0) @map("monthly_seat_micros")
+  includedMonthlyMicros        BigInt   @default(0) @map("included_monthly_micros")
+  inputRateMicrosPerMillion    BigInt   @default(0) @map("input_rate_micros_per_million")
+  outputRateMicrosPerMillion   BigInt   @default(0) @map("output_rate_micros_per_million")
+  cacheRateMicrosPerMillion    BigInt   @default(0) @map("cache_rate_micros_per_million")
+  billingOwner                 String?  @map("billing_owner")
+  renewalDate                  DateTime? @map("renewal_date") @db.Date
+  externalReference            String?  @map("external_reference")
+  notes                        String?  @db.Text
+  active                       Boolean  @default(true)
+  createdByUserId              String   @map("created_by_user_id")
+  createdAt                    DateTime @default(now()) @map("created_at")
+  updatedAt                    DateTime @updatedAt @map("updated_at")
+
+  organization Organization              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  assignments  DeveloperPlanAssignment[]
+
+  @@index([orgId, active])
+  @@index([orgId, toolKey, active])
+  @@map("billing_plan_templates")
+}
+
+model DeveloperPlanAssignment {
+  id                           String   @id @default(cuid())
+  orgId                        String   @map("org_id")
+  developerId                  String   @map("developer_id")
+  planTemplateId               String   @map("plan_template_id")
+  provider                     String
+  product                      String
+  toolName                     String   @map("tool_name")
+  planName                     String   @map("plan_name")
+  planTier                     String?  @map("plan_tier")
+  currency                     String   @default("USD")
+  monthlySeatMicros            BigInt   @default(0) @map("monthly_seat_micros")
+  includedMonthlyMicros        BigInt   @default(0) @map("included_monthly_micros")
+  inputRateMicrosPerMillion    BigInt   @default(0) @map("input_rate_micros_per_million")
+  outputRateMicrosPerMillion   BigInt   @default(0) @map("output_rate_micros_per_million")
+  cacheRateMicrosPerMillion    BigInt   @default(0) @map("cache_rate_micros_per_million")
+  billingOwner                 String?  @map("billing_owner")
+  renewalDate                  DateTime? @map("renewal_date") @db.Date
+  externalReference            String?  @map("external_reference")
+  seatCount                    Int      @default(1) @map("seat_count")
+  seatStatus                   String   @default("active") @map("seat_status")
+  startDate                    DateTime @map("start_date") @db.Date
+  endDate                      DateTime? @map("end_date") @db.Date
+  active                       Boolean  @default(true)
+  source                       String   @default("admin_confirmed")
+  vendorAccountEmail           String?  @map("vendor_account_email")
+  notes                        String?  @db.Text
+  createdByUserId              String   @map("created_by_user_id")
+  createdAt                    DateTime @default(now()) @map("created_at")
+  updatedAt                    DateTime @updatedAt @map("updated_at")
+
+  organization Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  developer    Developer           @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  template     BillingPlanTemplate @relation(fields: [planTemplateId], references: [id], onDelete: Restrict)
+
+  @@index([orgId, developerId, toolName, startDate, endDate])
+  @@index([orgId, startDate, endDate])
+  @@map("developer_plan_assignments")
+}
+
+model TelemetryEndpoint {
+  id        String   @id @default(cuid())
+  orgId     String   @unique @map("org_id")
+  tokenHash String   @unique @map("token_hash")
+  tokenHint String   @map("token_hint")
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  rotatedAt DateTime @default(now()) @map("rotated_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@map("telemetry_endpoints")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  orgId      String   @map("org_id")
+  actorType  String   @map("actor_type")
+  actorId    String?  @map("actor_id")
+  action     String
+  targetType String?  @map("target_type")
+  targetId   String?  @map("target_id")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, createdAt])
+  @@map("audit_logs")
 }

@@ -7,13 +7,13 @@ INSTALL_DIR="${HOME}/.usejunction/bin"
 VERSION="0.1.0"
 
 usage() {
-  echo "Usage: curl -fsSL https://usejunction.dev/install.sh | sh -s -- --enroll-token <token> [--url <control-plane>]"
+  echo "Usage: curl -fsSL https://usejunction.dev/install.sh | sh -s -- --token <token> [--url <control-plane>]"
   exit 1
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --enroll-token) ENROLL_TOKEN="$2"; shift 2 ;;
+    --token|--enroll-token) ENROLL_TOKEN="$2"; shift 2 ;;
     --url) CONTROL_PLANE_URL="$2"; shift 2 ;;
     -h|--help) usage ;;
     *) echo "Unknown option: $1"; usage ;;
@@ -34,6 +34,8 @@ mkdir -p "$INSTALL_DIR"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BINARY="$INSTALL_DIR/usejunction"
 
+DOWNLOAD_BASE="${USEJUNCTION_DOWNLOAD_BASE:-https://github.com/usejunction/usejunction/releases/download/v${VERSION}}"
+
 if [[ -f "$SCRIPT_DIR/agent/main.go" ]]; then
   echo "Building agent from source..."
   (cd "$SCRIPT_DIR/agent" && go build -o "$BINARY" .)
@@ -41,8 +43,21 @@ elif command -v go >/dev/null 2>&1 && [[ -f "$SCRIPT_DIR/../agent/main.go" ]]; t
   echo "Building agent from source..."
   (cd "$SCRIPT_DIR/../agent" && go build -o "$BINARY" .)
 else
-  echo "Go is required to build the agent from this repo. Install Go 1.22+ and re-run from the UseJunction checkout."
-  exit 1
+  ARCHIVE="usejunction-${OS}-${ARCH}"
+  TMP_DIR="$(mktemp -d)"
+  trap 'rm -rf "$TMP_DIR"' EXIT
+  echo "Downloading UseJunction agent ${VERSION} for ${OS}/${ARCH}..."
+  curl -fsSL "${DOWNLOAD_BASE}/${ARCHIVE}" -o "${TMP_DIR}/${ARCHIVE}"
+  curl -fsSL "${DOWNLOAD_BASE}/checksums.txt" -o "${TMP_DIR}/checksums.txt"
+  EXPECTED="$(awk -v name="$ARCHIVE" '$2 == name {print $1}' "${TMP_DIR}/checksums.txt")"
+  [[ -n "$EXPECTED" ]] || { echo "Checksum for ${ARCHIVE} not found"; exit 1; }
+  if command -v shasum >/dev/null 2>&1; then
+    ACTUAL="$(shasum -a 256 "${TMP_DIR}/${ARCHIVE}" | awk '{print $1}')"
+  else
+    ACTUAL="$(sha256sum "${TMP_DIR}/${ARCHIVE}" | awk '{print $1}')"
+  fi
+  [[ "$ACTUAL" == "$EXPECTED" ]] || { echo "Agent checksum verification failed"; exit 1; }
+  cp "${TMP_DIR}/${ARCHIVE}" "$BINARY"
 fi
 
 chmod +x "$BINARY"
@@ -53,9 +68,6 @@ echo "Enrolling device..."
 
 echo "Detecting tools..."
 "$BINARY" doctor
-
-echo "Configuring supported tools..."
-"$BINARY" configure || true
 
 # macOS launchd user agent
 if [[ "$OS" == "darwin" ]]; then

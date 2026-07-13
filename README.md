@@ -79,10 +79,10 @@ pnpm dev
 ```
 
 Admin UI: http://localhost:3001  
-Generate an enrollment token (after login cookie, or via Docker admin):
+Generate a developer-bound enrollment token after signing in and joining the organization:
 
 ```bash
-curl -X POST http://localhost:3001/api/enrollment-tokens \
+curl -X POST http://localhost:3001/api/me/enrollment-token \
   -H "Cookie: uj_session=..." | jq
 ```
 
@@ -90,7 +90,7 @@ curl -X POST http://localhost:3001/api/enrollment-tokens \
 
 ```bash
 chmod +x install.sh
-./install.sh --enroll-token <token> --url http://localhost:3001
+./install.sh --token <token> --url http://localhost:3001
 ```
 
 Or build manually:
@@ -99,7 +99,6 @@ Or build manually:
 cd agent && go build -o usejunction .
 ./usejunction enroll --token <token> --url http://localhost:3001
 ./usejunction doctor
-./usejunction configure
 ./usejunction report
 ```
 
@@ -113,6 +112,8 @@ Coding tools → LiteLLM Proxy → Providers
          UseJunction callback → Admin API → Postgres
                     ↑
          Go agent (heartbeat, tool detection, local log scans)
+                    ↑
+  Provider Admin APIs + Claude Code OTLP/HTTP JSON
 ```
 
 ## CLI commands
@@ -121,7 +122,7 @@ Coding tools → LiteLLM Proxy → Providers
 |---------|-------------|
 | `usejunction enroll --token <t>` | Enroll device |
 | `usejunction doctor` | Detect installed tools |
-| `usejunction configure` | Point tools at org gateway |
+| `usejunction configure` | Explicitly point supported tools at an org gateway (never run during onboarding) |
 | `usejunction unconfigure` | Restore config backups |
 | `usejunction status` | Show enrollment state |
 | `usejunction cost --tool all` | Local JSONL usage scan |

@@ -69,16 +69,6 @@ func (p *CodexProvider) AccountIdentity(ctx context.Context) (*types.ToolAccount
 }
 
 func (p *CodexProvider) ProbeQuota(ctx context.Context) ([]types.QuotaSnapshot, error) {
-	acc, _ := p.AccountIdentity(ctx)
-	if acc != nil && acc.AuthPresent {
-		used := 0.0
-		return []types.QuotaSnapshot{{
-			ToolName:    p.ID(),
-			WindowType:  "session_5h",
-			UsedPercent: &used,
-			Source:      "auth_file",
-		}}, nil
-	}
 	return nil, nil
 }
 

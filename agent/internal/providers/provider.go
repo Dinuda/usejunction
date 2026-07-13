@@ -32,6 +32,8 @@ func All() []Provider {
 	return []Provider{
 		&CodexProvider{},
 		&ClaudeProvider{},
+		&CursorProvider{},
+		&CopilotProvider{},
 		&ContinueProvider{},
 		&ClineProvider{Tool: "cline"},
 		&ClineProvider{Tool: "roo"},

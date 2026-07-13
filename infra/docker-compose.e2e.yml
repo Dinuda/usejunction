@@ -1,0 +1,5 @@
+# Isolated E2E projects do not need to expose Postgres on the host. Keeping the
+# database internal avoids colliding with a developer's normal localhost:5433.
+services:
+  postgres:
+    ports: !reset []

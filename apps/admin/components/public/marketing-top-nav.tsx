@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Github, Menu, X } from "lucide-react";
@@ -18,9 +19,7 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
   const router = useRouter();
 
   useEffect(() => {
-    function onScroll() {
-      setScrolled(window.scrollY > 48);
-    }
+    const onScroll = () => setScrolled(window.scrollY > 48);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -67,17 +66,18 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
       }}
     >
       <div className="public-container flex h-16 items-center justify-between md:grid md:grid-cols-[1fr_auto_1fr]">
-        <Link href="/" className="inline-flex h-10 items-center md:justify-self-start">
-          <img
-            src={usejunctionLogo.src}
+        <Link href="/" className="inline-flex h-10 items-center md:justify-self-start" aria-label="UseJunction home">
+          <Image
+            src={usejunctionLogo}
             alt={siteConfig.name}
             width={usejunctionLogo.width}
             height={usejunctionLogo.height}
+            priority
             className="h-12 w-auto"
           />
         </Link>
 
-        <nav className="hidden h-10 items-center gap-8 md:flex md:justify-self-center">
+        <nav className="hidden h-10 items-center gap-8 md:flex md:justify-self-center" aria-label="Primary navigation">
           {navAnchors.map((anchor) => (
             <button
               key={anchor.id}
@@ -126,7 +126,7 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
           className="border-t md:hidden"
           style={{ borderColor: "var(--public-border)", background: "var(--public-surface)" }}
         >
-          <nav className="public-container flex flex-col gap-4 py-4">
+          <nav className="public-container flex flex-col gap-4 py-4" aria-label="Mobile navigation">
             {navAnchors.map((anchor) => (
               <button
                 key={anchor.id}

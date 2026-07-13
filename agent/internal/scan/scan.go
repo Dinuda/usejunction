@@ -6,7 +6,9 @@ package scan
 import (
 	"bufio"
 	"encoding/json"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -86,6 +88,7 @@ func processFile(
 	buckets map[string]*types.DailyUsage,
 	seen map[string]bool,
 ) {
+	repository := repositoryForSessionFile(path)
 	f, err := os.Open(path)
 	if err != nil {
 		return
@@ -119,9 +122,13 @@ func processFile(
 			seen[dedupeKey] = true
 		}
 
-		key := date + "|" + model
+		repoKey := ""
+		if repository != nil {
+			repoKey = repository.Host + "/" + repository.Owner + "/" + repository.Name
+		}
+		key := date + "|" + model + "|" + repoKey
 		if buckets[key] == nil {
-			buckets[key] = &types.DailyUsage{Date: date, ToolName: tool, Model: model}
+			buckets[key] = &types.DailyUsage{Date: date, ToolName: tool, Model: model, Repository: repository}
 		}
 		b := buckets[key]
 		b.InputTokens += input
@@ -149,9 +156,81 @@ func parseCodexLine(row map[string]any) (date, model string, input, output, cach
 		return
 	}
 	model, _ = row["model"].(string)
-	date = time.Now().Format("2006-01-02")
+	ts, _ := row["timestamp"].(string)
+	if ts != "" {
+		if parsed, err := time.Parse(time.RFC3339Nano, ts); err == nil {
+			date = parsed.Format("2006-01-02")
+		}
+	}
+	if date == "" {
+		date = time.Now().Format("2006-01-02")
+	}
 	ok = true
 	return
+}
+
+func repositoryForSessionFile(path string) *types.RepositoryIdentity {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for lines := 0; lines < 200 && scanner.Scan(); lines++ {
+		var row map[string]any
+		if json.Unmarshal(scanner.Bytes(), &row) != nil {
+			continue
+		}
+		cwd := stringField(row, "cwd")
+		if payload, ok := row["payload"].(map[string]any); ok && cwd == "" {
+			cwd = stringField(payload, "cwd")
+		}
+		if cwd == "" {
+			continue
+		}
+		command := exec.Command("git", "-C", cwd, "config", "--get", "remote.origin.url")
+		remote, err := command.Output()
+		if err != nil {
+			return nil
+		}
+		return normalizeRemote(strings.TrimSpace(string(remote)))
+	}
+	return nil
+}
+
+func stringField(row map[string]any, key string) string {
+	value, _ := row[key].(string)
+	return value
+}
+
+func normalizeRemote(remote string) *types.RepositoryIdentity {
+	if remote == "" {
+		return nil
+	}
+	if strings.HasPrefix(remote, "git@") && strings.Contains(remote, ":") {
+		parts := strings.SplitN(strings.TrimPrefix(remote, "git@"), ":", 2)
+		return repositoryParts(parts[0], parts[1])
+	}
+	parsed, err := url.Parse(remote)
+	if err != nil || parsed.Hostname() == "" {
+		return nil
+	}
+	return repositoryParts(strings.ToLower(parsed.Hostname()), strings.TrimPrefix(parsed.Path, "/"))
+}
+
+func repositoryParts(host, path string) *types.RepositoryIdentity {
+	path = strings.TrimSuffix(strings.TrimSuffix(path, "/"), ".git")
+	parts := strings.Split(path, "/")
+	if host == "" || len(parts) < 2 {
+		return nil
+	}
+	owner := parts[len(parts)-2]
+	name := parts[len(parts)-1]
+	if owner == "" || name == "" {
+		return nil
+	}
+	return &types.RepositoryIdentity{Host: strings.ToLower(host), Owner: owner, Name: name}
 }
 
 func parseClaudeLine(row map[string]any) (date, model string, input, output, cacheRead int, ok bool) {

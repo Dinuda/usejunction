@@ -30,13 +30,22 @@ type QuotaSnapshot struct {
 
 // DailyUsage is token/cost data aggregated by date + model.
 type DailyUsage struct {
-	Date            string  `json:"date"`
-	ToolName        string  `json:"toolName"`
-	Model           string  `json:"model"`
-	InputTokens     int     `json:"inputTokens"`
-	OutputTokens    int     `json:"outputTokens"`
-	CacheReadTokens int     `json:"cacheReadTokens"`
-	EstimatedCost   float64 `json:"estimatedCost"`
+	Date            string              `json:"date"`
+	ToolName        string              `json:"toolName"`
+	Model           string              `json:"model"`
+	InputTokens     int                 `json:"inputTokens"`
+	OutputTokens    int                 `json:"outputTokens"`
+	CacheReadTokens int                 `json:"cacheReadTokens"`
+	EstimatedCost   float64             `json:"estimatedCost"`
+	Repository      *RepositoryIdentity `json:"repository,omitempty"`
+}
+
+// RepositoryIdentity is the canonical remote identity of a repository. Local
+// filesystem paths are deliberately never included in reports.
+type RepositoryIdentity struct {
+	Host  string `json:"host"`
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
 }
 
 // LocalModelInfo describes a locally running model (Ollama, LM Studio, etc.).

@@ -1,23 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
-import { requireAdminSession, hashToken, generateEnrollmentToken, getDefaultOrgId } from "@/lib/auth";
+import { hashToken, generateEnrollmentToken } from "@/lib/auth";
+import { requireOrgRole } from "@/lib/rbac";
 
 export async function POST(req: NextRequest) {
-  const auth = await requireAdminSession(req);
+  const auth = await requireOrgRole(req, ["owner", "admin"]);
   if (auth instanceof NextResponse) return auth;
 
   try {
     const body = await req.json().catch(() => ({}));
-    const orgId = body.orgId ?? getDefaultOrgId();
-    const teamId = body.teamId ?? null;
-    const expiresInHours = body.expiresInHours ?? 72;
+    const orgId = auth.orgId;
+    if (!orgId) return NextResponse.json({ error: "organization setup required" }, { status: 409 });
+    const developerId = String(body.developerId ?? "");
+    if (!developerId) return NextResponse.json({ error: "developerId required" }, { status: 400 });
+    const developer = await prisma.developer.findFirst({ where: { id: developerId, orgId } });
+    if (!developer) return NextResponse.json({ error: "developer not found" }, { status: 404 });
 
     const rawToken = generateEnrollmentToken();
     const tokenHash = hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
     await prisma.enrollmentToken.create({
-      data: { orgId, teamId, tokenHash, expiresAt },
+      data: { orgId, teamId: developer.teamId, developerId: developer.id, tokenHash, expiresAt },
     });
 
     return NextResponse.json({
@@ -31,11 +35,12 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const auth = await requireAdminSession(req);
+  const auth = await requireOrgRole(req, ["owner", "admin"]);
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const orgId = getDefaultOrgId();
+    const orgId = auth.orgId;
+    if (!orgId) return NextResponse.json({ error: "organization setup required" }, { status: 409 });
     const tokens = await prisma.enrollmentToken.findMany({
       where: { orgId },
       orderBy: { createdAt: "desc" },
@@ -44,6 +49,7 @@ export async function GET(req: NextRequest) {
         id: true,
         orgId: true,
         teamId: true,
+        developerId: true,
         expiresAt: true,
         usedAt: true,
         createdAt: true,

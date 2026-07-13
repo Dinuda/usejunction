@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
-import { requireAdminSession, getDefaultOrgId } from "@/lib/auth";
+import { requireOrgRole } from "@/lib/rbac";
 
 export async function GET(req: NextRequest) {
-  const auth = await requireAdminSession(req);
+  const auth = await requireOrgRole(req, ["owner", "admin"]);
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const orgId = getDefaultOrgId();
+    const orgId = auth.orgId;
+    if (!orgId) return NextResponse.json({ error: "organization setup required" }, { status: 409 });
     const { searchParams } = req.nextUrl;
     const days = Math.min(parseInt(searchParams.get("days") ?? "30"), 365);
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
     ]);
 
     const userIds = byUser.map((u) => u.userId).filter(Boolean) as string[];
-    const users = await prisma.user.findMany({
+    const users = await prisma.developer.findMany({
       where: { id: { in: userIds } },
       select: { id: true, name: true, email: true },
     });

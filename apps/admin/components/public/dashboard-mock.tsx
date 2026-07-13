@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ClaudeCode, Cursor, GithubCopilot, Ollama } from "@lobehub/icons";
+import { ClaudeCode, Cursor, GithubCopilot, Ollama } from "@/lib/tool-icons";
 
 const VIEW_CYCLE_MS = 7000;
 const TICK_INTERVAL_MS = 3000;
@@ -46,11 +46,10 @@ const TOOL_ROWS: ToolRow[] = [
 ];
 
 const MODEL_ROWS: ModelRow[] = [
-  { model: "claude-sonnet-4", provider: "Anthropic", requests: 4821, cost: 112.4, latencyMs: 1100, errorRate: 0.4 },
-  { model: "gpt-4o", provider: "OpenAI", requests: 3912, cost: 98.2, latencyMs: 890, errorRate: 0.6 },
-  { model: "cursor-small", provider: "Cursor", requests: 2104, cost: 41.8, latencyMs: 760, errorRate: 0.3 },
-  { model: "llama3.1:70b", provider: "Ollama", requests: 876, cost: 0, latencyMs: 2100, errorRate: 1.2 },
-  { model: "copilot-gpt-4o", provider: "GitHub", requests: 634, cost: 32.1, latencyMs: 940, errorRate: 0.5 },
+  { model: "claude-sonnet-4", provider: "Anthropic", requests: 4821, cost: 112.38, latencyMs: 1100, errorRate: 0.4 },
+  { model: "gpt-4o", provider: "OpenAI", requests: 3913, cost: 98.18, latencyMs: 890, errorRate: 0.6 },
+  { model: "cursor-small", provider: "Cursor", requests: 2164, cost: 41.94, latencyMs: 757, errorRate: 0.3 },
+  { model: "llama3.1:70b", provider: "Ollama", requests: 876, cost: 9.88, latencyMs: 2100, errorRate: 1.2 },
 ];
 
 const STATS = [
@@ -260,7 +259,7 @@ function ModelView({ rows }: { rows: ModelRow[] }) {
 }
 
 export function DashboardMock() {
-  const [view, setView] = useState<ViewMode>("tool");
+  const [view, setView] = useState<ViewMode>("model");
   const [toolRows, setToolRows] = useState(TOOL_ROWS);
   const [modelRows, setModelRows] = useState(MODEL_ROWS);
   const [tick, setTick] = useState(0);
@@ -352,58 +351,56 @@ export function DashboardMock() {
         className="flex h-10 items-center justify-between gap-3 border-b px-4"
         style={{ borderColor: "var(--public-border)", background: "var(--public-surface)" }}
       >
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="text-[12px] font-medium tracking-tight">Overview</span>
-            <span className="text-[var(--public-border)]">/</span>
-            <span className="text-[11px] public-mono text-[var(--public-muted)]">last 24h</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="text-[12px] font-medium tracking-tight">Overview</span>
+          <span className="text-[var(--public-border)]">/</span>
+          <span className="text-[11px] public-mono text-[var(--public-muted)]">last 24h</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          <ViewTabs view={view} onChange={handleViewChange} />
+          <div className="flex items-center gap-1.5 text-[10px] public-mono text-[var(--public-muted)]">
+            <span
+              className="inline-block h-1.5 w-1.5"
+              style={{ background: "var(--public-accent)" }}
+              aria-hidden
+            />
+            <span>live</span>
+            <span className="text-[var(--public-border)]">·</span>
+            <span className="tabular-nums">{tick}</span>
           </div>
-          <div className="flex shrink-0 items-center gap-3">
-            <ViewTabs view={view} onChange={handleViewChange} />
-            <div className="flex items-center gap-1.5 text-[10px] public-mono text-[var(--public-muted)]">
-              <span
-                className="inline-block h-1.5 w-1.5"
-                style={{ background: "var(--public-accent)" }}
-                aria-hidden
-              />
-              <span>live</span>
-              <span className="text-[var(--public-border)]">·</span>
-              <span className="tabular-nums">{tick}</span>
+        </div>
+      </div>
+
+      <div
+        className="grid grid-cols-2 gap-px border-b sm:grid-cols-4"
+        style={{ background: "var(--public-border)" }}
+      >
+        {STATS.map((stat) => (
+          <div key={stat.label} className="px-4 py-3" style={{ background: "var(--public-surface)" }}>
+            <div className="text-[11px] public-mono uppercase tracking-wider text-[var(--public-muted)]">
+              {stat.label}
+            </div>
+            <div className="mt-1.5 text-[17px] font-semibold public-mono tabular-nums">
+              {stat.value}
             </div>
           </div>
-        </div>
+        ))}
+      </div>
 
-        {/* KPI strip */}
-        <div
-          className="grid grid-cols-2 gap-px border-b sm:grid-cols-4"
-          style={{ background: "var(--public-border)" }}
-        >
-          {STATS.map((stat) => (
-            <div key={stat.label} className="px-4 py-3" style={{ background: "var(--public-surface)" }}>
-              <div className="text-[11px] public-mono uppercase tracking-wider text-[var(--public-muted)]">
-                {stat.label}
-              </div>
-              <div className="mt-1.5 text-[17px] font-semibold public-mono tabular-nums">
-                {stat.value}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Content table */}
-        <div className="relative min-h-[18rem] flex-1 overflow-hidden">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={view}
-              initial={reduceMotion ? false : { opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={reduceMotion ? undefined : { opacity: 0 }}
-              transition={{ duration: 0.18, ease: "easeOut" }}
-              className="absolute inset-0 overflow-x-auto overflow-y-hidden"
-            >
-              {view === "tool" ? <ToolView rows={toolRows} /> : <ModelView rows={modelRows} />}
-            </motion.div>
-          </AnimatePresence>
-        </div>
+      <div className="relative min-h-[18rem] flex-1 overflow-hidden">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={view}
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={reduceMotion ? undefined : { opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="absolute inset-0 overflow-x-auto overflow-y-hidden"
+          >
+            {view === "tool" ? <ToolView rows={toolRows} /> : <ModelView rows={modelRows} />}
+          </motion.div>
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

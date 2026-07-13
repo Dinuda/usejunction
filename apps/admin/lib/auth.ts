@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { verifySessionToken, COOKIE_NAME } from "./session-edge";
+import { getWorkspaceContext } from "@/lib/workspace-context";
 
 export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -20,7 +20,9 @@ export function getDefaultOrgId(): string {
 
 export function verifyIngestAuth(req: NextRequest): boolean {
   const auth = req.headers.get("authorization");
-  const secret = process.env.INGEST_SECRET || "change-me-ingest-secret";
+  const secret = process.env.INGEST_SECRET;
+  if (!secret) return false;
+  if (process.env.NODE_ENV === "production" && secret === "change-me-ingest-secret" && process.env.USEJUNCTION_ALLOW_INSECURE_DEVELOPMENT !== "true") return false;
   return auth === `Bearer ${secret}`;
 }
 
@@ -31,14 +33,14 @@ export function verifyDeviceTokenHeader(req: NextRequest, deviceToken: string): 
 }
 
 export async function requireAdminSession(
-  req: NextRequest
-): Promise<{ email: string } | NextResponse> {
-  const token = req.cookies.get(COOKIE_NAME)?.value;
-  const email = token ? await verifySessionToken(token) : null;
-  if (!email) {
+  _req: NextRequest
+): Promise<{ email: string; userId: string; orgId: string | null; role: string | null } | NextResponse> {
+  const ctx = await getWorkspaceContext();
+  if (!ctx) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  return { email };
+
+  return { email: ctx.email, userId: ctx.userId, orgId: ctx.orgId, role: ctx.role };
 }
 
 export async function requireDeviceAuth(

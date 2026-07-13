@@ -4,7 +4,10 @@ export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization");
   const secret = process.env.CRON_SECRET;
 
-  if (secret && auth !== `Bearer ${secret}`) {
+  if (!secret || (process.env.NODE_ENV === "production" && secret === "development-cron" && process.env.USEJUNCTION_ALLOW_INSECURE_DEVELOPMENT !== "true")) {
+    return NextResponse.json({ error: "CRON_SECRET is not securely configured" }, { status: 503 });
+  }
+  if (auth !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

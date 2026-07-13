@@ -15,6 +15,9 @@ const nextConfig: NextConfig = {
     ],
   },
   transpilePackages: ["@usejunction/db"],
+  experimental: {
+    optimizePackageImports: ["@lobehub/icons"],
+  },
 };
 
 export default nextConfig;

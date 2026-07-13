@@ -1,0 +1,15 @@
+export { default as Anthropic } from "@lobehub/icons/es/Anthropic";
+export { default as ClaudeCode } from "@lobehub/icons/es/ClaudeCode";
+export { default as Cline } from "@lobehub/icons/es/Cline";
+export { default as Codex } from "@lobehub/icons/es/Codex";
+export { default as Cursor } from "@lobehub/icons/es/Cursor";
+export { default as DeepSeek } from "@lobehub/icons/es/DeepSeek";
+export { default as Gemini } from "@lobehub/icons/es/Gemini";
+export { default as GithubCopilot } from "@lobehub/icons/es/GithubCopilot";
+export { default as Groq } from "@lobehub/icons/es/Groq";
+export { default as LmStudio } from "@lobehub/icons/es/LmStudio";
+export { default as Mistral } from "@lobehub/icons/es/Mistral";
+export { default as Ollama } from "@lobehub/icons/es/Ollama";
+export { default as OpenAI } from "@lobehub/icons/es/OpenAI";
+export { default as OpenCode } from "@lobehub/icons/es/OpenCode";
+export { default as RooCode } from "@lobehub/icons/es/RooCode";

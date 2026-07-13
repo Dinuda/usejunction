@@ -1,5 +1,3 @@
-"use client";
-
 import type { ComponentType } from "react";
 import {
   ClaudeCode,
@@ -11,41 +9,40 @@ import {
   Ollama,
   OpenCode,
   RooCode,
-} from "@lobehub/icons";
+} from "@/lib/tool-icons";
 import { Code2 } from "lucide-react";
 import { SUPPORTED_TOOLS } from "@/lib/public/config";
 
 type IconProps = { size?: number | string; className?: string };
 
 const TOOL_ICONS: Record<string, ComponentType<IconProps>> = {
-  Codex: Codex,
+  Codex,
   "Claude Code": ClaudeCode,
-  Cursor: Cursor,
+  Cursor,
   Continue: Code2,
-  Cline: Cline,
+  Cline,
   "Roo Code": RooCode,
-  OpenCode: OpenCode,
+  OpenCode,
   "GitHub Copilot": GithubCopilot,
-  Ollama: Ollama,
+  Ollama,
   "LM Studio": LmStudio,
 };
 
 export function ToolLogosStrip() {
   return (
-    <section
-      className="border-y py-12"
-      style={{ borderColor: "var(--public-border)", background: "var(--public-bg)" }}
-    >
-      <div className="container">
-        <p className="public-eyebrow mb-10 text-center">Supported tools &amp; runtimes</p>
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-center gap-x-10 gap-y-6">
+    <section className="border-y border-border bg-background py-12">
+      <div className="mx-auto w-full max-w-7xl px-5 lg:px-8">
+        <p className="mb-10 text-center font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">
+          Supported tools &amp; runtimes
+        </p>
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-10 gap-y-6">
           {SUPPORTED_TOOLS.map((tool) => {
             const Icon = TOOL_ICONS[tool.name] ?? Code2;
             return (
               <div key={tool.name} className="flex items-center gap-3">
                 <div
-                  className="flex h-11 w-11 items-center justify-center border"
-                  style={{ borderColor: "var(--public-border)", background: "var(--public-surface)" }}
+                  className="flex size-11 items-center justify-center border border-border bg-card transition-colors hover:border-primary"
+                  aria-hidden
                 >
                   <Icon size={22} />
                 </div>

@@ -2,10 +2,11 @@ export const siteConfig = {
   name: "UseJunction",
   tagline: "Open-source observability for AI coding tools",
   description:
-    "See every AI coding tool your team uses — which models, what it costs, how it performs, and whether devices are configured correctly. Self-hosted. Open source. Observe first; control when you're ready.",
+    "See every AI coding tool your team uses, what it costs, how it performs, and whether devices are configured correctly. Self-hosted and open source.",
   url: process.env.NEXTAUTH_URL ?? "https://usejunction.dev",
   githubUrl: "https://github.com/usejunction/usejunction",
   docsUrl: "https://github.com/usejunction/usejunction#readme",
+  signupUrl: "/signup",
   license: "MIT",
 } as const;
 
