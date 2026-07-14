@@ -7,7 +7,9 @@ dist/
 .DS_Store
 .turbo/
 agent/usejunction
+agent/agent
 agent/dist/
+apps/admin/public/releases/
 packages/db/prisma/migrations/**/migration_lock.toml
 .vercel
 .env*.local

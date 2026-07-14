@@ -6,12 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/usejunction/agent/internal/scan"
 	"github.com/usejunction/agent/internal/types"
 )
 
 type CopilotProvider struct{}
 
-func (p *CopilotProvider) ID() string { return "github-copilot" }
+func (p *CopilotProvider) ID() string { return "copilot" }
 
 func (p *CopilotProvider) Detect(ctx context.Context) (*types.ToolStatus, error) {
 	home, _ := os.UserHomeDir()
@@ -19,6 +20,7 @@ func (p *CopilotProvider) Detect(ctx context.Context) (*types.ToolStatus, error)
 		filepath.Join(home, ".vscode", "extensions"),
 		filepath.Join(home, ".vscode-insiders", "extensions"),
 		filepath.Join(home, ".cursor", "extensions"),
+		filepath.Join(home, "Library", "Application Support", "Cursor", "User", "extensions"),
 	}
 	detected := false
 	configPath := ""
@@ -28,7 +30,8 @@ func (p *CopilotProvider) Detect(ctx context.Context) (*types.ToolStatus, error)
 			continue
 		}
 		for _, entry := range entries {
-			if strings.HasPrefix(strings.ToLower(entry.Name()), "github.copilot-") || strings.HasPrefix(strings.ToLower(entry.Name()), "github.copilot-chat-") {
+			name := strings.ToLower(entry.Name())
+			if strings.HasPrefix(name, "github.copilot-") || strings.HasPrefix(name, "github.copilot-chat-") {
 				detected = true
 				configPath = filepath.Join(root, entry.Name())
 				break
@@ -38,11 +41,11 @@ func (p *CopilotProvider) Detect(ctx context.Context) (*types.ToolStatus, error)
 			break
 		}
 	}
-	return &types.ToolStatus{ToolName: p.ID(), Detected: detected, Configured: false, ConfigPath: configPath}, nil
+	return &types.ToolStatus{ToolName: p.ID(), Detected: detected, Configured: detected, ConfigPath: configPath}, nil
 }
 
 func (p *CopilotProvider) AccountIdentity(ctx context.Context) (*types.ToolAccount, error) {
-	return &types.ToolAccount{ToolName: p.ID(), LoginMethod: "github"}, nil
+	return &types.ToolAccount{ToolName: p.ID(), LoginMethod: "github", AuthPresent: false}, nil
 }
 
 func (p *CopilotProvider) ProbeQuota(ctx context.Context) ([]types.QuotaSnapshot, error) {
@@ -50,5 +53,5 @@ func (p *CopilotProvider) ProbeQuota(ctx context.Context) ([]types.QuotaSnapshot
 }
 
 func (p *CopilotProvider) ScanLocalUsage(ctx context.Context, refresh bool) ([]types.DailyUsage, error) {
-	return nil, nil
+	return scan.ScanCopilot(refresh)
 }

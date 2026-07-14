@@ -45,8 +45,22 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const auth = await requireOrgRole(req, ["owner", "admin"]);
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
-  const result = await prisma.billingPlanTemplate.updateMany({ where: { id, orgId: auth.orgId, active: true }, data: { active: false } });
-  if (!result.count) return NextResponse.json({ error: "subscription not found" }, { status: 404 });
+  try {
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.billingPlanTemplate.findFirst({ where: { id, orgId: auth.orgId, active: true } });
+      if (!existing) throw new Error("NOT_FOUND");
+      await tx.developerPlanAssignment.updateMany({
+        where: { orgId: auth.orgId, planTemplateId: id, active: true },
+        data: { active: false, endDate: new Date() },
+      });
+      await tx.billingPlanTemplate.update({ where: { id }, data: { active: false } });
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "NOT_FOUND") {
+      return NextResponse.json({ error: "subscription not found" }, { status: 404 });
+    }
+    throw error;
+  }
   await audit({ orgId: auth.orgId, actorType: "user", actorId: auth.userId, action: "tools.subscription_archived", targetType: "billing_plan_template", targetId: id });
   return NextResponse.json({ ok: true });
 }

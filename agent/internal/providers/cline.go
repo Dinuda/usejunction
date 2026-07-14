@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/usejunction/agent/internal/scan"
 	"github.com/usejunction/agent/internal/types"
 )
 
@@ -54,9 +55,8 @@ func (p *ClineProvider) Detect(ctx context.Context) (*types.ToolStatus, error) {
 	}
 
 	return &types.ToolStatus{
-		ToolName: p.ID(),
-		Detected: detected,
-		// Cline/Roo/OpenCode are detect-only; configure is not supported.
+		ToolName:   p.ID(),
+		Detected:   detected,
 		Configured: false,
 	}, nil
 }
@@ -83,5 +83,5 @@ func (p *ClineProvider) ProbeQuota(ctx context.Context) ([]types.QuotaSnapshot, 
 }
 
 func (p *ClineProvider) ScanLocalUsage(ctx context.Context, refresh bool) ([]types.DailyUsage, error) {
-	return nil, nil
+	return scan.ScanClineFamily(p.ID(), refresh)
 }

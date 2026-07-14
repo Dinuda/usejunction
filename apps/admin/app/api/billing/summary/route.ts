@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { calculateBilling, serializeBillingLine } from "@/lib/billing/calculator";
+import { usageDayFilterInclusive, usageInclusiveEnd } from "@/lib/metrics/date-range";
 import { requireOrgRole } from "@/lib/rbac";
 
 function parseDate(value: string | null, fallback: Date) {
@@ -15,14 +16,14 @@ export async function GET(req: NextRequest) {
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const from = parseDate(req.nextUrl.searchParams.get("from"), monthStart);
-  const to = parseDate(req.nextUrl.searchParams.get("to"), now);
+  const to = parseDate(req.nextUrl.searchParams.get("to"), usageInclusiveEnd(now));
   const developerId = req.nextUrl.searchParams.get("developerId") || undefined;
   const toolName = req.nextUrl.searchParams.get("tool") || undefined;
   const assignments = await prisma.developerPlanAssignment.findMany({
     where: { orgId: auth.orgId, ...(developerId ? { developerId } : {}), ...(toolName ? { toolName } : {}) },
   });
   const usage = await prisma.usageDaily.findMany({
-    where: { orgId: auth.orgId, date: { gte: from, lte: to }, ...(developerId ? { developerId } : {}), ...(toolName ? { toolName } : {}) },
+    where: { orgId: auth.orgId, date: usageDayFilterInclusive(from, to), ...(developerId ? { developerId } : {}), ...(toolName ? { toolName } : {}) },
     select: { date: true, source: true, costMicros: true, inputTokens: true, outputTokens: true, cacheReadTokens: true, observedAt: true, developerId: true, provider: true, product: true, toolName: true },
   });
   const lines = calculateBilling({ assignments, usage, from, to });

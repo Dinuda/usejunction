@@ -282,6 +282,14 @@ a {
   min-height: 2.75rem;
 }
 
+.auth-shell [data-slot="button"].uj-grid-texture::before {
+  display: none;
+}
+
+.auth-shell [data-slot="button"][data-variant="default"] {
+  background-image: none;
+}
+
 .auth-shell [data-slot="input"]:focus-visible,
 .auth-shell [data-slot="button"]:focus-visible {
   outline-offset: 2px;

@@ -21,13 +21,17 @@ export async function POST(req: NextRequest) {
     }
 
     let upserted = 0;
+    const reportedNames: string[] = [];
     for (const tool of tools) {
       if (!tool.toolName) continue;
+      const detected = tool.detected !== false;
+      if (!detected) continue;
+      reportedNames.push(tool.toolName);
 
       await prisma.toolInstallation.upsert({
         where: { deviceId_toolName: { deviceId: device.id, toolName: tool.toolName } },
         update: {
-          detected: tool.detected ?? true,
+          detected: true,
           configured: tool.configured ?? false,
           configPath: tool.configPath ?? null,
           version: tool.version ?? null,
@@ -38,13 +42,25 @@ export async function POST(req: NextRequest) {
           userId: device.userId,
           deviceId: device.id,
           toolName: tool.toolName,
-          detected: tool.detected ?? true,
+          detected: true,
           configured: tool.configured ?? false,
           configPath: tool.configPath ?? null,
           version: tool.version ?? null,
         },
       });
       upserted += 1;
+    }
+
+    // Drop stale rows for tools no longer present on this device.
+    if (reportedNames.length > 0) {
+      await prisma.toolInstallation.deleteMany({
+        where: {
+          deviceId: device.id,
+          toolName: { notIn: reportedNames },
+        },
+      });
+    } else {
+      await prisma.toolInstallation.deleteMany({ where: { deviceId: device.id } });
     }
 
     return NextResponse.json({ upserted });

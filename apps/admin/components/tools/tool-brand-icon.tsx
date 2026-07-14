@@ -9,6 +9,7 @@ const icons = {
   claude: ClaudeCode,
   cursor: Cursor,
   "github-copilot": GithubCopilot,
+  copilot: GithubCopilot,
   cline: Cline,
   deepseek: DeepSeek,
   gemini: Gemini,
@@ -22,6 +23,10 @@ const icons = {
   "roo-code": RooCode,
   roocode: RooCode,
 };
+
+export function hasToolBrandIcon(tool: string) {
+  return canonicalToolKey(tool) in icons;
+}
 
 export function ToolBrandIcon({ tool, size = 22, className, ...props }: { tool: string; size?: number; className?: string } & Omit<SVGProps<SVGSVGElement>, "size">) {
   const Icon = icons[canonicalToolKey(tool) as keyof typeof icons] ?? Wrench;

@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/usejunction/agent/internal/client"
 	"github.com/usejunction/agent/internal/config"
+	"github.com/usejunction/agent/internal/configure"
 )
 
 var (
@@ -14,6 +15,7 @@ var (
 	controlPlaneURL string
 	enrollEmail     string
 	enrollName      string
+	enrollSetup     bool
 )
 
 var enrollCmd = &cobra.Command{
@@ -52,8 +54,27 @@ var enrollCmd = &cobra.Command{
 			OrgID:           resp.OrgID,
 			GatewayURL:      resp.GatewayURL,
 		}
+		if resp.Otel != nil {
+			cfg.OtelEnabled = resp.Otel.Enabled
+			cfg.OtelMetricsEndpoint = resp.Otel.MetricsEndpoint
+		}
+		if _, err := cfg.EnsureLocalSyncCredentials(); err != nil {
+			return fmt.Errorf("local sync credentials: %w", err)
+		}
 		if err := config.Save(cfg); err != nil {
 			return fmt.Errorf("saving config: %w", err)
+		}
+
+		if enrollSetup {
+			if _, err := configure.RunSetup(cfg, configure.SetupOptions{
+				ConfigureGateway: true,
+				EnableOtel:       true,
+			}); err != nil {
+				fmt.Printf("setup warning: %v\n", err)
+			}
+			if err := runReport(cmd, args); err != nil {
+				fmt.Printf("initial report warning: %v\n", err)
+			}
 		}
 
 		if format == "json" {
@@ -76,5 +97,6 @@ func init() {
 	enrollCmd.Flags().StringVar(&controlPlaneURL, "url", "", "Control plane URL (default: $USEJUNCTION_URL or http://localhost:3001)")
 	enrollCmd.Flags().StringVar(&enrollEmail, "email", "", "Developer email")
 	enrollCmd.Flags().StringVar(&enrollName, "name", "", "Developer name")
+	enrollCmd.Flags().BoolVar(&enrollSetup, "setup", true, "Configure gateway, OTEL, and send initial report")
 	rootCmd.AddCommand(enrollCmd)
 }

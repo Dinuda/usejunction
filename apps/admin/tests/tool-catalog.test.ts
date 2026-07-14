@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { TOOL_CATALOG, canonicalToolKey, findCatalogPlan, serializeCatalog } from "../lib/tools/catalog";
 import { deriveSubscription } from "../lib/tools/subscriptions";
+import { mapVendorPlanToCatalog, hasReportedVendorPlan } from "../lib/tools/sync-detected";
 
 test("catalog contains the four supported branded tools and stable aliases", () => {
   assert.deepEqual(TOOL_CATALOG.map((tool) => tool.key), ["chatgpt-codex", "claude", "cursor", "github-copilot"]);
@@ -46,4 +47,23 @@ test("serialized catalog is JSON-safe", () => {
   const serialized = serializeCatalog();
   assert.doesNotThrow(() => JSON.stringify(serialized));
   assert.equal(serialized[0].plans[2].prices.monthly, "20000000");
+});
+
+test("detected seat sync requires a reported vendor plan", () => {
+  assert.equal(hasReportedVendorPlan(null), false);
+  assert.equal(hasReportedVendorPlan(""), false);
+  assert.equal(hasReportedVendorPlan("   "), false);
+  assert.equal(hasReportedVendorPlan("pro_plus"), true);
+});
+
+test("vendor plan strings map onto catalog plan keys with safe defaults", () => {
+  assert.equal(mapVendorPlanToCatalog("cursor", null), "hobby");
+  assert.equal(mapVendorPlanToCatalog("cursor", "pro_plus"), "pro-plus");
+  assert.equal(mapVendorPlanToCatalog("cursor", "pro+"), "pro-plus");
+  assert.equal(mapVendorPlanToCatalog("cursor", "business"), "teams");
+  assert.equal(mapVendorPlanToCatalog("chatgpt-codex", "plus"), "plus");
+  assert.equal(mapVendorPlanToCatalog("chatgpt-codex", undefined), "free");
+  assert.equal(mapVendorPlanToCatalog("claude", "max"), "max-5x");
+  assert.equal(mapVendorPlanToCatalog("github-copilot", "Pro Plus"), "pro-plus");
+  assert.equal(mapVendorPlanToCatalog("unknown-tool", "pro"), "free");
 });

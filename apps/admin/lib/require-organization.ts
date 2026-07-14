@@ -36,7 +36,7 @@ export async function resolveOrgId(userId: string, sessionOrgId: string | null |
 
   const membership = await prisma.organizationMembership.findFirst({
     where: { userId },
-    orderBy: { createdAt: "asc" },
+    orderBy: { createdAt: "desc" },
   });
   return membership?.orgId ?? null;
 }

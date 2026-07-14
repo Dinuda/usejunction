@@ -149,7 +149,7 @@ export function WorkspaceSwitcher({
                 id="workspace-name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Acme Engineering"
+                placeholder="Acme"
                 autoFocus
                 maxLength={80}
                 disabled={pending}

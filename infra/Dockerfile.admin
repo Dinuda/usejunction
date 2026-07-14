@@ -1,6 +1,17 @@
 FROM node:20-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
+FROM golang:1.22-alpine AS agent
+WORKDIR /src
+COPY agent/ ./
+COPY scripts/build-agent-releases.sh /build-agent-releases.sh
+# build-agent-releases.sh expects repo layout; synthesize a minimal tree
+RUN mkdir -p /repo/agent /repo/apps/admin/public /repo/scripts \
+  && cp -R /src/. /repo/agent/ \
+  && cp /build-agent-releases.sh /repo/scripts/build-agent-releases.sh \
+  && chmod +x /repo/scripts/build-agent-releases.sh \
+  && /repo/scripts/build-agent-releases.sh
+
 FROM base AS deps
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
@@ -24,6 +35,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/db/node_modules ./packages/db/node_modules
 COPY --from=deps /app/apps/admin/node_modules ./apps/admin/node_modules
 COPY . .
+COPY --from=agent /repo/apps/admin/public/releases ./apps/admin/public/releases
 ENV DATABASE_URL=postgresql://usejunction:usejunction@postgres:5432/usejunction
 RUN pnpm --filter @usejunction/db generate
 RUN pnpm --filter @usejunction/admin build
@@ -37,6 +49,7 @@ ENV HOSTNAME=0.0.0.0
 COPY --from=builder /app/apps/admin/.next/standalone ./
 COPY --from=builder /app/apps/admin/.next/static ./apps/admin/.next/static
 COPY --from=builder /app/apps/admin/public ./apps/admin/public
+COPY --from=builder /app/install.sh ./install.sh
 COPY --from=migrate /app/prisma-migrate ./prisma-migrate
 RUN ARCH=$(uname -m) && \
     if [ "$ARCH" = "aarch64" ]; then ENGINE=libquery_engine-linux-musl-arm64-openssl-3.0.x.so.node; \

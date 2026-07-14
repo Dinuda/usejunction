@@ -222,10 +222,10 @@ export function UseJunctionHomeContent() {
                     {plan.featured ? (
                       <a
                         href={plan.href}
-                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-none bg-white px-4 text-sm font-semibold text-primary transition-opacity hover:opacity-90"
+                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-none bg-white px-4 text-sm font-semibold !text-primary transition-colors hover:bg-white/95 hover:!text-primary-dark [&_svg]:!text-primary"
                       >
-                        <span>{plan.cta}</span>
-                        <ArrowRight className="size-4 shrink-0" />
+                        <span className="!text-primary">{plan.cta}</span>
+                        <ArrowRight className="size-4 shrink-0 !text-primary" />
                       </a>
                     ) : (
                       <Button

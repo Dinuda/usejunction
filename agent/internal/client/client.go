@@ -57,10 +57,12 @@ func (c *APIClient) post(path string, body any) error {
 // --- Payload types ----------------------------------------------------------
 
 type HeartbeatPayload struct {
-	Hostname     string `json:"hostname"`
-	OS           string `json:"os"`
-	Architecture string `json:"architecture"`
-	AgentVersion string `json:"agentVersion"`
+	Hostname       string `json:"hostname"`
+	OS             string `json:"os"`
+	Architecture   string `json:"architecture"`
+	AgentVersion   string `json:"agentVersion"`
+	LocalEndpoint  string `json:"localEndpoint,omitempty"`
+	LocalSyncToken string `json:"localSyncToken,omitempty"`
 }
 
 type ToolReport struct {
@@ -96,14 +98,29 @@ type QuotaReport struct {
 }
 
 type UsageAggregate struct {
-	Date            string            `json:"date"`
-	ToolName        string            `json:"toolName"`
-	Model           string            `json:"model"`
-	InputTokens     int               `json:"inputTokens"`
-	OutputTokens    int               `json:"outputTokens"`
-	CacheReadTokens int               `json:"cacheReadTokens"`
-	EstimatedCost   float64           `json:"estimatedCost"`
-	Repository      *RepositoryReport `json:"repository,omitempty"`
+	Date             string            `json:"date"`
+	ToolName         string            `json:"toolName"`
+	Model            string            `json:"model"`
+	InputTokens      int               `json:"inputTokens"`
+	OutputTokens     int               `json:"outputTokens"`
+	CacheReadTokens  int               `json:"cacheReadTokens"`
+	CacheWriteTokens int               `json:"cacheWriteTokens,omitempty"`
+	ReasoningTokens  int               `json:"reasoningTokens,omitempty"`
+	EstimatedCost    float64           `json:"estimatedCost"`
+	SuggestedLines   int               `json:"suggestedLines,omitempty"`
+	AcceptedLines    int               `json:"acceptedLines,omitempty"`
+	AddedLines       int               `json:"addedLines,omitempty"`
+	DeletedLines     int               `json:"deletedLines,omitempty"`
+	Commits          int               `json:"commits,omitempty"`
+	AiPercent        *float64          `json:"aiPercent,omitempty"`
+	Requests         int               `json:"requests,omitempty"`
+	Source           string            `json:"source,omitempty"`
+	Verified         bool              `json:"verified,omitempty"`
+	MetricKind       string            `json:"metricKind,omitempty"`
+	CostKind         string            `json:"costKind,omitempty"`
+	TokenSemantics   string            `json:"tokenSemantics,omitempty"`
+	CalculationVersion string          `json:"calculationVersion,omitempty"`
+	Repository       *RepositoryReport `json:"repository,omitempty"`
 }
 
 type RepositoryReport struct {
@@ -156,6 +173,12 @@ type EnrollResponse struct {
 	OrgID       string `json:"orgId"`
 	DeviceToken string `json:"deviceToken"`
 	GatewayURL  string `json:"gatewayUrl"`
+	Otel        *EnrollOtel `json:"otel,omitempty"`
+}
+
+type EnrollOtel struct {
+	Enabled         bool   `json:"enabled"`
+	MetricsEndpoint string `json:"metricsEndpoint"`
 }
 
 // Enroll sends the enrollment request to baseURL without authentication.

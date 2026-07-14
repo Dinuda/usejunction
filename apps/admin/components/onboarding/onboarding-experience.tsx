@@ -1,22 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  ArrowRight,
-  Check,
-  CheckCircle2,
-  Laptop2,
-  Loader2,
-  ShieldCheck,
-  Terminal,
-  Users,
-} from "lucide-react";
+import { ArrowRight, Laptop, Loader2, Users } from "lucide-react";
+import { AuthShell } from "@/components/auth/auth-shell";
 import { DeviceConnectCard } from "@/components/onboarding/device-connect-card";
 import { InviteTeamForm } from "@/components/onboarding/invite-team-form";
-import { Badge } from "@/components/ui/badge";
+import { hasToolBrandIcon, ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { canonicalToolKey } from "@/lib/tools/catalog";
+import { cn } from "@/lib/utils";
 
 type OnboardingStatus = {
   configured: boolean;
@@ -35,13 +27,81 @@ type OnboardingStatus = {
 
 type Path = "choose" | "connect" | "invite";
 
-function StepRail({ active }: { active: 1 | 2 }) {
+function TextLink({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="mb-7 grid grid-cols-[auto_minmax(1rem,1fr)_auto] items-center gap-2 text-[0.7rem] text-muted-foreground sm:gap-3 sm:text-xs" aria-label="Setup progress">
-      <span className="flex min-w-0 items-center gap-2 font-medium text-foreground"><span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[0.68rem] text-primary-foreground">{active === 1 ? "1" : <Check className="size-3.5" />}</span><span className="leading-4">Choose a path</span></span>
-      <Separator className="min-w-4" />
-      <span className={`flex min-w-0 items-center gap-2 ${active === 2 ? "font-medium text-foreground" : ""}`}><span className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[0.68rem] ${active === 2 ? "border-primary bg-primary text-primary-foreground" : ""}`}>2</span><span className="max-w-[5.5rem] leading-4 sm:max-w-none">Start seeing value</span></span>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground disabled:opacity-50"
+    >
+      {children}
+    </button>
+  );
+}
+
+function ChoiceCard({
+  icon: Icon,
+  title,
+  description,
+  onClick,
+  primary = false,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  onClick: () => void;
+  primary?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "group flex min-h-[9.5rem] flex-1 flex-col items-start gap-4 border p-4 text-left transition-colors",
+        primary
+          ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
+          : "border-border bg-card hover:border-primary/40 hover:bg-muted/40",
+      )}
+    >
+      <span
+        className={cn(
+          "inline-flex size-9 items-center justify-center border",
+          primary
+            ? "border-primary-foreground/25 bg-primary-foreground/10"
+            : "border-border bg-muted/50",
+        )}
+      >
+        <Icon className={cn("size-4", primary ? "text-primary-foreground" : "text-primary")} />
+      </span>
+      <span className="mt-auto space-y-1.5">
+        <span className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+          {title}
+          <ArrowRight
+            className={cn(
+              "size-3.5 transition-transform group-hover:translate-x-0.5",
+              primary ? "text-primary-foreground/80" : "text-muted-foreground",
+            )}
+          />
+        </span>
+        <span
+          className={cn(
+            "block text-xs leading-5",
+            primary ? "text-primary-foreground/80" : "text-muted-foreground",
+          )}
+        >
+          {description}
+        </span>
+      </span>
+    </button>
   );
 }
 
@@ -57,33 +117,175 @@ export function OnboardingExperience() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   async function finish(action: "complete" | "skip" = "complete") {
     setFinishing(true);
-    await fetch("/api/onboarding", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) });
+    await fetch("/api/onboarding", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
     window.location.href = "/dashboard";
   }
 
   if (loading || !status) {
-    return <div className="mx-auto max-w-2xl space-y-5"><div className="h-3 w-28 animate-pulse rounded-full bg-muted" /><div className="h-9 w-3/4 animate-pulse rounded-lg bg-muted" /><div className="h-52 animate-pulse rounded-xl bg-muted" /></div>;
+    return (
+      <AuthShell
+        size="md"
+        accent="cyan"
+        contentAlign="top"
+        eyebrow="Workspace setup"
+        title="Loading your workspace."
+        description="Checking devices and membership."
+        statement="Visibility before control."
+      >
+        <div className="space-y-3" aria-busy="true">
+          <div className="h-11 animate-pulse rounded-md bg-muted" />
+          <div className="h-11 animate-pulse rounded-md bg-muted" />
+        </div>
+      </AuthShell>
+    );
   }
 
   const isFounder = status.role === "owner" || status.role === "admin";
   const workspaceName = status.organization?.name ?? "your workspace";
-  const device = status.developer?.devices[0];
+  // Only treat as connected once the agent has reported detected tools —
+  // enroll alone is too early (install still detecting/configuring).
+  const device = status.developer?.devices.find(
+    (item) => (item.toolInstallations?.length ?? 0) > 0,
+  );
+  const connectedTools = device
+    ? [...new Set(device.toolInstallations.map((tool) => canonicalToolKey(tool.toolName)).filter(hasToolBrandIcon))]
+    : [];
 
   if (device) {
-    return <div className="mx-auto max-w-2xl"><StepRail active={2} /><Card className="overflow-hidden border-success/30 shadow-[0_18px_48px_-32px_rgba(22,128,93,0.2)]"><CardHeader className="border-b bg-success/10 p-6"><Badge variant="outline" className="w-fit border-success/30 bg-white text-success"><CheckCircle2 className="mr-1 size-3.5" /> Connected</Badge><CardTitle className="mt-3 text-2xl">Your workspace is ready.</CardTitle><p className="text-sm leading-6 text-muted-foreground">{device.hostname} is reporting to {workspaceName}. You can invite teammates and connect more tools from the dashboard.</p></CardHeader><CardContent className="space-y-5 p-6"><div className="flex items-center gap-3 rounded-lg border bg-card p-4"><div className="flex size-10 items-center justify-center rounded-md bg-primary/10 text-primary"><Laptop2 className="size-5" /></div><div><p className="font-medium">{device.hostname}</p><p className="text-xs text-muted-foreground">{device.os} · connected just now</p></div></div><Button onClick={() => void finish()} disabled={finishing} className="w-full sm:w-auto">{finishing && <Loader2 className="animate-spin" />} Open dashboard <ArrowRight /></Button></CardContent></Card></div>;
+    return (
+      <AuthShell
+        size="md"
+        accent="cyan"
+        contentAlign="top"
+        eyebrow="Connected"
+        title={`${device.hostname} is live.`}
+        description={`Reporting to ${workspaceName}. Open the dashboard to see tools and spend.`}
+        statement="First signal. Then the rest."
+      >
+        <div className="space-y-5">
+          <div className="border border-border bg-card px-4 py-3">
+            <p className="font-mono text-[0.65rem] uppercase tracking-[0.14em] text-primary">Device</p>
+            <p className="mt-2 text-sm font-medium">{device.hostname}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{device.os} · just now</p>
+            {connectedTools.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {connectedTools.map((toolKey) => (
+                  <ToolLogoTile key={toolKey} tool={toolKey} size="sm" />
+                ))}
+              </div>
+            )}
+          </div>
+          <Button className="w-full" onClick={() => void finish()} disabled={finishing}>
+            {finishing ? <Loader2 className="animate-spin" /> : null}
+            Open dashboard
+            <ArrowRight />
+          </Button>
+        </div>
+      </AuthShell>
+    );
   }
 
   if (path === "connect" || !isFounder) {
-    return <div className="mx-auto max-w-2xl"><StepRail active={2} /><div className="mb-6 flex items-start gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Terminal className="size-5" /></div><div><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Connect {isFounder ? "your first computer" : "your computer"}</h2><p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Run one command in your terminal. We’ll confirm the device here automatically.</p></div></div><DeviceConnectCard title="One command to get started" description="UseJunction reads setup and usage metadata only — never prompts or responses." compact onConnected={() => { void refresh(); void fetch("/api/onboarding", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "complete" }) }); }} /><div className="flex flex-col items-center justify-between gap-3 text-sm text-muted-foreground sm:flex-row"><span className="flex items-center gap-2"><ShieldCheck className="size-4 text-primary" /> Metadata only. Your code stays private.</span><Button variant="ghost" onClick={() => void finish("skip")} disabled={finishing}>Do this later</Button></div></div>;
+    return (
+      <AuthShell
+        size="md"
+        accent="cyan"
+        contentAlign="top"
+        eyebrow="Connect"
+        title="Run this in Terminal."
+        description="Copy the command. We’ll detect the machine automatically."
+        statement="One command. Real data."
+      >
+        <div className="space-y-5">
+          <DeviceConnectCard
+            compact
+            onConnected={() => {
+              // Refresh UI only — do not mark onboarding complete or redirect yet.
+              // User clicks Open dashboard after tools are detected.
+              void refresh();
+            }}
+          />
+          <p className="font-mono text-[0.65rem] text-muted-foreground">
+            Metadata only · expires in 15 minutes
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-1">
+            {isFounder ? (
+              <TextLink onClick={() => setPath("invite")}>Invite the team instead</TextLink>
+            ) : null}
+            <TextLink onClick={() => void finish("skip")} disabled={finishing}>
+              Skip for now
+            </TextLink>
+          </div>
+        </div>
+      </AuthShell>
+    );
   }
 
   if (path === "invite") {
-    return <div className="mx-auto max-w-2xl"><StepRail active={2} /><div className="mb-6 flex items-start gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Users className="size-5" /></div><div><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Bring your team into {workspaceName}.</h2><p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">They’ll get a secure link, connect their computer, and appear here as soon as they’re ready.</p></div></div><Card className="shadow-[0_18px_48px_-32px_rgba(14,116,144,0.35)]"><CardHeader className="border-b bg-muted/25 p-5"><CardTitle className="text-base">Send invitations</CardTitle></CardHeader><CardContent className="p-5"><InviteTeamForm onInvited={() => void finish()} /></CardContent></Card><div className="mt-3 flex justify-end"><Button variant="ghost" onClick={() => setPath("choose")}>Back to setup choices</Button></div></div>;
+    return (
+      <AuthShell
+        size="md"
+        accent="cyan"
+        contentAlign="top"
+        eyebrow="Invite"
+        title="Share a link."
+        description={`Teammates join ${workspaceName}, connect a machine, and show up here.`}
+        statement="Visibility before control."
+      >
+        <div className="space-y-5">
+          <InviteTeamForm onInvited={() => void finish()} />
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+            <TextLink onClick={() => setPath("connect")}>Connect a computer instead</TextLink>
+            <TextLink onClick={() => void finish("skip")} disabled={finishing}>
+              Skip for now
+            </TextLink>
+          </div>
+        </div>
+      </AuthShell>
+    );
   }
 
-  return <div className="mx-auto max-w-2xl"><StepRail active={1} /><Card className="mb-7 overflow-hidden border-border shadow-[0_18px_48px_-32px_rgba(8,117,138,0.2)]"><CardHeader className="flex flex-row items-start gap-4 border-b bg-card p-6"><div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-brand-yellow text-brand-yellow-dark"><span className="text-lg font-semibold">U</span></div><div><Badge variant="outline" className="border-primary/20 bg-primary-pale text-primary">{isFounder ? "Your workspace" : "Joined workspace"}</Badge><CardTitle className="mt-3 text-2xl">{workspaceName}</CardTitle><p className="mt-2 text-sm leading-6 text-muted-foreground">{isFounder ? "Choose the path that gets your team to its first useful insight." : "Connect your computer to start sharing useful team context."}</p></div></CardHeader></Card><div className="mb-5"><p className="text-sm font-medium">How would you like to start?</p><p className="mt-1 text-sm text-muted-foreground">You can always do the other one later.</p></div><div className="grid gap-4 sm:grid-cols-2"><button type="button" onClick={() => setPath("connect")} className="group rounded-xl border bg-card p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary"><Laptop2 className="size-5" /></span><span className="mt-5 block font-medium">Connect my computer</span><span className="mt-2 block text-sm leading-6 text-muted-foreground">See detected tools and device health in a couple of minutes.</span><span className="mt-5 flex items-center gap-2 text-sm font-medium text-primary">Start here <ArrowRight className="size-4 transition group-hover:translate-x-0.5" /></span></button><button type="button" onClick={() => setPath("invite")} className="group rounded-xl border bg-card p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className="flex size-10 items-center justify-center rounded-lg bg-brand-yellow/45 text-brand-charcoal"><Users className="size-5" /></span><span className="mt-5 block font-medium">Invite my team</span><span className="mt-2 block text-sm leading-6 text-muted-foreground">Send secure links so everyone can connect without extra setup.</span><span className="mt-5 flex items-center gap-2 text-sm font-medium text-primary">Invite teammates <ArrowRight className="size-4 transition group-hover:translate-x-0.5" /></span></button></div><div className="mt-6 flex justify-center"><Button variant="ghost" onClick={() => void finish("skip")} disabled={finishing}>Do this later</Button></div></div>;
+  return (
+    <AuthShell
+      size="md"
+      accent="cyan"
+      contentAlign="top"
+      eyebrow="Workspace setup"
+      title={workspaceName}
+      description="Connect this computer or invite the team. You can rename the workspace anytime from settings."
+      statement="Visibility before control."
+    >
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <ChoiceCard
+          primary
+          icon={Laptop}
+          title="Connect this computer"
+          description="Install the agent and start reporting tools."
+          onClick={() => setPath("connect")}
+        />
+        <ChoiceCard
+          icon={Users}
+          title="Invite the team"
+          description="Share a join link for teammates."
+          onClick={() => setPath("invite")}
+        />
+      </div>
+      <p className="mt-5 text-center text-sm text-muted-foreground">
+        You can do the other step later.{" "}
+        <TextLink onClick={() => void finish("skip")} disabled={finishing}>
+          Skip for now
+        </TextLink>
+      </p>
+    </AuthShell>
+  );
 }

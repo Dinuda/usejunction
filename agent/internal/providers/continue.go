@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/usejunction/agent/internal/scan"
 	"github.com/usejunction/agent/internal/types"
 )
 
@@ -50,5 +51,5 @@ func (p *ContinueProvider) ProbeQuota(ctx context.Context) ([]types.QuotaSnapsho
 }
 
 func (p *ContinueProvider) ScanLocalUsage(ctx context.Context, refresh bool) ([]types.DailyUsage, error) {
-	return nil, nil
+	return scan.ScanContinue(refresh)
 }

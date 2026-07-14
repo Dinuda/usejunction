@@ -1,6 +1,7 @@
 {
   "name": "usejunction",
   "private": true,
+  "license": "LicenseRef-UseJunction-Community-1.0",
   "scripts": {
     "dev": "pnpm --filter @usejunction/admin dev",
     "build": "pnpm --filter @usejunction/db generate && pnpm --filter @usejunction/admin build",

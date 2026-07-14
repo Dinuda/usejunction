@@ -1,10 +1,6 @@
 import { StatusBadge } from "@/components/app-shell";
 import { DeveloperToolInventory } from "@/components/developers/developer-tool-inventory";
-import {
-  EnrollMachineDialog,
-  InvitePeopleDialog,
-  TeamConnectPanel,
-} from "@/components/team/team-connect-panel";
+import { EnrollMachineDialog, InvitePeopleDialog } from "@/components/team/team-connect-panel";
 import { RosterHealth } from "@/components/team/roster-health";
 import { getDashboardDevices } from "@/lib/queries/dashboard/devices";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
@@ -15,9 +11,7 @@ export default async function TeamPage() {
     devices: [] as Awaited<ReturnType<typeof getDashboardDevices>>["devices"],
   }));
   const online = data.devices.filter((device) => device.status === "online").length;
-  const gaps = data.devices.filter((device) =>
-    device.toolInstallations.some((tool) => tool.detected && !tool.configured),
-  ).length;
+  const gaps = 0;
   const empty = data.devices.length === 0;
 
   return (
@@ -25,11 +19,11 @@ export default async function TeamPage() {
       <div className="mb-10 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">
-            {empty ? "Build your roster." : "Who's on the roster."}
+            {empty ? "Get the first machines reporting." : "Who's on the roster."}
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
             {empty
-              ? "Invite people, enroll a machine, then assign plans to what shows up."
+              ? "Share an invite link (or email it). Teammates open it, sign up or sign in, and install the agent."
               : "Coverage, seats, and machines reporting into this workspace."}
           </p>
         </div>
@@ -42,10 +36,12 @@ export default async function TeamPage() {
         <div className="mt-10">
           <div className="uj-grid-texture relative mb-8 overflow-hidden border border-border bg-brand-yellow p-6 text-brand-yellow-dark sm:p-8 [--uj-grid-opacity:0.09]">
             <p className="relative max-w-lg text-2xl font-semibold leading-[1.05] tracking-[-0.03em] sm:text-3xl">
-              Make model decisions based on evidence.
+              One link for the team. Paste it in Slack.
+            </p>
+            <p className="relative mt-3 max-w-md text-sm leading-6 text-brand-yellow-dark/80">
+              Use Invite teammates above. Copy the link or email instructions — anyone with the link can join and install.
             </p>
           </div>
-          <TeamConnectPanel />
         </div>
       ) : null}
 
@@ -53,39 +49,47 @@ export default async function TeamPage() {
         <DeveloperToolInventory showSummary={false} />
       </section>
 
-      {!empty && (
-        <section className="mt-10">
-          <div className="mb-4 flex items-end justify-between gap-3 border-b pb-3">
-            <div>
-              <h2 className="text-lg font-semibold tracking-tight">Machines.</h2>
-              <p className="mt-1 text-xs text-muted-foreground">Reporting into this workspace.</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <EnrollMachineDialog />
-            </div>
-          </div>
-          <ul className="divide-y">
-            {data.devices.slice(0, 8).map((device) => (
-              <li key={device.id} className="flex items-center justify-between gap-3 py-4">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{device.hostname}</p>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">
-                    {device.user?.name ?? device.user?.email ?? "Unassigned"} · {device.os}
-                  </p>
-                </div>
-                <StatusBadge variant={device.status === "online" ? "success" : "default"}>
-                  {device.status}
-                </StatusBadge>
-              </li>
-            ))}
-          </ul>
-          {data.devices.length > 8 && (
-            <p className="mt-3 text-xs text-muted-foreground">
-              Showing 8 of {data.devices.length}.
+      <section className="mt-10">
+        <div className="mb-4 flex items-end justify-between gap-3 border-b pb-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Machines.</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {empty ? "None yet — invite teammates, or connect this machine with +." : "Reporting into this workspace."}
             </p>
-          )}
-        </section>
-      )}
+          </div>
+          <div className="flex items-center gap-2">
+            <EnrollMachineDialog />
+          </div>
+        </div>
+        {empty ? (
+          <p className="py-6 text-sm text-muted-foreground">No machines enrolled yet.</p>
+        ) : (
+          <>
+            <ul className="divide-y">
+              {data.devices.slice(0, 8).map((device) => (
+                <li key={device.id} className="py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{device.hostname}</p>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
+                        {device.user?.name ?? device.user?.email ?? "Unassigned"} · {device.os}
+                      </p>
+                    </div>
+                    <StatusBadge variant={device.status === "online" ? "success" : "default"}>
+                      {device.status}
+                    </StatusBadge>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {data.devices.length > 8 && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Showing 8 of {data.devices.length}.
+              </p>
+            )}
+          </>
+        )}
+      </section>
     </>
   );
 }

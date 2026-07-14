@@ -15,26 +15,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 
-export function TeamConnectPanel() {
-  const router = useRouter();
-
-  return (
-    <section className="max-w-2xl">
-      <h2 className="text-xl font-semibold tracking-tight">Enroll the first machine.</h2>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-        Run the command in Terminal. The machine appears here when enrollment completes.
-      </p>
-      <div className="mt-5">
-        <DeviceConnectCard
-          title="Enroll command"
-          description="One curl. Expires in 15 minutes."
-          onConnected={() => router.refresh()}
-        />
-      </div>
-    </section>
-  );
-}
-
 export function InvitePeopleDialog() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -45,27 +25,29 @@ export function InvitePeopleDialog() {
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) setFormKey((current) => current + 1);
+        if (!next) {
+          setFormKey((current) => current + 1);
+          router.refresh();
+        }
       }}
     >
       <DialogTrigger asChild>
         <Button type="button">
           <UserPlus />
-          Invite people
+          Invite teammates
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-xl gap-5 sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Invite people.</DialogTitle>
+          <DialogTitle>Invite teammates.</DialogTitle>
           <DialogDescription>
-            Send a secure join link. They can connect their machine after signing in.
+            Share the invite link (or email it). Teammates sign up or sign in, then install on their machine.
           </DialogDescription>
         </DialogHeader>
         <InviteTeamForm
           key={formKey}
-          onInvited={({ failed }) => {
+          onInvited={() => {
             router.refresh();
-            if (failed === 0) setOpen(false);
           }}
         />
       </DialogContent>
@@ -80,22 +62,22 @@ export function EnrollMachineDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button type="button" variant="outline" size="icon-sm" aria-label="Enroll another machine">
+        <Button type="button" variant="outline" size="icon-sm" aria-label="Connect my machine">
           <Plus />
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-xl gap-5 sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Enroll a machine.</DialogTitle>
+          <DialogTitle>Connect my machine.</DialogTitle>
           <DialogDescription>
-            Run this on any computer. Expires in 15 minutes.
+            Enrolls this computer under your account. Expires in 15 minutes.
           </DialogDescription>
         </DialogHeader>
         <DeviceConnectCard
           compact
           forceEnroll
-          title="Enroll command"
-          description="One curl. Waiting for enroll…"
+          title="Connect command"
+          description="Installs the agent and starts reporting."
           onConnected={() => {
             router.refresh();
             setOpen(false);

@@ -1,36 +1,72 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DeviceConnectCard } from "@/components/onboarding/device-connect-card";
 import { InviteTeamForm } from "@/components/onboarding/invite-team-form";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export function DashboardSetupPanel({ canInvite = true }: { canInvite?: boolean }) {
   const router = useRouter();
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [formKey, setFormKey] = useState(0);
 
   return (
     <div className={canInvite ? "grid gap-8 lg:grid-cols-2" : "max-w-xl"}>
       <section>
         <h2 className="text-xl font-semibold tracking-tight">Connect this machine.</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Copy the command, run it in Terminal. We mark the device online when enroll succeeds.
+          Enrolls your computer under your account — configures tools, enables Claude metrics, and starts reporting.
         </p>
         <div className="mt-5">
           <DeviceConnectCard
             title="Connect command"
-            description="One curl. Expires in 15 minutes."
+            description="Installs the agent and starts reporting. Expires in 15 minutes."
             onConnected={() => router.refresh()}
           />
         </div>
       </section>
       {canInvite && (
         <section>
-          <h2 className="text-xl font-semibold tracking-tight">Invite the team.</h2>
+          <h2 className="text-xl font-semibold tracking-tight">Invite teammates.</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            They get a join link, sign in, and run the same connect flow on their machines.
+            Share one invite link — or email it with instructions — and they connect their machines.
           </p>
-          <div className="mt-5 border bg-card p-5">
-            <InviteTeamForm onInvited={() => router.refresh()} />
+          <div className="mt-5">
+            <Button type="button" onClick={() => setInviteOpen(true)}>
+              Invite teammates
+            </Button>
           </div>
+          <Dialog
+            open={inviteOpen}
+            onOpenChange={(next) => {
+              setInviteOpen(next);
+              if (!next) {
+                setFormKey((current) => current + 1);
+                router.refresh();
+              }
+            }}
+          >
+            <DialogContent className="max-w-xl gap-5 sm:max-w-xl">
+              <DialogHeader>
+                <DialogTitle>Invite teammates.</DialogTitle>
+                <DialogDescription>
+                  Share the invite link (or email it). Teammates sign up or sign in, then install on their machine.
+                </DialogDescription>
+              </DialogHeader>
+              <InviteTeamForm
+                key={formKey}
+                onInvited={() => router.refresh()}
+              />
+            </DialogContent>
+          </Dialog>
         </section>
       )}
     </div>

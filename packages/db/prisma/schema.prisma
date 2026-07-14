@@ -36,6 +36,8 @@ model Organization {
   planInterests        PlanInterest[]
   domains              OrganizationDomain[]
   invites              OrganizationInvite[]
+  connectInvites       ConnectInvite[]
+  teamInviteLinks      TeamInviteLink[]
   providerConnections  ProviderConnection[]
   providerSyncRuns     ProviderSyncRun[]
   externalIdentities   ExternalIdentity[]
@@ -96,17 +98,22 @@ model Developer {
 }
 
 model Device {
-  id           String   @id @default(cuid())
-  orgId        String   @map("org_id")
-  userId       String   @map("user_id")
-  hostname     String
-  os           String
-  architecture String
-  agentVersion String   @map("agent_version")
-  lastSeenAt   DateTime @default(now()) @map("last_seen_at")
-  status       String   @default("online")
-  deviceToken  String   @unique @map("device_token")
-  createdAt    DateTime @default(now()) @map("created_at")
+  id                   String    @id @default(cuid())
+  orgId                String    @map("org_id")
+  userId               String    @map("user_id")
+  hostname             String
+  os                   String
+  architecture         String
+  agentVersion         String    @map("agent_version")
+  lastSeenAt           DateTime  @default(now()) @map("last_seen_at")
+  status               String    @default("online")
+  deviceToken          String    @unique @map("device_token")
+  localEndpoint        String?   @map("local_endpoint")
+  localSyncTokenHash   String?   @map("local_sync_token_hash")
+  localSyncTokenEnc    String?   @map("local_sync_token_enc")
+  lastUsageSyncAt      DateTime? @map("last_usage_sync_at")
+  lastAccountSyncAt    DateTime? @map("last_account_sync_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
 
   organization         Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user                 Developer             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -246,24 +253,38 @@ model QuotaSnapshot {
 }
 
 model LocalUsageAggregate {
-  id              String   @id @default(cuid())
-  orgId           String   @map("org_id")
-  userId          String   @map("user_id")
-  deviceId        String   @map("device_id")
-  date            DateTime @db.Date
-  toolName        String   @map("tool_name")
-  model           String   @default("")
-  inputTokens     Int      @default(0) @map("input_tokens")
-  outputTokens    Int      @default(0) @map("output_tokens")
-  cacheReadTokens Int      @default(0) @map("cache_read_tokens")
-  estimatedCost   Float    @default(0) @map("estimated_cost")
-  source          String   @default("local_scan")
+  id               String   @id @default(cuid())
+  orgId            String   @map("org_id")
+  userId           String   @map("user_id")
+  deviceId         String   @map("device_id")
+  date             DateTime @db.Date
+  toolName         String   @map("tool_name")
+  model            String   @default("")
+  inputTokens      Int      @default(0) @map("input_tokens")
+  outputTokens     Int      @default(0) @map("output_tokens")
+  cacheReadTokens  BigInt   @default(0) @map("cache_read_tokens")
+  cacheWriteTokens BigInt   @default(0) @map("cache_write_tokens")
+  reasoningTokens  BigInt   @default(0) @map("reasoning_tokens")
+  suggestedLines   Int      @default(0) @map("suggested_lines")
+  acceptedLines    Int      @default(0) @map("accepted_lines")
+  addedLines       Int      @default(0) @map("added_lines")
+  deletedLines     Int      @default(0) @map("deleted_lines")
+  commits          Int      @default(0)
+  aiPercent        Float?   @map("ai_percent")
+  requests         Int      @default(0)
+  estimatedCost    Float    @default(0) @map("estimated_cost")
+  source           String   @default("local_scan")
+  verified         Boolean  @default(false)
+  metricKind       String   @default("usage") @map("metric_kind")
+  costKind         String?  @map("cost_kind")
+  calculationVersion String? @map("calculation_version")
+  metadata         Json?
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user         Developer    @relation(fields: [userId], references: [id], onDelete: Cascade)
   device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
-  @@unique([deviceId, date, toolName, model])
+  @@unique([deviceId, date, toolName, model, source])
   @@index([orgId, userId, date, toolName])
   @@map("local_usage_aggregates")
 }
@@ -410,6 +431,54 @@ model OrganizationInvite {
   @@map("organization_invites")
 }
 
+model ConnectInvite {
+  id                     String    @id @default(cuid())
+  orgId                  String    @map("org_id")
+  email                  String
+  tokenHash              String    @unique @map("token_hash")
+  inviteId               String?   @map("invite_id")
+  status                 String    @default("pending")
+  enrollmentTokenHash    String?   @map("enrollment_token_hash")
+  enrollmentTokenReveal  String?   @map("enrollment_token_reveal") @db.Text
+  expiresAt              DateTime  @map("expires_at")
+  usedAt                 DateTime? @map("used_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, email])
+  @@map("connect_invites")
+}
+
+model TeamInviteLink {
+  id          String    @id @default(cuid())
+  orgId       String    @unique @map("org_id")
+  tokenHash   String    @unique @map("token_hash")
+  tokenReveal String    @map("token_reveal") @db.Text
+  enabled     Boolean   @default(true)
+  expiresAt   DateTime? @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  rotatedAt   DateTime  @default(now()) @map("rotated_at")
+
+  organization Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  allowlist    TeamInviteAllowlist[]
+
+  @@map("team_invite_links")
+}
+
+model TeamInviteAllowlist {
+  id        String   @id @default(cuid())
+  linkId    String   @map("link_id")
+  email     String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  link TeamInviteLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@unique([linkId, email])
+  @@index([email])
+  @@map("team_invite_allowlist")
+}
+
 model ProviderConnection {
   id                    String    @id @default(cuid())
   orgId                 String    @map("org_id")
@@ -543,6 +612,8 @@ model UsageDaily {
   inputTokens     BigInt   @default(0) @map("input_tokens")
   outputTokens    BigInt   @default(0) @map("output_tokens")
   cacheReadTokens BigInt   @default(0) @map("cache_read_tokens")
+  cacheWriteTokens BigInt  @default(0) @map("cache_write_tokens")
+  reasoningTokens BigInt   @default(0) @map("reasoning_tokens")
   activeSeconds   BigInt   @default(0) @map("active_seconds")
   suggestedLines  BigInt   @default(0) @map("suggested_lines")
   acceptedLines   BigInt   @default(0) @map("accepted_lines")
@@ -551,6 +622,9 @@ model UsageDaily {
   commits         Int      @default(0)
   pullRequests    Int      @default(0) @map("pull_requests")
   costMicros      BigInt   @default(0) @map("cost_micros")
+  metricKind      String   @default("usage") @map("metric_kind")
+  costKind        String?  @map("cost_kind")
+  calculationVersion String? @map("calculation_version")
   dedupeKey       String   @map("dedupe_key")
   observedAt      DateTime @default(now()) @map("observed_at")
   metadata        Json?

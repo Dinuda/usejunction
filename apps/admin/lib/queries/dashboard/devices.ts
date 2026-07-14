@@ -16,6 +16,7 @@ export interface DashboardDeviceRow {
     usedPercent: number | null;
     creditsRemaining: number | null;
     windowType: string;
+    resetAt: Date | null;
     updatedAt: Date;
   }>;
   totalRequests: number;
@@ -34,13 +35,14 @@ export async function getDashboardDevices(orgId: string): Promise<DashboardDevic
       orderBy: { lastSeenAt: "desc" },
       include: {
         user: { select: { name: true, email: true } },
-        toolInstallations: { select: { toolName: true, detected: true, configured: true } },
+        toolInstallations: { where: { detected: true }, select: { toolName: true, detected: true, configured: true } },
         quotaSnapshots: {
           select: {
             toolName: true,
             usedPercent: true,
             creditsRemaining: true,
             windowType: true,
+            resetAt: true,
             updatedAt: true,
           },
         },

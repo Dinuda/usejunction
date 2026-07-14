@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireOrgRole } from "@/lib/rbac";
 import { aggregateMetrics } from "@/lib/metrics/aggregate";
+import { usageDayFilter, usageWindowDays, inclusiveDayCount } from "@/lib/metrics/date-range";
 import { prisma } from "@usejunction/db";
 import { calculateBilling, serializeBillingLine } from "@/lib/billing/calculator";
 
@@ -20,12 +21,12 @@ export async function GET(req: NextRequest) {
   const parsed = querySchema.safeParse(raw);
   if (!parsed.success) return NextResponse.json({ error: "invalid metric query", details: parsed.error.flatten() }, { status: 400 });
   const to = parsed.data.to ?? new Date();
-  const from = parsed.data.from ?? new Date(to.getTime() - 30 * 86400_000);
-  if (to < from || to.getTime() - from.getTime() > 366 * 86400_000) return NextResponse.json({ error: "date range must be between 0 and 366 days" }, { status: 400 });
+  const from = parsed.data.from ?? usageWindowDays(30, to).from;
+  if (to < from || inclusiveDayCount(from, to) > 366) return NextResponse.json({ error: "date range must be between 0 and 366 days" }, { status: 400 });
   const data = await aggregateMetrics({ orgId: auth.orgId, from, to, groupBy: parsed.data.groupBy, includeAllSources: parsed.data.source === "all" });
   const [assignments, usage] = await Promise.all([
     prisma.developerPlanAssignment.findMany({ where: { orgId: auth.orgId } }),
-    prisma.usageDaily.findMany({ where: { orgId: auth.orgId, date: { gte: from, lte: to } }, select: { date: true, source: true, costMicros: true, inputTokens: true, outputTokens: true, cacheReadTokens: true, observedAt: true, developerId: true, provider: true, product: true, toolName: true } }),
+    prisma.usageDaily.findMany({ where: { orgId: auth.orgId, date: usageDayFilter(from, to) }, select: { date: true, source: true, costMicros: true, inputTokens: true, outputTokens: true, cacheReadTokens: true, observedAt: true, developerId: true, provider: true, product: true, toolName: true } }),
   ]);
   const billing = calculateBilling({ assignments, usage, from, to }).map(serializeBillingLine);
   return NextResponse.json({ from: from.toISOString(), to: to.toISOString(), groupBy: parsed.data.groupBy, source: parsed.data.source, data, billing, billingSource: "manual_config_primary" });

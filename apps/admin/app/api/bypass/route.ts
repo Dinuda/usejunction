@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
+import { usageDayFilter, usageWindowDays } from "@/lib/metrics/date-range";
 import { requireOrgRole } from "@/lib/rbac";
 
 export async function GET(req: NextRequest) {
@@ -9,18 +10,18 @@ export async function GET(req: NextRequest) {
   try {
     const orgId = auth.orgId;
     if (!orgId) return NextResponse.json({ error: "organization setup required" }, { status: 409 });
-    const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const usage30d = usageWindowDays(30);
 
     const gatewayByUser = await prisma.requestMetadata.groupBy({
       by: ["userId"],
-      where: { orgId, source: "gateway", createdAt: { gte: since30d }, userId: { not: null } },
+      where: { orgId, source: "gateway", createdAt: { gte: usage30d.from }, userId: { not: null } },
       _count: { id: true },
       _sum: { totalTokens: true, estimatedCost: true },
     });
 
     const localByUser = await prisma.localUsageAggregate.groupBy({
       by: ["userId"],
-      where: { orgId, date: { gte: since30d } },
+      where: { orgId, date: usageDayFilter(usage30d.from, usage30d.to) },
       _sum: { inputTokens: true, outputTokens: true, estimatedCost: true },
     });
 

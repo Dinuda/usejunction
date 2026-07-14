@@ -6,6 +6,18 @@ export interface ConfigHealthIssue {
   context: string;
 }
 
+export function formatUserDeviceContext(
+  user: { name: string } | null | undefined,
+  device: { hostname: string } | null | undefined,
+): string {
+  const name = user?.name?.trim();
+  const hostname = device?.hostname?.trim();
+  if (name && hostname) return `${name} (${hostname})`;
+  if (name) return name;
+  if (hostname) return hostname;
+  return "Unknown";
+}
+
 export interface DashboardConfigHealthData {
   tools: Array<{
     id: string;
@@ -44,7 +56,7 @@ export interface DashboardConfigHealthData {
 export async function getDashboardConfigHealth(orgId: string): Promise<DashboardConfigHealthData> {
   const [tools, accounts, quotas] = await Promise.all([
     prisma.toolInstallation.findMany({
-      where: { orgId },
+      where: { orgId, detected: true },
       include: {
         user: { select: { name: true, email: true } },
         device: { select: { hostname: true } },
@@ -61,7 +73,12 @@ export async function getDashboardConfigHealth(orgId: string): Promise<Dashboard
     prisma.quotaSnapshot.findMany({
       where: { orgId },
       include: {
-        device: { select: { hostname: true } },
+        device: {
+          select: {
+            hostname: true,
+            user: { select: { name: true } },
+          },
+        },
       },
       orderBy: { updatedAt: "desc" },
     }),
@@ -69,36 +86,19 @@ export async function getDashboardConfigHealth(orgId: string): Promise<Dashboard
 
   const issues: ConfigHealthIssue[] = [];
 
-  for (const t of tools) {
-    if (!t.configured) {
-      issues.push({
-        severity: "warning",
-        message: `${t.toolName} not configured`,
-        context: `${t.user?.name ?? "unknown"} / ${t.device?.hostname ?? "unknown"}`,
-      });
-    }
-  }
-
-  for (const a of accounts) {
-    if (!a.authPresent) {
-      issues.push({
-        severity: "error",
-        message: `${a.toolName} missing auth`,
-        context: `${a.user?.name ?? "unknown"} / ${a.device?.hostname ?? "unknown"}`,
-      });
-    }
-  }
-
+  // Only surface actionable quota pressure — never "tool not configured" noise
+  // for tools the user simply hasn't installed.
   for (const q of quotas) {
     if ((q.usedPercent ?? 0) > 85) {
       issues.push({
         severity: (q.usedPercent ?? 0) > 95 ? "error" : "warning",
         message: `${q.toolName} quota at ${q.usedPercent?.toFixed(0)}%`,
-        context: q.device?.hostname ?? "unknown device",
+        context: formatUserDeviceContext(q.device?.user, q.device),
       });
     }
   }
 
+  const detectedTools = tools.filter((t) => t.detected);
   return {
     tools: tools.map((t) => ({
       id: t.id,
@@ -132,8 +132,8 @@ export async function getDashboardConfigHealth(orgId: string): Promise<Dashboard
     })),
     issues,
     healthScore:
-      tools.length === 0
+      detectedTools.length === 0
         ? null
-        : Math.round((tools.filter((t) => t.configured).length / tools.length) * 100),
+        : Math.round((detectedTools.filter((t) => t.configured).length / detectedTools.length) * 100),
   };
 }

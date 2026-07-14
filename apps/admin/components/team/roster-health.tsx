@@ -192,12 +192,14 @@ export function RosterHealth({
           </ul>
         ) : (
           <div className="py-8">
-            <p className="text-sm text-muted-foreground">No plans bought yet.</p>
+            <p className="text-sm text-muted-foreground">
+              No plans yet. Plans sync automatically when teammates connect a machine and tools are detected.
+            </p>
             <Link
               href="/tools"
               className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-foreground underline-offset-4 hover:underline"
             >
-              Add a tool
+              Manage tools
               <ArrowUpRight className="size-3.5" />
             </Link>
           </div>

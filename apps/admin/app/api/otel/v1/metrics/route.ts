@@ -48,13 +48,30 @@ function safeJson(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
 }
 
+async function resolveOtelAuth(bearer: string) {
+  const token = bearer.slice(7);
+  const endpoint = await prisma.telemetryEndpoint.findUnique({
+    where: { tokenHash: hashOpaqueToken(token) },
+    select: { orgId: true, enabled: true },
+  });
+  if (endpoint?.enabled) {
+    return { orgId: endpoint.orgId, defaultDeveloperId: null as string | null };
+  }
+  const device = await prisma.device.findUnique({
+    where: { deviceToken: token },
+    select: { orgId: true, userId: true },
+  });
+  if (!device) return null;
+  return { orgId: device.orgId, defaultDeveloperId: device.userId };
+}
+
 export async function POST(req: NextRequest) {
   const length = Number(req.headers.get("content-length") ?? 0);
   if (length > 1_048_576) return NextResponse.json({ error: "payload too large" }, { status: 413 });
   const auth = req.headers.get("authorization");
   if (!auth?.startsWith("Bearer ")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const endpoint = await prisma.telemetryEndpoint.findUnique({ where: { tokenHash: hashOpaqueToken(auth.slice(7)) } });
-  if (!endpoint?.enabled) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const authContext = await resolveOtelAuth(auth);
+  if (!authContext) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const text = await req.text();
   if (text.length > 1_048_576) return NextResponse.json({ error: "payload too large" }, { status: 413 });
   let body: Row;
@@ -76,12 +93,12 @@ export async function POST(req: NextRequest) {
           const attributes = { ...resourceAttributes, ...attrs(point.attributes) };
           const email = typeof attributes["user.email"] === "string" ? String(attributes["user.email"]).trim().toLowerCase() : null;
           const accountId = String(attributes["user.account_id"] ?? attributes["user.account_uuid"] ?? attributes["user.id"] ?? "");
-          let developerId: string | null = null;
-          if (email) {
-            const developer = await prisma.developer.findUnique({ where: { orgId_email: { orgId: endpoint.orgId, email } }, select: { id: true } });
+          let developerId: string | null = authContext.defaultDeveloperId;
+          if (!developerId && email) {
+            const developer = await prisma.developer.findUnique({ where: { orgId_email: { orgId: authContext.orgId, email } }, select: { id: true } });
             developerId = developer?.id ?? null;
-          } else if (accountId) {
-            const identity = await prisma.externalIdentity.findUnique({ where: { orgId_provider_externalUserId: { orgId: endpoint.orgId, provider: "anthropic", externalUserId: accountId } }, select: { developerId: true } });
+          } else if (!developerId && accountId) {
+            const identity = await prisma.externalIdentity.findUnique({ where: { orgId_provider_externalUserId: { orgId: authContext.orgId, provider: "anthropic", externalUserId: accountId } }, select: { developerId: true } });
             developerId = identity?.developerId ?? null;
           }
           const observed = pointDate(point);
@@ -101,10 +118,10 @@ export async function POST(req: NextRequest) {
             costMicros: metric.name === "claude_code.cost.usage" ? BigInt(Math.max(0, Math.round(metricValue * 1_000_000))) : BigInt(0),
           };
           await prisma.usageDaily.upsert({
-            where: { orgId_dedupeKey: { orgId: endpoint.orgId, dedupeKey: `otel:${fingerprint}` } },
+            where: { orgId_dedupeKey: { orgId: authContext.orgId, dedupeKey: `otel:${fingerprint}` } },
             update: { developerId, observedAt: observed, ...values },
             create: {
-              orgId: endpoint.orgId, developerId, date: dateOnly(observed), provider: "anthropic", product: "claude_code",
+              orgId: authContext.orgId, developerId, date: dateOnly(observed), provider: "anthropic", product: "claude_code",
               toolName: "claude-code", model: String(attributes.model ?? ""), source: "otel_observed", sourceRef: fingerprint, verified: false,
               dedupeKey: `otel:${fingerprint}`, observedAt: observed, metadata: safeJson(attributes), ...values,
             },

@@ -13,11 +13,15 @@ export async function POST() {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const result = await ensureOwnerWorkspace({
-    id: session.user.id,
-    email: session.user.email,
-    name: session.user.name,
-  });
+  // Prefer an existing membership; only create when the user has none.
+  const existingOrgId = await resolveOrgId(session.user.id, session.user.orgId);
+  const result = existingOrgId
+    ? { orgId: existingOrgId, created: false as const }
+    : await ensureOwnerWorkspace({
+        id: session.user.id,
+        email: session.user.email,
+        name: session.user.name,
+      });
 
   const organization = await prisma.organization.findUnique({
     where: { id: result.orgId },

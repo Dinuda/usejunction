@@ -1,14 +1,23 @@
 "use client";
 
-import { signIn } from "next-auth/react";
+import { OAuthProviderButtons, getEnabledOAuthProviders } from "@/components/auth/oauth-provider-buttons";
 import { Button } from "@/components/ui/button";
 
 export function InviteAuthActions({ token }: { token: string }) {
   const callbackUrl = `/join/${token}`;
-  const providers = [
-    { id: "google", label: "Google", enabled: process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true" },
-    { id: "microsoft-entra-id", label: "Microsoft", enabled: process.env.NEXT_PUBLIC_MICROSOFT_AUTH_ENABLED === "true" },
-    { id: "github", label: "GitHub", enabled: process.env.NEXT_PUBLIC_GITHUB_AUTH_ENABLED === "true" },
-  ].filter((provider) => provider.enabled);
-  return <div className="space-y-3">{providers.map((provider) => <Button key={provider.id} type="button" variant="outline" className="w-full" onClick={() => signIn(provider.id, { callbackUrl })}>Continue with {provider.label}</Button>)}<Button asChild className="w-full"><a href={`/login?from=${encodeURIComponent(callbackUrl)}`}>{providers.length ? "Use work email instead" : "Sign in to continue"}</a></Button></div>;
+  const hasOAuth = getEnabledOAuthProviders().length > 0;
+
+  return (
+    <div className="space-y-4">
+      <OAuthProviderButtons callbackUrl={callbackUrl} showEmailDivider={hasOAuth} emailDividerLabel="or use email" />
+      <div className="space-y-3">
+        <Button asChild className="w-full">
+          <a href={`/signup?from=${encodeURIComponent(callbackUrl)}`}>Create account</a>
+        </Button>
+        <Button asChild variant="outline" className="w-full">
+          <a href={`/login?from=${encodeURIComponent(callbackUrl)}`}>Sign in</a>
+        </Button>
+      </div>
+    </div>
+  );
 }

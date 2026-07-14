@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { StatusBadge } from "@/components/app-shell";
+import { AiCodingPanel } from "@/components/dashboard/ai-coding-panel";
+import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
 import { cn } from "@/lib/utils";
 import { getDashboardRequests } from "@/lib/queries/dashboard/requests";
 import { getDashboardUsage } from "@/lib/queries/dashboard/usage";
@@ -80,6 +82,7 @@ export default async function ActivityPage() {
   if (role === "developer") {
     const personal = await getMeOverview(orgId, userId, role);
     const tokens = Number(BigInt(personal.usage30d.inputTokens) + BigInt(personal.usage30d.outputTokens));
+    const spend = Number(BigInt(personal.usage30d.costMicros)) / 1_000_000;
 
     return (
       <>
@@ -90,17 +93,46 @@ export default async function ActivityPage() {
           </p>
         </div>
 
-        <div className="grid gap-8 sm:grid-cols-3">
+        <div className="mb-8">
+          <LocalSyncPanel
+            lastSeenAt={personal.sync.lastSeenAt}
+            lastUsageSyncAt={personal.sync.lastUsageSyncAt}
+            lastAccountSyncAt={personal.sync.lastAccountSyncAt}
+            stale={personal.sync.stale}
+            needsPlanSync={personal.sync.needsPlanSync}
+            autoAttempt
+          />
+        </div>
+
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
           <Kpi label="Requests" value={compact(personal.usage30d.requests)} accent />
           <Kpi label="Sessions" value={compact(personal.usage30d.sessions)} />
           <Kpi label="Tokens" value={compact(tokens)} sub="input + output" />
+          <Kpi label="Spend" value={money(spend)} sub="estimated / verified" />
         </div>
 
+        <AiCodingPanel metrics={personal.aiCoding30d} models={personal.modelUsage30d} />
+
         <section className="mt-10">
-          <SectionHeader title="Privacy." />
-          <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-            Your personal activity is visible to you. UseJunction stores counts, latency, and cost — never prompts or responses.
-          </p>
+          <SectionHeader title="By tool." description="Tools detected on your machines." />
+          {personal.toolsUsage30d.length ? (
+            <ul className="divide-y">
+              {personal.toolsUsage30d.map((tool) => (
+                <li key={tool.toolName} className="flex items-center justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{tool.toolName}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {tool.tokens > 0 ? `${compact(tool.tokens)} tokens` : "Detected"}
+                      {tool.cost > 0 ? ` · ${money(tool.cost)}` : ""}
+                    </p>
+                  </div>
+                  <p className="text-sm font-medium tabular-nums">{compact(tool.requests)}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="py-4 text-sm text-muted-foreground">No tools detected yet.</p>
+          )}
         </section>
       </>
     );
@@ -110,10 +142,11 @@ export default async function ActivityPage() {
     getDashboardUsage(orgId, 30),
     getDashboardRequests(orgId, { limit: 20 }),
   ]);
-  const totalCost = usage.byModel.reduce((sum, row) => sum + row.cost, 0);
-  const totalTokens = usage.byModel.reduce((sum, row) => sum + row.tokens, 0);
-  const totalRequests = usage.byModel.reduce((sum, row) => sum + row.requests, 0);
-  const models = usage.byModel.slice(0, 8);
+  const totalCost = usage.kpis.verifiedUsageCost + usage.kpis.estimatedApiCost;
+  const totalTokens = usage.kpis.inputTokens + usage.kpis.outputTokens;
+  const totalRequests = usage.kpis.modelCalls;
+  const models = usage.byModel;
+  const tools = usage.byTool;
   const recent = requests.requests.slice(0, 8);
 
   return (
@@ -121,22 +154,39 @@ export default async function ActivityPage() {
       <div className="mb-10">
         <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">Usage and requests.</h1>
         <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-          Last 30 days of traffic, broken down by model and recent request metadata.
+          Last 30 days of traffic from gateway and device-observed usage.
         </p>
       </div>
 
-      <div className="grid gap-8 sm:grid-cols-3">
-        <Kpi label="Requests" value={compact(totalRequests)} sub="last 30 days" accent />
+      <div className="grid gap-8 sm:grid-cols-2 xl:grid-cols-4">
+        <Kpi label="Model calls" value={compact(totalRequests)} sub="last 30 days" accent />
         <Kpi label="Tokens" value={compact(totalTokens)} sub="input + output" />
-        <Kpi label="Estimated spend" value={money(totalCost)} sub="last 30 days" />
+        <Kpi label="Verified usage" value={money(usage.kpis.verifiedUsageCost)} sub="vendor charges" />
+        <Kpi label="Estimated API value" value={money(usage.kpis.estimatedApiCost)} sub="rate-card estimate" />
       </div>
 
       <div className="mt-10 grid gap-10 lg:grid-cols-2">
         <section>
-          <SectionHeader
-            title="By model."
-            description="Which models are doing the work."
-          />
+          <SectionHeader title="By tool." description="Detected and observed tools." />
+          {tools.length ? (
+            <ul className="divide-y">
+              {tools.map((row) => (
+                <li key={row.toolName ?? "unknown"} className="flex items-center justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{row.toolName ?? "Unknown"}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{row.requests.toLocaleString()} requests</p>
+                  </div>
+                  <p className="text-sm font-medium tabular-nums">{money(row.cost)}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="py-4 text-sm text-muted-foreground">No tool traffic yet.</p>
+          )}
+        </section>
+
+        <section>
+          <SectionHeader title="By model." description={`Every recorded model · ${models.length} total.`} />
           {models.length ? (
             <ul className="divide-y">
               {models.map((row) => (
@@ -153,33 +203,30 @@ export default async function ActivityPage() {
             <p className="py-4 text-sm text-muted-foreground">No model traffic yet.</p>
           )}
         </section>
-
-        <section>
-          <SectionHeader
-            title="Recent requests."
-            description="Metadata only — prompts are never stored."
-          />
-          {recent.length ? (
-            <ul className="divide-y">
-              {recent.map((request) => (
-                <li key={request.id} className="flex items-center justify-between gap-3 py-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      {request.toolName ?? "Unknown"} · {request.model ?? "Unknown"}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {new Date(request.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                    </p>
-                  </div>
-                  <StatusBadge variant={statusVariant(request.status)}>{request.status}</StatusBadge>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="py-4 text-sm text-muted-foreground">No data yet.</p>
-          )}
-        </section>
       </div>
+
+      <section className="mt-10">
+        <SectionHeader title="Recent requests." description="Gateway metadata only — prompts are never stored." />
+        {recent.length ? (
+          <ul className="divide-y">
+            {recent.map((request) => (
+              <li key={request.id} className="flex items-center justify-between gap-3 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">
+                    {request.toolName ?? "Unknown"} · {request.model ?? "Unknown"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {new Date(request.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                  </p>
+                </div>
+                <StatusBadge variant={statusVariant(request.status)}>{request.status}</StatusBadge>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="py-4 text-sm text-muted-foreground">No gateway requests yet. Local tool usage still appears above.</p>
+        )}
+      </section>
     </>
   );
 }

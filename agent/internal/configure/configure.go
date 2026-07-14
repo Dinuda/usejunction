@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/usejunction/agent/internal/config"
@@ -144,17 +145,44 @@ virtual_key = "%s"
 	return os.WriteFile(configPath, []byte(content), 0600)
 }
 
-// ConfigureClaude writes a shell env snippet for Claude Code.
-// Claude Code uses ANTHROPIC_BASE_URL; users source the snippet or add it to
-// their shell RC. The original Claude settings file is not mutated.
-func ConfigureClaude(gatewayURL, virtualKey string) error {
+// ClaudeEnvOptions configures gateway routing and optional Claude Code OTEL export.
+type ClaudeEnvOptions struct {
+	GatewayURL          string
+	VirtualKey          string
+	OtelEnabled         bool
+	OtelMetricsEndpoint string
+	DeviceToken         string
+}
+
+// WriteClaudeEnv writes ~/.usejunction/claude-env.sh with gateway and OTEL settings.
+func WriteClaudeEnv(opts ClaudeEnvOptions) error {
 	snippetPath := filepath.Join(config.ConfigDir(), "claude-env.sh")
-	content := fmt.Sprintf(`# Source this file to route Claude Code through the UseJunction gateway.
-# Add to ~/.zshrc or ~/.bashrc:  source %s
-export ANTHROPIC_BASE_URL="%s"
-export ANTHROPIC_API_KEY="%s"
-`, snippetPath, gatewayURL, virtualKey)
-	return os.WriteFile(snippetPath, []byte(content), 0600)
+	var b strings.Builder
+	b.WriteString("# Managed by UseJunction agent — source from your shell RC.\n")
+	b.WriteString(fmt.Sprintf("export ANTHROPIC_BASE_URL=\"%s\"\n", opts.GatewayURL))
+	b.WriteString(fmt.Sprintf("export ANTHROPIC_API_KEY=\"%s\"\n", opts.VirtualKey))
+	if opts.OtelEnabled && opts.OtelMetricsEndpoint != "" && opts.DeviceToken != "" {
+		b.WriteString("export CLAUDE_CODE_ENABLE_TELEMETRY=1\n")
+		b.WriteString("export OTEL_METRICS_EXPORTER=otlp\n")
+		b.WriteString("export OTEL_LOGS_EXPORTER=none\n")
+		b.WriteString("export OTEL_TRACES_EXPORTER=none\n")
+		b.WriteString("export OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/json\n")
+		b.WriteString(fmt.Sprintf("export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=\"%s\"\n", opts.OtelMetricsEndpoint))
+		b.WriteString(fmt.Sprintf("export OTEL_EXPORTER_OTLP_METRICS_HEADERS=\"Authorization=Bearer %s\"\n", opts.DeviceToken))
+		b.WriteString("export OTEL_LOG_USER_PROMPTS=0\n")
+		b.WriteString("export OTEL_LOG_TOOL_DETAILS=0\n")
+		b.WriteString("export OTEL_LOG_TOOL_CONTENT=0\n")
+	}
+	b.WriteString(fmt.Sprintf("# source %s\n", snippetPath))
+	return os.WriteFile(snippetPath, []byte(b.String()), 0600)
+}
+
+// ConfigureClaude writes a shell env snippet for Claude Code.
+func ConfigureClaude(gatewayURL, virtualKey string) error {
+	return WriteClaudeEnv(ClaudeEnvOptions{
+		GatewayURL: gatewayURL,
+		VirtualKey: virtualKey,
+	})
 }
 
 // ConfigureContinue rewrites ~/.continue/config.json with the gateway as the

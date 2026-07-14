@@ -1,21 +1,58 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const Version = "0.1.0"
 
 // Config holds the persisted enrollment state.
 type Config struct {
-	ControlPlaneURL string `json:"controlPlaneUrl"`
-	DeviceToken     string `json:"deviceToken"`
-	DeviceID        string `json:"deviceId"`
-	UserID          string `json:"userId"`
-	OrgID           string `json:"orgId"`
-	GatewayURL      string `json:"gatewayUrl"`
+	ControlPlaneURL     string `json:"controlPlaneUrl"`
+	DeviceToken         string `json:"deviceToken"`
+	DeviceID            string `json:"deviceId"`
+	UserID              string `json:"userId"`
+	OrgID               string `json:"orgId"`
+	GatewayURL          string `json:"gatewayUrl"`
+	OtelEnabled         bool   `json:"otelEnabled,omitempty"`
+	OtelMetricsEndpoint string `json:"otelMetricsEndpoint,omitempty"`
+	LocalSyncPort       int    `json:"localSyncPort,omitempty"`
+	LocalSyncToken      string `json:"localSyncToken,omitempty"`
+}
+
+const DefaultLocalSyncPort = 47832
+
+// LocalSyncURL returns the loopback metrics endpoint for this device.
+func (c *Config) LocalSyncURL() string {
+	port := c.LocalSyncPort
+	if port <= 0 {
+		port = DefaultLocalSyncPort
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d", port)
+}
+
+// EnsureLocalSyncCredentials creates a local sync token/port if missing.
+func (c *Config) EnsureLocalSyncCredentials() (bool, error) {
+	changed := false
+	if c.LocalSyncPort <= 0 {
+		c.LocalSyncPort = DefaultLocalSyncPort
+		changed = true
+	}
+	if strings.TrimSpace(c.LocalSyncToken) == "" {
+		token, err := randomToken(24)
+		if err != nil {
+			return false, err
+		}
+		c.LocalSyncToken = token
+		changed = true
+	}
+	return changed, nil
 }
 
 // ConfigDir returns ~/.usejunction.
@@ -62,4 +99,12 @@ func Save(c *Config) error {
 		return err
 	}
 	return os.WriteFile(ConfigPath(), data, 0600)
+}
+
+func randomToken(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return "uj_local_" + base64.RawURLEncoding.EncodeToString(b), nil
 }

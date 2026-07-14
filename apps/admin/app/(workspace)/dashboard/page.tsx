@@ -1,13 +1,17 @@
 import Link from "next/link";
 import { ArrowUpRight, CircleAlert } from "lucide-react";
+import { AiCodingPanel } from "@/components/dashboard/ai-coding-panel";
+import { ConnectMachineBanner } from "@/components/dashboard/connect-machine-banner";
+import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
 import { OverviewChart } from "@/components/dashboard/overview-chart";
 import { DashboardSetupPanel } from "@/components/dashboard/setup-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { getDashboardOverview, type DashboardRange } from "@/lib/queries/dashboard/overview";
+import { getDashboardOverview, ACTIVE_PEOPLE_WINDOW_DAYS, type DashboardRange } from "@/lib/queries/dashboard/overview";
 import { getMeOverview } from "@/lib/queries/me/overview";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
+import { prisma } from "@usejunction/db";
 
 function currency(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -87,6 +91,7 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
 
   return (
     <>
+      <ConnectMachineBanner show={!data.developer.devices.length} />
       <div className="mb-10">
         <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">Hey {firstName}.</h1>
         <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
@@ -98,11 +103,23 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
         <DashboardSetupPanel canInvite={false} />
       ) : (
         <>
+          <div className="mb-8">
+            <LocalSyncPanel
+              lastSeenAt={data.sync.lastSeenAt}
+              lastUsageSyncAt={data.sync.lastUsageSyncAt}
+              lastAccountSyncAt={data.sync.lastAccountSyncAt}
+              stale={data.sync.stale}
+              needsPlanSync={data.sync.needsPlanSync}
+              autoAttempt
+            />
+          </div>
           <div className="grid gap-8 sm:grid-cols-3">
-            <Kpi label="Requests" value={compactNumber(usage.requests)} />
+            <Kpi label="Model calls" value={compactNumber(usage.requests)} />
             <Kpi label="Sessions" value={compactNumber(usage.sessions)} />
             <Kpi label="Devices" value={`${online}/${data.developer.devices.length}`} accent />
           </div>
+
+          <AiCodingPanel metrics={data.aiCoding30d} models={data.modelUsage30d} />
 
           <div className="mt-10 grid gap-10 lg:grid-cols-2">
             <section>
@@ -137,19 +154,29 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
 
             <section>
               <div className="mb-4 border-b pb-3">
-                <h2 className="text-lg font-semibold tracking-tight">Assigned tools.</h2>
+                <h2 className="text-lg font-semibold tracking-tight">Your tools.</h2>
               </div>
-              {data.developer.assignedPlans.length ? (
+              {data.toolsUsage30d.length ? (
                 <ul className="divide-y">
-                  {data.developer.assignedPlans.slice(0, 8).map((plan) => (
-                    <li key={`${plan.provider}-${plan.product}`} className="py-4">
-                      <p className="text-sm font-medium">{plan.product}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{plan.plan ?? plan.provider}</p>
+                  {data.toolsUsage30d.map((tool) => (
+                    <li key={tool.toolName} className="flex items-center justify-between gap-3 py-4">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{tool.toolName}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {tool.tokens > 0 ? `${compactNumber(tool.tokens)} tokens` : "Detected on your machine"}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-medium tabular-nums">{compactNumber(tool.requests)}</p>
+                        {tool.cost > 0 && (
+                          <p className="mt-1 text-xs text-muted-foreground">{currency(tool.cost)}</p>
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="py-4 text-sm text-muted-foreground">Nothing assigned yet.</p>
+                <p className="py-4 text-sm text-muted-foreground">No tools detected yet. Connect a machine to report inventory.</p>
               )}
             </section>
           </div>
@@ -177,9 +204,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   }
 
   const empty = data && !data.hasActivity && data.coverage.devices === 0;
+  const myDeveloper = await prisma.developer.findFirst({
+    where: { orgId, authUserId: userId },
+    select: { id: true, _count: { select: { devices: true } } },
+  });
+  const needsPersonalConnect = !myDeveloper || myDeveloper._count.devices === 0;
 
   return (
     <>
+      <ConnectMachineBanner show={needsPersonalConnect} />
       <div className="mb-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">
@@ -213,26 +246,44 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       ) : data ? (
         <>
-          <div className="grid gap-8 sm:grid-cols-2 xl:grid-cols-4">
-            <Kpi label="Spend" value={currency(data.kpis.spend.value)} delta={data.kpis.spend.deltaPercent} inverse accent />
-            <Kpi label="Requests" value={compactNumber(data.kpis.requests.value)} delta={data.kpis.requests.deltaPercent} />
+          <div className="grid gap-8 sm:grid-cols-2 xl:grid-cols-5">
             <Kpi
-              label="Active people"
+              label="Actual spend"
+              value={currency(data.kpis.actualSpend.value)}
+              delta={data.kpis.actualSpend.deltaPercent}
+              inverse
+              accent
+            />
+            <Kpi
+              label="Verified usage"
+              value={currency(data.kpis.verifiedUsageCost.value)}
+              delta={data.kpis.verifiedUsageCost.deltaPercent}
+              inverse
+            />
+            <Kpi
+              label="Estimated API value"
+              value={currency(data.kpis.estimatedApiCost.value)}
+              delta={data.kpis.estimatedApiCost.deltaPercent}
+              inverse
+            />
+            <Kpi label="Model calls" value={compactNumber(data.kpis.modelCalls.value)} delta={data.kpis.modelCalls.deltaPercent} />
+            <Kpi
+              label={`Active people (${ACTIVE_PEOPLE_WINDOW_DAYS}d)`}
               value={`${data.kpis.activeDevelopers.value}/${data.coverage.developers}`}
               delta={data.kpis.activeDevelopers.deltaPercent}
             />
-            <Kpi
-              label="Success"
-              value={`${data.kpis.successRate.value.toFixed(1)}%`}
-              delta={data.kpis.successRate.deltaPercent}
-            />
           </div>
+          {data.partialData ? (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Some sources overlap for the same day — totals use source-priority selection and may be partial.
+            </p>
+          ) : null}
 
           <div className="mt-10 grid gap-10 xl:grid-cols-[1.4fr_0.6fr]">
             <section>
               <div className="mb-4 flex items-end justify-between gap-3 border-b pb-3">
                 <div>
-                  <h2 className="text-lg font-semibold tracking-tight">Requests.</h2>
+                  <h2 className="text-lg font-semibold tracking-tight">Model calls.</h2>
                   <p className="mt-1 text-xs text-muted-foreground">Solid = this period · dashed = prior</p>
                 </div>
               </div>
@@ -241,7 +292,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
             <section>
               <div className="mb-4 border-b pb-3">
-                <h2 className="text-lg font-semibold tracking-tight">Fix these.</h2>
+                <h2 className="text-lg font-semibold tracking-tight">Notifications.</h2>
               </div>
               {data.attention.length ? (
                 <ul className="divide-y">
@@ -267,7 +318,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                   ))}
                 </ul>
               ) : (
-                <p className="py-4 text-sm text-muted-foreground">No open issues.</p>
+                <p className="py-4 text-sm text-muted-foreground">No notifications.</p>
               )}
             </section>
           </div>
@@ -298,7 +349,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                   ))}
                 </ul>
               ) : (
-                <p className="py-4 text-sm text-muted-foreground">No tool traffic in this range.</p>
+                <p className="py-4 text-sm text-muted-foreground">No tools detected yet.</p>
               )}
             </section>
 
@@ -309,7 +360,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <dl className="space-y-5">
                 {[
                   {
-                    label: "Active people",
+                    label: `Active people (${ACTIVE_PEOPLE_WINDOW_DAYS}d)`,
                     value: `${data.coverage.activeDevelopers}/${data.coverage.developers}`,
                     pct: data.coverage.developers
                       ? Math.min(100, (data.coverage.activeDevelopers / data.coverage.developers) * 100)
@@ -323,11 +374,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                       : 0,
                   },
                   {
-                    label: "Tools configured",
-                    value: `${data.coverage.configuredTools}/${data.coverage.trackedTools}`,
-                    pct: data.coverage.trackedTools
-                      ? Math.round((data.coverage.configuredTools / data.coverage.trackedTools) * 100)
-                      : 0,
+                    label: "Tools detected",
+                    value: `${data.coverage.trackedTools}`,
+                    pct: data.coverage.trackedTools ? 100 : 0,
                   },
                 ].map((row) => (
                   <div key={row.label}>

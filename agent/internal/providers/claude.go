@@ -2,11 +2,11 @@ package providers
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/usejunction/agent/internal/probe"
 	"github.com/usejunction/agent/internal/scan"
 	"github.com/usejunction/agent/internal/types"
 )
@@ -39,6 +39,11 @@ func (p *ClaudeProvider) Detect(ctx context.Context) (*types.ToolStatus, error) 
 	if strings.Contains(baseURL, "4000") || strings.Contains(baseURL, "usejunction") {
 		configured = true
 	}
+	if home, err := os.UserHomeDir(); err == nil {
+		if fileExists(filepath.Join(home, ".usejunction", "claude-env.sh")) && baseURL != "" {
+			configured = true
+		}
+	}
 	return &types.ToolStatus{
 		ToolName:   p.ID(),
 		Detected:   detected,
@@ -48,24 +53,16 @@ func (p *ClaudeProvider) Detect(ctx context.Context) (*types.ToolStatus, error) 
 }
 
 func (p *ClaudeProvider) AccountIdentity(ctx context.Context) (*types.ToolAccount, error) {
-	creds := filepath.Join(claudeConfigDir(), ".credentials.json")
-	if !fileExists(creds) {
+	account, err := probe.ClaudeAccountFromCredentials(claudeConfigDir())
+	if err != nil {
 		return &types.ToolAccount{ToolName: p.ID(), LoginMethod: "unknown"}, nil
 	}
-	data, _ := os.ReadFile(creds)
-	var m map[string]any
-	_ = json.Unmarshal(data, &m)
-	email, _ := m["email"].(string)
-	return &types.ToolAccount{
-		ToolName:    p.ID(),
-		Email:       email,
-		LoginMethod: "oauth",
-		AuthPresent: true,
-	}, nil
+	return account, nil
 }
 
 func (p *ClaudeProvider) ProbeQuota(ctx context.Context) ([]types.QuotaSnapshot, error) {
-	return nil, nil
+	quotas, _, err := probe.ProbeClaudeQuota(ctx, claudeConfigDir())
+	return quotas, err
 }
 
 func (p *ClaudeProvider) ScanLocalUsage(ctx context.Context, refresh bool) ([]types.DailyUsage, error) {

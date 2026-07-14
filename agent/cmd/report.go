@@ -1,14 +1,13 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/usejunction/agent/internal/client"
 	"github.com/usejunction/agent/internal/config"
-	"github.com/usejunction/agent/internal/providers"
+	"github.com/usejunction/agent/internal/localsync"
 )
 
 var reportCmd = &cobra.Command{
@@ -20,20 +19,49 @@ var reportCmd = &cobra.Command{
 
 var daemonCmd = &cobra.Command{
 	Use:    "daemon",
-	Short:  "Run the reporting loop every 60 seconds",
+	Short:  "Run the reporting loop and localhost sync endpoint",
 	Hidden: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := requireConfig()
+		if err != nil {
+			return err
+		}
+		if changed, err := cfg.EnsureLocalSyncCredentials(); err != nil {
+			return err
+		} else if changed {
+			if err := config.Save(cfg); err != nil {
+				return err
+			}
+		}
+
+		api := client.New(cfg)
+		syncFn := func(refresh bool) (int, int, int, int, error) {
+			return collectAndReport(api, refresh)
+		}
+
+		go func() {
+			srv := localsync.New(cfg, syncFn)
+			fmt.Printf("Local sync endpoint: %s\n", cfg.LocalSyncURL())
+			if err := srv.ListenAndServe(); err != nil {
+				fmt.Printf("[daemon] local sync server stopped: %v\n", err)
+			}
+		}()
+
+		// Register endpoint on the control plane immediately.
+		_ = sendHeartbeat(api)
+
 		fmt.Println("Starting UseJunction daemon (Ctrl-C to stop)…")
 		iteration := 0
 		for {
-			var err error
+			var loopErr error
 			if iteration%15 == 0 {
-				err = runReport(cmd, args)
+				// Full collect every ~15 minutes (refresh caches).
+				_, _, _, _, loopErr = collectAndReport(api, true)
 			} else {
-				err = runHeartbeat()
+				loopErr = sendHeartbeat(api)
 			}
-			if err != nil && verbose {
-				fmt.Printf("[daemon] report error: %v\n", err)
+			if loopErr != nil && verbose {
+				fmt.Printf("[daemon] report error: %v\n", loopErr)
 			}
 			iteration++
 			time.Sleep(60 * time.Second)
@@ -46,98 +74,25 @@ func runReport(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	ctx := context.Background()
-	api := client.New(cfg)
-
-	if err := sendHeartbeat(api); err != nil {
-		return fmt.Errorf("heartbeat: %w", err)
+	if changed, err := cfg.EnsureLocalSyncCredentials(); err != nil {
+		return err
+	} else if changed {
+		_ = config.Save(cfg)
 	}
-
-	var tools []client.ToolReport
-	var accounts []client.AccountReport
-	var models []client.LocalModelReport
-	var usage []client.UsageAggregate
-
-	for _, p := range providers.All() {
-		status, _ := p.Detect(ctx)
-		if status != nil {
-			tools = append(tools, client.ToolReport{
-				ToolName:   status.ToolName,
-				Detected:   status.Detected,
-				Configured: status.Configured,
-				ConfigPath: status.ConfigPath,
-				Version:    status.Version,
-			})
-		}
-
-		if acc, _ := p.AccountIdentity(ctx); acc != nil && acc.AuthPresent {
-			accounts = append(accounts, client.AccountReport{
-				ToolName:    acc.ToolName,
-				Email:       acc.Email,
-				Plan:        acc.Plan,
-				LoginMethod: acc.LoginMethod,
-				AuthPresent: acc.AuthPresent,
-			})
-		}
-
-		if daily, err := p.ScanLocalUsage(ctx, true); err == nil {
-			for _, row := range daily {
-				var repository *client.RepositoryReport
-				if row.Repository != nil {
-					repository = &client.RepositoryReport{Host: row.Repository.Host, Owner: row.Repository.Owner, Name: row.Repository.Name}
-				}
-				usage = append(usage, client.UsageAggregate{
-					Date: row.Date, ToolName: row.ToolName, Model: row.Model,
-					InputTokens: row.InputTokens, OutputTokens: row.OutputTokens, CacheReadTokens: row.CacheReadTokens,
-					EstimatedCost: 0, Repository: repository,
-				})
-			}
-		}
-
-		// Collect local models from Ollama and LM Studio.
-		if o, ok := p.(*providers.OllamaProvider); ok {
-			if ms, err := o.LocalModels(ctx); err == nil {
-				for _, m := range ms {
-					models = append(models, client.LocalModelReport{
-						Provider:  m.Provider,
-						ModelName: m.ModelName,
-						Size:      m.Size,
-						Running:   m.Running,
-					})
-				}
-			}
-		}
-		if l, ok := p.(*providers.LMStudioProvider); ok {
-			if ms, err := l.LocalModels(ctx); err == nil {
-				for _, m := range ms {
-					models = append(models, client.LocalModelReport{
-						Provider:  m.Provider,
-						ModelName: m.ModelName,
-						Running:   m.Running,
-					})
-				}
-			}
-		}
+	tools, accounts, quotas, usage, err := collectAndReport(client.New(cfg), true)
+	if err != nil {
+		return err
 	}
-
-	_ = api.ReportTools(tools)
-	if len(accounts) > 0 {
-		_ = api.ReportAccounts(accounts)
-	}
-	if len(models) > 0 {
-		_ = api.ReportLocalModels(models)
-	}
-	if len(usage) > 0 {
-		_ = api.ReportLocalUsage(usage)
-	}
-
 	if format == "json" {
 		printJSON(map[string]any{
-			"ok":     true,
-			"tools":  len(tools),
-			"models": len(models),
-			"usage":  len(usage),
+			"ok":       true,
+			"tools":    tools,
+			"accounts": accounts,
+			"quotas":   quotas,
+			"usage":    usage,
 		})
+	} else {
+		fmt.Printf("Reported %d tool(s), %d account(s), %d quota window(s), %d usage row(s).\n", tools, accounts, quotas, usage)
 	}
 	return nil
 }
@@ -151,9 +106,23 @@ func runHeartbeat() error {
 }
 
 func sendHeartbeat(api *client.APIClient) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if changed, err := cfg.EnsureLocalSyncCredentials(); err != nil {
+		return err
+	} else if changed {
+		_ = config.Save(cfg)
+	}
 	osName, arch := platformInfo()
 	return api.Heartbeat(client.HeartbeatPayload{
-		Hostname: hostname(), OS: osName, Architecture: arch, AgentVersion: config.Version,
+		Hostname:       hostname(),
+		OS:             osName,
+		Architecture:   arch,
+		AgentVersion:   config.Version,
+		LocalEndpoint:  cfg.LocalSyncURL(),
+		LocalSyncToken: cfg.LocalSyncToken,
 	})
 }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { audit, requireOrgRole } from "@/lib/rbac";
 import { serializeBigInts } from "@/lib/billing/validation";
+import { syncDetectedPlansForOrg } from "@/lib/tools/sync-detected";
 import { deriveSubscription, listSubscriptions, subscriptionInputSchema } from "@/lib/tools/subscriptions";
 
 function inputError(error: unknown) {
@@ -18,6 +19,11 @@ export async function GET(req: NextRequest) {
   const auth = await requireOrgRole(req, ["owner", "admin"]);
   if (auth instanceof NextResponse) return auth;
   try {
+    try {
+      await syncDetectedPlansForOrg(auth.orgId);
+    } catch (syncError) {
+      console.error("GET /api/tools/subscriptions plan sync failed", syncError);
+    }
     return NextResponse.json(serializeBigInts({ subscriptions: await listSubscriptions(auth.orgId) }));
   } catch (error) {
     console.error("GET /api/tools/subscriptions", error);

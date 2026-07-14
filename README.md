@@ -88,9 +88,28 @@ curl -X POST http://localhost:3001/api/me/enrollment-token \
 
 ### Install the local agent
 
+From a repo checkout (builds the Go agent locally — preferred for development):
+
 ```bash
 chmod +x install.sh
 ./install.sh --token <token> --url http://localhost:3001
+# enrolls, configures tools, enables Claude OTEL, sends first report, and starts the daemon
+```
+
+One-liner (downloads a prebuilt binary from the control plane, or builds from source if the repo is on disk):
+
+```bash
+# optional for pnpm/dev without Docker: publish binaries into apps/admin/public
+./scripts/build-agent-releases.sh
+
+curl -fsSL http://localhost:3001/install.sh | sh -s -- --token <token> --url http://localhost:3001
+```
+
+Teammate connect (from Team → Share connect command):
+
+```bash
+curl -fsSL http://localhost:3001/install.sh | sh -s -- --connect <token> --url http://localhost:3001
+# opens browser to authenticate with the invited email, then enrolls
 ```
 
 Or build manually:
@@ -120,9 +139,10 @@ Coding tools → LiteLLM Proxy → Providers
 
 | Command | Description |
 |---------|-------------|
-| `usejunction enroll --token <t>` | Enroll device |
+| `usejunction enroll --token <t>` | Enroll device (runs setup by default) |
+| `usejunction setup` | Configure gateway, Claude OTEL, and send initial report |
 | `usejunction doctor` | Detect installed tools |
-| `usejunction configure` | Explicitly point supported tools at an org gateway (never run during onboarding) |
+| `usejunction configure` | Point supported tools at the org gateway |
 | `usejunction unconfigure` | Restore config backups |
 | `usejunction status` | Show enrollment state |
 | `usejunction cost --tool all` | Local JSONL usage scan |
@@ -145,4 +165,7 @@ Metadata-only logging by default. Local scans read token counts from session JSO
 
 ## License
 
-MIT
+[UseJunction Community License](LICENSE) — based on [Apache 2.0](http://www.apache.org/licenses/LICENSE-2.0) with additional terms:
+
+- **Use as-is commercially** — run the unmodified software (frontend, backend, or self-hosted) in a commercial context.
+- **Derivatives require a license** — developing or distributing a modified fork for commercial use requires a separate license. Contact [hello@usejunction.dev](mailto:hello@usejunction.dev).

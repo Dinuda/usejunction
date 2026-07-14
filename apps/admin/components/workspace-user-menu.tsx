@@ -4,7 +4,6 @@ import { signOut } from "next-auth/react";
 import { LogOut } from "lucide-react";
 import {
   Avatar,
-  AvatarBadge,
   AvatarFallback,
   AvatarImage,
 } from "@/components/ui/avatar";
@@ -59,11 +58,16 @@ export function WorkspaceUserMenu({
                 className="size-9 rounded-full p-0 hover:bg-muted"
               >
                 <Avatar className="size-9">
-                  {image ? <AvatarImage src={image} alt={displayName} /> : null}
+                  {image ? (
+                    <AvatarImage
+                      src={image}
+                      alt={displayName}
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : null}
                   <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
                     {initials(name, email)}
                   </AvatarFallback>
-                  <AvatarBadge className="bg-green-600 dark:bg-green-700" />
                 </Avatar>
                 <span className="sr-only">Open account menu</span>
               </Button>

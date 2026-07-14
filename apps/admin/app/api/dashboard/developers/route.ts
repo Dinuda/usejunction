@@ -3,6 +3,8 @@ import { prisma } from "@usejunction/db";
 import { requireOrgRole } from "@/lib/rbac";
 import { calculateBilling, serializeBillingLine } from "@/lib/billing/calculator";
 import { serializeBigInts } from "@/lib/billing/validation";
+import { usageDayFilterInclusive, usageWindowDays } from "@/lib/metrics/date-range";
+import { syncDetectedPlansForOrg } from "@/lib/tools/sync-detected";
 
 export async function GET(req: NextRequest) {
   const auth = await requireOrgRole(req, ["owner", "admin"]);
@@ -11,7 +13,13 @@ export async function GET(req: NextRequest) {
   try {
     const orgId = auth.orgId;
     if (!orgId) return NextResponse.json({ error: "organization setup required" }, { status: 409 });
-    const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const usage7d = usageWindowDays(7);
+
+    try {
+      await syncDetectedPlansForOrg(orgId);
+    } catch (syncError) {
+      console.error("GET /api/dashboard/developers plan sync failed", syncError);
+    }
 
     const users = await prisma.developer.findMany({
       where: { orgId },
@@ -38,7 +46,7 @@ export async function GET(req: NextRequest) {
 
     const recentActivity = await prisma.requestMetadata.groupBy({
       by: ["userId"],
-      where: { orgId, createdAt: { gte: since7d }, userId: { not: null } },
+      where: { orgId, createdAt: { gte: usage7d.from }, userId: { not: null } },
       _count: { id: true },
       _sum: { estimatedCost: true },
     });
@@ -48,10 +56,10 @@ export async function GET(req: NextRequest) {
     );
     const billingAssignments = users.flatMap((user) => user.planAssignments);
     const billingUsage = await prisma.usageDaily.findMany({
-      where: { orgId, date: { gte: since7d, lte: new Date() } },
+      where: { orgId, date: usageDayFilterInclusive(usage7d.from, usage7d.to) },
       select: { date: true, source: true, costMicros: true, inputTokens: true, outputTokens: true, cacheReadTokens: true, observedAt: true, developerId: true, provider: true, product: true, toolName: true },
     });
-    const billing = calculateBilling({ assignments: billingAssignments, usage: billingUsage, from: since7d, to: new Date() });
+    const billing = calculateBilling({ assignments: billingAssignments, usage: billingUsage, from: usage7d.from, to: usage7d.to });
     const billingMap = new Map<string, ReturnType<typeof serializeBillingLine>[]>();
     for (const line of billing) billingMap.set(line.developerId, [...(billingMap.get(line.developerId) ?? []), serializeBillingLine(line)]);
 

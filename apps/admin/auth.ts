@@ -24,7 +24,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const user = await prisma.user.findUnique({
           where: { email },
-          include: { memberships: { orderBy: { createdAt: "asc" }, take: 1 } },
+          include: { memberships: { orderBy: { createdAt: "desc" }, take: 1 } },
         });
         if (!user?.passwordHash || !user.emailVerified) return null;
         if (!(await compare(password, user.passwordHash))) return null;
@@ -33,6 +33,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           id: user.id,
           email: user.email,
           name: user.name,
+          image: user.image,
           orgId: user.memberships[0]?.orgId ?? null,
           role: user.memberships[0]?.role ?? null,
         };
@@ -58,8 +59,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user, trigger, session }) {
       if (user) {
         token.userId = user.id;
+        token.picture = user.image ?? null;
         token.orgId = (user as { orgId?: string | null }).orgId ?? null;
         token.role = (user as { role?: string | null }).role ?? null;
+      }
+      if (token.userId && !("picture" in token)) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: String(token.userId) },
+          select: { image: true },
+        });
+        token.picture = dbUser?.image ?? null;
       }
       if (trigger === "update" && session?.orgId && token.userId) {
         const membership = await prisma.organizationMembership.findUnique({
@@ -79,7 +88,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token.userId && !token.orgId) {
         const membership = await prisma.organizationMembership.findFirst({
           where: { userId: String(token.userId) },
-          orderBy: { createdAt: "asc" },
+          orderBy: { createdAt: "desc" },
         });
         token.orgId = membership?.orgId ?? null;
         token.role = membership?.role ?? null;
@@ -91,6 +100,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.id = String(token.userId);
         session.user.orgId = token.orgId ? String(token.orgId) : null;
         session.user.role = token.role ? String(token.role) : null;
+        session.user.image = token.picture ? String(token.picture) : null;
       }
       return session;
     },

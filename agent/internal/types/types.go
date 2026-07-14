@@ -28,16 +28,57 @@ type QuotaSnapshot struct {
 	Source           string   `json:"source"`
 }
 
+// MetricKind separates billing usage from productivity-only observations.
+type MetricKind string
+
+const (
+	MetricKindUsage        MetricKind = "usage"
+	MetricKindProductivity MetricKind = "productivity"
+)
+
+// CostKind classifies how dollar amounts should be interpreted.
+type CostKind string
+
+const (
+	CostKindVerifiedUsage CostKind = "verified_usage"
+	CostKindEstimatedAPI  CostKind = "estimated_api"
+	CostKindActualSpend   CostKind = "actual_spend"
+)
+
+// TokenSemantics documents how input/cache buckets relate for pricing.
+type TokenSemantics string
+
+const (
+	TokenSemanticsOpenAI    TokenSemantics = "openai_subset_cache"
+	TokenSemanticsAnthropic TokenSemantics = "anthropic_additive_cache"
+	TokenSemanticsVendor    TokenSemantics = "vendor_reported"
+)
+
 // DailyUsage is token/cost data aggregated by date + model.
 type DailyUsage struct {
-	Date            string              `json:"date"`
-	ToolName        string              `json:"toolName"`
-	Model           string              `json:"model"`
-	InputTokens     int                 `json:"inputTokens"`
-	OutputTokens    int                 `json:"outputTokens"`
-	CacheReadTokens int                 `json:"cacheReadTokens"`
-	EstimatedCost   float64             `json:"estimatedCost"`
-	Repository      *RepositoryIdentity `json:"repository,omitempty"`
+	Date                string              `json:"date"`
+	ToolName            string              `json:"toolName"`
+	Model               string              `json:"model"`
+	InputTokens         int                 `json:"inputTokens"`
+	OutputTokens        int                 `json:"outputTokens"`
+	CacheReadTokens     int                 `json:"cacheReadTokens"`
+	CacheWriteTokens    int                 `json:"cacheWriteTokens,omitempty"`
+	ReasoningTokens     int                 `json:"reasoningTokens,omitempty"`
+	EstimatedCost       float64             `json:"estimatedCost"`
+	SuggestedLines      int                 `json:"suggestedLines,omitempty"`
+	AcceptedLines       int                 `json:"acceptedLines,omitempty"`
+	AddedLines          int                 `json:"addedLines,omitempty"`
+	DeletedLines        int                 `json:"deletedLines,omitempty"`
+	Commits             int                 `json:"commits,omitempty"`
+	AiPercent           *float64            `json:"aiPercent,omitempty"`
+	Requests            int                 `json:"requests,omitempty"`
+	Source              string              `json:"source,omitempty"`
+	Verified            bool                `json:"verified,omitempty"`
+	MetricKind          MetricKind          `json:"metricKind,omitempty"`
+	CostKind            CostKind            `json:"costKind,omitempty"`
+	TokenSemantics      TokenSemantics      `json:"tokenSemantics,omitempty"`
+	CalculationVersion  string              `json:"calculationVersion,omitempty"`
+	Repository          *RepositoryIdentity `json:"repository,omitempty"`
 }
 
 // RepositoryIdentity is the canonical remote identity of a repository. Local

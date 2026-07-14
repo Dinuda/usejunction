@@ -1,13 +1,21 @@
 import { prisma } from "@usejunction/db";
+import { usageDayFilter } from "@/lib/metrics/date-range";
+import { activityPriority, costPriority, normalizeSource } from "@/lib/metrics/source-priority";
 
 export type MetricGroup = "day" | "developer" | "tool" | "provider" | "repository";
 
-const ACTIVITY_PRIORITY: Record<string, number> = { vendor_verified: 0, otel_observed: 1, device_observed: 2, gateway_observed: 3, estimated: 4 };
-const COST_PRIORITY: Record<string, number> = { vendor_verified: 0, invoice_imported: 0, gateway_observed: 1, estimated: 2, device_observed: 2, otel_observed: 3 };
+function rowMetricKind(row: { metricKind?: string | null; metadata?: unknown }): string {
+  if (row.metricKind) return row.metricKind;
+  if (row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)) {
+    const value = (row.metadata as Record<string, unknown>).metricKind;
+    if (typeof value === "string") return value;
+  }
+  return "usage";
+}
 
 export async function aggregateMetrics(input: { orgId: string; developerId?: string; from: Date; to: Date; groupBy: MetricGroup; includeAllSources: boolean }) {
   const rows = await prisma.usageDaily.findMany({
-    where: { orgId: input.orgId, ...(input.developerId ? { developerId: input.developerId } : {}), date: { gte: input.from, lte: input.to } },
+    where: { orgId: input.orgId, ...(input.developerId ? { developerId: input.developerId } : {}), date: usageDayFilter(input.from, input.to) },
     include: {
       developer: { select: { id: true, name: true, email: true } },
       repository: { select: { id: true, host: true, owner: true, name: true } },
@@ -17,18 +25,24 @@ export async function aggregateMetrics(input: { orgId: string; developerId?: str
 
   const activityKey = (row: (typeof rows)[number]) => [row.date.toISOString().slice(0, 10), row.developerId ?? "", row.provider, row.model, input.groupBy === "repository" ? row.repositoryId ?? "" : ""].join("|");
   const costKey = (row: (typeof rows)[number]) => [row.date.toISOString().slice(0, 10), row.developerId ?? "", row.provider, input.groupBy === "repository" ? row.repositoryId ?? "" : ""].join("|");
-  const hasActivity = (row: (typeof rows)[number]) => row.requests > 0 || row.sessions > 0 || row.inputTokens > BigInt(0) || row.outputTokens > BigInt(0) || row.activeSeconds > BigInt(0) || row.suggestedLines > BigInt(0) || row.acceptedLines > BigInt(0) || row.addedLines > BigInt(0) || row.deletedLines > BigInt(0) || row.commits > 0 || row.pullRequests > 0;
+  const hasActivity = (row: (typeof rows)[number]) =>
+    rowMetricKind(row) !== "productivity" &&
+    (row.requests > 0 || row.sessions > 0 || row.inputTokens > BigInt(0) || row.outputTokens > BigInt(0) || row.activeSeconds > BigInt(0));
+  const hasProductivity = (row: (typeof rows)[number]) =>
+    row.suggestedLines > BigInt(0) || row.acceptedLines > BigInt(0) || row.addedLines > BigInt(0) || row.deletedLines > BigInt(0) || row.commits > 0;
   const activityPreferred = new Map<string, number>();
   const costPreferred = new Map<string, number>();
   for (const row of rows) {
-    if (hasActivity(row)) activityPreferred.set(activityKey(row), Math.min(activityPreferred.get(activityKey(row)) ?? 99, ACTIVITY_PRIORITY[row.source] ?? 99));
-    if (row.costMicros > BigInt(0)) costPreferred.set(costKey(row), Math.min(costPreferred.get(costKey(row)) ?? 99, COST_PRIORITY[row.source] ?? 99));
+    const source = normalizeSource(row.source);
+    if (hasActivity(row)) activityPreferred.set(activityKey(row), Math.min(activityPreferred.get(activityKey(row)) ?? 99, activityPriority(source)));
+    if (row.costMicros > BigInt(0)) costPreferred.set(costKey(row), Math.min(costPreferred.get(costKey(row)) ?? 99, costPriority(source)));
   }
   const selected = rows.map((row) => ({
     row,
-    activity: hasActivity(row) && (input.includeAllSources || (ACTIVITY_PRIORITY[row.source] ?? 99) === activityPreferred.get(activityKey(row))),
-    cost: row.costMicros > BigInt(0) && (input.includeAllSources || (COST_PRIORITY[row.source] ?? 99) === costPreferred.get(costKey(row))),
-  })).filter((selection) => selection.activity || selection.cost);
+    activity: hasActivity(row) && (input.includeAllSources || activityPriority(normalizeSource(row.source)) === activityPreferred.get(activityKey(row))),
+    cost: row.costMicros > BigInt(0) && (input.includeAllSources || costPriority(normalizeSource(row.source)) === costPreferred.get(costKey(row))),
+    productivity: hasProductivity(row) && rowMetricKind(row) === "productivity",
+  })).filter((selection) => selection.activity || selection.cost || selection.productivity);
 
   type Aggregate = {
     key: string;
@@ -75,6 +89,8 @@ export async function aggregateMetrics(input: { orgId: string; developerId?: str
       aggregate.outputTokens += row.outputTokens;
       aggregate.cacheReadTokens += row.cacheReadTokens;
       aggregate.activeSeconds += row.activeSeconds;
+    }
+    if (selection.productivity) {
       aggregate.suggestedLines += row.suggestedLines;
       aggregate.acceptedLines += row.acceptedLines;
       aggregate.addedLines += row.addedLines;

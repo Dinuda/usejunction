@@ -2,12 +2,12 @@ package providers
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/usejunction/agent/internal/probe"
 	"github.com/usejunction/agent/internal/scan"
 	"github.com/usejunction/agent/internal/types"
 )
@@ -50,26 +50,16 @@ func (p *CodexProvider) Detect(ctx context.Context) (*types.ToolStatus, error) {
 }
 
 func (p *CodexProvider) AccountIdentity(ctx context.Context) (*types.ToolAccount, error) {
-	authPath := filepath.Join(codexHome(), "auth.json")
-	if !fileExists(authPath) {
+	account, err := probe.CodexAccountIdentity(ctx, codexHome())
+	if err != nil {
 		return &types.ToolAccount{ToolName: p.ID(), LoginMethod: "unknown"}, nil
 	}
-	data, _ := os.ReadFile(authPath)
-	var auth map[string]any
-	_ = json.Unmarshal(data, &auth)
-	email, _ := auth["email"].(string)
-	plan, _ := auth["plan_type"].(string)
-	return &types.ToolAccount{
-		ToolName:    p.ID(),
-		Email:       email,
-		Plan:        plan,
-		LoginMethod: "oauth",
-		AuthPresent: true,
-	}, nil
+	return account, nil
 }
 
 func (p *CodexProvider) ProbeQuota(ctx context.Context) ([]types.QuotaSnapshot, error) {
-	return nil, nil
+	quotas, _, err := probe.ProbeCodexQuota(ctx, codexHome())
+	return quotas, err
 }
 
 func (p *CodexProvider) ScanLocalUsage(ctx context.Context, refresh bool) ([]types.DailyUsage, error) {

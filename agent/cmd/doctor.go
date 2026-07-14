@@ -36,18 +36,20 @@ var doctorCmd = &cobra.Command{
 			return nil
 		}
 
-		fmt.Printf("%-12s  %-10s  %-12s  %s\n", "TOOL", "DETECTED", "CONFIGURED", "CONFIG PATH")
-		fmt.Printf("%-12s  %-10s  %-12s  %s\n", "----", "--------", "----------", "-----------")
+		fmt.Printf("%-14s  %-10s  %-14s  %s\n", "TOOL", "DETECTED", "CONFIGURED", "CONFIG PATH")
+		fmt.Printf("%-14s  %-10s  %-14s  %s\n", "----", "--------", "----------", "-----------")
 
 		for _, r := range detected {
 			configured := "no"
 			if r.Configured {
-				configured = "yes (gateway)"
+				switch r.ToolName {
+				case "codex", "claude", "continue":
+					configured = "yes (gateway)"
+				default:
+					configured = "yes (observed)"
+				}
 			}
-			fmt.Printf("%-12s  %-10s  %-12s  %s\n", r.ToolName, "yes", configured, r.ConfigPath)
-		}
-		for _, r := range notFound {
-			fmt.Printf("%-12s  %-10s  %-12s\n", r.ToolName, "no", "-")
+			fmt.Printf("%-14s  %-10s  %-14s  %s\n", r.ToolName, "yes", configured, r.ConfigPath)
 		}
 
 		fmt.Printf("\n%d tool(s) detected.\n", len(detected))

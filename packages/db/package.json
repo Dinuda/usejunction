@@ -2,14 +2,14 @@
   "name": "@usejunction/db",
   "version": "0.1.0",
   "private": true,
+  "license": "LicenseRef-UseJunction-Community-1.0",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
     "generate": "prisma generate",
     "migrate": "dotenv -e ../../.env -- prisma migrate dev",
     "migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
-    "push": "dotenv -e ../../.env -- prisma db push",
-    "seed": "dotenv -e ../../.env -- tsx prisma/seed.ts"
+    "push": "dotenv -e ../../.env -- prisma db push"
   },
   "dependencies": {
     "@prisma/client": "^6.5.0",
@@ -20,8 +20,5 @@
     "prisma": "^6.5.0",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
   }
 }

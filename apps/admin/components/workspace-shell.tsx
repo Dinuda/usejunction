@@ -58,7 +58,7 @@ function AppSidebar({
   const nav = role === "owner" || role === "admin" ? adminNav : developerNav;
 
   return (
-    <Sidebar collapsible="none" variant="sidebar" className="h-svh border-r">
+    <Sidebar collapsible="none" variant="sidebar" className="h-full border-r md:h-svh">
       <SidebarHeader className="border-b p-4">
         <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden">
           <BrandLogo className="h-8 w-auto" />
@@ -103,9 +103,12 @@ export function WorkspaceShell({
   const pathname = usePathname();
 
   return (
-    <SidebarProvider defaultOpen>
+    <SidebarProvider
+      defaultOpen
+      className="grid h-svh grid-rows-[auto_1fr] overflow-hidden md:grid-cols-[var(--sidebar-width)_1fr] md:grid-rows-1"
+    >
       <AppSidebar active={pathname} role={role} billing={billing} />
-      <SidebarInset>
+      <SidebarInset className="min-h-0 overflow-y-auto">
         <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
           <div className="min-w-0 flex-1">
             <WorkspaceSwitcher organizations={organizations} currentOrgId={currentOrgId} />

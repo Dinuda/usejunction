@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { assertCanEnrollDevice } from "@/lib/billing/status";
 import { generateDeviceToken } from "@/lib/auth";
+import { getPublicAppUrl } from "@/lib/public-url";
 import { hashOpaqueToken } from "@/lib/security";
 
 export async function POST(req: NextRequest) {
@@ -72,6 +73,12 @@ export async function POST(req: NextRequest) {
       });
     if (!device) return NextResponse.json({ error: "token already used" }, { status: 401 });
 
+    const appUrl = getPublicAppUrl();
+    const telemetryEndpoint = await prisma.telemetryEndpoint.findUnique({
+      where: { orgId },
+      select: { enabled: true },
+    });
+
     return NextResponse.json({
       deviceId: device.id,
       userId: enrollment.developer.id,
@@ -79,6 +86,10 @@ export async function POST(req: NextRequest) {
       deviceToken,
       gatewayUrl: process.env.LITELLM_URL || "http://localhost:4000",
       status: "connected",
+      otel: {
+        enabled: telemetryEndpoint?.enabled ?? true,
+        metricsEndpoint: `${appUrl}/api/otel/v1/metrics`,
+      },
     });
   } catch (e) {
     console.error("[enroll]", e);
