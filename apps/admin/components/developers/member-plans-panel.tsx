@@ -1,0 +1,319 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { AddSubscriptionSheet } from "@/components/tools/add-subscription-sheet";
+import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
+import { canonicalToolKey } from "@/lib/tools/catalog";
+import { cn } from "@/lib/utils";
+
+type Subscription = {
+  id: string;
+  toolKey: string | null;
+  name: string;
+  tier: string | null;
+  seatCapacity: number;
+  assignedSeats: number;
+  availableSeats: number;
+  monthlySeatMicros: string;
+  estimatedMonthlyMicros: string;
+};
+
+type ManualPlan = {
+  id: string;
+  planTemplateId: string;
+  toolName: string;
+  planName: string;
+  planTier: string | null;
+  seatCount: number;
+  seatStatus: string;
+  startDate: string;
+  endDate: string | null;
+  monthlySeatMicros: string;
+  vendorAccountEmail: string | null;
+  template: { toolKey: string | null; catalogPlanKey: string | null };
+};
+
+type Developer = {
+  id: string;
+  name: string;
+  email: string;
+  manualPlans: ManualPlan[];
+};
+
+const money = (micros: string) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(
+    Number(BigInt(micros)) / 1_000_000,
+  );
+const utcToday = () => new Date().toISOString().slice(0, 10);
+
+export function toolLabel(tool: string | null) {
+  const key = canonicalToolKey(tool ?? "");
+  return key === "chatgpt-codex"
+    ? "ChatGPT"
+    : key === "github-copilot"
+      ? "Copilot"
+      : key
+        ? key.charAt(0).toUpperCase() + key.slice(1)
+        : "Tool";
+}
+
+export function MemberPlansPanel({
+  developerId,
+  developerName,
+}: {
+  developerId: string;
+  developerName: string;
+}) {
+  const [developer, setDeveloper] = useState<Developer | null>(null);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [addSubscriptionOpen, setAddSubscriptionOpen] = useState(false);
+
+  const load = useCallback(async ({ soft = false }: { soft?: boolean } = {}) => {
+    if (!soft) setLoading(true);
+    const [developersRes, subscriptionsRes] = await Promise.all([
+      fetch("/api/dashboard/developers"),
+      fetch("/api/tools/subscriptions"),
+    ]);
+    const developersJson = await developersRes.json();
+    const subscriptionsJson = await subscriptionsRes.json();
+    if (!developersRes.ok || !subscriptionsRes.ok) {
+      setError(developersJson.error ?? subscriptionsJson.error ?? "Could not load plans");
+    } else {
+      const match = (developersJson.developers as Developer[]).find((row) => row.id === developerId) ?? null;
+      setDeveloper(match);
+      setSubscriptions(subscriptionsJson.subscriptions);
+      setError(null);
+    }
+    setLoading(false);
+  }, [developerId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function assign(subscription: Subscription) {
+    if (!developer) return;
+    setSaving(subscription.id);
+    setError(null);
+    const existing = developer.manualPlans.find((plan) => plan.planTemplateId === subscription.id);
+    const response = existing
+      ? await fetch(`/api/developers/${developer.id}/billing-assignments/${existing.id}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ seatCount: Math.max(1, (existing.seatCount ?? 1) + 1) }),
+        })
+      : await fetch(`/api/developers/${developer.id}/billing-assignments`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            planTemplateId: subscription.id,
+            startDate: utcToday(),
+            seatCount: 1,
+            seatStatus: "active",
+            vendorAccountEmail: developer.email,
+          }),
+        });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(body.error ?? (existing ? "Could not add another seat" : "Could not assign subscription"));
+    } else {
+      setAdding(false);
+      await load({ soft: true });
+    }
+    setSaving(null);
+  }
+
+  async function removeAssignment(assignment: ManualPlan) {
+    if (!developer) return;
+    setSaving(assignment.id);
+    setError(null);
+    const seats = assignment.seatCount ?? 1;
+    const response =
+      seats > 1
+        ? await fetch(`/api/developers/${developer.id}/billing-assignments/${assignment.id}`, {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ seatCount: seats - 1 }),
+          })
+        : await fetch(`/api/developers/${developer.id}/billing-assignments/${assignment.id}`, {
+            method: "DELETE",
+          });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) setError(body.error ?? "Could not remove plan");
+    else await load({ soft: true });
+    setSaving(null);
+  }
+
+  const openSeats = subscriptions.filter((subscription) => subscription.availableSeats > 0);
+  const plans = developer?.manualPlans ?? [];
+
+  return (
+    <section>
+      <div className="mb-4 flex items-end justify-between gap-3 border-b pb-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Plans.</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Seats assigned to {developerName}.</p>
+        </div>
+        {!loading && !adding ? (
+          <Button size="sm" onClick={() => setAdding(true)}>
+            <Plus /> Add seat
+          </Button>
+        ) : null}
+      </div>
+
+      {error ? (
+        <div role="alert" className="mb-4 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin text-primary" /> Loading plans…
+        </div>
+      ) : plans.length ? (
+        <ul className="divide-y">
+          {plans.map((plan) => (
+            <li key={plan.id} className="flex flex-wrap items-center gap-3 py-4">
+              <ToolLogoTile tool={plan.template.toolKey ?? plan.toolName} size="sm" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">
+                  {toolLabel(plan.template.toolKey ?? plan.toolName)} {plan.planName}
+                  {(plan.seatCount ?? 1) > 1 ? ` · ${plan.seatCount} seats` : ""}
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {money(plan.monthlySeatMicros)}/mo · since {new Date(plan.startDate).toLocaleDateString()}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                disabled={saving === plan.id}
+                onClick={() => removeAssignment(plan)}
+              >
+                {saving === plan.id ? <Loader2 className="animate-spin" /> : <Trash2 />}
+                {(plan.seatCount ?? 1) > 1 ? "Remove seat" : "Remove"}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="py-4 text-sm text-muted-foreground">No plans on this person yet.</p>
+      )}
+
+      {adding ? (
+        <div className="mt-4 space-y-3 border border-primary/20 bg-primary-pale p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-mono text-[0.65rem] uppercase tracking-[0.12em] text-primary-dark">
+              Add a seat or plan
+            </p>
+            <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>
+              Cancel
+            </Button>
+          </div>
+          <SubscriptionChoices
+            subscriptions={openSeats}
+            requested={1}
+            saving={saving}
+            existingPlanIds={new Set(plans.map((plan) => plan.planTemplateId))}
+            onSelect={assign}
+            onAddSubscription={() => setAddSubscriptionOpen(true)}
+          />
+        </div>
+      ) : null}
+
+      <AddSubscriptionSheet
+        open={addSubscriptionOpen}
+        onOpenChange={setAddSubscriptionOpen}
+        onCreated={async () => {
+          await load({ soft: true });
+          setAdding(true);
+        }}
+      />
+    </section>
+  );
+}
+
+export function SubscriptionChoices({
+  subscriptions,
+  requested,
+  saving,
+  onSelect,
+  existingPlanIds,
+  onAddSubscription,
+}: {
+  subscriptions: Subscription[];
+  requested: number;
+  saving: string | null;
+  onSelect: (subscription: Subscription) => void;
+  existingPlanIds?: Set<string>;
+  onAddSubscription?: () => void;
+}) {
+  if (!subscriptions.length) {
+    return (
+      <div className="rounded-md bg-background/70 px-4 py-5 text-sm text-muted-foreground">
+        <p>No seats are available yet.</p>
+        {onAddSubscription && (
+          <Button size="sm" className="mt-3" onClick={onAddSubscription}>
+            <Plus /> Add subscription
+          </Button>
+        )}
+      </div>
+    );
+  }
+  const hasExhausted = subscriptions.some((subscription) => subscription.availableSeats < requested);
+  return (
+    <div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {subscriptions.map((subscription) => {
+          const exhausted = subscription.availableSeats < requested;
+          const alreadyAssigned = existingPlanIds?.has(subscription.id);
+          return (
+            <button
+              key={subscription.id}
+              type="button"
+              disabled={exhausted || Boolean(saving)}
+              onClick={() => onSelect(subscription)}
+              className="flex items-center gap-3 rounded-md bg-background px-3 py-3 text-left outline-none transition hover:bg-primary/5 focus-visible:ring-3 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ToolLogoTile tool={subscription.toolKey ?? ""} size="sm" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">
+                  {alreadyAssigned ? "Add another " : ""}
+                  {toolLabel(subscription.toolKey)} {subscription.name}
+                </p>
+                <p className={cn("text-xs", exhausted ? "text-destructive" : "text-muted-foreground")}>
+                  {exhausted
+                    ? "No seats available"
+                    : `${subscription.availableSeats} ${subscription.availableSeats === 1 ? "seat" : "seats"} open`}
+                </p>
+              </div>
+              {saving?.endsWith(subscription.id) && <Loader2 className="size-4 animate-spin" />}
+            </button>
+          );
+        })}
+      </div>
+      {onAddSubscription && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mt-3 w-full justify-start border-dashed bg-muted/50 hover:bg-muted/70"
+          onClick={onAddSubscription}
+        >
+          <Plus /> Add a subscription not listed
+        </Button>
+      )}
+      {hasExhausted && !onAddSubscription && (
+        <p className="mt-2 text-xs text-muted-foreground">A plan is full. Add more seats first.</p>
+      )}
+    </div>
+  );
+}

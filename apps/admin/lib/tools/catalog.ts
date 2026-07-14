@@ -126,6 +126,13 @@ export function catalogPrice(plan: CatalogPlan, cadence: BillingCadence) {
   return plan.prices[cadence];
 }
 
+/** True when the tool is a known AI coding subscription in the catalog. */
+export function isCodingTool(toolKeyOrName: string | null | undefined) {
+  if (!toolKeyOrName) return false;
+  const key = canonicalToolKey(toolKeyOrName);
+  return TOOL_CATALOG.some((tool) => tool.key === key);
+}
+
 export function serializeCatalog() {
   return TOOL_CATALOG.map((tool) => ({
     ...tool,

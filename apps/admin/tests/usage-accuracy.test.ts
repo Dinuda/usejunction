@@ -84,6 +84,23 @@ test("aggregateUsageKpis excludes productivity rows from model calls", () => {
   assert.equal(kpis.acceptedLines, 50);
 });
 
+test("aggregateUsageKpis excludes synthetic estimated source from model calls and API value", () => {
+  const rows = [
+    baseRow,
+    {
+      ...baseRow,
+      source: "estimated",
+      verified: false,
+      requests: 50_000,
+      costMicros: BigInt(500_000_000),
+      costKind: "estimated_api",
+    },
+  ];
+  const kpis = aggregateUsageKpis(rows);
+  assert.equal(kpis.modelCalls, 10);
+  assert.equal(kpis.estimatedApiCost, 0);
+});
+
 test("aggregateUsageKpis counts more than 40 models without truncation", () => {
   const rows = Array.from({ length: 55 }, (_, index) => ({
     ...baseRow,

@@ -25,23 +25,41 @@ export async function POST(req: NextRequest) {
         ? body.localSyncToken.slice(0, 256)
         : undefined;
 
-    await prisma.device.update({
-      where: { id: device.id },
-      data: {
-        lastSeenAt: new Date(),
-        status: "online",
-        ...(body.agentVersion ? { agentVersion: String(body.agentVersion).slice(0, 64) } : {}),
-        ...(body.os ? { os: String(body.os).slice(0, 64) } : {}),
-        ...(body.architecture ? { architecture: String(body.architecture).slice(0, 64) } : {}),
-        ...(body.hostname ? { hostname: String(body.hostname).slice(0, 255) } : {}),
-        ...(localEndpoint ? { localEndpoint } : {}),
-        ...(localSyncToken
-          ? {
-              localSyncTokenHash: hashOpaqueToken(localSyncToken),
-              localSyncTokenEnc: encryptSecret(localSyncToken),
-            }
-          : {}),
-      },
+    await prisma.$transaction(async (tx) => {
+      // Only one agent can own a loopback sync port — drop stale claims so the
+      // dashboard never bounces with a token that the running daemon rejects.
+      if (localEndpoint) {
+        await tx.device.updateMany({
+          where: {
+            localEndpoint,
+            id: { not: device.id },
+          },
+          data: {
+            localEndpoint: null,
+            localSyncTokenHash: null,
+            localSyncTokenEnc: null,
+          },
+        });
+      }
+
+      await tx.device.update({
+        where: { id: device.id },
+        data: {
+          lastSeenAt: new Date(),
+          status: "online",
+          ...(body.agentVersion ? { agentVersion: String(body.agentVersion).slice(0, 64) } : {}),
+          ...(body.os ? { os: String(body.os).slice(0, 64) } : {}),
+          ...(body.architecture ? { architecture: String(body.architecture).slice(0, 64) } : {}),
+          ...(body.hostname ? { hostname: String(body.hostname).slice(0, 255) } : {}),
+          ...(localEndpoint ? { localEndpoint } : {}),
+          ...(localSyncToken
+            ? {
+                localSyncTokenHash: hashOpaqueToken(localSyncToken),
+                localSyncTokenEnc: encryptSecret(localSyncToken),
+              }
+            : {}),
+        },
+      });
     });
 
     return NextResponse.json({ ok: true, deviceId: device.id });

@@ -1,7 +1,5 @@
-import { StatusBadge } from "@/components/app-shell";
 import { DeveloperToolInventory } from "@/components/developers/developer-tool-inventory";
-import { EnrollMachineDialog, InvitePeopleDialog } from "@/components/team/team-connect-panel";
-import { RosterHealth } from "@/components/team/roster-health";
+import { InvitePeopleDialog } from "@/components/team/team-connect-panel";
 import { getDashboardDevices } from "@/lib/queries/dashboard/devices";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
 
@@ -10,8 +8,6 @@ export default async function TeamPage() {
   const data = await getDashboardDevices(orgId).catch(() => ({
     devices: [] as Awaited<ReturnType<typeof getDashboardDevices>>["devices"],
   }));
-  const online = data.devices.filter((device) => device.status === "online").length;
-  const gaps = 0;
   const empty = data.devices.length === 0;
 
   return (
@@ -24,17 +20,15 @@ export default async function TeamPage() {
           <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
             {empty
               ? "Share an invite link (or email it). Teammates open it, sign up or sign in, and install the agent."
-              : "Coverage, seats, and machines reporting into this workspace."}
+              : "Everyone on this workspace. Open a person for plans, machines, and usage."}
           </p>
         </div>
         <InvitePeopleDialog />
       </div>
 
-      <RosterHealth online={online} devices={data.devices.length} gaps={gaps} />
-
       {empty ? (
-        <div className="mt-10">
-          <div className="uj-grid-texture relative mb-8 overflow-hidden border border-border bg-brand-yellow p-6 text-brand-yellow-dark sm:p-8 [--uj-grid-opacity:0.09]">
+        <div className="mb-10">
+          <div className="uj-grid-texture relative overflow-hidden border border-border bg-brand-yellow p-6 text-brand-yellow-dark sm:p-8 [--uj-grid-opacity:0.09]">
             <p className="relative max-w-lg text-2xl font-semibold leading-[1.05] tracking-[-0.03em] sm:text-3xl">
               One link for the team. Paste it in Slack.
             </p>
@@ -45,51 +39,7 @@ export default async function TeamPage() {
         </div>
       ) : null}
 
-      <section className="mt-10">
-        <DeveloperToolInventory showSummary={false} />
-      </section>
-
-      <section className="mt-10">
-        <div className="mb-4 flex items-end justify-between gap-3 border-b pb-3">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight">Machines.</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {empty ? "None yet — invite teammates, or connect this machine with +." : "Reporting into this workspace."}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <EnrollMachineDialog />
-          </div>
-        </div>
-        {empty ? (
-          <p className="py-6 text-sm text-muted-foreground">No machines enrolled yet.</p>
-        ) : (
-          <>
-            <ul className="divide-y">
-              {data.devices.slice(0, 8).map((device) => (
-                <li key={device.id} className="py-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{device.hostname}</p>
-                      <p className="mt-1 truncate text-xs text-muted-foreground">
-                        {device.user?.name ?? device.user?.email ?? "Unassigned"} · {device.os}
-                      </p>
-                    </div>
-                    <StatusBadge variant={device.status === "online" ? "success" : "default"}>
-                      {device.status}
-                    </StatusBadge>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            {data.devices.length > 8 && (
-              <p className="mt-3 text-xs text-muted-foreground">
-                Showing 8 of {data.devices.length}.
-              </p>
-            )}
-          </>
-        )}
-      </section>
+      <DeveloperToolInventory showSummary={false} />
     </>
   );
 }

@@ -1,5 +1,4 @@
 import { prisma } from "@usejunction/db";
-import { calculateBilling, serializeBillingLine } from "@/lib/billing/calculator";
 import { usageDayFilter, usageWindowDays } from "@/lib/metrics/date-range";
 import { aggregateModelUsage, aggregateUsageKpis, fetchUsageRows } from "@/lib/metrics/model-usage";
 import { orgNeedsPlanSync } from "@/lib/queries/me/local-sync-context";
@@ -90,13 +89,13 @@ export interface MeOverviewData {
       planTier: string | null;
       currency: string;
       monthlySeatMicros: bigint;
+      includedMonthlyMicros: bigint;
       seatCount: number;
       seatStatus: string;
       startDate: Date;
       endDate: Date | null;
       active: boolean;
     }>;
-    manualBilling30d: ReturnType<typeof serializeBillingLine>[];
     reportedTools: Array<{ toolName: string; source: string; observedAt: Date }>;
   };
   usage30d: {
@@ -125,6 +124,51 @@ export interface MeOverviewData {
 }
 
 
+const overviewInclude = {
+  organization: { select: { name: true, slug: true } },
+  devices: {
+    orderBy: { lastSeenAt: "desc" as const },
+    include: {
+      toolInstallations: {
+        where: { detected: true },
+        select: { toolName: true, version: true, lastCheckedAt: true },
+      },
+      toolAccounts: {
+        select: { toolName: true, email: true, plan: true, authPresent: true, updatedAt: true },
+      },
+      quotaSnapshots: {
+        select: {
+          toolName: true,
+          windowType: true,
+          usedPercent: true,
+          resetAt: true,
+          updatedAt: true,
+        },
+        orderBy: { updatedAt: "desc" as const },
+      },
+    },
+  },
+  seatAssignments: {
+    select: {
+      provider: true,
+      product: true,
+      plan: true,
+      status: true,
+      source: true,
+      lastActivityAt: true,
+      observedAt: true,
+    },
+  },
+  planAssignments: {
+    orderBy: { startDate: "desc" as const },
+  },
+  toolClaims: { where: { enabled: true }, select: { toolName: true, source: true, observedAt: true } },
+};
+
+type OverviewDeveloper = NonNullable<
+  Awaited<ReturnType<typeof prisma.developer.findFirst<{ include: typeof overviewInclude }>>>
+>;
+
 export async function getMeOverview(
   orgId: string,
   userId: string,
@@ -132,52 +176,34 @@ export async function getMeOverview(
 ): Promise<MeOverviewData> {
   const developer = await prisma.developer.findFirst({
     where: { orgId, authUserId: userId },
-    include: {
-      organization: { select: { name: true, slug: true } },
-      devices: {
-        orderBy: { lastSeenAt: "desc" },
-        include: {
-          toolInstallations: {
-            where: { detected: true },
-            select: { toolName: true, version: true, lastCheckedAt: true },
-          },
-          toolAccounts: {
-            select: { toolName: true, email: true, plan: true, authPresent: true, updatedAt: true },
-          },
-          quotaSnapshots: {
-            select: {
-              toolName: true,
-              windowType: true,
-              usedPercent: true,
-              resetAt: true,
-              updatedAt: true,
-            },
-            orderBy: { updatedAt: "desc" },
-          },
-        },
-      },
-      seatAssignments: {
-        select: {
-          provider: true,
-          product: true,
-          plan: true,
-          status: true,
-          source: true,
-          lastActivityAt: true,
-          observedAt: true,
-        },
-      },
-      planAssignments: {
-        orderBy: { startDate: "desc" },
-      },
-      toolClaims: { where: { enabled: true }, select: { toolName: true, source: true, observedAt: true } },
-    },
+    include: overviewInclude,
   });
 
   if (!developer) {
     throw new Error("developer profile required");
   }
 
+  return buildMeOverview(orgId, developer, role);
+}
+
+/** Admin view of any teammate by developer id. */
+export async function getDeveloperOverview(
+  orgId: string,
+  developerId: string
+): Promise<MeOverviewData | null> {
+  const developer = await prisma.developer.findFirst({
+    where: { orgId, id: developerId },
+    include: overviewInclude,
+  });
+  if (!developer) return null;
+  return buildMeOverview(orgId, developer, developer.role as OrganizationRole);
+}
+
+async function buildMeOverview(
+  orgId: string,
+  developer: OverviewDeveloper,
+  role: OrganizationRole
+): Promise<MeOverviewData> {
   const usage30d = usageWindowDays(30);
   const [usageRows, toolsUsageRows] = await Promise.all([
     fetchUsageRows({ orgId, developerId: developer.id, from: usage30d.from, to: usage30d.to }),
@@ -265,13 +291,6 @@ export async function getMeOverview(
     verifiedCost: usageKpis.verifiedUsageCost,
   };
 
-  const manualBilling = calculateBilling({
-    assignments: developer.planAssignments,
-    usage: usageRows,
-    from: usage30d.from,
-    to: usage30d.to,
-  }).map(serializeBillingLine);
-
   const onlineThreshold = new Date(Date.now() - 5 * 60_000);
 
   const primaryDevice = developer.devices[0] ?? null;
@@ -320,7 +339,6 @@ export async function getMeOverview(
       })),
       assignedPlans: developer.seatAssignments,
       manualPlans: developer.planAssignments.filter((assignment) => assignment.active),
-      manualBilling30d: manualBilling,
       reportedTools: developer.toolClaims,
     },
     usage30d: {

@@ -112,7 +112,11 @@ export function LocalSyncPanel({
       clearTimeout(timer);
       if (!res.ok) {
         setStatus("error");
-        setDetail(`Agent returned ${res.status}`);
+        setDetail(
+          res.status === 401
+            ? "Local sync token mismatch. Restart the agent daemon, then try Sync now again."
+            : `Agent returned ${res.status}`,
+        );
         return;
       }
       const body = await res.json().catch(() => ({}));

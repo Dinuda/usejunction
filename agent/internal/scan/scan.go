@@ -6,6 +6,7 @@ package scan
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
@@ -499,6 +500,14 @@ func intVal(v any) int {
 }
 
 func loadCache(path string) ([]types.DailyUsage, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	// Keep caches short-lived so in-progress days (today) keep accumulating.
+	if time.Since(info.ModTime()) > 5*time.Minute {
+		return nil, fmt.Errorf("cache stale")
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

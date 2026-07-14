@@ -4,6 +4,7 @@ import {
   activityPriority,
   costKindForRow,
   costPriority,
+  isObservedSource,
   isProductivityMetric,
   normalizeSource,
 } from "@/lib/metrics/source-priority";
@@ -173,7 +174,7 @@ export function aggregateUsageKpis(rows: UsageRow[]): UsageKpis {
       continue;
     }
 
-    if (row.selectedActivity) {
+    if (row.selectedActivity && isObservedSource(row.source)) {
       const key = activityKey(row);
       if (!seenActivity.has(key)) {
         seenActivity.add(key);
@@ -197,7 +198,7 @@ export function aggregateUsageKpis(rows: UsageRow[]): UsageKpis {
         const kind = row.costKind ?? costKindForRow(row);
         if (kind === "verified_usage") kpis.verifiedUsageCost += cost;
         else if (kind === "actual_spend") kpis.actualSpendCost += cost;
-        else kpis.estimatedApiCost += cost;
+        else if (kind === "estimated_api" && isObservedSource(row.source)) kpis.estimatedApiCost += cost;
       }
     } else if (row.costMicros > BigInt(0)) {
       kpis.partialData = true;
@@ -340,10 +341,10 @@ export function groupByDay(rows: UsageRow[]) {
     if (rowMetricKind(row) === "productivity") continue;
     const date = row.date.toISOString().slice(0, 10);
     const entry = map.get(date) ?? { date, modelCalls: 0, cost: 0 };
-    if (row.selectedActivity) {
+    if (row.selectedActivity && isObservedSource(row.source)) {
       entry.modelCalls += row.requests;
     }
-    if (row.selectedCost) {
+    if (row.selectedCost && (row.costKind === "verified_usage" || isObservedSource(row.source))) {
       entry.cost += Number(row.costMicros) / 1_000_000;
     }
     map.set(date, entry);
@@ -358,11 +359,13 @@ export function groupByTool(rows: UsageRow[]) {
     if (rowMetricKind(row) === "productivity") continue;
     const toolName = row.toolName || "unknown";
     const entry = map.get(toolName) ?? { toolName, modelCalls: 0, cost: 0, tokens: 0, developers: new Set<string>() };
-    if (row.selectedActivity) {
+    if (row.selectedActivity && isObservedSource(row.source)) {
       entry.modelCalls += row.requests;
       entry.tokens += Number(row.inputTokens) + Number(row.outputTokens);
     }
-    if (row.selectedCost) entry.cost += Number(row.costMicros) / 1_000_000;
+    if (row.selectedCost && (row.costKind === "verified_usage" || isObservedSource(row.source))) {
+      entry.cost += Number(row.costMicros) / 1_000_000;
+    }
     if (row.developerId) entry.developers.add(row.developerId);
     map.set(toolName, entry);
   }

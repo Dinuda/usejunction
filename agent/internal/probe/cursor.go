@@ -543,7 +543,7 @@ func loadCursorEventsCache(path string) ([]types.DailyUsage, error) {
 	if err != nil {
 		return nil, err
 	}
-	if time.Since(info.ModTime()) > time.Hour {
+	if time.Since(info.ModTime()) > 5*time.Minute {
 		return nil, fmt.Errorf("cache stale")
 	}
 	data, err := os.ReadFile(path)

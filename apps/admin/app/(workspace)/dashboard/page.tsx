@@ -8,7 +8,13 @@ import { DashboardSetupPanel } from "@/components/dashboard/setup-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { getDashboardOverview, ACTIVE_PEOPLE_WINDOW_DAYS, type DashboardRange } from "@/lib/queries/dashboard/overview";
+import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
+import {
+  ACTIVE_PEOPLE_WINDOW_DAYS,
+  getOrgOverview,
+  overviewInputFromRange,
+  type OrgOverviewV1,
+} from "@/lib/insights";
 import { getMeOverview } from "@/lib/queries/me/overview";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
 import { prisma } from "@usejunction/db";
@@ -35,6 +41,8 @@ function Delta({ value, inverse = false }: { value: number | null; inverse?: boo
     </span>
   );
 }
+
+type DashboardRange = OrgOverviewV1["range"];
 
 function RangePicker({ range }: { range: DashboardRange }) {
   return (
@@ -64,17 +72,20 @@ function Kpi({
   delta,
   inverse,
   accent,
+  sub,
 }: {
   label: string;
   value: string;
   delta?: number | null;
   inverse?: boolean;
   accent?: boolean;
+  sub?: string;
 }) {
   return (
     <div className={cn("border-l-2 pl-4", accent ? "border-brand-yellow-dark bg-brand-yellow-pale py-3 pr-4" : "border-border-strong")}>
       <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
       <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{value}</p>
+      {sub ? <p className="mt-1 text-xs text-muted-foreground">{sub}</p> : null}
       {delta !== undefined && (
         <div className="mt-2">
           <Delta value={delta} inverse={inverse} />
@@ -82,6 +93,37 @@ function Kpi({
       )}
     </div>
   );
+}
+
+function actualSpendSub(kpi: { basis: "subscriptions" | "none" }) {
+  if (kpi.basis === "none") return "no monthly coding subscriptions";
+  return "full monthly subscription cost";
+}
+
+function observedDaysSub(observation: {
+  partialWindow: boolean;
+  daysWithActivity: number;
+  rangeDays: number;
+  firstActivityDate: string | null;
+}) {
+  if (observation.partialWindow) {
+    if (observation.firstActivityDate) {
+      return `observed · ${observation.daysWithActivity}/${observation.rangeDays}d from ${observation.firstActivityDate}`;
+    }
+    return `observed · ${observation.daysWithActivity}/${observation.rangeDays}d`;
+  }
+  return "observed";
+}
+
+function estimatedApiSub(observation: {
+  partialWindow: boolean;
+  daysWithActivity: number;
+  rangeDays: number;
+}) {
+  if (observation.partialWindow) {
+    return `rate-card · ${observation.daysWithActivity}/${observation.rangeDays}d observed`;
+  }
+  return "rate-card on observed usage";
 }
 
 function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>> }) {
@@ -195,10 +237,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   const params = await searchParams;
   const range = params.range === "7" || params.range === "90" ? (Number(params.range) as DashboardRange) : 30;
-  let data: Awaited<ReturnType<typeof getDashboardOverview>> | null = null;
+  let data: OrgOverviewV1 | null = null;
   let error: string | null = null;
   try {
-    data = await getDashboardOverview(orgId, range);
+    const envelope = await getOrgOverview(
+      {
+        orgId,
+        actorId: userId,
+        roles: [role],
+        now: new Date(),
+        timezone: UTC_TIMEZONE,
+      },
+      overviewInputFromRange(range),
+    );
+    data = envelope.data;
   } catch (cause) {
     error = cause instanceof Error ? cause.message : "Could not load dashboard.";
   }
@@ -221,7 +273,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
             {empty
               ? "Connect a machine, then invite people. Metrics show up as soon as the first request lands."
-              : `Last ${range} days across tools and developers.`}
+              : `Last ${range} days through today across tools and developers.`}
           </p>
         </div>
         {!empty && data && <RangePicker range={range} />}
@@ -246,36 +298,51 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       ) : data ? (
         <>
-          <div className="grid gap-8 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-8 sm:grid-cols-2 xl:grid-cols-4">
             <Kpi
               label="Actual spend"
               value={currency(data.kpis.actualSpend.value)}
               delta={data.kpis.actualSpend.deltaPercent}
               inverse
               accent
+              sub={actualSpendSub(data.kpis.actualSpend)}
             />
             <Kpi
               label="Verified usage"
               value={currency(data.kpis.verifiedUsageCost.value)}
               delta={data.kpis.verifiedUsageCost.deltaPercent}
               inverse
+              sub="vendor-reported charges"
             />
             <Kpi
               label="Estimated API value"
               value={currency(data.kpis.estimatedApiCost.value)}
               delta={data.kpis.estimatedApiCost.deltaPercent}
               inverse
+              sub={estimatedApiSub(data.observation)}
             />
-            <Kpi label="Model calls" value={compactNumber(data.kpis.modelCalls.value)} delta={data.kpis.modelCalls.deltaPercent} />
             <Kpi
-              label={`Active people (${ACTIVE_PEOPLE_WINDOW_DAYS}d)`}
-              value={`${data.kpis.activeDevelopers.value}/${data.coverage.developers}`}
-              delta={data.kpis.activeDevelopers.deltaPercent}
+              label="Model calls"
+              value={compactNumber(data.kpis.modelCalls.value)}
+              delta={data.kpis.modelCalls.deltaPercent}
+              sub={observedDaysSub(data.observation)}
             />
           </div>
-          {data.partialData ? (
-            <p className="mt-3 text-xs text-muted-foreground">
-              Some sources overlap for the same day — totals use source-priority selection and may be partial.
+          {data.planUsageSummary &&
+          (data.planUsageSummary.nearLimitCount > 0 ||
+            data.planUsageSummary.avgUtilizationPercent != null) ? (
+            <p className="mt-4 text-sm text-muted-foreground">
+              Plan seats {data.planUsageSummary.assignedSeats}/{data.planUsageSummary.seatCapacity}
+              {data.planUsageSummary.avgUtilizationPercent != null
+                ? ` · avg utilization ${data.planUsageSummary.avgUtilizationPercent.toFixed(0)}%`
+                : ""}
+              {data.planUsageSummary.nearLimitCount > 0
+                ? ` · ${data.planUsageSummary.nearLimitCount} near limit`
+                : ""}
+              {" · "}
+              <Link href="/team" className="underline-offset-4 hover:text-foreground hover:underline">
+                View roster
+              </Link>
             </p>
           ) : null}
 

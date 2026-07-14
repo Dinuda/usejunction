@@ -3,7 +3,6 @@ import test from "node:test";
 import {
   inclusiveDayCount,
   usageDayFilter,
-  usageInclusiveEnd,
   usageWindowDays,
   utcDateOnly,
 } from "../lib/metrics/date-range";
@@ -21,7 +20,16 @@ test("usageDayFilter includes rows dated today when to is now", () => {
   const filter = usageDayFilter(new Date("2026-07-08T00:00:00.000Z"), now);
   assert.equal(filter.gte.toISOString(), "2026-07-08T00:00:00.000Z");
   assert.equal(filter.lt.toISOString(), "2026-07-15T00:00:00.000Z");
-  assert.ok(usageInclusiveEnd(now) < filter.lt);
+});
+
+test("usageDayFilter does not truncate same-day timestamps into excluding today", () => {
+  // Prisma @db.Date truncates DateTime filters to a calendar day. Passing
+  // `lt: now` becomes `date < today` and drops today — the helper must use tomorrow.
+  const now = new Date("2026-07-14T18:30:00.000Z");
+  const filter = usageDayFilter(now, now);
+  assert.equal(filter.gte.toISOString(), "2026-07-14T00:00:00.000Z");
+  assert.equal(filter.lt.toISOString(), "2026-07-15T00:00:00.000Z");
+  assert.notEqual(filter.lt.toISOString(), "2026-07-14T00:00:00.000Z");
 });
 
 test("usageWindowDays previous period ends the day before current window starts", () => {

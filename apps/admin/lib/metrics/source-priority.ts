@@ -53,3 +53,8 @@ export function activityPriority(source: string): number {
 export function costPriority(source: string): number {
   return COST_PRIORITY[normalizeSource(source)] ?? 99;
 }
+
+/** Telemetry-backed sources only — excludes synthetic rate-card fallbacks. */
+export function isObservedSource(source: string): boolean {
+  return normalizeSource(source) !== "estimated";
+}

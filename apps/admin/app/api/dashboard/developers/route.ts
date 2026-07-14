@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { requireOrgRole } from "@/lib/rbac";
-import { calculateBilling, serializeBillingLine } from "@/lib/billing/calculator";
 import { serializeBigInts } from "@/lib/billing/validation";
-import { usageDayFilterInclusive, usageWindowDays } from "@/lib/metrics/date-range";
+import { usageWindowDays } from "@/lib/metrics/date-range";
 import { syncDetectedPlansForOrg } from "@/lib/tools/sync-detected";
 
 export async function GET(req: NextRequest) {
@@ -26,7 +25,13 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: "desc" },
       include: {
         devices: {
-          select: { id: true, hostname: true, status: true, lastSeenAt: true, toolInstallations: { where: { detected: true }, select: { toolName: true, version: true } } },
+          select: {
+            id: true,
+            hostname: true,
+            status: true,
+            lastSeenAt: true,
+            toolInstallations: { where: { detected: true }, select: { toolName: true, version: true } },
+          },
         },
         seatAssignments: {
           select: { provider: true, product: true, plan: true, status: true, source: true, lastActivityAt: true, observedAt: true, connection: { select: { id: true, status: true, lastSyncedAt: true } } },
@@ -54,14 +59,6 @@ export async function GET(req: NextRequest) {
     const activityMap = new Map(
       recentActivity.map((a) => [a.userId, { requests7d: a._count.id, cost7d: a._sum.estimatedCost ?? 0 }])
     );
-    const billingAssignments = users.flatMap((user) => user.planAssignments);
-    const billingUsage = await prisma.usageDaily.findMany({
-      where: { orgId, date: usageDayFilterInclusive(usage7d.from, usage7d.to) },
-      select: { date: true, source: true, costMicros: true, inputTokens: true, outputTokens: true, cacheReadTokens: true, observedAt: true, developerId: true, provider: true, product: true, toolName: true },
-    });
-    const billing = calculateBilling({ assignments: billingAssignments, usage: billingUsage, from: usage7d.from, to: usage7d.to });
-    const billingMap = new Map<string, ReturnType<typeof serializeBillingLine>[]>();
-    for (const line of billing) billingMap.set(line.developerId, [...(billingMap.get(line.developerId) ?? []), serializeBillingLine(line)]);
 
     return NextResponse.json(serializeBigInts({
       developers: users.map((u) => ({
@@ -75,7 +72,6 @@ export async function GET(req: NextRequest) {
         devices: u.devices,
         assignedPlans: u.seatAssignments,
         manualPlans: u.planAssignments,
-        manualBilling7d: billingMap.get(u.id) ?? [],
         toolEvidence: u.toolClaims,
         ...activityMap.get(u.id) ?? { requests7d: 0, cost7d: 0 },
       })),
