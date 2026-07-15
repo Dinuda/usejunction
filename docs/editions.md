@@ -5,7 +5,7 @@ authentication, ingestion, analytics, insights, integrations, and vendor
 subscription cost-accounting features.
 
 The following hosted-business features live in the separate private
-`usejunction-commercial` repository:
+[`usejunction-commercial`](https://github.com/Dinuda/usejunction-commercial) repository:
 
 - the `usejunction.dev` marketing website and contact funnel;
 - Lemon Squeezy checkout, customer portal, and webhook handling;
