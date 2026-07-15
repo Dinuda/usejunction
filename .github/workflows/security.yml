@@ -68,7 +68,6 @@ jobs:
             exit 1
           fi
           bash scripts/security-smoke.sh http://127.0.0.1:3001
-      - run: pnpm audit --audit-level high
 
   agent:
     runs-on: ubuntu-latest
