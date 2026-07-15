@@ -2,6 +2,8 @@
 
 Canonical semantics for requests, tokens, cost, sources, and model visibility across UseJunction.
 
+For the runtime query architecture that executes this contract, see [Central Analytics Engine](central-analytics-engine.md).
+
 ## Requests
 
 - `requests` means **model calls** or **vendor usage events** (one billed or logged API interaction).

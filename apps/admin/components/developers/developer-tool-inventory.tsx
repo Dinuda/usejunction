@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BarChart3, ChevronDown, ChevronUp, Loader2, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { BarChart3, ChevronDown, ChevronUp, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AddSubscriptionSheet } from "@/components/tools/add-subscription-sheet";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
@@ -58,48 +59,36 @@ function compact(value: number) {
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
-export function DeveloperToolInventory({ showSummary = true }: { showSummary?: boolean }) {
-  const [developers, setDevelopers] = useState<Developer[]>([]);
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  const [loading, setLoading] = useState(true);
+function planUsageMap(rows: PlanUsageDeveloperRow[]) {
+  return new Map(rows.map((developer) => [developer.developerId, developer]));
+}
+
+export function DeveloperToolInventory({
+  showSummary = true,
+  initialDevelopers,
+  initialSubscriptions,
+  initialPlanUsage,
+}: {
+  showSummary?: boolean;
+  initialDevelopers: Developer[];
+  initialSubscriptions: Subscription[];
+  initialPlanUsage: PlanUsageDeveloperRow[];
+}) {
+  const router = useRouter();
+  const [developers, setDevelopers] = useState<Developer[]>(initialDevelopers);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>(initialSubscriptions);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [addSubscriptionOpen, setAddSubscriptionOpen] = useState(false);
-  const [planUsageByDeveloper, setPlanUsageByDeveloper] = useState<Map<string, PlanUsageDeveloperRow>>(
-    new Map(),
-  );
+  const [planUsageByDeveloper, setPlanUsageByDeveloper] = useState(() => planUsageMap(initialPlanUsage));
 
-  const load = useCallback(async ({ soft = false }: { soft?: boolean } = {}) => {
-    if (!soft) setLoading(true);
-    const [developersRes, subscriptionsRes, planUsageRes] = await Promise.all([
-      fetch("/api/dashboard/developers"),
-      fetch("/api/tools/subscriptions"),
-      fetch("/api/insights/plan-usage?range=30"),
-    ]);
-    const developersJson = await developersRes.json();
-    const subscriptionsJson = await subscriptionsRes.json();
-    const planUsageJson = await planUsageRes.json();
-    if (!developersRes.ok || !subscriptionsRes.ok) {
-      setError(developersJson.error ?? subscriptionsJson.error ?? "Could not load developers");
-    } else {
-      setDevelopers(developersJson.developers);
-      setSubscriptions(subscriptionsJson.subscriptions);
-      setError(null);
-    }
-    if (planUsageRes.ok) {
-      const usageMap = new Map<string, PlanUsageDeveloperRow>();
-      for (const developer of planUsageJson.data.developers as PlanUsageDeveloperRow[]) {
-        usageMap.set(developer.developerId, developer);
-      }
-      setPlanUsageByDeveloper(usageMap);
-    }
-    setLoading(false);
-  }, []);
   useEffect(() => {
-    void load();
-  }, [load]);
+    setDevelopers(initialDevelopers);
+    setSubscriptions(initialSubscriptions);
+    setPlanUsageByDeveloper(planUsageMap(initialPlanUsage));
+  }, [initialDevelopers, initialSubscriptions, initialPlanUsage]);
 
   const configured = developers.filter((developer) => developer.manualPlans.length > 0).length;
   const unassignedActivity = developers.filter(
@@ -130,17 +119,9 @@ export function DeveloperToolInventory({ showSummary = true }: { showSummary?: b
     else {
       setSelected(new Set());
       setBulkOpen(false);
-      await load({ soft: true });
+      router.refresh();
     }
     setSaving(null);
-  }
-
-  if (loading) {
-    return (
-      <div className="flex min-h-40 items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin text-primary" /> Loading people…
-      </div>
-    );
   }
 
   return (
@@ -299,9 +280,7 @@ export function DeveloperToolInventory({ showSummary = true }: { showSummary?: b
       <AddSubscriptionSheet
         open={addSubscriptionOpen}
         onOpenChange={setAddSubscriptionOpen}
-        onCreated={async () => {
-          await load({ soft: true });
-        }}
+        onCreated={() => router.refresh()}
       />
     </div>
   );

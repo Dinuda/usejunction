@@ -1,11 +1,4 @@
-import {
-  aggregateModelUsage,
-  aggregateUsageKpis,
-  fetchUsageRows,
-  groupByDay,
-  groupByModel,
-  groupByTool,
-} from "@/lib/metrics/model-usage";
+import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
 import { usageWindowDays } from "@/lib/metrics/date-range";
 
 export interface DashboardUsageData {
@@ -36,43 +29,157 @@ export interface DashboardUsageData {
   }>;
   byTool: Array<{ toolName: string | null; requests: number; tokens: number; cost: number }>;
   byDay: Array<{ date: string; requests: number; tokens: number; cost: number }>;
-  kpis: ReturnType<typeof aggregateUsageKpis>;
+  kpis: {
+    modelCalls: number;
+    sessions: number;
+    verifiedUsageCost: number;
+    estimatedApiCost: number;
+    actualSpendCost: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    reasoningTokens: number;
+    suggestedLines: number;
+    acceptedLines: number;
+    addedLines: number;
+    deletedLines: number;
+    commits: number;
+    partialData: boolean;
+  };
 }
 
+const usageMeasures = [
+  "requests",
+  "sessions",
+  "inputTokens",
+  "outputTokens",
+  "cacheReadTokens",
+  "cacheWriteTokens",
+  "reasoningTokens",
+  "suggestedLines",
+  "acceptedLines",
+  "addedLines",
+  "deletedLines",
+  "commits",
+  "costMicros",
+] as const;
+
 export async function getDashboardUsage(orgId: string, days = 30): Promise<DashboardUsageData> {
-  const cappedDays = Math.min(days, 90);
-  const window = usageWindowDays(cappedDays);
-  const rows = await fetchUsageRows({ orgId, from: window.from, to: window.to });
-  const kpis = aggregateUsageKpis(rows);
-  const { usage, productivity } = aggregateModelUsage(rows);
-  const byModel = groupByModel(rows);
-  const byTool = groupByTool(rows).map((row) => ({
-    toolName: row.toolName,
-    requests: row.modelCalls,
-    tokens: 0,
-    cost: row.cost,
-  }));
-  const byDay = groupByDay(rows).map((row) => ({
-    date: row.date,
-    requests: row.modelCalls,
-    tokens: 0,
-    cost: row.cost,
-  }));
+  const window = usageWindowDays(Math.min(days, 90));
+  const [summary, costs, models, tools, trend] = await Promise.all([
+    readUsageMetrics({ orgId, window, measures: [...usageMeasures], limit: 1 }),
+    readUsageMetrics({ orgId, window, measures: ["costMicros"], dimensions: ["source", "costKind"] }),
+    readUsageMetrics({ orgId, window, measures: [...usageMeasures], dimensions: ["tool", "model", "source"] }),
+    readUsageMetrics({
+      orgId,
+      window,
+      measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
+      dimensions: ["tool"],
+    }),
+    readUsageMetrics({
+      orgId,
+      window,
+      measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
+      dimensions: ["day"],
+    }),
+  ]);
+
+  const summaryRow = summary.data.rows[0];
+  let verifiedUsageCost = 0;
+  let estimatedApiCost = 0;
+  let actualSpendCost = 0;
+  for (const row of costs.data.rows) {
+    const dollars = metricNumber(row, "costMicros") / 1_000_000;
+    const kind = dimension(row, "costKind");
+    const source = dimension(row, "source");
+    if (kind === "verified_usage") verifiedUsageCost += dollars;
+    else if (kind === "actual_spend") actualSpendCost += dollars;
+    else if (kind === "estimated_api" && source !== "estimated") estimatedApiCost += dollars;
+  }
+
+  const byModel: DashboardUsageData["byModel"] = [];
+  const productivityModels: DashboardUsageData["productivityModels"] = [];
+  for (const row of models.data.rows) {
+    const toolName = dimension(row, "tool") || "unknown";
+    const model = dimension(row, "model") || "unknown";
+    const source = dimension(row, "source");
+    const requests = metricNumber(row, "requests");
+    const inputTokens = metricNumber(row, "inputTokens");
+    const outputTokens = metricNumber(row, "outputTokens");
+    const cost = metricNumber(row, "costMicros") / 1_000_000;
+    const suggestedLines = metricNumber(row, "suggestedLines");
+    const acceptedLines = metricNumber(row, "acceptedLines");
+    const addedLines = metricNumber(row, "addedLines");
+    const deletedLines = metricNumber(row, "deletedLines");
+    const commits = metricNumber(row, "commits");
+
+    if (requests || inputTokens || outputTokens || cost) {
+      byModel.push({
+        model,
+        toolName,
+        requests,
+        tokens: inputTokens + outputTokens,
+        cost,
+        source,
+        verified: source === "vendor_verified",
+        costKind: source === "vendor_verified" ? "verified_usage" : cost > 0 ? "estimated_api" : null,
+        inputTokens,
+        outputTokens,
+        cacheReadTokens: metricNumber(row, "cacheReadTokens"),
+        cacheWriteTokens: metricNumber(row, "cacheWriteTokens"),
+        reasoningTokens: metricNumber(row, "reasoningTokens"),
+      });
+    }
+    if (suggestedLines || acceptedLines || addedLines || deletedLines || commits) {
+      productivityModels.push({
+        toolName,
+        model,
+        source,
+        suggestedLines,
+        acceptedLines,
+        addedLines,
+        deletedLines,
+        commits,
+      });
+    }
+  }
+
+  byModel.sort((a, b) => b.cost - a.cost || b.requests - a.requests || a.model!.localeCompare(b.model!));
+  productivityModels.sort((a, b) => b.acceptedLines - a.acceptedLines || a.model.localeCompare(b.model));
 
   return {
     byModel,
-    productivityModels: productivity.map((row) => ({
-      toolName: row.toolName,
-      model: row.model,
-      source: row.source,
-      suggestedLines: row.suggestedLines,
-      acceptedLines: row.acceptedLines,
-      addedLines: row.addedLines,
-      deletedLines: row.deletedLines,
-      commits: row.commits,
+    productivityModels,
+    byTool: tools.data.rows.map((row) => ({
+      toolName: dimension(row, "tool") || "unknown",
+      requests: metricNumber(row, "requests"),
+      tokens: metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens"),
+      cost: metricNumber(row, "costMicros") / 1_000_000,
     })),
-    byTool,
-    byDay,
-    kpis,
+    byDay: trend.data.rows.map((row) => ({
+      date: dimension(row, "day"),
+      requests: metricNumber(row, "requests"),
+      tokens: metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens"),
+      cost: metricNumber(row, "costMicros") / 1_000_000,
+    })),
+    kpis: {
+      modelCalls: metricNumber(summaryRow, "requests"),
+      sessions: metricNumber(summaryRow, "sessions"),
+      verifiedUsageCost,
+      estimatedApiCost,
+      actualSpendCost,
+      inputTokens: metricNumber(summaryRow, "inputTokens"),
+      outputTokens: metricNumber(summaryRow, "outputTokens"),
+      cacheReadTokens: metricNumber(summaryRow, "cacheReadTokens"),
+      cacheWriteTokens: metricNumber(summaryRow, "cacheWriteTokens"),
+      reasoningTokens: metricNumber(summaryRow, "reasoningTokens"),
+      suggestedLines: metricNumber(summaryRow, "suggestedLines"),
+      acceptedLines: metricNumber(summaryRow, "acceptedLines"),
+      addedLines: metricNumber(summaryRow, "addedLines"),
+      deletedLines: metricNumber(summaryRow, "deletedLines"),
+      commits: metricNumber(summaryRow, "commits"),
+      partialData: false,
+    },
   };
 }

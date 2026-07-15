@@ -1,13 +1,39 @@
 import { DeveloperToolInventory } from "@/components/developers/developer-tool-inventory";
 import { InvitePeopleDialog } from "@/components/team/team-connect-panel";
 import { getDashboardDevices } from "@/lib/queries/dashboard/devices";
+import { resolveReportWindow, UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
+import { serializeBigInts } from "@/lib/billing/validation";
+import { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
+import { getDeveloperRoster } from "@/lib/read-models/developers";
+import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
 
 export default async function TeamPage() {
-  const { orgId } = await requireWorkspaceRole(["owner", "admin"]);
-  const data = await getDashboardDevices(orgId).catch(() => ({
-    devices: [] as Awaited<ReturnType<typeof getDashboardDevices>>["devices"],
-  }));
+  const { orgId, userId, role } = await requireWorkspaceRole(["owner", "admin"]);
+  const reportWindow = resolveReportWindow({ range: 30 });
+  const [data, roster, subscriptions, planUsage] = await Promise.all([
+    getDashboardDevices(orgId).catch(() => ({
+      devices: [] as Awaited<ReturnType<typeof getDashboardDevices>>["devices"],
+    })),
+    getDeveloperRoster(orgId),
+    listSubscriptions(orgId),
+    getPlanUsage({
+      orgId,
+      actorId: userId,
+      roles: [role],
+      now: new Date(),
+      timezone: UTC_TIMEZONE,
+    }, { reportWindow }),
+  ]);
+  const initial = serializeBigInts({
+    developers: roster.developers,
+    subscriptions,
+    planUsage: planUsage.data.developers,
+  }) as unknown as {
+    developers: Parameters<typeof DeveloperToolInventory>[0]["initialDevelopers"];
+    subscriptions: Parameters<typeof DeveloperToolInventory>[0]["initialSubscriptions"];
+    planUsage: Parameters<typeof DeveloperToolInventory>[0]["initialPlanUsage"];
+  };
   const empty = data.devices.length === 0;
 
   return (
@@ -39,7 +65,12 @@ export default async function TeamPage() {
         </div>
       ) : null}
 
-      <DeveloperToolInventory showSummary={false} />
+      <DeveloperToolInventory
+        showSummary={false}
+        initialDevelopers={initial.developers}
+        initialSubscriptions={initial.subscriptions}
+        initialPlanUsage={initial.planUsage}
+      />
     </>
   );
 }

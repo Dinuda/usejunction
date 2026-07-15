@@ -4,7 +4,6 @@ import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
 import { getDashboardTools } from "@/lib/queries/dashboard/tools";
 import { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
 import { getMeOverview } from "@/lib/queries/me/overview";
-import { syncDetectedPlansForOrg } from "@/lib/tools/sync-detected";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
 
 function ToolsHeader({ personal = false }: { personal?: boolean }) {
@@ -147,7 +146,6 @@ export default async function ToolsPage() {
   let err: string | null = null;
 
   try {
-    await syncDetectedPlansForOrg(orgId);
     data = await getDashboardTools(orgId);
   } catch (e) {
     err = e instanceof Error ? e.message : "Failed to load tools";

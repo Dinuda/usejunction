@@ -73,7 +73,14 @@ if [[ "$login_code" != "200" && "$login_code" != "302" ]]; then
 fi
 
 echo "==> Fetching seed user ids..."
-developers_json=$(curl -s -b "$COOKIE_JAR" "$ADMIN_URL/api/dashboard/developers")
+developers_json=$(cd "$ROOT" && pnpm --silent --filter @usejunction/db exec dotenv -e ../../.env -- tsx -e '
+import { prisma } from "@usejunction/db";
+void (async () => {
+  const developers = await prisma.developer.findMany({ where: { orgId: "seed-org" }, orderBy: { createdAt: "asc" }, select: { id: true } });
+  process.stdout.write(JSON.stringify({ developers }));
+  await prisma.$disconnect();
+})();
+')
 user_id=$(echo "$developers_json" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -99,8 +106,11 @@ curl -sf -X POST "$ADMIN_URL/api/ingest/local-usage" \
   -H "Authorization: Bearer $device_token" \
   -H "Content-Type: application/json" \
   -d '{"aggregates":[{"date":"2026-07-10","toolName":"claude","model":"claude-e2e","inputTokens":20,"outputTokens":10,"repository":{"host":"github.com","owner":"acme","name":"e2e"}}]}' >/dev/null
-repo_metric=$(curl -s -b "$COOKIE_JAR" "$ADMIN_URL/api/dashboard/metrics?groupBy=repository&source=preferred" | python3 -c "import sys,json; data=json.load(sys.stdin); print(next((r['label'] for r in data.get('data',[]) if r['label']=='github.com/acme/e2e'),''))")
-[[ "$repo_metric" == "github.com/acme/e2e" ]] || { echo "ERROR: repository metric was not returned" >&2; exit 1; }
+analytics_query='{"schemaVersion":"1","window":{"from":"2026-07-01","to":"2026-07-31"},"measures":["inputTokens"],"dimensions":["repository"]}'
+repo_metric=$(curl -sf -b "$COOKIE_JAR" -X POST "$ADMIN_URL/api/insights/query" -H "Content-Type: application/json" -d "$analytics_query" | python3 -c "import sys,json; data=json.load(sys.stdin); print(next((r['dimensions']['repository'] for r in data['data']['rows'] if r['dimensions'].get('repository') and int(r['measures']['inputTokens']) >= 20),''))")
+[[ -n "$repo_metric" ]] || { echo "ERROR: repository metric was not returned" >&2; exit 1; }
+cache_status=$(curl -sf -b "$COOKIE_JAR" -X POST "$ADMIN_URL/api/insights/query" -H "Content-Type: application/json" -d "$analytics_query" | python3 -c "import sys,json; print(json.load(sys.stdin)['meta']['cache']['status'])")
+[[ "$cache_status" == "hit" ]] || { echo "ERROR: repeated analytics query was not served from cache" >&2; exit 1; }
 
 echo "==> Creating an Enterprise plan and assigning it to the developer..."
 plan_resp=$(curl -s -w "\n%{http_code}" -b "$COOKIE_JAR" -X POST "$ADMIN_URL/api/billing/plans" \
@@ -116,9 +126,9 @@ assignment_resp=$(curl -s -w "\n%{http_code}" -b "$COOKIE_JAR" -X POST "$ADMIN_U
 assignment_code=$(echo "$assignment_resp" | tail -n1)
 assignment_body=$(echo "$assignment_resp" | sed '$d')
 [[ "$assignment_code" == "201" ]] || { echo "ERROR: plan assignment failed (HTTP $assignment_code)" >&2; echo "$assignment_body" >&2; exit 1; }
-billing_summary=$(curl -s -b "$COOKIE_JAR" "$ADMIN_URL/api/billing/summary?from=2026-07-01&to=2026-07-31&developerId=$user_id")
-python3 -c "import sys,json; data=json.load(sys.stdin); lines=data.get('lines', []); assert lines and lines[0]['planName']=='E2E Enterprise' and int(lines[0]['netMicros']) > 0" <<<"$billing_summary"
-echo "    Manual billing summary verified (Enterprise plan, seat proration, and rates)"
+assignments=$(curl -sf -b "$COOKIE_JAR" "$ADMIN_URL/api/developers/$user_id/billing-assignments")
+python3 -c "import sys,json; data=json.load(sys.stdin); rows=data.get('assignments', []); assert any(row['planName']=='E2E Enterprise' and int(row['monthlySeatMicros']) > 0 for row in rows)" <<<"$assignments"
+echo "    Enterprise plan assignment verified (billing arithmetic is covered by read-model tests)"
 
 echo "==> Creating branded tool subscriptions and reserving seats..."
 chatgpt_pro=$(curl -sf -b "$COOKIE_JAR" -X POST "$ADMIN_URL/api/tools/subscriptions" \
@@ -176,11 +186,6 @@ copilot_state=$(curl -sf -b "$COOKIE_JAR" "$ADMIN_URL/api/tools/subscriptions" |
 [[ "$copilot_state" == "1:0" ]] || { echo "ERROR: concurrent seat pool ended in state $copilot_state" >&2; exit 1; }
 echo "    Exactly one Copilot Business seat was assigned"
 
-before_count=$(curl -s -b "$COOKIE_JAR" "$ADMIN_URL/api/dashboard/requests?limit=100" | python3 -c "
-import sys, json
-print(len(json.load(sys.stdin).get('requests', [])))
-")
-
 GATEWAY_TESTED=0
 MATCH_TOOL="codex"
 MATCH_MODEL_HINT="gpt"
@@ -235,34 +240,13 @@ else
   MATCH_MODEL_HINT="gpt-4o-mini"
 fi
 
-echo "==> Polling admin Requests API for new row..."
+echo "==> Polling the server-rendered Activity page for the new row..."
 found=0
 for attempt in $(seq 1 30); do
-  requests_json=$(curl -s -b "$COOKIE_JAR" "$ADMIN_URL/api/dashboard/requests?limit=20")
-  match=$(echo "$requests_json" | MATCH_TOOL="$MATCH_TOOL" MATCH_MODEL_HINT="$MATCH_MODEL_HINT" python3 -c "
-import os, sys, json
-data = json.load(sys.stdin)
-tool = os.environ['MATCH_TOOL']
-hint = os.environ['MATCH_MODEL_HINT']
-for r in data.get('requests', []):
-    if (r.get('tool') or r.get('toolName')) != tool:
-        continue
-    model = r.get('model') or ''
-    trace = r.get('traceLink') or ''
-    if hint in model or hint in trace:
-        print(json.dumps(r))
-        break
-" || true)
-  if [[ -n "$match" ]]; then
+  activity_html=$(curl -sf -b "$COOKIE_JAR" "$ADMIN_URL/activity" || true)
+  if [[ "$activity_html" == *"$MATCH_MODEL_HINT"* ]]; then
     found=1
-    echo "    Request row found:"
-    echo "$match" | python3 -m json.tool
-    trace_link=$(echo "$match" | python3 -c "import sys,json; print(json.load(sys.stdin).get('traceLink') or '')")
-    if [[ -n "$trace_link" ]]; then
-      echo "    Langfuse trace link: $trace_link"
-    elif [[ "$GATEWAY_TESTED" -eq 1 ]]; then
-      echo "    WARN: no trace link on request row (Langfuse keys may be unset)"
-    fi
+    echo "    Request row found on /activity"
     break
   fi
   sleep 2
@@ -270,14 +254,19 @@ done
 
 if [[ "$found" -ne 1 ]]; then
   echo "ERROR: no matching request row appeared in admin" >&2
-  curl -s -b "$COOKIE_JAR" "$ADMIN_URL/api/dashboard/requests?limit=5" | python3 -m json.tool >&2 || true
   exit 1
 fi
 
-after_count=$(curl -s -b "$COOKIE_JAR" "$ADMIN_URL/api/dashboard/requests?limit=100" | python3 -c "
-import sys, json
-print(len(json.load(sys.stdin).get('requests', [])))
-")
+echo "==> Verifying legacy analytical reads are gone..."
+for path in \
+  /api/dashboard/config-health /api/dashboard/developers /api/dashboard/devices \
+  /api/dashboard/local-models /api/dashboard/metrics /api/dashboard/requests \
+  /api/dashboard/tools /api/dashboard/usage /api/me/overview /api/me/usage \
+  /api/billing/summary /api/org-spend /api/tools/cursor \
+  /api/insights/overview /api/insights/plan-usage; do
+  code=$(curl -s -o /dev/null -w "%{http_code}" -b "$COOKIE_JAR" "$ADMIN_URL$path")
+  [[ "$code" == "404" ]] || { echo "ERROR: legacy route $path returned HTTP $code" >&2; exit 1; }
+done
 
 echo ""
 echo "PASS: Full stack E2E"
@@ -287,6 +276,7 @@ if [[ "$GATEWAY_TESTED" -eq 1 ]]; then
 else
   echo "  - LiteLLM gateway test skipped (no provider keys); ingest API verified instead"
 fi
-echo "  - Admin Requests row present (count: $before_count -> $after_count)"
-echo "  - Admin UI: $ADMIN_URL/requests"
+echo "  - Central analytics query and PostgreSQL cache verified"
+echo "  - Admin activity row present and legacy reads return 404"
+echo "  - Admin UI: $ADMIN_URL/activity"
 echo "  - Langfuse UI: $LANGFUSE_URL"

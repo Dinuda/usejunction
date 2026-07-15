@@ -135,6 +135,8 @@ Coding tools → LiteLLM Proxy → Providers
   Provider Admin APIs + Claude Code OTLP/HTTP JSON
 ```
 
+Analytical reads are centralized through `UsageDaily`, the SQL query engine, and a PostgreSQL result cache. See [Central Analytics Engine](docs/central-analytics-engine.md) and [Usage Accounting Contract](docs/usage-accounting.md).
+
 ## CLI commands
 
 | Command | Description |

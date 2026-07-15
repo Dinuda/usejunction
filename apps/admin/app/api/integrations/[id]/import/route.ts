@@ -4,6 +4,7 @@ import { prisma, type Prisma } from "@usejunction/db";
 import { z } from "zod";
 import { normalizeEmail } from "@/lib/developer-identity";
 import { requireOrgRole, audit } from "@/lib/rbac";
+import { invalidateAnalyticsCache } from "@/lib/analytics/query";
 
 const rowSchema = z.object({
   date: z.coerce.date(),
@@ -39,6 +40,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   }
   await prisma.providerConnection.update({ where: { id }, data: { status: "active", lastSyncedAt: new Date(), lastError: null } });
+  await invalidateAnalyticsCache(auth.orgId);
   await audit({ orgId: auth.orgId, actorType: "user", actorId: auth.userId, action: "integration.invoice_imported", targetType: "provider_connection", targetId: id, metadata: { rows: parsed.data.rows.length } });
   return NextResponse.json({ imported: parsed.data.rows.length });
 }

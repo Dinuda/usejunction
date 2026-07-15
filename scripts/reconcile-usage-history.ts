@@ -109,6 +109,7 @@ async function main() {
       data: { source: "vendor_verified", verified: true, costKind: "verified_usage" },
     }),
   ]);
+  await prisma.analyticsQueryCache.deleteMany({ where: { orgId } });
 
   const after = await snapshotTable(orgId, since);
   console.log("After:", after);

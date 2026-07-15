@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma, type Prisma } from "@usejunction/db";
 import { bearerToken, requireIngestAuth } from "@/lib/auth";
 import { CALCULATION_VERSION } from "@/lib/metrics/source-priority";
+import { invalidateAnalyticsCache } from "@/lib/analytics/query";
 
 type UsageRow = {
   date: string;
@@ -273,6 +274,7 @@ export async function POST(req: NextRequest) {
         where: { id: deviceId },
         data: { lastUsageSyncAt: new Date(), lastSeenAt: new Date(), status: "online" },
       });
+      await invalidateAnalyticsCache(orgId);
     }
 
     return NextResponse.json({ upserted });

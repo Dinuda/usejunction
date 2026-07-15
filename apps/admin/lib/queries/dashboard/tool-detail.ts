@@ -1,8 +1,8 @@
 import { prisma } from "@usejunction/db";
-import { aggregateUsageKpis, fetchUsageRows } from "@/lib/metrics/model-usage";
+import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
 import { findCatalogTool } from "@/lib/tools/catalog";
 import { usageWindowDays } from "@/lib/metrics/date-range";
-import { mapVendorPlanToCatalog, syncDetectedPlansForOrg } from "@/lib/tools/sync-detected";
+import { mapVendorPlanToCatalog } from "@/lib/tools/sync-detected";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 
 export type ToolDetailData = {
@@ -78,8 +78,6 @@ export async function getToolDetail(orgId: string, toolKey: string): Promise<Too
   const tool = findCatalogTool(toolKey);
   if (!tool) return null;
 
-  await syncDetectedPlansForOrg(orgId).catch(() => undefined);
-
   const names = toolNamesFor(toolKey);
   const usage7d = usageWindowDays(7);
 
@@ -112,7 +110,13 @@ export async function getToolDetail(orgId: string, toolKey: string): Promise<Too
         },
         orderBy: { updatedAt: "desc" },
       }),
-      fetchUsageRows({ orgId, from: usage7d.from, to: usage7d.to }),
+      readUsageMetrics({
+        orgId,
+        window: usage7d,
+        measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
+        dimensions: ["source"],
+        filters: { toolNames: names },
+      }),
       listSubscriptions(orgId),
       prisma.developerPlanAssignment.findMany({
         where: {
@@ -152,11 +156,16 @@ export async function getToolDetail(orgId: string, toolKey: string): Promise<Too
       active: subscription.active,
     }));
 
-  const toolUsageRows = usageRows.filter((row) => names.includes(row.toolName));
-  const usageKpis = aggregateUsageKpis(toolUsageRows);
-  const requests7d = usageKpis.modelCalls;
-  const spend7d = usageKpis.verifiedUsageCost + usageKpis.estimatedApiCost;
-  const tokens7d = usageKpis.inputTokens + usageKpis.outputTokens;
+  const requests7d = usageRows.data.rows.reduce((sum, row) => sum + metricNumber(row, "requests"), 0);
+  const spend7d = usageRows.data.rows.reduce((sum, row) => {
+    return dimension(row, "source") === "estimated"
+      ? sum
+      : sum + metricNumber(row, "costMicros") / 1_000_000;
+  }, 0);
+  const tokens7d = usageRows.data.rows.reduce(
+    (sum, row) => sum + metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens"),
+    0,
+  );
 
   const peopleMap = new Map<
     string,

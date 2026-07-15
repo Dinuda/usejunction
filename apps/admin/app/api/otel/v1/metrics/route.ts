@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, type Prisma } from "@usejunction/db";
 import { hashOpaqueToken } from "@/lib/security";
+import { invalidateAnalyticsCache } from "@/lib/analytics/query";
 
 type Row = Record<string, any>;
 const ALLOWED_METRICS = new Set([
@@ -131,5 +132,6 @@ export async function POST(req: NextRequest) {
       }
     }
   }
+  if (accepted > 0) await invalidateAnalyticsCache(authContext.orgId);
   return NextResponse.json({ partialSuccess: { accepted, discarded } });
 }

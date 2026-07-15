@@ -1,6 +1,6 @@
 import { prisma } from "@usejunction/db";
-import { usageDayFilter, usageWindowDays } from "@/lib/metrics/date-range";
-import { aggregateModelUsage, aggregateUsageKpis, fetchUsageRows } from "@/lib/metrics/model-usage";
+import { usageWindowDays } from "@/lib/metrics/date-range";
+import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
 import { orgNeedsPlanSync } from "@/lib/queries/me/local-sync-context";
 import { canonicalToolKey, findCatalogTool } from "@/lib/tools/catalog";
 import type { OrganizationRole } from "@/lib/workspace-context";
@@ -205,60 +205,94 @@ async function buildMeOverview(
   role: OrganizationRole
 ): Promise<MeOverviewData> {
   const usage30d = usageWindowDays(30);
-  const [usageRows, toolsUsageRows] = await Promise.all([
-    fetchUsageRows({ orgId, developerId: developer.id, from: usage30d.from, to: usage30d.to }),
-    prisma.usageDaily.groupBy({
-      by: ["toolName"],
-      where: {
-        orgId,
-        developerId: developer.id,
-        date: usageDayFilter(usage30d.from, usage30d.to),
-        toolName: { not: "" },
-        metricKind: { not: "productivity" },
-      },
-      _sum: { requests: true, inputTokens: true, outputTokens: true, costMicros: true },
+  const measures = [
+    "requests", "sessions", "inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens",
+    "reasoningTokens", "suggestedLines", "acceptedLines", "addedLines", "deletedLines", "commits", "costMicros",
+  ] as const;
+  const [summary, tools, models, costs] = await Promise.all([
+    readUsageMetrics({ orgId, developerId: developer.id, window: usage30d, measures: [...measures], limit: 1 }),
+    readUsageMetrics({
+      orgId,
+      developerId: developer.id,
+      window: usage30d,
+      measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
+      dimensions: ["tool"],
+    }),
+    readUsageMetrics({
+      orgId,
+      developerId: developer.id,
+      window: usage30d,
+      measures: [...measures],
+      dimensions: ["tool", "model", "source"],
+    }),
+    readUsageMetrics({
+      orgId,
+      developerId: developer.id,
+      window: usage30d,
+      measures: ["costMicros"],
+      dimensions: ["source", "costKind"],
     }),
   ]);
 
-  const usageKpis = aggregateUsageKpis(usageRows);
-  const { usage: modelUsage30d, productivity: productivityModels } = aggregateModelUsage(usageRows);
+  const summaryRow = summary.data.rows[0];
+  let verifiedUsageCost = 0;
+  let estimatedApiCost = 0;
+  for (const row of costs.data.rows) {
+    const value = metricNumber(row, "costMicros") / 1_000_000;
+    if (dimension(row, "costKind") === "verified_usage") verifiedUsageCost += value;
+    else if (dimension(row, "costKind") === "estimated_api" && dimension(row, "source") !== "estimated") {
+      estimatedApiCost += value;
+    }
+  }
 
   const detectedToolNames = new Set(
     developer.devices.flatMap((device) => device.toolInstallations.map((tool) => tool.toolName)),
   );
   const toolsUsage30d = [
-    ...toolsUsageRows.map((row) => ({
-      toolName: row.toolName,
-      requests: row._sum.requests ?? 0,
-      tokens: Number(row._sum.inputTokens ?? BigInt(0)) + Number(row._sum.outputTokens ?? BigInt(0)),
-      cost: Number(row._sum.costMicros ?? BigInt(0)) / 1_000_000,
+    ...tools.data.rows.map((row) => ({
+      toolName: dimension(row, "tool") || "unknown",
+      requests: metricNumber(row, "requests"),
+      tokens: metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens"),
+      cost: metricNumber(row, "costMicros") / 1_000_000,
     })),
     ...Array.from(detectedToolNames)
-      .filter((name) => !toolsUsageRows.some((row) => row.toolName === name))
+      .filter((name) => !tools.data.rows.some((row) => dimension(row, "tool") === name))
       .map((toolName) => ({ toolName, requests: 0, tokens: 0, cost: 0 })),
   ].sort((a, b) => b.requests - a.requests || a.toolName.localeCompare(b.toolName));
 
-  const modelUsageRows: ModelUsageRow[] = [
-    ...modelUsage30d.map((row) => ({
-      toolName: row.toolName,
-      model: row.model,
-      inputTokens: row.inputTokens,
-      outputTokens: row.outputTokens,
-      cacheReadTokens: row.cacheReadTokens,
-      cacheWriteTokens: row.cacheWriteTokens,
-      reasoningTokens: row.reasoningTokens,
-      cost: row.cost,
-      requests: row.requests,
-      suggestedLines: row.suggestedLines,
-      acceptedLines: row.acceptedLines,
-      source: row.source,
-      verified: row.verified,
-      costKind: row.costKind,
-      metricKind: "usage" as const,
-    })),
-    ...productivityModels.map((row) => ({
-      toolName: row.toolName,
-      model: row.model,
+  const modelUsageRows: ModelUsageRow[] = models.data.rows.flatMap((row) => {
+    const source = dimension(row, "source");
+    const requests = metricNumber(row, "requests");
+    const inputTokens = metricNumber(row, "inputTokens");
+    const outputTokens = metricNumber(row, "outputTokens");
+    const cost = metricNumber(row, "costMicros") / 1_000_000;
+    const suggestedLines = metricNumber(row, "suggestedLines");
+    const acceptedLines = metricNumber(row, "acceptedLines");
+    const productivity = suggestedLines > 0 || acceptedLines > 0 || metricNumber(row, "commits") > 0;
+    const usage = requests > 0 || inputTokens > 0 || outputTokens > 0 || cost > 0;
+    const common = {
+      toolName: dimension(row, "tool") || "unknown",
+      model: dimension(row, "model") || "unknown",
+      source,
+    };
+    const output: ModelUsageRow[] = [];
+    if (usage) output.push({
+      ...common,
+      inputTokens,
+      outputTokens,
+      cacheReadTokens: metricNumber(row, "cacheReadTokens"),
+      cacheWriteTokens: metricNumber(row, "cacheWriteTokens"),
+      reasoningTokens: metricNumber(row, "reasoningTokens"),
+      cost,
+      requests,
+      suggestedLines: 0,
+      acceptedLines: 0,
+      verified: source === "vendor_verified",
+      costKind: source === "vendor_verified" ? "verified_usage" : cost > 0 ? "estimated_api" : null,
+      metricKind: "usage",
+    });
+    if (productivity) output.push({
+      ...common,
       inputTokens: 0,
       outputTokens: 0,
       cacheReadTokens: 0,
@@ -266,29 +300,29 @@ async function buildMeOverview(
       reasoningTokens: 0,
       cost: 0,
       requests: 0,
-      suggestedLines: row.suggestedLines,
-      acceptedLines: row.acceptedLines,
-      source: row.source,
+      suggestedLines,
+      acceptedLines,
       verified: false,
       costKind: null,
-      metricKind: "productivity" as const,
-    })),
-  ];
+      metricKind: "productivity",
+    });
+    return output;
+  });
 
   const aiCoding30d: AiCodingMetrics = {
-    suggestedLines: usageKpis.suggestedLines,
-    acceptedLines: usageKpis.acceptedLines,
-    addedLines: usageKpis.addedLines,
-    deletedLines: usageKpis.deletedLines,
-    commits: usageKpis.commits,
+    suggestedLines: metricNumber(summaryRow, "suggestedLines"),
+    acceptedLines: metricNumber(summaryRow, "acceptedLines"),
+    addedLines: metricNumber(summaryRow, "addedLines"),
+    deletedLines: metricNumber(summaryRow, "deletedLines"),
+    commits: metricNumber(summaryRow, "commits"),
     aiPercent: null,
-    inputTokens: usageKpis.inputTokens,
-    outputTokens: usageKpis.outputTokens,
-    cacheReadTokens: usageKpis.cacheReadTokens,
-    cacheWriteTokens: usageKpis.cacheWriteTokens,
-    reasoningTokens: usageKpis.reasoningTokens,
-    cost: usageKpis.verifiedUsageCost + usageKpis.estimatedApiCost,
-    verifiedCost: usageKpis.verifiedUsageCost,
+    inputTokens: metricNumber(summaryRow, "inputTokens"),
+    outputTokens: metricNumber(summaryRow, "outputTokens"),
+    cacheReadTokens: metricNumber(summaryRow, "cacheReadTokens"),
+    cacheWriteTokens: metricNumber(summaryRow, "cacheWriteTokens"),
+    reasoningTokens: metricNumber(summaryRow, "reasoningTokens"),
+    cost: verifiedUsageCost + estimatedApiCost,
+    verifiedCost: verifiedUsageCost,
   };
 
   const onlineThreshold = new Date(Date.now() - 5 * 60_000);
@@ -342,11 +376,11 @@ async function buildMeOverview(
       reportedTools: developer.toolClaims,
     },
     usage30d: {
-      requests: usageKpis.modelCalls,
-      sessions: 0,
-      inputTokens: String(usageKpis.inputTokens),
-      outputTokens: String(usageKpis.outputTokens),
-      costMicros: String(Math.round((usageKpis.verifiedUsageCost + usageKpis.estimatedApiCost) * 1_000_000)),
+      requests: metricNumber(summaryRow, "requests"),
+      sessions: metricNumber(summaryRow, "sessions"),
+      inputTokens: String(metricNumber(summaryRow, "inputTokens")),
+      outputTokens: String(metricNumber(summaryRow, "outputTokens")),
+      costMicros: String(Math.round((verifiedUsageCost + estimatedApiCost) * 1_000_000)),
     },
     toolsUsage30d,
     aiCoding30d,

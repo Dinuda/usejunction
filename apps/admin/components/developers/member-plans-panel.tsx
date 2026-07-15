@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AddSubscriptionSheet } from "@/components/tools/add-subscription-sheet";
@@ -62,40 +63,26 @@ export function toolLabel(tool: string | null) {
 export function MemberPlansPanel({
   developerId,
   developerName,
+  initialDeveloper,
+  initialSubscriptions,
 }: {
   developerId: string;
   developerName: string;
+  initialDeveloper: Developer;
+  initialSubscriptions: Subscription[];
 }) {
-  const [developer, setDeveloper] = useState<Developer | null>(null);
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const [developer, setDeveloper] = useState<Developer | null>(initialDeveloper);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>(initialSubscriptions);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [addSubscriptionOpen, setAddSubscriptionOpen] = useState(false);
 
-  const load = useCallback(async ({ soft = false }: { soft?: boolean } = {}) => {
-    if (!soft) setLoading(true);
-    const [developersRes, subscriptionsRes] = await Promise.all([
-      fetch("/api/dashboard/developers"),
-      fetch("/api/tools/subscriptions"),
-    ]);
-    const developersJson = await developersRes.json();
-    const subscriptionsJson = await subscriptionsRes.json();
-    if (!developersRes.ok || !subscriptionsRes.ok) {
-      setError(developersJson.error ?? subscriptionsJson.error ?? "Could not load plans");
-    } else {
-      const match = (developersJson.developers as Developer[]).find((row) => row.id === developerId) ?? null;
-      setDeveloper(match);
-      setSubscriptions(subscriptionsJson.subscriptions);
-      setError(null);
-    }
-    setLoading(false);
-  }, [developerId]);
-
   useEffect(() => {
-    void load();
-  }, [load]);
+    setDeveloper(initialDeveloper);
+    setSubscriptions(initialSubscriptions);
+  }, [initialDeveloper, initialSubscriptions]);
 
   async function assign(subscription: Subscription) {
     if (!developer) return;
@@ -124,7 +111,7 @@ export function MemberPlansPanel({
       setError(body.error ?? (existing ? "Could not add another seat" : "Could not assign subscription"));
     } else {
       setAdding(false);
-      await load({ soft: true });
+      router.refresh();
     }
     setSaving(null);
   }
@@ -146,7 +133,7 @@ export function MemberPlansPanel({
           });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) setError(body.error ?? "Could not remove plan");
-    else await load({ soft: true });
+    else router.refresh();
     setSaving(null);
   }
 
@@ -160,7 +147,7 @@ export function MemberPlansPanel({
           <h2 className="text-lg font-semibold tracking-tight">Plans.</h2>
           <p className="mt-1 text-xs text-muted-foreground">Seats assigned to {developerName}.</p>
         </div>
-        {!loading && !adding ? (
+        {!adding ? (
           <Button size="sm" onClick={() => setAdding(true)}>
             <Plus /> Add seat
           </Button>
@@ -173,11 +160,7 @@ export function MemberPlansPanel({
         </div>
       ) : null}
 
-      {loading ? (
-        <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin text-primary" /> Loading plans…
-        </div>
-      ) : plans.length ? (
+      {plans.length ? (
         <ul className="divide-y">
           {plans.map((plan) => (
             <li key={plan.id} className="flex flex-wrap items-center gap-3 py-4">
@@ -232,8 +215,8 @@ export function MemberPlansPanel({
       <AddSubscriptionSheet
         open={addSubscriptionOpen}
         onOpenChange={setAddSubscriptionOpen}
-        onCreated={async () => {
-          await load({ soft: true });
+        onCreated={() => {
+          router.refresh();
           setAdding(true);
         }}
       />

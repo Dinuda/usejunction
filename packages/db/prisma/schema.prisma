@@ -44,6 +44,7 @@ model Organization {
   seatAssignments      SeatAssignment[]
   repositories         Repository[]
   usageDaily           UsageDaily[]
+  analyticsQueryCaches AnalyticsQueryCache[]
   toolClaims           DeveloperToolClaim[]
   telemetryEndpoint    TelemetryEndpoint?
   billingPlanTemplates BillingPlanTemplate[]
@@ -640,6 +641,27 @@ model UsageDaily {
   @@index([orgId, developerId, date])
   @@index([orgId, repositoryId, date])
   @@map("usage_daily")
+}
+
+model AnalyticsQueryCache {
+  key                String   @id
+  orgId              String   @map("org_id")
+  scopeHash          String   @map("scope_hash")
+  contractVersion    String   @map("contract_version")
+  calculationVersion String   @map("calculation_version")
+  normalizedQuery    Json     @map("normalized_query")
+  result             Json
+  generatedAt        DateTime @map("generated_at")
+  dataThrough        DateTime? @map("data_through")
+  expiresAt          DateTime @map("expires_at")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, expiresAt])
+  @@index([expiresAt])
+  @@map("analytics_query_cache")
 }
 
 model DeveloperToolClaim {

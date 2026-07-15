@@ -1,4 +1,5 @@
-import { createUsageMetricsStore } from "@/lib/analytics/adapters/prisma-usage-metrics-store";
+import { prisma } from "@usejunction/db";
+import { internalAnalyticsScope, readCanonicalBillingFacts, readDataThrough } from "@/lib/analytics/query";
 import { calculateBilling, serializeBillingLine } from "@/lib/billing/calculator";
 import {
   dedupeQuotaUtilizations,
@@ -59,17 +60,13 @@ export async function getPlanUsage(
 ): Promise<InsightEnvelope<PlanUsageV1>> {
   assertInsightRoles(context, ["owner", "admin"]);
 
-  const metrics = createUsageMetricsStore();
+  const analyticsScope = internalAnalyticsScope(context.orgId, input.developerId);
   const [subscriptions, assignments, quotaRows, billingFacts, dataThrough] = await Promise.all([
     readSubscriptions(context.orgId),
     readAssignments(context.orgId, { developerId: input.developerId }),
     readQuotas(context.orgId, { developerId: input.developerId }),
-    metrics.billingFacts({
-      orgId: context.orgId,
-      window: input.reportWindow,
-      developerId: input.developerId,
-    }),
-    metrics.dataThrough(context.orgId),
+    readCanonicalBillingFacts(prisma, analyticsScope, input.reportWindow),
+    readDataThrough(prisma, analyticsScope),
   ]);
 
   const billingLines = calculateBilling({

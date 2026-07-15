@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { requireIngestAuth, getDefaultOrgId } from "@/lib/auth";
+import { invalidateAnalyticsCache } from "@/lib/analytics/query";
 
 export async function POST(req: NextRequest) {
   const authResult = requireIngestAuth(req);
@@ -63,6 +64,7 @@ export async function POST(req: NextRequest) {
         observedAt: record.createdAt,
       },
     });
+    await invalidateAnalyticsCache(orgId);
 
     return NextResponse.json({ id: record.id });
   } catch (e) {

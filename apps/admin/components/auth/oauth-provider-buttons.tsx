@@ -14,7 +14,7 @@ type Provider = {
 };
 
 export function getEnabledOAuthProviders(): Provider[] {
-  return [
+  const providers: Provider[] = [
     { id: "google", label: "Google", enabled: process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true" },
     { id: "github", label: "GitHub", enabled: process.env.NEXT_PUBLIC_GITHUB_AUTH_ENABLED === "true" },
     {
@@ -22,7 +22,8 @@ export function getEnabledOAuthProviders(): Provider[] {
       label: "Microsoft",
       enabled: process.env.NEXT_PUBLIC_MICROSOFT_AUTH_ENABLED === "true",
     },
-  ].filter((provider) => provider.enabled);
+  ];
+  return providers.filter((provider) => provider.enabled);
 }
 
 function GoogleLogo({ className }: { className?: string }) {

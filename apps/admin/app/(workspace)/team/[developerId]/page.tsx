@@ -8,6 +8,9 @@ import { MemberPlansPanel } from "@/components/developers/member-plans-panel";
 import { resolveReportWindow, UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 import { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
 import { getDeveloperOverview } from "@/lib/queries/me/overview";
+import { getDeveloperRoster } from "@/lib/read-models/developers";
+import { listSubscriptions } from "@/lib/tools/subscriptions";
+import { serializeBigInts } from "@/lib/billing/validation";
 import { cn } from "@/lib/utils";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
 
@@ -57,7 +60,7 @@ export default async function TeamMemberPage({
   const { developerId } = await params;
   const reportWindow = resolveReportWindow({ range: 30 });
 
-  const [personal, planUsage] = await Promise.all([
+  const [personal, planUsage, roster, subscriptions] = await Promise.all([
     getDeveloperOverview(orgId, developerId),
     getPlanUsage(
       {
@@ -69,8 +72,16 @@ export default async function TeamMemberPage({
       },
       { reportWindow, developerId },
     ),
+    getDeveloperRoster(orgId, { developerId }),
+    listSubscriptions(orgId),
   ]);
   if (!personal) notFound();
+  const rosterDeveloper = roster.developers[0];
+  if (!rosterDeveloper) notFound();
+  const plansInitial = serializeBigInts({ developer: rosterDeveloper, subscriptions }) as unknown as {
+    developer: Parameters<typeof MemberPlansPanel>[0]["initialDeveloper"];
+    subscriptions: Parameters<typeof MemberPlansPanel>[0]["initialSubscriptions"];
+  };
 
   const tokens = Number(BigInt(personal.usage30d.inputTokens) + BigInt(personal.usage30d.outputTokens));
   const spend = Number(BigInt(personal.usage30d.costMicros)) / 1_000_000;
@@ -115,7 +126,12 @@ export default async function TeamMemberPage({
       </div>
 
       <div className="mt-10">
-        <MemberPlansPanel developerId={personal.developer.id} developerName={personal.developer.name} />
+        <MemberPlansPanel
+          developerId={personal.developer.id}
+          developerName={personal.developer.name}
+          initialDeveloper={plansInitial.developer}
+          initialSubscriptions={plansInitial.subscriptions}
+        />
       </div>
 
       <div className="mt-10 grid gap-10 lg:grid-cols-2">

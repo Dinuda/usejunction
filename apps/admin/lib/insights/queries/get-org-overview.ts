@@ -1,14 +1,13 @@
 import { prisma } from "@usejunction/db";
-import { createUsageMetricsStore } from "@/lib/analytics/adapters/prisma-usage-metrics-store";
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
+import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
 import {
   computeActualSpend,
   filterMonthlyCodingSubscriptions,
   observationCoverage,
 } from "@/lib/billing/actual-spend";
 import { DAY_MS, usageWindowDays, utcDateOnly } from "@/lib/metrics/date-range";
-import { aggregateUsageKpis, groupByDay, groupByTool } from "@/lib/metrics/model-usage";
 import {
   assertInsightRoles,
   makeInsightEnvelope,
@@ -66,6 +65,53 @@ function toMetricWindow(from: Date, to: Date): MetricWindow {
   return { from, to, timezone: UTC_TIMEZONE, grain: "day" };
 }
 
+async function readOverviewUsage(orgId: string, window: MetricWindow, includeTools: boolean) {
+  const [summary, costs, trend, tools] = await Promise.all([
+    readUsageMetrics({ orgId, window, measures: ["requests"], limit: 1 }),
+    readUsageMetrics({ orgId, window, measures: ["costMicros"], dimensions: ["source", "costKind"] }),
+    readUsageMetrics({ orgId, window, measures: ["requests", "costMicros"], dimensions: ["day"] }),
+    includeTools
+      ? readUsageMetrics({
+          orgId,
+          window,
+          measures: ["requests", "costMicros", "activeDevelopers"],
+          dimensions: ["tool"],
+        })
+      : Promise.resolve(null),
+  ]);
+
+  let verifiedUsageCost = 0;
+  let estimatedApiCost = 0;
+  for (const row of costs.data.rows) {
+    const cost = metricNumber(row, "costMicros") / 1_000_000;
+    if (dimension(row, "costKind") === "verified_usage") verifiedUsageCost += cost;
+    else if (dimension(row, "costKind") === "estimated_api" && dimension(row, "source") !== "estimated") {
+      estimatedApiCost += cost;
+    }
+  }
+
+  return {
+    dataThrough: summary.dataThrough ? new Date(summary.dataThrough) : null,
+    kpis: {
+      modelCalls: metricNumber(summary.data.rows[0], "requests"),
+      verifiedUsageCost,
+      estimatedApiCost,
+      partialData: false,
+    },
+    trend: trend.data.rows.map((row) => ({
+      date: dimension(row, "day"),
+      modelCalls: metricNumber(row, "requests"),
+      cost: metricNumber(row, "costMicros") / 1_000_000,
+    })),
+    tools: tools?.data.rows.map((row) => ({
+      toolName: dimension(row, "tool") || "unknown",
+      modelCalls: metricNumber(row, "requests"),
+      cost: metricNumber(row, "costMicros") / 1_000_000,
+      activeDevelopers: metricNumber(row, "activeDevelopers"),
+    })) ?? [],
+  };
+}
+
 export async function getOrgOverview(
   context: InsightContext,
   input: OverviewInput,
@@ -76,14 +122,13 @@ export async function getOrgOverview(
   const range = input.range;
   const dates = usageWindowDays(range, context.now);
   const activeDates = usageWindowDays(ACTIVE_PEOPLE_WINDOW_DAYS, context.now);
-  const metrics = createUsageMetricsStore();
   const reportWindow = input.reportWindow;
   const previousWindow = input.previousWindow;
 
   const [
-    currentRows,
-    previousRows,
-    activeObservedCurrent,
+    currentUsage,
+    previousUsage,
+    activeUsage,
     failures,
     totalDevelopers,
     deviceCoverage,
@@ -93,16 +138,15 @@ export async function getOrgOverview(
     detectedInstallations,
     subscriptionPlans,
     planUsage,
-    dataThrough,
   ] = await Promise.all([
-    metrics.activityRows({ orgId, window: reportWindow }),
-    metrics.activityRows({ orgId, window: previousWindow }),
-    prisma.$queryRaw<Array<{ activeDevelopers: number }>>`
-      SELECT COUNT(DISTINCT developer_id) FILTER (WHERE developer_id IS NOT NULL)::int AS "activeDevelopers"
-      FROM usage_daily
-      WHERE org_id = ${orgId} AND date >= ${activeDates.from} AND date <= ${activeDates.to}
-        AND metric_kind <> 'productivity' AND requests > 0
-    `,
+    readOverviewUsage(orgId, reportWindow, true),
+    readOverviewUsage(orgId, previousWindow, false),
+    readUsageMetrics({
+      orgId,
+      window: toMetricWindow(activeDates.from, activeDates.to),
+      measures: ["activeDevelopers"],
+      limit: 1,
+    }),
     prisma.$queryRaw<
       Array<{
         id: string;
@@ -144,14 +188,13 @@ export async function getOrgOverview(
       },
     }),
     getPlanUsage(context, { reportWindow }),
-    metrics.dataThrough(orgId),
   ]);
 
-  const currentKpis = aggregateUsageKpis(currentRows);
-  const previousKpis = aggregateUsageKpis(previousRows);
-  const currentTrend = groupByDay(currentRows);
-  const previousTrend = groupByDay(previousRows);
-  const toolRows = groupByTool(currentRows);
+  const currentKpis = currentUsage.kpis;
+  const previousKpis = previousUsage.kpis;
+  const currentTrend = currentUsage.trend;
+  const previousTrend = previousUsage.trend;
+  const toolRows = currentUsage.tools;
 
   const subscriptions = filterMonthlyCodingSubscriptions(subscriptionPlans, isCodingTool).map((plan) => ({
     monthlySeatMicros: plan.monthlySeatMicros,
@@ -250,7 +293,7 @@ export async function getOrgOverview(
     tools: mergedTools,
     coverage: {
       developers: totalDevelopers,
-      activeDevelopers: Number(activeObservedCurrent[0]?.activeDevelopers ?? 0),
+      activeDevelopers: metricNumber(activeUsage.data.rows[0], "activeDevelopers"),
       devices: deviceCoverage.devices,
       onlineDevices: deviceCoverage.onlineDevices,
       configuredTools,
@@ -279,7 +322,7 @@ export async function getOrgOverview(
     context,
     kind: "overview",
     window: reportWindow,
-    dataThrough,
+    dataThrough: currentUsage.dataThrough,
     data,
   });
 }

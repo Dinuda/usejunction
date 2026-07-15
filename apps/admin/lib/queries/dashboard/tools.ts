@@ -1,6 +1,6 @@
 import { prisma } from "@usejunction/db";
 import { usageWindowDays } from "@/lib/metrics/date-range";
-import { fetchUsageRows, groupByTool } from "@/lib/metrics/model-usage";
+import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
 
 export interface DashboardToolsData {
   tools: Array<{
@@ -36,7 +36,12 @@ export async function getDashboardTools(orgId: string): Promise<DashboardToolsDa
       where: { orgId, detected: true, configured: true },
       _count: { id: true },
     }),
-    fetchUsageRows({ orgId, from: usage7d.from, to: usage7d.to }),
+    readUsageMetrics({
+      orgId,
+      window: usage7d,
+      measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
+      dimensions: ["tool"],
+    }),
     prisma.developerToolClaim.groupBy({
       by: ["toolName", "source"],
       where: { orgId, enabled: true },
@@ -58,9 +63,13 @@ export async function getDashboardTools(orgId: string): Promise<DashboardToolsDa
 
   const configuredMap = new Map(configured.map((c) => [c.toolName, c._count.id]));
   const activityMap = new Map(
-    groupByTool(usageRows).map((row) => [
-      row.toolName,
-      { requests7d: row.modelCalls, cost7d: row.cost, tokens7d: row.tokens },
+    usageRows.data.rows.map((row) => [
+      dimension(row, "tool") || "unknown",
+      {
+        requests7d: metricNumber(row, "requests"),
+        cost7d: metricNumber(row, "costMicros") / 1_000_000,
+        tokens7d: metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens"),
+      },
     ]),
   );
 
