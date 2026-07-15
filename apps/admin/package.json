@@ -7,7 +7,7 @@
     "dev": "next dev --turbopack --port 3001",
     "build": "next build",
     "start": "next start --port 3001",
-    "test": "tsx --test tests/**/*.test.ts"
+    "test": "sh -c 'tsx --test tests/*.test.ts'"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

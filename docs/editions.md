@@ -20,3 +20,5 @@ UseJunction SaaS billing.
 
 CI runs `pnpm check:community-boundary` to prevent commercial source or
 dependencies from being added to this repository.
+
+See `docs/developing.md` for the day-to-day workflow across both repositories.
