@@ -9,7 +9,7 @@ for required in \
   "x-frame-options: DENY" \
   "x-content-type-options: nosniff" \
   "referrer-policy:"; do
-  if ! printf '%s\n' "$headers" | tr '[:upper:]' '[:lower:]' | rg -q "$(printf '%s' "$required" | tr '[:upper:]' '[:lower:]')"; then
+  if ! printf '%s\n' "$headers" | tr '[:upper:]' '[:lower:]' | grep -Fq "$(printf '%s' "$required" | tr '[:upper:]' '[:lower:]')"; then
     echo "Missing security header: $required" >&2
     exit 1
   fi
