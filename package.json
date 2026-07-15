@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "pnpm --filter @usejunction/admin dev",
     "build": "pnpm --filter @usejunction/db generate && pnpm --filter @usejunction/admin build",
-    "test": "pnpm --filter @usejunction/admin test",
+    "test": "pnpm --filter @usejunction/db generate && pnpm --filter @usejunction/admin test",
     "check:community-boundary": "pnpm --filter @usejunction/admin exec tsx scripts/check-community-boundary.ts",
     "db:generate": "pnpm --filter @usejunction/db generate",
     "db:migrate": "pnpm --filter @usejunction/db migrate",

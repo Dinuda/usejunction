@@ -1,6 +1,7 @@
 package probe
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -20,17 +21,22 @@ func TestCodexPlanFromClaims(t *testing.T) {
 
 func TestLoadCodexAuthNestedTokens(t *testing.T) {
 	dir := t.TempDir()
-	authJSON := `{
-	  "auth_mode": "chatgpt",
-	  "last_refresh": "2026-07-07T11:53:16Z",
-	  "tokens": {
-	    "access_token": "access-token",
-	    "refresh_token": "refresh-token",
-	    "id_token": "aaa.eyJlbWFpbCI6ImRldkBleGFtcGxlLmNvbSJ9.bbb",
-	    "account_id": "acct-1"
-	  }
-	}`
-	if err := os.WriteFile(filepath.Join(dir, "auth.json"), []byte(authJSON), 0600); err != nil {
+	idPayload := base64.RawStdEncoding.EncodeToString([]byte(`{"email":"dev@example.com"}`))
+	authDoc := map[string]any{
+		"auth_mode":    "chatgpt",
+		"last_refresh": "2026-07-07T11:53:16Z",
+		"tokens": map[string]any{
+			"access_token":  "access-token",
+			"refresh_token": "refresh-token",
+			"id_token":      "aaa." + idPayload + ".bbb",
+			"account_id":    "acct-1",
+		},
+	}
+	authJSON, err := json.Marshal(authDoc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "auth.json"), authJSON, 0600); err != nil {
 		t.Fatal(err)
 	}
 	auth, err := LoadCodexAuth(dir)
