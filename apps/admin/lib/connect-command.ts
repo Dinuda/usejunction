@@ -7,14 +7,18 @@ export function getPublicAppUrl() {
   return configured.replace(/\/$/, "") || "http://localhost:3001";
 }
 
-export function buildInstallCommand(token: string, controlPlaneUrl: string) {
-  const base = controlPlaneUrl.replace(/\/$/, "");
-  return `curl -fsSL ${base}/install.sh | sh -s -- --token ${token} --url ${base}`;
+function shellArg(value: string) {
+  return `'${value.replaceAll("'", `'\"'\"'`)}'`;
 }
 
-export function buildConnectInviteCommand(token: string, controlPlaneUrl: string) {
+export function buildInstallCommand(token: string, controlPlaneUrl: string) {
   const base = controlPlaneUrl.replace(/\/$/, "");
-  return `curl -fsSL ${base}/install.sh | sh -s -- --connect ${token} --url ${base}`;
+  return `curl -fsSL ${shellArg(`${base}/install.sh`)} | sh -s -- --token ${shellArg(token)} --url ${shellArg(base)}`;
+}
+
+export function buildConnectInviteCommand(token: string, pollToken: string, controlPlaneUrl: string) {
+  const base = controlPlaneUrl.replace(/\/$/, "");
+  return `curl -fsSL ${shellArg(`${base}/install.sh`)} | sh -s -- --connect ${shellArg(token)} --poll-token ${shellArg(pollToken)} --url ${shellArg(base)}`;
 }
 
 export function buildConnectInviteUrl(token: string, controlPlaneUrl: string) {

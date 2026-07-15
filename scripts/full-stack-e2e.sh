@@ -5,10 +5,6 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ADMIN_URL="${ADMIN_URL:-http://localhost:3001}"
 LITELLM_URL="${LITELLM_URL:-http://localhost:4000}"
 LANGFUSE_URL="${LANGFUSE_URL:-http://localhost:3000}"
-LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-sk-usejunction-master}"
-ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
-ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
-INGEST_SECRET="${INGEST_SECRET:-change-me-ingest-secret}"
 MODEL="${E2E_MODEL:-gpt-4o-mini}"
 COOKIE_JAR="$(mktemp)"
 CONCURRENT_BODY_ONE="$(mktemp)"
@@ -21,7 +17,7 @@ load_env_file() {
   local env_file="${ENV_FILE:-$ROOT/.env}"
   [[ -f "$env_file" ]] || return 0
   while IFS= read -r line; do
-    [[ "$line" =~ ^(OPENAI_API_KEY|ANTHROPIC_API_KEY|INGEST_SECRET)= ]] || continue
+    [[ "$line" =~ ^(OPENAI_API_KEY|ANTHROPIC_API_KEY|INGEST_SECRET|LITELLM_MASTER_KEY|ADMIN_EMAIL|ADMIN_PASSWORD)= ]] || continue
     local key="${line%%=*}"
     local value="${line#*=}"
     if [[ -z "${!key:-}" ]]; then
@@ -53,6 +49,10 @@ wait_for() {
 }
 
 load_env_file
+: "${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY for the test stack}"
+: "${ADMIN_EMAIL:?set ADMIN_EMAIL for a verified test account}"
+: "${ADMIN_PASSWORD:?set ADMIN_PASSWORD for the verified test account}"
+: "${INGEST_SECRET:?set INGEST_SECRET for the test stack}"
 
 wait_for "admin" "$ADMIN_URL/api/health"
 wait_for "langfuse" "$LANGFUSE_URL"

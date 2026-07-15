@@ -8,7 +8,6 @@ import { MemberPlansPanel } from "@/components/developers/member-plans-panel";
 import { resolveReportWindow, UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 import { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
 import { getDeveloperOverview } from "@/lib/queries/me/overview";
-import { cn } from "@/lib/utils";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
 
 function money(value: number) {
@@ -21,31 +20,6 @@ function money(value: number) {
 
 function compact(value: number) {
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
-}
-
-function Kpi({
-  label,
-  value,
-  sub,
-  accent,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  accent?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "border-l-2 pl-4",
-        accent ? "border-brand-yellow-dark bg-brand-yellow-pale py-3 pr-4" : "border-border-strong",
-      )}
-    >
-      <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
-      <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{value}</p>
-      {sub ? <p className="mt-2 text-xs text-muted-foreground">{sub}</p> : null}
-    </div>
-  );
 }
 
 export default async function TeamMemberPage({
@@ -72,10 +46,6 @@ export default async function TeamMemberPage({
   ]);
   if (!personal) notFound();
 
-  const tokens = Number(BigInt(personal.usage30d.inputTokens) + BigInt(personal.usage30d.outputTokens));
-  const spend = Number(BigInt(personal.usage30d.costMicros)) / 1_000_000;
-  const online = personal.developer.devices.filter((device) => device.status === "online").length;
-
   return (
     <>
       <div className="mb-8">
@@ -95,24 +65,9 @@ export default async function TeamMemberPage({
         </p>
       </div>
 
-      <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="Requests" value={compact(personal.usage30d.requests)} accent />
-        <Kpi label="Tokens" value={compact(tokens)} sub="input + output" />
-        <Kpi label="Spend" value={money(spend)} sub="estimated / verified" />
-        <Kpi
-          label="Machines"
-          value={`${online}/${personal.developer.devices.length}`}
-          sub="online · last 5 minutes"
-        />
-      </div>
+      <MemberPlanUsage data={planUsage.data} developerName={personal.developer.name} />
 
-      <div className="mt-10">
-        <MemberPlanUsage data={planUsage.data} developerName={personal.developer.name} />
-      </div>
-
-      <div className="mt-10">
-        <AiCodingPanel metrics={personal.aiCoding30d} models={personal.modelUsage30d} />
-      </div>
+      <AiCodingPanel metrics={personal.aiCoding30d} models={personal.modelUsage30d} />
 
       <div className="mt-10">
         <MemberPlansPanel developerId={personal.developer.id} developerName={personal.developer.name} />

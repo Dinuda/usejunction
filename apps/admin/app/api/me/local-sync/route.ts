@@ -1,3 +1,4 @@
+import { createHmac, randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { requireOrgRole } from "@/lib/rbac";
@@ -48,9 +49,9 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    let token: string;
+    let localSyncSecret: string;
     try {
-      token = decryptSecret(device.localSyncTokenEnc);
+      localSyncSecret = decryptSecret(device.localSyncTokenEnc);
     } catch {
       return NextResponse.json({
         available: false,
@@ -61,13 +62,18 @@ export async function GET(req: NextRequest) {
 
     const onlineThreshold = Date.now() - 5 * 60_000;
     const online = device.lastSeenAt.getTime() >= onlineThreshold;
+    const expiresAt = Math.floor(Date.now() / 1000) + 60;
+    const nonce = randomBytes(16).toString("base64url");
+    const grantPayload = `v1.${expiresAt}.${nonce}`;
+    const signature = createHmac("sha256", localSyncSecret).update(grantPayload).digest("base64url");
 
     return NextResponse.json({
       available: true,
       deviceId: device.id,
       hostname: device.hostname,
       url: device.localEndpoint,
-      token,
+      grant: `${grantPayload}.${signature}`,
+      grantExpiresAt: new Date(expiresAt * 1000).toISOString(),
       online,
       lastSeenAt: device.lastSeenAt.toISOString(),
       lastUsageSyncAt: device.lastUsageSyncAt?.toISOString() ?? null,

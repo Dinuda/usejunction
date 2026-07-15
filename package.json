@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "pnpm --filter @usejunction/admin dev",
     "build": "pnpm --filter @usejunction/db generate && pnpm --filter @usejunction/admin build",
+    "test": "pnpm --filter @usejunction/admin test",
+    "check:community-boundary": "pnpm --filter @usejunction/admin exec tsx scripts/check-community-boundary.ts",
     "db:generate": "pnpm --filter @usejunction/db generate",
     "db:migrate": "pnpm --filter @usejunction/db migrate",
     "db:seed": "pnpm --filter @usejunction/db seed",
@@ -14,6 +16,9 @@
     "node": ">=20"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["@prisma/client", "prisma", "esbuild", "sharp"]
+    "onlyBuiltDependencies": ["@prisma/client", "prisma", "esbuild", "sharp"],
+    "overrides": {
+      "postcss": ">=8.5.10"
+    }
   }
 }

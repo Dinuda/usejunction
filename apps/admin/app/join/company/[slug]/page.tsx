@@ -7,8 +7,17 @@ import { CompanyJoinButton } from "./company-join-button";
 export default async function CompanyJoinPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await auth();
-  const organization = await prisma.organization.findUnique({ where: { slug } });
-  const available = Boolean(organization?.companyJoinEnabled);
+  const organization = await prisma.organization.findUnique({
+    where: { slug },
+    include: {
+      domains: {
+        where: { verifiedAt: { not: null } },
+        select: { id: true },
+        take: 1,
+      },
+    },
+  });
+  const available = Boolean(organization?.domains.length);
 
   if (!organization || !available) {
     return (

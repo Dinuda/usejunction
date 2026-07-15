@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
-import { requireIngestAuth, getDefaultOrgId } from "@/lib/auth";
+import { markAnalyticsDirtyDay } from "@/lib/analytics/dirty-days";
+import { requireIngestAuth } from "@/lib/auth";
+import { PayloadTooLargeError, readJsonWithLimit } from "@/lib/request-body";
 
 export async function POST(req: NextRequest) {
   const authResult = requireIngestAuth(req);
   if (authResult instanceof NextResponse) return authResult;
 
   try {
-    const body = await req.json();
-    const orgId = body.orgId ?? getDefaultOrgId();
+    const body = await readJsonWithLimit<Record<string, any>>(req);
+    const orgId = authResult.orgId;
     const organization = await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true } });
     if (!organization) return NextResponse.json({ error: "invalid organization" }, { status: 403 });
     if (body.userId) {
@@ -63,9 +65,13 @@ export async function POST(req: NextRequest) {
         observedAt: record.createdAt,
       },
     });
+    await markAnalyticsDirtyDay(orgId, metricDate);
 
     return NextResponse.json({ id: record.id });
   } catch (e) {
+    if (e instanceof PayloadTooLargeError) {
+      return NextResponse.json({ error: "payload too large" }, { status: 413 });
+    }
     console.error("[ingest/request]", e);
     return NextResponse.json({ error: "ingest failed" }, { status: 500 });
   }

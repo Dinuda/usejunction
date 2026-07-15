@@ -1,0 +1,2 @@
+-- Reserved migration identifier. The missing connect-invite tables are created
+-- by the following 2026071500035_connect_invites migration.

@@ -1,6 +1,6 @@
 # UseJunction
 
-Open-source observability for AI coding tools. Track usage, cost, latency, and configuration health across Codex, Claude Code, Cursor, Continue, local models, and more.
+Community-licensed, self-hosted observability for AI coding tools. Track usage, cost, latency, and configuration health across Codex, Claude Code, Cursor, Continue, local models, and more.
 
 ## Quick start
 
@@ -10,6 +10,10 @@ Run the entire stack in Docker — admin on **:3001** (host; configurable via `A
 
 ```bash
 cp .env.example .env
+# Fill every blank secret. Generate values with:
+#   openssl rand -hex 32
+# Generate INTEGRATION_ENCRYPTION_KEY with:
+#   openssl rand -base64 32
 # Optional: add provider keys to test real LiteLLM completions
 #   OPENAI_API_KEY=sk-...
 #   ANTHROPIC_API_KEY=sk-ant-...
@@ -34,7 +38,11 @@ ADMIN_URL=http://localhost:3020 ./run-e2e.sh
 2. Copy **Public Key** and **Secret Key** into root `.env`
 3. Restart LiteLLM: `cd infra && docker compose restart litellm`
 
-The admin container runs `prisma db push` and seeds `seed-org` plus a demo enrollment token on first start.
+The admin container applies committed Prisma migrations and refuses known
+default secrets or demo seeding. Create the first account through `/signup`.
+For the first boot, set `INGEST_ORG_ID=pending-setup`. After creating the
+workspace, replace it with the organization ID and restart `admin` and
+`litellm`; the ingest credential is intentionally bound to that one tenant.
 
 **Verify end-to-end:**
 
@@ -50,7 +58,7 @@ Manual gateway request (use a user id from **Developers**):
 
 ```bash
 curl http://localhost:4000/v1/chat/completions \
-  -H "Authorization: Bearer sk-usejunction-master" \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -H "Content-Type: application/json" \
   -H "x-usejunction-user: <userId>" \
   -H "x-usejunction-tool: codex" \
@@ -59,7 +67,7 @@ curl http://localhost:4000/v1/chat/completions \
 
 | Service | URL |
 |---------|-----|
-| Admin UI | http://localhost:3001 (`admin@example.com` / `admin`) |
+| Admin UI | http://localhost:3001 (register the first owner) |
 | Langfuse | http://localhost:3000 |
 | LiteLLM | http://localhost:4000 |
 | Postgres (host) | localhost:5433 |

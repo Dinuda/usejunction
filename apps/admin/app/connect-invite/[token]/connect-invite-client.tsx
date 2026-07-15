@@ -8,23 +8,18 @@ import { Button } from "@/components/ui/button";
 
 type Props = {
   token: string;
-  email: string;
+  emailMasked: string;
   signedIn: boolean;
   sessionEmail: string | null;
 };
 
-export function ConnectInviteClient({ token, email, signedIn, sessionEmail }: Props) {
+export function ConnectInviteClient({ token, emailMasked, signedIn, sessionEmail }: Props) {
   const [status, setStatus] = useState<"idle" | "completing" | "ready" | "error">(signedIn ? "completing" : "idle");
   const [error, setError] = useState<string | null>(null);
   const callbackUrl = `/connect-invite/${token}`;
 
   useEffect(() => {
     if (!signedIn) return;
-    if (sessionEmail && sessionEmail.toLowerCase() !== email.toLowerCase()) {
-      setStatus("idle");
-      setError(`Sign in as ${email} to continue. You are signed in as ${sessionEmail}.`);
-      return;
-    }
     let cancelled = false;
     void (async () => {
       setStatus("completing");
@@ -41,7 +36,7 @@ export function ConnectInviteClient({ token, email, signedIn, sessionEmail }: Pr
     return () => {
       cancelled = true;
     };
-  }, [signedIn, token, email, sessionEmail]);
+  }, [signedIn, token]);
 
   if (status === "ready") {
     return (
@@ -61,7 +56,7 @@ export function ConnectInviteClient({ token, email, signedIn, sessionEmail }: Pr
     return (
       <div className="flex items-center gap-3 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin text-primary" />
-        Confirming {email}…
+        Confirming {emailMasked}…
       </div>
     );
   }
@@ -71,15 +66,9 @@ export function ConnectInviteClient({ token, email, signedIn, sessionEmail }: Pr
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Continue as <span className="font-medium text-foreground">{email}</span>.
+        Continue as <span className="font-medium text-foreground">{emailMasked}</span>.
       </p>
-      {sessionEmail && sessionEmail.toLowerCase() !== email.toLowerCase() ? (
-        <Alert variant="destructive">
-          <AlertDescription>
-            Signed in as {sessionEmail}. Sign out and continue as {email}.
-          </AlertDescription>
-        </Alert>
-      ) : null}
+      {sessionEmail ? <p className="text-xs text-muted-foreground">Signed in as {sessionEmail}.</p> : null}
       {error ? (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
@@ -87,7 +76,7 @@ export function ConnectInviteClient({ token, email, signedIn, sessionEmail }: Pr
       ) : null}
       <OAuthProviderButtons callbackUrl={callbackUrl} showEmailDivider={hasOAuth} emailDividerLabel="or use email" />
       <Button asChild className="w-full">
-        <a href={`/login?from=${encodeURIComponent(callbackUrl)}&email=${encodeURIComponent(email)}`}>
+        <a href={`/login?from=${encodeURIComponent(callbackUrl)}`}>
           {hasOAuth ? "Use work email" : "Sign in to continue"}
         </a>
       </Button>

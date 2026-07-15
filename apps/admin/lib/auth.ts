@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { constantTimeHashMatch, hashOpaqueToken } from "@/lib/security";
 import { getWorkspaceContext } from "@/lib/workspace-context";
 
 export function hashToken(token: string): string {
@@ -18,18 +19,13 @@ export function getDefaultOrgId(): string {
   return process.env.DEFAULT_ORG_ID || "seed-org";
 }
 
-export function verifyIngestAuth(req: NextRequest): boolean {
+export function verifyIngestAuth(req: NextRequest): { orgId: string } | null {
   const auth = req.headers.get("authorization");
   const secret = process.env.INGEST_SECRET;
-  if (!secret) return false;
-  if (process.env.NODE_ENV === "production" && secret === "change-me-ingest-secret" && process.env.USEJUNCTION_ALLOW_INSECURE_DEVELOPMENT !== "true") return false;
-  return auth === `Bearer ${secret}`;
-}
-
-export function verifyDeviceTokenHeader(req: NextRequest, deviceToken: string): boolean {
-  const auth = req.headers.get("authorization");
-  if (!auth?.startsWith("Bearer ")) return false;
-  return auth.slice(7) === deviceToken;
+  const orgId = process.env.INGEST_ORG_ID || process.env.DEFAULT_ORG_ID;
+  if (!secret || !orgId || !auth?.startsWith("Bearer ")) return null;
+  if (process.env.NODE_ENV === "production" && secret === "change-me-ingest-secret") return null;
+  return constantTimeHashMatch(auth.slice(7), hashOpaqueToken(secret)) ? { orgId } : null;
 }
 
 export async function requireAdminSession(
@@ -43,25 +39,26 @@ export async function requireAdminSession(
   return { email: ctx.email, userId: ctx.userId, orgId: ctx.orgId, role: ctx.role };
 }
 
-export async function requireDeviceAuth(
-  req: NextRequest,
-  deviceToken: string
-): Promise<true | NextResponse> {
-  if (!verifyDeviceTokenHeader(req, deviceToken)) {
+export function requireIngestAuth(req: NextRequest): { orgId: string } | NextResponse {
+  const context = verifyIngestAuth(req);
+  if (!context) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  return true;
-}
-
-export function requireIngestAuth(req: NextRequest): true | NextResponse {
-  if (!verifyIngestAuth(req)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-  return true;
+  return context;
 }
 
 export function bearerToken(req: NextRequest): string | null {
   const auth = req.headers.get("authorization");
   if (!auth?.startsWith("Bearer ")) return null;
   return auth.slice(7);
+}
+
+export function verifyConfiguredBearer(
+  req: NextRequest,
+  secret: string | undefined,
+  forbiddenValues: readonly string[] = [],
+): boolean {
+  const token = bearerToken(req);
+  if (!secret || !token || forbiddenValues.includes(secret)) return false;
+  return constantTimeHashMatch(token, hashOpaqueToken(secret));
 }

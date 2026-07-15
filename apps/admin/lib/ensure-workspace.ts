@@ -1,6 +1,6 @@
 import { randomBytes } from "crypto";
 import { prisma } from "@usejunction/db";
-import { trialEndsAtFromNow } from "@/lib/billing/entitlements";
+import { commercialFeatures } from "@/lib/commercial/provider";
 
 function slugify(value: string) {
   return (
@@ -51,7 +51,7 @@ export async function createWorkspace(user: WorkspaceUser, options?: { name?: st
   const slug = `${slugify(name)}-${randomBytes(2).toString("hex")}`;
   const organization = await prisma.$transaction(async (tx) => {
     const org = await tx.organization.create({
-      data: { name, slug, plan: "trial", trialEndsAt: trialEndsAtFromNow() },
+      data: { name, slug, ...commercialFeatures.workspaceDefaults() },
     });
     const team = await tx.team.create({ data: { orgId: org.id, name: "Platform" } });
     await tx.organizationMembership.create({ data: { userId: user.id, orgId: org.id, role: "owner" } });
@@ -65,7 +65,6 @@ export async function createWorkspace(user: WorkspaceUser, options?: { name?: st
         role: "owner",
       },
     });
-    await tx.planInterest.updateMany({ where: { userId: user.id, orgId: null }, data: { orgId: org.id } });
     return org;
   });
 

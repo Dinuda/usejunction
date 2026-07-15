@@ -1,4 +1,5 @@
 import type { NextAuthConfig } from "next-auth";
+import { machineAuthenticatedRoutes } from "@/lib/machine-auth-routes";
 
 export default {
   // Auth.js must trust the host header for local Next.js development. In
@@ -15,7 +16,7 @@ export default {
     authorized({ auth, request }) {
       const pathname = request.nextUrl.pathname;
       if (/\.(?:png|svg|jpg|jpeg|gif|webp|ico)$/.test(pathname)) return true;
-      if (pathname === "/" || pathname === "/login" || pathname === "/signup" || pathname.startsWith("/join") || pathname.startsWith("/connect-invite") || pathname.startsWith("/i/") || pathname.startsWith("/verify") || pathname.startsWith("/forgot") || pathname.startsWith("/reset") || pathname.startsWith("/contact") || pathname === "/install.sh" || pathname.startsWith("/releases/") || pathname.startsWith("/api/auth") || pathname.startsWith("/api/contact") || pathname.startsWith("/api/health") || pathname.startsWith("/api/join") || pathname.startsWith("/api/connect-invite") || pathname.startsWith("/api/i/") || pathname.startsWith("/api/enroll") || pathname.startsWith("/api/ingest") || pathname.startsWith("/api/devices") || pathname.startsWith("/api/otel") || pathname.startsWith("/api/cron") || pathname.startsWith("/api/webhooks")) {
+      if (pathname === "/" || pathname === "/login" || pathname === "/signup" || pathname.startsWith("/join/") || pathname.startsWith("/connect-invite/") || pathname.startsWith("/i/") || pathname.startsWith("/verify") || pathname.startsWith("/forgot") || pathname.startsWith("/reset") || pathname === "/install.sh" || pathname.startsWith("/releases/") || pathname.startsWith("/api/auth") || pathname === "/api/health" || pathname.startsWith("/api/join/") || pathname.startsWith("/api/connect-invite/") || pathname.startsWith("/api/i/") || machineAuthenticatedRoutes.has(pathname)) {
         return true;
       }
       return Boolean(auth);

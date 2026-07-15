@@ -28,7 +28,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
 
   return NextResponse.json({
     status: invite.status,
-    email: invite.email,
     emailMasked: maskEmail(invite.email),
     organization: invite.organization,
     expiresAt: invite.expiresAt.toISOString(),

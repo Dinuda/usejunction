@@ -40,7 +40,6 @@ type Developer = {
   name: string;
   email: string;
   role: string;
-  requests7d: number;
   devices: Array<{
     id: string;
     hostname?: string;
@@ -53,10 +52,6 @@ type Developer = {
 };
 
 const utcToday = () => new Date().toISOString().slice(0, 10);
-
-function compact(value: number) {
-  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
-}
 
 export function DeveloperToolInventory({ showSummary = true }: { showSummary?: boolean }) {
   const [developers, setDevelopers] = useState<Developer[]>([]);
@@ -221,7 +216,6 @@ export function DeveloperToolInventory({ showSummary = true }: { showSummary?: b
               const machineCount = developer.devices.length;
               const meta = [
                 machineCount ? `${online}/${machineCount} online` : "No machines",
-                developer.requests7d > 0 ? `${compact(developer.requests7d)} requests · 7d` : null,
               ]
                 .filter(Boolean)
                 .join(" · ");

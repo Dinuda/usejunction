@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    const device = await prisma.device.findUnique({ where: { deviceToken: token } });
+    const device = await prisma.device.findUnique({ where: { deviceTokenHash: hashOpaqueToken(token) } });
     if (!device) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }

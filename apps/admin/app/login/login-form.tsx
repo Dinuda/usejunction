@@ -8,11 +8,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { safeAuthNextPath } from "@/lib/safe-redirect";
 
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const from = searchParams.get("from") ?? "/dashboard";
+  const from = safeAuthNextPath(searchParams.get("from"));
   const verified = searchParams.get("verified") === "1";
   const joiningInvite =
     from.startsWith("/i/") || from.startsWith("/join/") || from.startsWith("/connect-invite/");

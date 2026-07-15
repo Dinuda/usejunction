@@ -4,7 +4,7 @@ import { prisma } from "@usejunction/db";
 import { hasVerifiedIdentity, linkDeveloperToUser, normalizeEmail } from "@/lib/developer-identity";
 import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 import { audit } from "@/lib/rbac";
-import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
+import { hashOpaqueToken } from "@/lib/security";
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const session = await auth();
@@ -27,21 +27,17 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
   if (connectInvite.status === "used") {
     return NextResponse.json({ error: "connect invite already used" }, { status: 410 });
   }
-  if (connectInvite.status === "ready" && connectInvite.enrollmentTokenReveal) {
+  const sessionEmail = normalizeEmail(session.user.email);
+  if (sessionEmail !== connectInvite.email) {
+    return NextResponse.json({ error: "signed-in email does not match this invite" }, { status: 403 });
+  }
+  if (connectInvite.status === "ready") {
     const response = NextResponse.json({
       status: "ready",
       orgId: connectInvite.orgId,
     });
     response.cookies.set(ACTIVE_ORG_COOKIE, connectInvite.orgId, activeOrgCookieOptions());
     return response;
-  }
-
-  const sessionEmail = normalizeEmail(session.user.email);
-  if (sessionEmail !== connectInvite.email) {
-    return NextResponse.json(
-      { error: `Sign in as ${connectInvite.email} to continue. You are signed in as ${sessionEmail}.` },
-      { status: 403 },
-    );
   }
 
   const developer = await prisma.$transaction(async (tx) => {
@@ -81,27 +77,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
     });
   });
 
-  const enrollmentToken = generateOpaqueToken("uj_enroll", 32);
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-  await prisma.$transaction(async (tx) => {
-    await tx.enrollmentToken.deleteMany({ where: { developerId: developer.id, usedAt: null } });
-    await tx.enrollmentToken.create({
-      data: {
-        orgId: connectInvite.orgId,
-        teamId: developer.teamId,
-        developerId: developer.id,
-        tokenHash: hashOpaqueToken(enrollmentToken),
-        expiresAt,
-      },
-    });
-    await tx.connectInvite.update({
-      where: { id: connectInvite.id },
-      data: {
-        status: "ready",
-        enrollmentTokenHash: hashOpaqueToken(enrollmentToken),
-        enrollmentTokenReveal: enrollmentToken,
-      },
-    });
+  await prisma.connectInvite.update({
+    where: { id: connectInvite.id },
+    data: {
+      status: "ready",
+      enrollmentTokenHash: null,
+    },
   });
 
   await audit({

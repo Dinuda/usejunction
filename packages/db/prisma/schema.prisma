@@ -9,18 +9,11 @@ datasource db {
 }
 
 model Organization {
-  id                         String    @id @default(cuid())
-  name                       String
-  slug                       String    @unique @default(cuid())
-  plan                       String    @default("trial")
-  trialEndsAt                DateTime? @map("trial_ends_at")
-  subscriptionStatus         String?   @map("subscription_status")
-  lemonSqueezyCustomerId     String?   @map("lemon_squeezy_customer_id")
-  lemonSqueezySubscriptionId String?   @map("lemon_squeezy_subscription_id")
-  lemonSqueezyVariantId      String?   @map("lemon_squeezy_variant_id")
-  billingEmail               String?   @map("billing_email")
-  currentPeriodEnd           DateTime? @map("current_period_end")
-  createdAt                  DateTime  @default(now()) @map("created_at")
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique @default(cuid())
+  plan      String   @default("community")
+  createdAt DateTime @default(now()) @map("created_at")
 
   teams                Team[]
   developers           Developer[]
@@ -33,7 +26,6 @@ model Organization {
   toolAccounts         ToolAccount[]
   quotaSnapshots       QuotaSnapshot[]
   localUsageAggregates LocalUsageAggregate[]
-  planInterests        PlanInterest[]
   domains              OrganizationDomain[]
   invites              OrganizationInvite[]
   connectInvites       ConnectInvite[]
@@ -49,6 +41,9 @@ model Organization {
   billingPlanTemplates BillingPlanTemplate[]
   planAssignments      DeveloperPlanAssignment[]
   auditLogs            AuditLog[]
+  metricDailyBuckets   MetricDailyBucket[]
+  analyticsWatermarks  AnalyticsWatermark[]
+  analyticsDirtyDays   AnalyticsDirtyDay[]
 
   @@map("organizations")
 }
@@ -107,7 +102,7 @@ model Device {
   agentVersion         String    @map("agent_version")
   lastSeenAt           DateTime  @default(now()) @map("last_seen_at")
   status               String    @default("online")
-  deviceToken          String    @unique @map("device_token")
+  deviceTokenHash      String    @unique @map("device_token_hash")
   localEndpoint        String?   @map("local_endpoint")
   localSyncTokenHash   String?   @map("local_sync_token_hash")
   localSyncTokenEnc    String?   @map("local_sync_token_enc")
@@ -302,7 +297,6 @@ model User {
   sessions          Session[]
   memberships       OrganizationMembership[]
   actionTokens      AuthActionToken[]
-  planInterests     PlanInterest[]
   developerProfiles Developer[]
 
   @@map("auth_users")
@@ -381,25 +375,6 @@ model AuthActionToken {
   @@map("auth_action_tokens")
 }
 
-model PlanInterest {
-  id        String   @id @default(cuid())
-  plan      String
-  email     String
-  name      String?
-  company   String?
-  message   String?
-  status    String   @default("new")
-  userId    String?  @map("user_id")
-  orgId     String?  @map("org_id")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
-  organization Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
-
-  @@index([email, plan])
-  @@map("plan_interests")
-}
-
 model OrganizationDomain {
   id               String    @id @default(cuid())
   orgId            String    @map("org_id")
@@ -436,10 +411,10 @@ model ConnectInvite {
   orgId                  String    @map("org_id")
   email                  String
   tokenHash              String    @unique @map("token_hash")
+  pollTokenHash          String?   @map("poll_token_hash")
   inviteId               String?   @map("invite_id")
   status                 String    @default("pending")
   enrollmentTokenHash    String?   @map("enrollment_token_hash")
-  enrollmentTokenReveal  String?   @map("enrollment_token_reveal") @db.Text
   expiresAt              DateTime  @map("expires_at")
   usedAt                 DateTime? @map("used_at")
   createdAt              DateTime  @default(now()) @map("created_at")
@@ -451,14 +426,13 @@ model ConnectInvite {
 }
 
 model TeamInviteLink {
-  id          String    @id @default(cuid())
-  orgId       String    @unique @map("org_id")
-  tokenHash   String    @unique @map("token_hash")
-  tokenReveal String    @map("token_reveal") @db.Text
-  enabled     Boolean   @default(true)
-  expiresAt   DateTime? @map("expires_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  rotatedAt   DateTime  @default(now()) @map("rotated_at")
+  id        String    @id @default(cuid())
+  orgId     String    @unique @map("org_id")
+  tokenHash String    @unique @map("token_hash")
+  enabled   Boolean   @default(true)
+  expiresAt DateTime? @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  rotatedAt DateTime  @default(now()) @map("rotated_at")
 
   organization Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
   allowlist    TeamInviteAllowlist[]
@@ -640,6 +614,77 @@ model UsageDaily {
   @@index([orgId, developerId, date])
   @@index([orgId, repositoryId, date])
   @@map("usage_daily")
+}
+
+/// Retained day-grain analytical rollup (PostHog-style bucketed materialization).
+/// Readers re-sum buckets for any window; writers rematerialize only dirty/new days.
+model MetricDailyBucket {
+  id                   String   @id @default(cuid())
+  orgId                String   @map("org_id")
+  date                 DateTime @db.Date
+  developerId          String   @default("") @map("developer_id")
+  toolName             String   @default("") @map("tool_name")
+  provider             String   @default("")
+  model                String   @default("")
+  metricKind           String   @default("usage") @map("metric_kind")
+  metricVersion        String   @map("metric_version")
+  requests             Int      @default(0)
+  sessions             Int      @default(0)
+  inputTokens          BigInt   @default(0) @map("input_tokens")
+  outputTokens         BigInt   @default(0) @map("output_tokens")
+  cacheReadTokens      BigInt   @default(0) @map("cache_read_tokens")
+  cacheWriteTokens     BigInt   @default(0) @map("cache_write_tokens")
+  reasoningTokens      BigInt   @default(0) @map("reasoning_tokens")
+  suggestedLines       BigInt   @default(0) @map("suggested_lines")
+  acceptedLines        BigInt   @default(0) @map("accepted_lines")
+  addedLines           BigInt   @default(0) @map("added_lines")
+  deletedLines         BigInt   @default(0) @map("deleted_lines")
+  commits              Int      @default(0)
+  costMicros           BigInt   @default(0) @map("cost_micros")
+  verifiedCostMicros   BigInt   @default(0) @map("verified_cost_micros")
+  estimatedCostMicros  BigInt   @default(0) @map("estimated_cost_micros")
+  computedAt           DateTime @default(now()) @map("computed_at")
+  sourceObservedThrough DateTime? @map("source_observed_through")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, date, developerId, toolName, provider, model, metricKind, metricVersion])
+  @@index([orgId, metricVersion, date])
+  @@index([orgId, metricVersion, developerId, date])
+  @@index([orgId, metricVersion, toolName, date])
+  @@map("metric_daily_buckets")
+}
+
+model AnalyticsWatermark {
+  id                String   @id @default(cuid())
+  orgId             String   @map("org_id")
+  kind              String   @default("metric_daily")
+  metricVersion     String   @map("metric_version")
+  cursorDate        DateTime? @map("cursor_date") @db.Date
+  cursorObservedAt  DateTime? @map("cursor_observed_at")
+  status            String   @default("idle")
+  lastError         String?  @map("last_error")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, kind, metricVersion])
+  @@index([status, updatedAt])
+  @@map("analytics_watermarks")
+}
+
+model AnalyticsDirtyDay {
+  id            String   @id @default(cuid())
+  orgId         String   @map("org_id")
+  date          DateTime @db.Date
+  metricVersion String   @map("metric_version")
+  markedAt      DateTime @default(now()) @map("marked_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, date, metricVersion])
+  @@index([orgId, metricVersion, date])
+  @@map("analytics_dirty_days")
 }
 
 model DeveloperToolClaim {

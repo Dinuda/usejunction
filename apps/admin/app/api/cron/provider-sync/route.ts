@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { verifyConfiguredBearer } from "@/lib/auth";
 import { claimDueConnections, syncConnection } from "@/lib/integrations/sync";
 
 export async function POST(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  if (!secret && process.env.NODE_ENV === "production") return NextResponse.json({ error: "CRON_SECRET is not configured" }, { status: 503 });
-  if (process.env.NODE_ENV === "production" && secret === "development-cron" && process.env.USEJUNCTION_ALLOW_INSECURE_DEVELOPMENT !== "true") return NextResponse.json({ error: "a non-default CRON_SECRET is required" }, { status: 503 });
-  if (req.headers.get("authorization") !== `Bearer ${secret || "development-cron"}`) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!secret || secret === "development-cron") {
+    return NextResponse.json({ error: "CRON_SECRET is not securely configured" }, { status: 503 });
+  }
+  if (!verifyConfiguredBearer(req, secret, ["development-cron"])) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
   const connectionIds = await claimDueConnections(5);
   const results = [];
   for (const id of connectionIds) {

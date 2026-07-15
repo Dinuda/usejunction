@@ -1,363 +1,80 @@
-import { prisma } from "@usejunction/db";
-import { usageDayFilter, usageWindowDays } from "@/lib/metrics/date-range";
-import { aggregateModelUsage, aggregateUsageKpis, fetchUsageRows } from "@/lib/metrics/model-usage";
-import { orgNeedsPlanSync } from "@/lib/queries/me/local-sync-context";
-import { canonicalToolKey, findCatalogTool } from "@/lib/tools/catalog";
+import { resolveReportWindow, UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
+import type { DeveloperOverviewV1 } from "@/lib/insights/contracts/developer-overview.v1";
+import { getDeveloperOverview as getDeveloperOverviewInsight } from "@/lib/insights/queries/get-developer-overview";
 import type { OrganizationRole } from "@/lib/workspace-context";
+import { prisma } from "@usejunction/db";
 
-export interface AiCodingMetrics {
-  suggestedLines: number;
-  acceptedLines: number;
-  addedLines: number;
-  deletedLines: number;
-  commits: number;
-  aiPercent: number | null;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  reasoningTokens: number;
-  cost: number;
-  verifiedCost: number;
-}
+export type AiCodingMetrics = DeveloperOverviewV1["aiCoding"];
+export type ModelUsageRow = DeveloperOverviewV1["modelUsage"][number];
 
-export interface ModelUsageRow {
-  toolName: string;
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  reasoningTokens: number;
-  cost: number;
-  requests: number;
-  suggestedLines: number;
-  acceptedLines: number;
-  source: string;
-  verified: boolean;
-  costKind: string | null;
-  metricKind: "usage" | "productivity";
-}
-
-export interface MeOverviewData {
-  developer: {
-    id: string;
-    name: string;
-    email: string;
-    role: OrganizationRole;
-    organization: { name: string; slug: string };
-    devices: Array<{
-      id: string;
-      hostname: string;
-      os: string;
-      architecture: string;
-      agentVersion: string;
-      status: string;
-      lastSeenAt: Date;
-      lastUsageSyncAt: Date | null;
-      lastAccountSyncAt: Date | null;
-      localEndpoint: string | null;
-      tools: Array<{ toolName: string; version: string | null; lastCheckedAt: Date | null }>;
-      accounts: Array<{
-        toolName: string;
-        email: string | null;
-        plan: string | null;
-        authPresent: boolean;
-        updatedAt: Date;
-      }>;
-      quotas: Array<{
-        toolName: string;
-        windowType: string;
-        usedPercent: number | null;
-        resetAt: Date | null;
-        updatedAt: Date;
-      }>;
-    }>;
-    assignedPlans: Array<{
-      provider: string;
-      product: string;
-      plan: string | null;
-      status: string;
-      source: string;
-      lastActivityAt: Date | null;
-      observedAt: Date;
-    }>;
-    manualPlans: Array<{
-      id: string;
-      toolName: string;
-      planName: string;
-      planTier: string | null;
-      currency: string;
-      monthlySeatMicros: bigint;
-      includedMonthlyMicros: bigint;
-      seatCount: number;
-      seatStatus: string;
-      startDate: Date;
-      endDate: Date | null;
-      active: boolean;
-    }>;
-    reportedTools: Array<{ toolName: string; source: string; observedAt: Date }>;
-  };
-  usage30d: {
-    requests: number;
-    sessions: number;
-    inputTokens: string;
-    outputTokens: string;
-    costMicros: string;
-  };
-  toolsUsage30d: Array<{
-    toolName: string;
-    requests: number;
-    tokens: number;
-    cost: number;
-  }>;
-  aiCoding30d: AiCodingMetrics;
-  modelUsage30d: ModelUsageRow[];
-  sync: {
-    lastSeenAt: string | null;
-    lastUsageSyncAt: string | null;
-    lastAccountSyncAt: string | null;
-    stale: boolean;
-    hasLocalEndpoint: boolean;
-    needsPlanSync: boolean;
-  };
-}
-
-
-const overviewInclude = {
-  organization: { select: { name: true, slug: true } },
-  devices: {
-    orderBy: { lastSeenAt: "desc" as const },
-    include: {
-      toolInstallations: {
-        where: { detected: true },
-        select: { toolName: true, version: true, lastCheckedAt: true },
-      },
-      toolAccounts: {
-        select: { toolName: true, email: true, plan: true, authPresent: true, updatedAt: true },
-      },
-      quotaSnapshots: {
-        select: {
-          toolName: true,
-          windowType: true,
-          usedPercent: true,
-          resetAt: true,
-          updatedAt: true,
-        },
-        orderBy: { updatedAt: "desc" as const },
-      },
-    },
-  },
-  seatAssignments: {
-    select: {
-      provider: true,
-      product: true,
-      plan: true,
-      status: true,
-      source: true,
-      lastActivityAt: true,
-      observedAt: true,
-    },
-  },
-  planAssignments: {
-    orderBy: { startDate: "desc" as const },
-  },
-  toolClaims: { where: { enabled: true }, select: { toolName: true, source: true, observedAt: true } },
+/** Page-compatible shape with legacy field aliases (usage30d, etc.). */
+export type MeOverviewData = DeveloperOverviewV1 & {
+  usage30d: DeveloperOverviewV1["usage"];
+  toolsUsage30d: DeveloperOverviewV1["toolsUsage"];
+  aiCoding30d: DeveloperOverviewV1["aiCoding"];
+  modelUsage30d: DeveloperOverviewV1["modelUsage"];
 };
 
-type OverviewDeveloper = NonNullable<
-  Awaited<ReturnType<typeof prisma.developer.findFirst<{ include: typeof overviewInclude }>>>
->;
+function toMeShape(data: DeveloperOverviewV1): MeOverviewData {
+  return {
+    ...data,
+    usage30d: data.usage,
+    toolsUsage30d: data.toolsUsage,
+    aiCoding30d: data.aiCoding,
+    modelUsage30d: data.modelUsage,
+  };
+}
 
 export async function getMeOverview(
   orgId: string,
   userId: string,
-  role: OrganizationRole
+  role: OrganizationRole,
 ): Promise<MeOverviewData> {
   const developer = await prisma.developer.findFirst({
     where: { orgId, authUserId: userId },
-    include: overviewInclude,
+    select: { id: true },
   });
+  if (!developer) throw new Error("developer profile required");
 
-  if (!developer) {
-    throw new Error("developer profile required");
-  }
-
-  return buildMeOverview(orgId, developer, role);
+  const envelope = await getDeveloperOverviewInsight(
+    {
+      orgId,
+      actorId: userId,
+      roles: [role],
+      now: new Date(),
+      timezone: UTC_TIMEZONE,
+    },
+    {
+      reportWindow: resolveReportWindow({ range: 30 }),
+      developerId: developer.id,
+      role,
+    },
+  );
+  return toMeShape(envelope.data);
 }
 
 /** Admin view of any teammate by developer id. */
 export async function getDeveloperOverview(
   orgId: string,
-  developerId: string
+  developerId: string,
 ): Promise<MeOverviewData | null> {
-  const developer = await prisma.developer.findFirst({
-    where: { orgId, id: developerId },
-    include: overviewInclude,
-  });
-  if (!developer) return null;
-  return buildMeOverview(orgId, developer, developer.role as OrganizationRole);
-}
-
-async function buildMeOverview(
-  orgId: string,
-  developer: OverviewDeveloper,
-  role: OrganizationRole
-): Promise<MeOverviewData> {
-  const usage30d = usageWindowDays(30);
-  const [usageRows, toolsUsageRows] = await Promise.all([
-    fetchUsageRows({ orgId, developerId: developer.id, from: usage30d.from, to: usage30d.to }),
-    prisma.usageDaily.groupBy({
-      by: ["toolName"],
-      where: {
+  try {
+    const envelope = await getDeveloperOverviewInsight(
+      {
         orgId,
-        developerId: developer.id,
-        date: usageDayFilter(usage30d.from, usage30d.to),
-        toolName: { not: "" },
-        metricKind: { not: "productivity" },
+        actorId: "system",
+        roles: ["owner"],
+        now: new Date(),
+        timezone: UTC_TIMEZONE,
       },
-      _sum: { requests: true, inputTokens: true, outputTokens: true, costMicros: true },
-    }),
-  ]);
-
-  const usageKpis = aggregateUsageKpis(usageRows);
-  const { usage: modelUsage30d, productivity: productivityModels } = aggregateModelUsage(usageRows);
-
-  const detectedToolNames = new Set(
-    developer.devices.flatMap((device) => device.toolInstallations.map((tool) => tool.toolName)),
-  );
-  const toolsUsage30d = [
-    ...toolsUsageRows.map((row) => ({
-      toolName: row.toolName,
-      requests: row._sum.requests ?? 0,
-      tokens: Number(row._sum.inputTokens ?? BigInt(0)) + Number(row._sum.outputTokens ?? BigInt(0)),
-      cost: Number(row._sum.costMicros ?? BigInt(0)) / 1_000_000,
-    })),
-    ...Array.from(detectedToolNames)
-      .filter((name) => !toolsUsageRows.some((row) => row.toolName === name))
-      .map((toolName) => ({ toolName, requests: 0, tokens: 0, cost: 0 })),
-  ].sort((a, b) => b.requests - a.requests || a.toolName.localeCompare(b.toolName));
-
-  const modelUsageRows: ModelUsageRow[] = [
-    ...modelUsage30d.map((row) => ({
-      toolName: row.toolName,
-      model: row.model,
-      inputTokens: row.inputTokens,
-      outputTokens: row.outputTokens,
-      cacheReadTokens: row.cacheReadTokens,
-      cacheWriteTokens: row.cacheWriteTokens,
-      reasoningTokens: row.reasoningTokens,
-      cost: row.cost,
-      requests: row.requests,
-      suggestedLines: row.suggestedLines,
-      acceptedLines: row.acceptedLines,
-      source: row.source,
-      verified: row.verified,
-      costKind: row.costKind,
-      metricKind: "usage" as const,
-    })),
-    ...productivityModels.map((row) => ({
-      toolName: row.toolName,
-      model: row.model,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-      reasoningTokens: 0,
-      cost: 0,
-      requests: 0,
-      suggestedLines: row.suggestedLines,
-      acceptedLines: row.acceptedLines,
-      source: row.source,
-      verified: false,
-      costKind: null,
-      metricKind: "productivity" as const,
-    })),
-  ];
-
-  const aiCoding30d: AiCodingMetrics = {
-    suggestedLines: usageKpis.suggestedLines,
-    acceptedLines: usageKpis.acceptedLines,
-    addedLines: usageKpis.addedLines,
-    deletedLines: usageKpis.deletedLines,
-    commits: usageKpis.commits,
-    aiPercent: null,
-    inputTokens: usageKpis.inputTokens,
-    outputTokens: usageKpis.outputTokens,
-    cacheReadTokens: usageKpis.cacheReadTokens,
-    cacheWriteTokens: usageKpis.cacheWriteTokens,
-    reasoningTokens: usageKpis.reasoningTokens,
-    cost: usageKpis.verifiedUsageCost + usageKpis.estimatedApiCost,
-    verifiedCost: usageKpis.verifiedUsageCost,
-  };
-
-  const onlineThreshold = new Date(Date.now() - 5 * 60_000);
-
-  const primaryDevice = developer.devices[0] ?? null;
-  let latestUsageSync: Date | null = null;
-  let latestAccountSync: Date | null = null;
-  for (const device of developer.devices) {
-    if (device.lastUsageSyncAt && (!latestUsageSync || device.lastUsageSyncAt > latestUsageSync)) {
-      latestUsageSync = device.lastUsageSyncAt;
-    }
-    if (device.lastAccountSyncAt && (!latestAccountSync || device.lastAccountSyncAt > latestAccountSync)) {
-      latestAccountSync = device.lastAccountSyncAt;
-    }
+      {
+        reportWindow: resolveReportWindow({ range: 30 }),
+        developerId,
+      },
+    );
+    return toMeShape(envelope.data);
+  } catch (error) {
+    if (error instanceof Error && error.message === "developer profile required") return null;
+    throw error;
   }
-
-  const allInstallations = developer.devices.flatMap((device) => device.toolInstallations);
-  const allAccounts = developer.devices.flatMap((device) => device.toolAccounts);
-  const personalNeedsPlanSync = allInstallations.some((installation) => {
-    const toolKey = canonicalToolKey(installation.toolName);
-    if (!findCatalogTool(toolKey)) return false;
-    const account = allAccounts.find((row) => canonicalToolKey(row.toolName) === toolKey);
-    return !account?.plan?.trim();
-  });
-  const needsPlanSync = personalNeedsPlanSync || (await orgNeedsPlanSync(orgId));
-
-  return {
-    developer: {
-      id: developer.id,
-      name: developer.name,
-      email: developer.email,
-      role,
-      organization: developer.organization,
-      devices: developer.devices.map((device) => ({
-        id: device.id,
-        hostname: device.hostname,
-        os: device.os,
-        architecture: device.architecture,
-        agentVersion: device.agentVersion,
-        status: device.lastSeenAt >= onlineThreshold ? "online" : "offline",
-        lastSeenAt: device.lastSeenAt,
-        lastUsageSyncAt: device.lastUsageSyncAt ?? null,
-        lastAccountSyncAt: device.lastAccountSyncAt ?? null,
-        localEndpoint: device.localEndpoint ?? null,
-        tools: device.toolInstallations,
-        accounts: device.toolAccounts,
-        quotas: device.quotaSnapshots,
-      })),
-      assignedPlans: developer.seatAssignments,
-      manualPlans: developer.planAssignments.filter((assignment) => assignment.active),
-      reportedTools: developer.toolClaims,
-    },
-    usage30d: {
-      requests: usageKpis.modelCalls,
-      sessions: 0,
-      inputTokens: String(usageKpis.inputTokens),
-      outputTokens: String(usageKpis.outputTokens),
-      costMicros: String(Math.round((usageKpis.verifiedUsageCost + usageKpis.estimatedApiCost) * 1_000_000)),
-    },
-    toolsUsage30d,
-    aiCoding30d,
-    modelUsage30d: modelUsageRows,
-    sync: {
-      lastSeenAt: primaryDevice?.lastSeenAt?.toISOString() ?? null,
-      lastUsageSyncAt: latestUsageSync?.toISOString() ?? null,
-      lastAccountSyncAt: latestAccountSync?.toISOString() ?? null,
-      stale: !developer.devices.some((d) => d.lastSeenAt >= onlineThreshold),
-      hasLocalEndpoint: developer.devices.some((d) => Boolean(d.localEndpoint)),
-      needsPlanSync,
-    },
-  };
 }

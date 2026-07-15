@@ -5,6 +5,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { hashOpaqueToken } from "@/lib/security";
 import { ConnectInviteClient } from "./connect-invite-client";
 
+function maskEmail(email: string) {
+  const [local, domain] = email.split("@");
+  const visible = local.slice(0, Math.min(2, local.length));
+  return `${visible}${"•".repeat(Math.max(3, local.length - visible.length))}@${domain}`;
+}
+
 export default async function ConnectInvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const session = await auth();
@@ -64,7 +70,7 @@ export default async function ConnectInvitePage({ params }: { params: Promise<{ 
     >
       <ConnectInviteClient
         token={token}
-        email={invite.email}
+        emailMasked={maskEmail(invite.email)}
         signedIn={Boolean(session?.user?.id)}
         sessionEmail={session?.user?.email ?? null}
       />

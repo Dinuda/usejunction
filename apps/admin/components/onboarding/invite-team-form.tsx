@@ -29,6 +29,7 @@ function parseEmails(raw: string) {
 
 export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResult) => void }) {
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [linkExists, setLinkExists] = useState(false);
   const [allowlist, setAllowlist] = useState<AllowlistRow[]>([]);
   const [loadingLink, setLoadingLink] = useState(true);
   const [rotating, setRotating] = useState(false);
@@ -62,7 +63,15 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
       return;
     }
     if (getData.url) {
+      setLinkExists(true);
       setInviteUrl(getData.url);
+      setAllowlist(getData.allowlist ?? []);
+      setLoadingLink(false);
+      return;
+    }
+    if (getData.link) {
+      setLinkExists(true);
+      setInviteUrl(null);
       setAllowlist(getData.allowlist ?? []);
       setLoadingLink(false);
       return;
@@ -85,6 +94,7 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
       return;
     }
     setInviteUrl(createData.url ?? null);
+    setLinkExists(Boolean(createData.link));
     setAllowlist(createData.allowlist ?? []);
   }, []);
 
@@ -134,6 +144,7 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
       return;
     }
     setInviteUrl(data.url ?? null);
+    setLinkExists(true);
     setAllowlist(data.allowlist ?? []);
     setSuccessNote("Invite link rotated. Share the new link.");
   }
@@ -262,7 +273,7 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
         <div>
           <p className="text-sm font-medium">Invite link</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Anyone with this link can sign up or sign in and connect their machine.
+            Only allowlisted email addresses can redeem this link. It is shown once and stored only as a hash.
           </p>
         </div>
         {loadingLink ? (
@@ -292,9 +303,14 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
             </button>
           </div>
         ) : (
-          <Button type="button" variant="outline" onClick={() => void loadLink(true)}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void (linkExists ? rotateLink() : loadLink(true))}
+            disabled={rotating}
+          >
             <Link2 className="size-4" />
-            Generate invite link
+            {linkExists ? "Rotate and reveal new link" : "Generate invite link"}
           </Button>
         )}
       </section>
@@ -303,7 +319,7 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
         <div>
           <p className="text-sm font-medium">Notify people (optional)</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Email teammates the invite link and install steps, or just copy the link above and share it yourself.
+            Each email receives its own short-lived, single-use invite. Add addresses before sharing the team link.
           </p>
         </div>
 

@@ -57,12 +57,14 @@ async function createConnectInviteForEmail(input: {
   }
 
   const connectToken = generateOpaqueToken("uj_connect", 32);
+  const pollToken = generateOpaqueToken("uj_poll", 32);
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
   const connectInvite = await prisma.connectInvite.create({
     data: {
       orgId: input.orgId,
       email,
       tokenHash: hashOpaqueToken(connectToken),
+      pollTokenHash: hashOpaqueToken(pollToken),
       inviteId,
       status: "pending",
       expiresAt,
@@ -83,7 +85,7 @@ async function createConnectInviteForEmail(input: {
   const base = getPublicAppUrl();
   return {
     email,
-    command: buildConnectInviteCommand(connectToken, base),
+    command: buildConnectInviteCommand(connectToken, pollToken, base),
     joinUrl: buildConnectInviteUrl(connectToken, base),
     expiresAt: expiresAt.toISOString(),
   };

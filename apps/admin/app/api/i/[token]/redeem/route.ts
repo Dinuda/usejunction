@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
 import { buildInstallCommand, getPublicAppUrl } from "@/lib/connect-command";
 import { hasVerifiedIdentity, linkDeveloperToUser, normalizeEmail } from "@/lib/developer-identity";
+import { canRedeemTeamInvite } from "@/lib/invite-policy";
 import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 import { audit } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
@@ -31,12 +32,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
     return NextResponse.json({ error: "invite link expired" }, { status: 410 });
   }
 
-  // Possession of the invite link is enough — admins only share it with people who should join.
   const sessionEmail = normalizeEmail(session.user.email);
-  await prisma.teamInviteAllowlist.upsert({
+  const allowlisted = await prisma.teamInviteAllowlist.findUnique({
     where: { linkId_email: { linkId: link.id, email: sessionEmail } },
-    update: {},
-    create: { linkId: link.id, email: sessionEmail },
+    select: { id: true },
   });
 
   const pendingInvite = await prisma.organizationInvite.findFirst({
@@ -48,6 +47,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
     },
     orderBy: { createdAt: "desc" },
   });
+  if (!canRedeemTeamInvite({ allowlisted: Boolean(allowlisted), hasPendingInvite: Boolean(pendingInvite) })) {
+    return NextResponse.json({ error: "your email is not allowed to use this invite" }, { status: 403 });
+  }
 
   const developer = await prisma.$transaction(async (tx) => {
     if (pendingInvite) {

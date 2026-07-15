@@ -3,6 +3,7 @@ set -euo pipefail
 
 ENROLL_TOKEN=""
 CONNECT_TOKEN=""
+POLL_TOKEN=""
 CONTROL_PLANE_URL="${USEJUNCTION_URL:-http://localhost:3001}"
 INSTALL_DIR="${HOME}/.usejunction/bin"
 APP_NAME="UseJunction Agent"
@@ -10,7 +11,7 @@ APP_DIR="${HOME}/.usejunction/${APP_NAME}.app"
 VERSION="0.1.0"
 
 usage() {
-  echo "Usage: curl -fsSL <control-plane>/install.sh | sh -s -- (--token <token> | --connect <token>) [--url <control-plane>]"
+  echo "Usage: curl -fsSL <control-plane>/install.sh | sh -s -- (--token <token> | --connect <token> --poll-token <token>) [--url <control-plane>]"
   exit 1
 }
 
@@ -18,6 +19,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --token|--enroll-token) ENROLL_TOKEN="$2"; shift 2 ;;
     --connect) CONNECT_TOKEN="$2"; shift 2 ;;
+    --poll-token) POLL_TOKEN="$2"; shift 2 ;;
     --url) CONTROL_PLANE_URL="$2"; shift 2 ;;
     -h|--help) usage ;;
     *) echo "Unknown option: $1"; usage ;;
@@ -28,6 +30,10 @@ CONTROL_PLANE_URL="${CONTROL_PLANE_URL%/}"
 
 if [[ -z "$ENROLL_TOKEN" && -z "$CONNECT_TOKEN" ]]; then
   usage
+fi
+if [[ -n "$CONNECT_TOKEN" && -z "$POLL_TOKEN" ]]; then
+  echo "--poll-token is required with --connect"
+  exit 1
 fi
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -260,7 +266,7 @@ if [[ -n "$CONNECT_TOKEN" ]]; then
   ATTEMPTS=0
   MAX_ATTEMPTS=120
   while [[ $ATTEMPTS -lt $MAX_ATTEMPTS ]]; do
-    STATUS_JSON="$(curl -fsS "${CONTROL_PLANE_URL}/api/connect-invite/${CONNECT_TOKEN}/status" 2>/dev/null || true)"
+    STATUS_JSON="$(curl -fsS -H "Authorization: Bearer ${POLL_TOKEN}" "${CONTROL_PLANE_URL}/api/connect-invite/${CONNECT_TOKEN}/status" 2>/dev/null || true)"
     STATUS="$(printf '%s' "$STATUS_JSON" | sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
     if [[ "$STATUS" == "ready" ]]; then
       ENROLL_TOKEN="$(printf '%s' "$STATUS_JSON" | sed -n 's/.*"enrollmentToken"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"

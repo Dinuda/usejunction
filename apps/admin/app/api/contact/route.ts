@@ -1,5 +1,0 @@
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@usejunction/db";
-import { Resend } from "resend";
-
-export async function POST(request: NextRequest) { const body = await request.json().catch(() => ({})); const email = String(body.email ?? "").trim().toLowerCase(); const name = String(body.name ?? "").trim(); if (!name || !/^\S+@\S+\.\S+$/.test(email)) return NextResponse.json({ error: "Name and a valid email are required." }, { status: 400 }); await prisma.planInterest.create({ data: { plan: "enterprise", email, name, company: String(body.company ?? "").trim() || null, message: String(body.message ?? "").trim() || null } }); if (process.env.RESEND_API_KEY && process.env.SALES_NOTIFICATION_TO) { const resend = new Resend(process.env.RESEND_API_KEY); await resend.emails.send({ from: process.env.AUTH_EMAIL_FROM ?? "UseJunction <auth@usejunction.dev>", to: process.env.SALES_NOTIFICATION_TO, subject: `UseJunction enterprise inquiry from ${name}`, text: `${name} (${email})\n${body.company ?? ""}\n\n${body.message ?? ""}` }); } return NextResponse.json({ ok: true }); }

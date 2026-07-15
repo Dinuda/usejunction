@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { verifyConfiguredBearer } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
-  const auth = req.headers.get("authorization");
   const secret = process.env.CRON_SECRET;
 
-  if (!secret || (process.env.NODE_ENV === "production" && secret === "development-cron" && process.env.USEJUNCTION_ALLOW_INSECURE_DEVELOPMENT !== "true")) {
+  if (!secret || secret === "development-cron") {
     return NextResponse.json({ error: "CRON_SECRET is not securely configured" }, { status: 503 });
   }
-  if (auth !== `Bearer ${secret}`) {
+  if (!verifyConfiguredBearer(req, secret, ["development-cron"])) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

@@ -9,7 +9,7 @@ type LocalSyncInfo =
   | {
       available: true;
       url: string;
-      token: string;
+      grant: string;
       hostname: string;
       online: boolean;
       lastSeenAt: string;
@@ -104,7 +104,7 @@ export function LocalSyncPanel({
       const res = await fetch(url.toString(), {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${local.token}`,
+          Authorization: `Bearer ${local.grant}`,
           "Content-Type": "application/json",
         },
         signal: controller.signal,
@@ -114,7 +114,7 @@ export function LocalSyncPanel({
         setStatus("error");
         setDetail(
           res.status === 401
-            ? "Local sync token mismatch. Restart the agent daemon, then try Sync now again."
+            ? "Local sync grant expired or was rejected. Try Sync now again."
             : `Agent returned ${res.status}`,
         );
         return;

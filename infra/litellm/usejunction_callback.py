@@ -8,8 +8,9 @@ from typing import Any, Optional
 import httpx
 
 INGEST_URL = os.environ.get("USEJUNCTION_INGEST_URL", "http://localhost:3001/api/ingest/request")
-INGEST_SECRET = os.environ.get("USEJUNCTION_INGEST_SECRET", "change-me-ingest-secret")
-ORG_ID = os.environ.get("USEJUNCTION_ORG_ID", "seed-org")
+INGEST_SECRET = os.environ.get("USEJUNCTION_INGEST_SECRET")
+if not INGEST_SECRET or INGEST_SECRET == "change-me-ingest-secret":
+    raise RuntimeError("USEJUNCTION_INGEST_SECRET must be configured with a non-default value")
 
 
 def _extract_trace_id(kwargs: dict, metadata: dict) -> Optional[str]:
@@ -95,7 +96,6 @@ class UseJunctionLogger:
         trace_id = _extract_trace_id(kwargs, metadata)
 
         payload = {
-            "orgId": ORG_ID,
             "userId": user_id,
             "deviceId": device_id,
             "toolName": tool_name,

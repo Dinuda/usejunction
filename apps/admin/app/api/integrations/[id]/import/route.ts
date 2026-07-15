@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, type Prisma } from "@usejunction/db";
 import { z } from "zod";
+import { markAnalyticsDirtyDays } from "@/lib/analytics/dirty-days";
 import { normalizeEmail } from "@/lib/developer-identity";
 import { requireOrgRole, audit } from "@/lib/rbac";
 
@@ -38,6 +39,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       create: { orgId: auth.orgId, developerId: developer?.id ?? null, connectionId: id, date: normalizedDate, provider: connection.provider, product: connection.product, toolName: row.toolName, model: row.model, source: "invoice_imported", sourceRef: fingerprint, verified: true, requests: row.requests, sessions: row.sessions, inputTokens: BigInt(row.inputTokens), outputTokens: BigInt(row.outputTokens), costMicros: BigInt(Math.round(row.costUsd * 1_000_000)), dedupeKey: `import:${fingerprint}`, metadata: row.metadata as Prisma.InputJsonValue | undefined },
     });
   }
+  await markAnalyticsDirtyDays({
+    orgId: auth.orgId,
+    dates: parsed.data.rows.map((row) => {
+      const d = row.date;
+      return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    }),
+  });
   await prisma.providerConnection.update({ where: { id }, data: { status: "active", lastSyncedAt: new Date(), lastError: null } });
   await audit({ orgId: auth.orgId, actorType: "user", actorId: auth.userId, action: "integration.invoice_imported", targetType: "provider_connection", targetId: id, metadata: { rows: parsed.data.rows.length } });
   return NextResponse.json({ imported: parsed.data.rows.length });

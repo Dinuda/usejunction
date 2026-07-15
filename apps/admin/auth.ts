@@ -6,6 +6,7 @@ import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { compare } from "bcryptjs";
 import { prisma } from "@usejunction/db";
+import { consumeRateLimit } from "@/lib/rate-limit";
 import authConfig from "./auth.config";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -21,6 +22,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const email = String(credentials?.email ?? "").trim().toLowerCase();
         const password = String(credentials?.password ?? "");
         if (!email || !password) return null;
+        if (!consumeRateLimit("credentials-login", email, 10, 15 * 60 * 1000).allowed) return null;
 
         const user = await prisma.user.findUnique({
           where: { email },

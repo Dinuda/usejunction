@@ -3,11 +3,15 @@
 package localsync
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -103,13 +107,28 @@ func (s *Server) authorize(r *http.Request) bool {
 	}
 	auth := r.Header.Get("Authorization")
 	if strings.HasPrefix(strings.ToLower(auth), "bearer ") {
-		got := strings.TrimSpace(auth[7:])
-		return got == token
-	}
-	if q := r.URL.Query().Get("token"); q != "" {
-		return q == token
+		return validGrant(strings.TrimSpace(auth[7:]), token, time.Now())
 	}
 	return false
+}
+
+func validGrant(grant, secret string, now time.Time) bool {
+	parts := strings.Split(grant, ".")
+	if len(parts) != 4 || parts[0] != "v1" {
+		return false
+	}
+	expiresAt, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || expiresAt < now.Unix() || expiresAt > now.Add(2*time.Minute).Unix() {
+		return false
+	}
+	provided, err := base64.RawURLEncoding.DecodeString(parts[3])
+	if err != nil {
+		return false
+	}
+	payload := strings.Join(parts[:3], ".")
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(payload))
+	return hmac.Equal(provided, mac.Sum(nil))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

@@ -7,11 +7,11 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { safeAuthNextPath } from "@/lib/safe-redirect";
 
 export function SignupForm() {
   const params = useSearchParams();
-  const intent = params.get("intent") === "team" ? "team" : "community";
-  const from = params.get("from") || "/dashboard";
+  const from = safeAuthNextPath(params.get("from"));
   const emailPrefill = params.get("email") ?? "";
   const joiningInvite =
     from.startsWith("/i/") || from.startsWith("/join/") || from.startsWith("/connect-invite/");
@@ -32,7 +32,7 @@ export function SignupForm() {
     const response = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, email, password, confirmPassword, intent, from }),
+      body: JSON.stringify({ name, email, password, confirmPassword, from }),
     });
     const data = await response.json().catch(() => ({}));
     setLoading(false);

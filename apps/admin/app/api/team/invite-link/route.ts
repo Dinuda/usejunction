@@ -13,9 +13,8 @@ function serializeLink(link: {
   expiresAt: Date | null;
   rotatedAt: Date;
   createdAt: Date;
-  tokenReveal: string;
   allowlist: { email: string; createdAt: Date }[];
-}) {
+}, rawToken: string | null = null) {
   const base = getPublicAppUrl();
   return {
     link: {
@@ -26,8 +25,8 @@ function serializeLink(link: {
       createdAt: link.createdAt,
     },
     allowlist: link.allowlist,
-    url: buildTeamInviteLinkUrl(link.tokenReveal, base),
-    token: link.tokenReveal,
+    url: rawToken ? buildTeamInviteLinkUrl(rawToken, base) : null,
+    token: rawToken,
   };
 }
 
@@ -37,7 +36,7 @@ async function ensureLink(orgId: string, userId: string, rotate: boolean) {
     include: { allowlist: { select: { email: true, createdAt: true }, orderBy: { createdAt: "asc" } } },
   });
 
-  if (existing && !rotate) return { link: existing, created: false };
+  if (existing && !rotate) return { link: existing, created: false, rawToken: null };
 
   const rawToken = generateOpaqueToken("uj_team", 24);
   const tokenHash = hashOpaqueToken(rawToken);
@@ -46,11 +45,11 @@ async function ensureLink(orgId: string, userId: string, rotate: boolean) {
   const link = existing
     ? await prisma.teamInviteLink.update({
         where: { orgId },
-        data: { tokenHash, tokenReveal: rawToken, enabled: true, rotatedAt: now },
+        data: { tokenHash, enabled: true, rotatedAt: now },
         include: { allowlist: { select: { email: true, createdAt: true }, orderBy: { createdAt: "asc" } } },
       })
     : await prisma.teamInviteLink.create({
-        data: { orgId, tokenHash, tokenReveal: rawToken, enabled: true, rotatedAt: now },
+        data: { orgId, tokenHash, enabled: true, rotatedAt: now },
         include: { allowlist: { select: { email: true, createdAt: true }, orderBy: { createdAt: "asc" } } },
       });
 
@@ -63,7 +62,7 @@ async function ensureLink(orgId: string, userId: string, rotate: boolean) {
     targetId: link.id,
   });
 
-  return { link, created: !existing };
+  return { link, created: !existing, rawToken };
 }
 
 async function orgName(orgId: string) {
@@ -96,9 +95,9 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const rotate = Boolean(body?.rotate);
-  const { link, created } = await ensureLink(auth.orgId, auth.userId, rotate);
+  const { link, created, rawToken } = await ensureLink(auth.orgId, auth.userId, rotate);
 
-  return NextResponse.json(serializeLink(link), { status: created ? 201 : 200 });
+  return NextResponse.json(serializeLink(link, rawToken), { status: created ? 201 : 200 });
 }
 
 const allowlistSchema = z.object({
@@ -115,9 +114,8 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "add at least one valid email" }, { status: 400 });
   }
 
-  const { link } = await ensureLink(auth.orgId, auth.userId, false);
+  const { link, rawToken } = await ensureLink(auth.orgId, auth.userId, false);
   const emails = [...new Set(parsed.data.emails.map(normalizeEmail))];
-  const inviteUrl = serializeLink({ ...link, allowlist: link.allowlist }).url;
   const organizationName = await orgName(auth.orgId);
   const added = [];
   const emailResults: Array<{ email: string; status: "sent" | "skipped" | "email_failed"; error?: string }> = [];
@@ -135,23 +133,34 @@ export async function PUT(req: NextRequest) {
       where: { orgId_email: { orgId: auth.orgId, email } },
       select: { id: true },
     });
+    let inviteUrl: string | null = null;
     if (!existingDeveloper) {
       const pending = await prisma.organizationInvite.findFirst({
         where: { orgId: auth.orgId, email, acceptedAt: null, expiresAt: { gt: new Date() } },
         select: { id: true },
       });
-      if (!pending) {
+      const inviteToken = generateOpaqueToken("uj_invite", 32);
+      if (pending) {
+        await prisma.organizationInvite.update({
+          where: { id: pending.id },
+          data: {
+            tokenHash: hashOpaqueToken(inviteToken),
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        });
+      } else {
         await prisma.organizationInvite.create({
           data: {
             orgId: auth.orgId,
             email,
             role: "developer",
-            tokenHash: hashOpaqueToken(generateOpaqueToken("uj_invite", 32)),
+            tokenHash: hashOpaqueToken(inviteToken),
             expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
             invitedByUserId: auth.userId,
           },
         });
       }
+      inviteUrl = `${getPublicAppUrl()}/join/${encodeURIComponent(inviteToken)}`;
     }
 
     if (!parsed.data.sendEmail) {
@@ -160,7 +169,11 @@ export async function PUT(req: NextRequest) {
     }
 
     try {
-      await sendTeamInviteEmail({ to: email, organizationName, inviteUrl });
+      await sendTeamInviteEmail({
+        to: email,
+        organizationName,
+        inviteUrl: inviteUrl ?? `${getPublicAppUrl()}/login`,
+      });
       emailResults.push({ email, status: "sent" });
     } catch (cause) {
       emailResults.push({
@@ -180,7 +193,7 @@ export async function PUT(req: NextRequest) {
   return NextResponse.json({
     added,
     allowlist,
-    url: inviteUrl,
+    url: rawToken ? buildTeamInviteLinkUrl(rawToken, getPublicAppUrl()) : null,
     emailResults,
   });
 }
@@ -214,7 +227,6 @@ export async function PATCH(req: NextRequest) {
   if (!link) return NextResponse.json({ error: "invite link not found" }, { status: 404 });
 
   const allowlisted = new Set(link.allowlist.map((row) => row.email));
-  const inviteUrl = buildTeamInviteLinkUrl(link.tokenReveal, getPublicAppUrl());
   const organizationName = await orgName(auth.orgId);
   const emailResults: Array<{ email: string; status: "sent" | "email_failed" | "not_allowlisted"; error?: string }> =
     [];
@@ -225,6 +237,33 @@ export async function PATCH(req: NextRequest) {
       continue;
     }
     try {
+      const inviteToken = generateOpaqueToken("uj_invite", 32);
+      const pending = await prisma.organizationInvite.findFirst({
+        where: { orgId: auth.orgId, email, acceptedAt: null },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      });
+      if (pending) {
+        await prisma.organizationInvite.update({
+          where: { id: pending.id },
+          data: {
+            tokenHash: hashOpaqueToken(inviteToken),
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        });
+      } else {
+        await prisma.organizationInvite.create({
+          data: {
+            orgId: auth.orgId,
+            email,
+            role: "developer",
+            tokenHash: hashOpaqueToken(inviteToken),
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            invitedByUserId: auth.userId,
+          },
+        });
+      }
+      const inviteUrl = `${getPublicAppUrl()}/join/${encodeURIComponent(inviteToken)}`;
       await sendTeamInviteEmail({ to: email, organizationName, inviteUrl });
       emailResults.push({ email, status: "sent" });
     } catch (cause) {
@@ -236,7 +275,7 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ emailResults, url: inviteUrl });
+  return NextResponse.json({ emailResults });
 }
 
 export async function DELETE(req: NextRequest) {

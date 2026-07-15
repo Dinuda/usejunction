@@ -217,7 +217,8 @@ export function AiCodingPanel({
         </p>
       </div>
 
-      <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <Metric label="Requests" value={compact(metrics.requests)} sub="last 30 days" />
         <Metric
           label="AI lines accepted"
           value={compact(metrics.acceptedLines)}

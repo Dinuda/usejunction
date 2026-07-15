@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, type Prisma } from "@usejunction/db";
+import { markAnalyticsDirtyDays } from "@/lib/analytics/dirty-days";
 import { bearerToken, requireIngestAuth } from "@/lib/auth";
+import { deviceCostKind, normalizeDeviceSource } from "@/lib/ingest-trust";
 import { CALCULATION_VERSION } from "@/lib/metrics/source-priority";
+import { PayloadTooLargeError, readJsonWithLimit } from "@/lib/request-body";
+import { hashOpaqueToken } from "@/lib/security";
 
 type UsageRow = {
   date: string;
@@ -37,12 +41,6 @@ function providerForTool(toolName: string): string {
   return toolName;
 }
 
-function normalizeCanonicalSource(source: string): string {
-  if (source === "local_scan" || source === "cursor_local") return "device_observed";
-  if (source === "cursor_usage_events") return "vendor_verified";
-  return source;
-}
-
 function inferMetricKind(row: UsageRow, source: string): string {
   if (row.metricKind) return row.metricKind;
   if (source === "cursor_local") return "productivity";
@@ -53,18 +51,9 @@ function inferMetricKind(row: UsageRow, source: string): string {
   return "usage";
 }
 
-function inferCostKind(row: UsageRow, source: string, estimatedCost: number): string | null {
-  if (row.costKind) return row.costKind;
-  if (estimatedCost <= 0) return null;
-  if (row.verified || source === "cursor_usage_events" || normalizeCanonicalSource(source) === "vendor_verified") {
-    return "verified_usage";
-  }
-  return "estimated_api";
-}
-
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = await readJsonWithLimit<any>(req);
     const token = bearerToken(req);
 
     let orgId: string | null = null;
@@ -72,7 +61,7 @@ export async function POST(req: NextRequest) {
     let deviceId: string | null = null;
 
     if (token) {
-      const device = await prisma.device.findUnique({ where: { deviceToken: token } });
+      const device = await prisma.device.findUnique({ where: { deviceTokenHash: hashOpaqueToken(token) } });
       if (device) {
         orgId = device.orgId;
         userId = device.userId;
@@ -83,7 +72,7 @@ export async function POST(req: NextRequest) {
     if (!deviceId) {
       const authResult = requireIngestAuth(req);
       if (authResult instanceof NextResponse) return authResult;
-      orgId = body.orgId ?? null;
+      orgId = authResult.orgId;
       userId = body.userId ?? null;
       deviceId = body.deviceId ?? null;
     }
@@ -102,6 +91,7 @@ export async function POST(req: NextRequest) {
     if (!contextDevice) return NextResponse.json({ error: "invalid device context" }, { status: 403 });
 
     let upserted = 0;
+    const dirtyDates: Date[] = [];
     for (const row of rows) {
       if (!row.date || !row.toolName) continue;
 
@@ -133,9 +123,9 @@ export async function POST(req: NextRequest) {
       if (estimatedCost < 0) continue;
       const aiPercent = typeof row.aiPercent === "number" ? row.aiPercent : null;
       const source = rawSource;
-      const canonicalSource = normalizeCanonicalSource(source);
-      const verified = Boolean(row.verified) || canonicalSource === "vendor_verified";
-      const costKind = inferCostKind(row, source, estimatedCost);
+      const canonicalSource = normalizeDeviceSource(source);
+      const verified = false;
+      const costKind = deviceCostKind(estimatedCost);
       const calculationVersion = row.calculationVersion ?? CALCULATION_VERSION;
       const requests = metricKind === "productivity"
         ? 0
@@ -265,10 +255,12 @@ export async function POST(req: NextRequest) {
           metadata,
         },
       });
+      dirtyDates.push(date);
       upserted += 1;
     }
 
     if (upserted > 0) {
+      await markAnalyticsDirtyDays({ orgId, dates: dirtyDates });
       await prisma.device.update({
         where: { id: deviceId },
         data: { lastUsageSyncAt: new Date(), lastSeenAt: new Date(), status: "online" },
@@ -277,6 +269,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ upserted });
   } catch (e) {
+    if (e instanceof PayloadTooLargeError) {
+      return NextResponse.json({ error: "payload too large" }, { status: 413 });
+    }
     console.error("[ingest/local-usage]", e);
     return NextResponse.json({ error: "local-usage ingest failed" }, { status: 500 });
   }

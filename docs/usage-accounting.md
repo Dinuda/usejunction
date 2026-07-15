@@ -68,3 +68,23 @@ Shown only when `request_metadata` has outcome telemetry. Otherwise display "Not
 ## Calculation version
 
 `calculationVersion` on aggregates tracks parser/pricing changes. Pre-fix rows are marked stale during reconciliation rather than arithmetically corrected in place.
+
+## Metric version (retained analytical buckets)
+
+`metricVersion` (e.g. `metrics-v1`) versions the **analytical rollup recipe** separately from fact `calculationVersion`.
+
+- Facts live in `usage_daily` (immutable upserts via `dedupeKey`).
+- Retained day buckets live in `metric_daily_buckets`, keyed by dimensions + `metricVersion`.
+- `analytics_watermarks` track how far each org has been materialized for a given version.
+- `analytics_dirty_days` mark calendar days that need rematerialization after late ingest.
+- Insight reads **re-sum sealed buckets** and live-scan only the gap (dirty days + today).
+- Bumping to `metrics-v2` backfills new buckets from facts without rewriting history; readers switch to v2 while v1 rows are retained until an explicit GC.
+
+Cron: `POST /api/cron/materialize-metrics` with `Authorization: Bearer $CRON_SECRET`.
+
+Backfill a version (from `apps/admin`):
+
+```bash
+pnpm exec tsx scripts/backfill-metric-buckets.ts --org <orgId>
+pnpm exec tsx scripts/backfill-metric-buckets.ts --all --version metrics-v2
+```

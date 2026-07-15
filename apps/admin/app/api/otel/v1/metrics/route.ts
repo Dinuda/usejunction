@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, type Prisma } from "@usejunction/db";
+import { markAnalyticsDirtyDay } from "@/lib/analytics/dirty-days";
 import { hashOpaqueToken } from "@/lib/security";
 
 type Row = Record<string, any>;
@@ -58,7 +59,7 @@ async function resolveOtelAuth(bearer: string) {
     return { orgId: endpoint.orgId, defaultDeveloperId: null as string | null };
   }
   const device = await prisma.device.findUnique({
-    where: { deviceToken: token },
+    where: { deviceTokenHash: hashOpaqueToken(token) },
     select: { orgId: true, userId: true },
   });
   if (!device) return null;
@@ -91,16 +92,8 @@ export async function POST(req: NextRequest) {
         const points: Row[] = metric.sum?.dataPoints ?? metric.gauge?.dataPoints ?? [];
         for (const point of points.slice(0, 10_000)) {
           const attributes = { ...resourceAttributes, ...attrs(point.attributes) };
-          const email = typeof attributes["user.email"] === "string" ? String(attributes["user.email"]).trim().toLowerCase() : null;
           const accountId = String(attributes["user.account_id"] ?? attributes["user.account_uuid"] ?? attributes["user.id"] ?? "");
-          let developerId: string | null = authContext.defaultDeveloperId;
-          if (!developerId && email) {
-            const developer = await prisma.developer.findUnique({ where: { orgId_email: { orgId: authContext.orgId, email } }, select: { id: true } });
-            developerId = developer?.id ?? null;
-          } else if (!developerId && accountId) {
-            const identity = await prisma.externalIdentity.findUnique({ where: { orgId_provider_externalUserId: { orgId: authContext.orgId, provider: "anthropic", externalUserId: accountId } }, select: { developerId: true } });
-            developerId = identity?.developerId ?? null;
-          }
+          const developerId: string | null = authContext.defaultDeveloperId;
           const observed = pointDate(point);
           const metricValue = pointValue(point);
           const metricType = String(attributes.type ?? "").toLowerCase();
@@ -126,6 +119,7 @@ export async function POST(req: NextRequest) {
               dedupeKey: `otel:${fingerprint}`, observedAt: observed, metadata: safeJson(attributes), ...values,
             },
           });
+          await markAnalyticsDirtyDay(authContext.orgId, dateOnly(observed));
           accepted += 1;
         }
       }

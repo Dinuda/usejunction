@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { bearerToken } from "@/lib/auth";
+import { hashOpaqueToken } from "@/lib/security";
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,7 +10,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    const device = await prisma.device.findUnique({ where: { deviceToken: token } });
+    const device = await prisma.device.findUnique({ where: { deviceTokenHash: hashOpaqueToken(token) } });
     if (!device) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }

@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -154,21 +156,49 @@ type ClaudeEnvOptions struct {
 	DeviceToken         string
 }
 
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
+func validateGatewayURL(raw string) error {
+	parsed, err := url.ParseRequestURI(raw)
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return fmt.Errorf("gateway URL must be an absolute http(s) URL")
+	}
+	host := parsed.Hostname()
+	isLoopback := host == "localhost"
+	if ip := net.ParseIP(host); ip != nil {
+		isLoopback = ip.IsLoopback()
+	}
+	if parsed.Scheme != "https" && !isLoopback {
+		return fmt.Errorf("gateway URL must use HTTPS unless it is loopback")
+	}
+	return nil
+}
+
 // WriteClaudeEnv writes ~/.usejunction/claude-env.sh with gateway and OTEL settings.
 func WriteClaudeEnv(opts ClaudeEnvOptions) error {
+	if err := validateGatewayURL(opts.GatewayURL); err != nil {
+		return err
+	}
+	if opts.OtelEnabled {
+		if err := validateGatewayURL(opts.OtelMetricsEndpoint); err != nil {
+			return fmt.Errorf("OTEL metrics endpoint: %w", err)
+		}
+	}
 	snippetPath := filepath.Join(config.ConfigDir(), "claude-env.sh")
 	var b strings.Builder
 	b.WriteString("# Managed by UseJunction agent — source from your shell RC.\n")
-	b.WriteString(fmt.Sprintf("export ANTHROPIC_BASE_URL=\"%s\"\n", opts.GatewayURL))
-	b.WriteString(fmt.Sprintf("export ANTHROPIC_API_KEY=\"%s\"\n", opts.VirtualKey))
+	b.WriteString(fmt.Sprintf("export ANTHROPIC_BASE_URL=%s\n", shellQuote(opts.GatewayURL)))
+	b.WriteString(fmt.Sprintf("export ANTHROPIC_API_KEY=%s\n", shellQuote(opts.VirtualKey)))
 	if opts.OtelEnabled && opts.OtelMetricsEndpoint != "" && opts.DeviceToken != "" {
 		b.WriteString("export CLAUDE_CODE_ENABLE_TELEMETRY=1\n")
 		b.WriteString("export OTEL_METRICS_EXPORTER=otlp\n")
 		b.WriteString("export OTEL_LOGS_EXPORTER=none\n")
 		b.WriteString("export OTEL_TRACES_EXPORTER=none\n")
 		b.WriteString("export OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/json\n")
-		b.WriteString(fmt.Sprintf("export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=\"%s\"\n", opts.OtelMetricsEndpoint))
-		b.WriteString(fmt.Sprintf("export OTEL_EXPORTER_OTLP_METRICS_HEADERS=\"Authorization=Bearer %s\"\n", opts.DeviceToken))
+		b.WriteString(fmt.Sprintf("export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=%s\n", shellQuote(opts.OtelMetricsEndpoint)))
+		b.WriteString(fmt.Sprintf("export OTEL_EXPORTER_OTLP_METRICS_HEADERS=%s\n", shellQuote("Authorization=Bearer "+opts.DeviceToken)))
 		b.WriteString("export OTEL_LOG_USER_PROMPTS=0\n")
 		b.WriteString("export OTEL_LOG_TOOL_DETAILS=0\n")
 		b.WriteString("export OTEL_LOG_TOOL_CONTENT=0\n")
@@ -188,28 +218,32 @@ func ConfigureClaude(gatewayURL, virtualKey string) error {
 // ConfigureContinue rewrites ~/.continue/config.json with the gateway as the
 // default model provider. The original is backed up first.
 func ConfigureContinue(gatewayURL, virtualKey string) error {
+	if err := validateGatewayURL(gatewayURL); err != nil {
+		return err
+	}
 	home, _ := os.UserHomeDir()
 	configPath := filepath.Join(home, ".continue", "config.json")
 	if err := BackupFile("continue", configPath); err != nil {
 		return err
 	}
-	content := fmt.Sprintf(`{
-  "_comment": "Managed by UseJunction agent — restore with: usejunction unconfigure",
-  "models": [
-    {
-      "title": "UseJunction Gateway",
-      "provider": "openai",
-      "model": "gpt-4o-mini",
-      "apiBase": "%s/v1",
-      "apiKey": "%s"
-    }
-  ]
-}
-`, gatewayURL, virtualKey)
+	content, err := json.MarshalIndent(map[string]any{
+		"_comment": "Managed by UseJunction agent — restore with: usejunction unconfigure",
+		"models": []map[string]string{{
+			"title":    "UseJunction Gateway",
+			"provider": "openai",
+			"model":    "gpt-4o-mini",
+			"apiBase":  strings.TrimRight(gatewayURL, "/") + "/v1",
+			"apiKey":   virtualKey,
+		}},
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+	content = append(content, '\n')
 	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
 		return err
 	}
-	return os.WriteFile(configPath, []byte(content), 0644)
+	return os.WriteFile(configPath, content, 0600)
 }
 
 // UnconfigureAll restores all backed-up tool configs.

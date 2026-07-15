@@ -1,9 +1,14 @@
 package localsync
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/usejunction/agent/internal/config"
 )
@@ -24,16 +29,38 @@ func TestOriginAllowed(t *testing.T) {
 }
 
 func TestAuthorizeBearer(t *testing.T) {
-	s := New(&config.Config{LocalSyncToken: "uj_local_secret"}, func(bool) (int, int, int, int, error) {
+	const secret = "uj_local_secret"
+	s := New(&config.Config{LocalSyncToken: secret}, func(bool) (int, int, int, int, error) {
 		return 1, 2, 3, 4, nil
 	})
+	expiresAt := time.Now().Add(time.Minute).Unix()
+	payload := fmt.Sprintf("v1.%d.test-nonce", expiresAt)
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(payload))
+	grant := payload + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	req := httptest.NewRequest(http.MethodPost, "/v1/sync", nil)
-	req.Header.Set("Authorization", "Bearer uj_local_secret")
+	req.Header.Set("Authorization", "Bearer "+grant)
 	if !s.authorize(req) {
-		t.Fatal("expected bearer auth to pass")
+		t.Fatal("expected short-lived grant to pass")
 	}
 	req.Header.Set("Authorization", "Bearer wrong")
 	if s.authorize(req) {
 		t.Fatal("expected bearer auth to fail")
+	}
+	queryReq := httptest.NewRequest(http.MethodPost, "/v1/sync?token="+secret, nil)
+	if s.authorize(queryReq) {
+		t.Fatal("query-string credentials must be rejected")
+	}
+}
+
+func TestExpiredGrantRejected(t *testing.T) {
+	const secret = "uj_local_secret"
+	expiresAt := time.Now().Add(-time.Minute).Unix()
+	payload := fmt.Sprintf("v1.%d.test-nonce", expiresAt)
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(payload))
+	grant := payload + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	if validGrant(grant, secret, time.Now()) {
+		t.Fatal("expired grant must be rejected")
 	}
 }

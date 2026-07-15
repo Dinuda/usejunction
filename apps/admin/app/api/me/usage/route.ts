@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@usejunction/db";
-import { aggregateMetrics } from "@/lib/metrics/aggregate";
-import { usageWindowDays } from "@/lib/metrics/date-range";
+import { resolveReportWindow, UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
+import { serializeBigInts } from "@/lib/billing/validation";
+import { getUsageDetail } from "@/lib/insights/queries/get-usage-detail";
 import { requireOrgRole } from "@/lib/rbac";
+import { prisma } from "@usejunction/db";
 
 const querySchema = z.object({ days: z.coerce.number().int().min(1).max(90).default(30) });
 
@@ -12,9 +13,33 @@ export async function GET(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
   const parsed = querySchema.safeParse({ days: req.nextUrl.searchParams.get("days") ?? 30 });
   if (!parsed.success) return NextResponse.json({ error: "invalid date range" }, { status: 400 });
-  const developer = await prisma.developer.findFirst({ where: { orgId: auth.orgId, authUserId: auth.userId }, select: { id: true } });
+
+  const developer = await prisma.developer.findFirst({
+    where: { orgId: auth.orgId, authUserId: auth.userId },
+    select: { id: true },
+  });
   if (!developer) return NextResponse.json({ error: "developer profile required" }, { status: 409 });
-  const window = usageWindowDays(parsed.data.days);
-  const data = await aggregateMetrics({ orgId: auth.orgId, developerId: developer.id, from: window.from, to: window.to, groupBy: "day", includeAllSources: false });
-  return NextResponse.json({ from: window.from, to: window.to, data });
+
+  const days = parsed.data.days;
+  const range = days <= 7 ? 7 : days <= 30 ? 30 : 90;
+  const reportWindow = resolveReportWindow({ range, timezone: UTC_TIMEZONE });
+  const envelope = await getUsageDetail(
+    {
+      orgId: auth.orgId,
+      actorId: auth.userId,
+      roles: [auth.role],
+      now: new Date(),
+      timezone: UTC_TIMEZONE,
+    },
+    { reportWindow, developerId: developer.id },
+  );
+
+  return NextResponse.json(
+    serializeBigInts({
+      from: reportWindow.from,
+      to: reportWindow.to,
+      data: envelope.data.byDay,
+      detail: envelope.data,
+    }),
+  );
 }

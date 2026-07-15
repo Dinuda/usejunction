@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
-import { assertCanEnrollDevice } from "@/lib/billing/status";
 import { generateDeviceToken } from "@/lib/auth";
+import { commercialFeatures } from "@/lib/commercial/provider";
 import { getPublicAppUrl } from "@/lib/public-url";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { hashOpaqueToken } from "@/lib/security";
 
 export async function POST(req: NextRequest) {
+  const limited = enforceRateLimit(req, "device-enroll", { limit: 20, windowMs: 15 * 60 * 1000 });
+  if (limited) return limited;
   try {
     const body = await req.json();
     const { token, hostname, os, architecture, agentVersion } = body;
@@ -41,7 +44,7 @@ export async function POST(req: NextRequest) {
 
     const orgId = enrollment.orgId;
 
-    const enrollmentCheck = await assertCanEnrollDevice(orgId);
+    const enrollmentCheck = await commercialFeatures.assertCanEnrollDevice(orgId);
     if (!enrollmentCheck.allowed) {
       return NextResponse.json({ error: enrollmentCheck.message }, { status: 403 });
     }
@@ -62,7 +65,7 @@ export async function POST(req: NextRequest) {
             os: String(os || "unknown").slice(0, 64),
             architecture: String(architecture || "unknown").slice(0, 64),
             agentVersion: String(agentVersion || "0.1.0").slice(0, 64),
-            deviceToken,
+            deviceTokenHash: hashOpaqueToken(deviceToken),
             status: "online",
           },
         });
@@ -84,7 +87,7 @@ export async function POST(req: NextRequest) {
       userId: enrollment.developer.id,
       orgId,
       deviceToken,
-      gatewayUrl: process.env.LITELLM_URL || "http://localhost:4000",
+      gatewayUrl: process.env.NEXT_PUBLIC_LITELLM_URL || "http://localhost:4000",
       status: "connected",
       otel: {
         enabled: telemetryEndpoint?.enabled ?? true,

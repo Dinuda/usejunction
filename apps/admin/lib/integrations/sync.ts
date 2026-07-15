@@ -1,4 +1,5 @@
 import { prisma, type Prisma, type ProviderConnection } from "@usejunction/db";
+import { markAnalyticsDirtyDays } from "@/lib/analytics/dirty-days";
 import { normalizeEmail } from "@/lib/developer-identity";
 import { getAdapter } from "@/lib/integrations/adapters";
 import { githubInstallationToken } from "@/lib/integrations/github-app";
@@ -123,6 +124,12 @@ export async function syncConnection(connectionId: string) {
           acceptedLines: row.acceptedLines ?? BigInt(0), addedLines: row.addedLines ?? BigInt(0), deletedLines: row.deletedLines ?? BigInt(0),
           commits: row.commits ?? 0, pullRequests: row.pullRequests ?? 0, costMicros: row.costMicros ?? BigInt(0), dedupeKey, metadata: json(row.metadata),
         },
+      });
+    }
+    if (data.usage.length > 0) {
+      await markAnalyticsDirtyDays({
+        orgId: connection.orgId,
+        dates: data.usage.map((row) => row.date),
       });
     }
     const counts = { members: identities.size, seats: data.seats.length, usage: data.usage.length };

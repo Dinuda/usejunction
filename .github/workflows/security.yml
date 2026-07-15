@@ -1,0 +1,118 @@
+name: Security and community boundary
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: usejunction
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://test:test@127.0.0.1:5432/usejunction
+      AUTH_SECRET: ci-only-not-deployed
+      INGEST_SECRET: ci-ingest-secret-not-deployed
+      INGEST_ORG_ID: ci-org
+      CRON_SECRET: ci-cron-secret-not-deployed
+      INTEGRATION_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @usejunction/db exec prisma migrate deploy
+      - run: pnpm check:community-boundary
+      - run: pnpm test
+      - run: pnpm build
+      - name: Production security smoke
+        run: |
+          pnpm --filter @usejunction/admin start > /tmp/usejunction-next.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:3001/api/health >/dev/null && break
+            sleep 1
+          done
+          bash scripts/security-smoke.sh http://127.0.0.1:3001
+      - run: pnpm audit --audit-level high
+
+  agent:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: agent/go.sum
+      - run: go test ./...
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - run: govulncheck ./...
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+
+  container-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+  signed-agent-artifacts:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: agent/go.sum
+      - uses: sigstore/cosign-installer@v3.8.2
+      - run: USEJUNCTION_AGENT_VERSION="${GITHUB_REF_NAME#v}" bash scripts/build-agent-releases.sh
+      - name: Sign checksum manifest
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cosign sign-blob --yes \
+            --bundle "apps/admin/public/releases/download/v${version}/checksums.sigstore.json" \
+            "apps/admin/public/releases/download/v${version}/checksums.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-usejunction-agent-${{ github.ref_name }}
+          path: apps/admin/public/releases/download/
