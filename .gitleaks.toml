@@ -1,0 +1,7 @@
+title = "UseJunction gitleaks config"
+
+[allowlist]
+description = "Synthetic auth fixtures used by agent probe tests"
+paths = [
+  '''(?i)agent/internal/probe/probe_test\.go''',
+]
