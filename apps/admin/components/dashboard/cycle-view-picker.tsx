@@ -58,9 +58,11 @@ function daysAgoIso(days: number) {
 export function CycleViewPicker({
   view,
   period,
+  basePath = "/dashboard",
 }: {
   view: CycleView;
   period: RollingPeriod;
+  basePath?: string;
 }) {
   const router = useRouter();
   const [prefs, setPrefs] = useState<RollingPeriodPrefs>({
@@ -88,15 +90,15 @@ export function CycleViewPicker({
     if (hasExplicitPeriod) return;
     const stored = readRollingPeriodPrefs().active;
     if (periodsEqual(stored, DEFAULT_ROLLING_PERIOD)) return;
-    router.replace(rollingPeriodHref(stored));
-  }, [router, view]);
+    router.replace(rollingPeriodHref(stored, basePath));
+  }, [basePath, router, view]);
 
   const rollingLabel = rollingPeriodLabel(prefs.active);
 
   function applyPeriod(next: RollingPeriod) {
     const updated = setActiveRollingPeriod(next);
     setPrefs(updated);
-    router.push(rollingPeriodHref(next));
+    router.push(rollingPeriodHref(next, basePath));
   }
 
   function deleteSaved(item: CustomRollingPeriod, event: MouseEvent) {
@@ -105,7 +107,7 @@ export function CycleViewPicker({
     const updated = removeSavedRollingPeriod(item.id);
     setPrefs(updated);
     if (periodsEqual(period, item)) {
-      router.push(rollingPeriodHref(DEFAULT_ROLLING_PERIOD));
+      router.push(rollingPeriodHref(DEFAULT_ROLLING_PERIOD, basePath));
     }
   }
 
@@ -126,7 +128,7 @@ export function CycleViewPicker({
         {(["current_cycles", "previous_cycles"] as const).map((value) => (
           <Button key={value} asChild size="sm" variant="ghost">
             <Link
-              href={`/dashboard?view=${value}`}
+              href={`${basePath}?view=${value}`}
               className={cn(
                 "h-8 rounded-none px-3 text-xs font-semibold",
                 view === value
@@ -231,7 +233,7 @@ export function CycleViewPicker({
 
           <Button asChild size="sm" variant="ghost" className="h-8 rounded-none px-0">
             <Link
-              href={rollingPeriodHref(prefs.active)}
+              href={rollingPeriodHref(prefs.active, basePath)}
               className={cn(
                 "h-8 rounded-none px-3 text-xs font-semibold",
                 view === "last_30_days"

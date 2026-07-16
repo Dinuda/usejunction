@@ -1,6 +1,6 @@
 export const DASHBOARD_PERIOD_STORAGE_KEY = "uj.dashboard.rolling-period";
 
-export const PERIOD_PRESETS = [30, 60, 90] as const;
+export const PERIOD_PRESETS = [3, 30, 60, 90] as const;
 export type PeriodPresetDays = (typeof PERIOD_PRESETS)[number];
 
 export type PresetRollingPeriod = {
@@ -50,7 +50,7 @@ export function rollingPeriodLabel(period: RollingPeriod): string {
   return `${shortUtcDate(period.from)} – ${shortUtcDate(period.to)}`;
 }
 
-export function rollingPeriodHref(period: RollingPeriod): string {
+export function rollingPeriodHref(period: RollingPeriod, basePath = "/dashboard"): string {
   const params = new URLSearchParams({ view: "last_30_days" });
   if (period.kind === "preset") {
     if (period.days !== 30) params.set("days", String(period.days));
@@ -58,7 +58,7 @@ export function rollingPeriodHref(period: RollingPeriod): string {
     params.set("from", period.from);
     params.set("to", period.to);
   }
-  return `/dashboard?${params.toString()}`;
+  return `${basePath}?${params.toString()}`;
 }
 
 export function periodsEqual(a: RollingPeriod, b: RollingPeriod): boolean {

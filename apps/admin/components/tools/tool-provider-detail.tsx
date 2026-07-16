@@ -129,7 +129,7 @@ export function ToolProviderDetail({ data }: { data: DetailProps }) {
           { label: "Devices", value: data.kpis.devices, sub: "With this tool installed" },
           { label: "People", value: data.kpis.people, sub: "Detected or assigned" },
           { label: "Seats free", value: data.kpis.seatsFree, sub: `${data.kpis.seatsAssigned}/${data.kpis.seatsPurchased} assigned` },
-          { label: "Spend (7d)", value: currency(data.kpis.spend7d), sub: `${data.kpis.requests7d.toLocaleString()} requests`, accent: true },
+          { label: "Usage cost (7d)", value: currency(data.kpis.usageCost7d), sub: `${data.kpis.requests7d.toLocaleString()} requests · verified + estimated`, accent: true },
         ].map((item) => (
           <div
             key={item.label}

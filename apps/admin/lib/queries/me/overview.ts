@@ -1,6 +1,8 @@
 import { prisma } from "@usejunction/db";
 import { usageWindowDays } from "@/lib/metrics/date-range";
+import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
+import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
 import { isDeviceOnline } from "@/lib/devices/presence";
 import { orgNeedsPlanSync } from "@/lib/queries/me/local-sync-context";
 import { canonicalToolKey, findCatalogTool } from "@/lib/tools/catalog";
@@ -190,22 +192,24 @@ export async function getMeOverview(
 /** Admin view of any teammate by developer id. */
 export async function getDeveloperOverview(
   orgId: string,
-  developerId: string
+  developerId: string,
+  options: { reportWindow?: MetricWindow } = {},
 ): Promise<MeOverviewData | null> {
   const developer = await prisma.developer.findFirst({
     where: { orgId, id: developerId },
     include: overviewInclude,
   });
   if (!developer) return null;
-  return buildMeOverview(orgId, developer, developer.role as OrganizationRole);
+  return buildMeOverview(orgId, developer, developer.role as OrganizationRole, options.reportWindow);
 }
 
 async function buildMeOverview(
   orgId: string,
   developer: OverviewDeveloper,
-  role: OrganizationRole
+  role: OrganizationRole,
+  reportWindow?: MetricWindow,
 ): Promise<MeOverviewData> {
-  const usage30d = usageWindowDays(30);
+  const usage30d = reportWindow ?? usageWindowDays(30);
   const measures = [
     "requests", "sessions", "inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens",
     "reasoningTokens", "suggestedLines", "acceptedLines", "addedLines", "deletedLines", "commits", "costMicros",
@@ -236,15 +240,14 @@ async function buildMeOverview(
   ]);
 
   const summaryRow = summary.data.rows[0];
-  let verifiedUsageCost = 0;
-  let estimatedApiCost = 0;
-  for (const row of costs.data.rows) {
-    const value = metricNumber(row, "costMicros") / 1_000_000;
-    if (dimension(row, "costKind") === "verified_usage") verifiedUsageCost += value;
-    else if (dimension(row, "costKind") === "estimated_api" && dimension(row, "source") !== "estimated") {
-      estimatedApiCost += value;
-    }
-  }
+  const costSummary = summarizeCanonicalCosts(
+    costs.data.rows.map((row) => ({
+      costMicros: metricNumber(row, "costMicros"),
+      costKind: dimension(row, "costKind"),
+    })),
+  );
+  const verifiedUsageCost = costSummary.verifiedUsageCost;
+  const estimatedApiCost = costSummary.estimatedApiCost;
 
   const detectedToolNames = new Set(
     developer.devices.flatMap((device) => device.toolInstallations.map((tool) => tool.toolName)),

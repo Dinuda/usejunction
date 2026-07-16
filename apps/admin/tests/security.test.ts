@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { constantTimeHashMatch, decryptSecret, encryptSecret, hashOpaqueToken } from "../lib/security";
 
 test("integration credentials round-trip through authenticated encryption", () => {

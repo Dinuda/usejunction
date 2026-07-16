@@ -142,7 +142,7 @@ async function DeveloperActivityView({ orgId, userId, role }: { orgId: string; u
         <Kpi label="Requests" value={compact(personal.usage30d.requests)} accent />
         <Kpi label="Sessions" value={compact(personal.usage30d.sessions)} />
         <Kpi label="Tokens" value={compact(tokens)} sub="input + output" />
-        <Kpi label="Spend" value={money(spend)} sub="estimated / verified" />
+        <Kpi label="Usage cost" value={money(spend)} sub="verified + estimated · 30 days" />
       </div>
 
       <AiCodingPanel metrics={personal.aiCoding30d} models={personal.modelUsage30d} />

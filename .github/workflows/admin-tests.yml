@@ -1,0 +1,121 @@
+name: Admin tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admin-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    name: Unit, component, coverage, and type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @usejunction/db generate
+      - run: pnpm --filter @usejunction/admin exec tsc --noEmit --incremental false
+      - run: pnpm --filter @usejunction/admin test:coverage
+
+  integration:
+    name: PostgreSQL integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: usejunction
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d usejunction"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/usejunction
+      NEXTAUTH_SECRET: ci-test-secret
+      RUN_AGENT_UPDATE_DB_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @usejunction/db generate
+      - run: pnpm --filter @usejunction/db exec prisma migrate deploy
+      - run: pnpm --filter @usejunction/admin test:integration
+
+  e2e:
+    name: Chromium workspace E2E
+    runs-on: ubuntu-latest
+    needs: [fast]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: usejunction
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d usejunction"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/usejunction
+      NEXTAUTH_SECRET: ci-test-secret
+      AUTH_TRUST_HOST: "true"
+      RUN_AGENT_UPDATE_DB_TESTS: "1"
+      E2E_OWNER_EMAIL: owner@example.com
+      E2E_OWNER_PASSWORD: e2e-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @usejunction/db generate
+      - run: pnpm --filter @usejunction/db exec prisma migrate deploy
+      - run: pnpm --filter @usejunction/admin e2e:seed
+      - run: pnpm --filter @usejunction/admin exec playwright install --with-deps chromium
+      - run: pnpm --filter @usejunction/admin test:e2e
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/admin/playwright-report/
+          if-no-files-found: ignore
+      - name: Upload Playwright failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: apps/admin/test-results/
+          if-no-files-found: ignore

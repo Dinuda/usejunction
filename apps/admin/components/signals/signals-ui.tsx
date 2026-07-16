@@ -57,18 +57,20 @@ export function SignalsKpi({
   value,
   sub,
   hero,
+  accent,
   className,
 }: {
   label: string;
   value: ReactNode;
   sub?: ReactNode;
   hero?: boolean;
+  accent?: boolean;
   className?: string;
 }) {
   return (
     <div className={cn(className)}>
       <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
-      <div className={cn("mt-2 font-semibold tracking-tight tabular-nums", hero ? "text-4xl" : "text-3xl")}>
+      <div className={cn("mt-2 font-semibold tracking-tight tabular-nums", hero ? "text-4xl" : "text-3xl", accent && "text-primary")}>
         {value}
       </div>
       {sub ? <div className="mt-1 text-xs text-muted-foreground">{sub}</div> : null}

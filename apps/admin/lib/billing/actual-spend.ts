@@ -17,7 +17,7 @@ export type SubscriptionSeatRow = {
 };
 
 export type ActualSpendBreakdown = {
-  /** Full cycle dollars for active coding subscriptions. */
+  /** Full cycle dollars for active coding subscriptions (purchased-seat commitment). */
   total: number;
   basis: "subscriptions" | "none";
   cycles: Array<{
@@ -57,7 +57,7 @@ export function cycleSubscriptionMicros(rows: SubscriptionSeatRow[], from: Date,
 }
 
 /**
- * Actual spend = full current-cycle coding-subscription cost.
+ * Subscription commitment = full current-cycle coding-subscription cost.
  * Not prorated by calendar day. Only subscriptions that have started by period end.
  */
 export function computeActualSpend(input: {

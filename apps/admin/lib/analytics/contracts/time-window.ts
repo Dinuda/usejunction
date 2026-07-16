@@ -10,7 +10,7 @@ export type MetricWindow = {
 export const UTC_TIMEZONE = "UTC";
 
 export type ResolveReportWindowInput = {
-  range?: 7 | 30 | 90;
+  range?: number;
   from?: Date | string;
   to?: Date | string;
   timezone?: string;

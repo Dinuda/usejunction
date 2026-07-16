@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { TOOL_CATALOG, canonicalToolKey, findCatalogPlan, serializeCatalog, toolUsageNames } from "../lib/tools/catalog";
 import { deriveSubscription } from "../lib/tools/subscriptions";
 import { mapVendorPlanToCatalog, hasReportedVendorPlan } from "../lib/tools/sync-detected";

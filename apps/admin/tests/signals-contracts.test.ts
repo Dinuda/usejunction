@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { containsForbiddenSignalsField, signalsIngestSchema } from "../lib/signals/contracts";
 
 test("signals ingest accepts domain-level sessions", () => {

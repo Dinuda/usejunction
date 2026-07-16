@@ -30,8 +30,6 @@ import { readQuotas } from "@/lib/insights/readers/quotas";
 import { readSubscriptions } from "@/lib/insights/readers/subscriptions";
 import { canonicalToolKey } from "@/lib/tools/catalog";
 
-const DAY_MS = 86_400_000;
-
 function emptyVerdict(): PlanVerdict {
   return evaluatePlanUtilization({ primaryQuota: null, included: null });
 }
@@ -70,18 +68,7 @@ export async function getPlanUsage(
     readQuotas(context.orgId, { developerId: input.developerId }),
     readDataThrough(prisma, analyticsScope),
   ]);
-  const assignmentCycles = assignments.map((assignment) => resolveBillingCycle(assignment, context.now));
-  const subscriptionCycles = subscriptions.map((subscription) => resolveBillingCycle(subscription, context.now));
-  const allCycles = [...assignmentCycles, ...subscriptionCycles];
-  const billingWindow = allCycles.length
-    ? {
-        from: new Date(Math.min(...allCycles.map((cycle) => cycle.cycleStart.getTime()))),
-        to: new Date(Math.max(...allCycles.map((cycle) => cycle.cycleEnd.getTime())) - DAY_MS),
-        timezone: input.reportWindow.timezone,
-        grain: input.reportWindow.grain,
-      }
-    : input.reportWindow;
-  const billingFacts = await readCanonicalBillingFacts(prisma, analyticsScope, billingWindow);
+  const billingFacts = await readCanonicalBillingFacts(prisma, analyticsScope, input.reportWindow);
 
   const billingLines = calculateBilling({
     assignments,
@@ -102,7 +89,7 @@ export async function getPlanUsage(
 
   const subscriptionRows: PlanUsageSubscriptionRow[] = subscriptions.map((subscription) => {
     const toolKey = subscription.toolKey ?? canonicalToolKey(subscription.toolName);
-    const billingCycle = resolveBillingCycle(subscription, context.now);
+    const billingCycle = resolveBillingCycle(subscription, input.reportWindow.to);
     const quotas = allQuotas.filter(
       (quota) => quota.toolKey === toolKey || quota.toolKey === canonicalToolKey(subscription.toolName),
     );
@@ -192,7 +179,7 @@ export async function getPlanUsage(
       planName: assignment.planName,
       seatCount: assignment.seatCount,
       billingCadence: assignment.billingCadence,
-      billingCycle: cycleToJson(resolveBillingCycle(assignment, context.now)),
+      billingCycle: cycleToJson(resolveBillingCycle(assignment, input.reportWindow.to)),
       cycleSeatMicros: assignment.cycleSeatMicros.toString(),
       includedCycleMicros: assignment.includedCycleMicros.toString(),
       primaryQuota,

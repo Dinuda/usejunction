@@ -44,7 +44,7 @@ Source: `apps/admin/lib/analytics/query/sql.ts`, `apps/admin/lib/metrics/source-
 - Cost source priority is vendor verified/invoice imported, gateway observed, estimated/device observed, OTEL observed.
 - Activity and cost are selected independently; one source can win activity while another wins cost for the same day/tool/model key.
 - Productivity rows are separate from usage activity. `cursor_local` and explicit `metric_kind=productivity` are productivity; they do not count as model activity.
-- Synthetic `estimated` rows do not count as observed activity and are excluded from the “estimated API value” accumulation in the dashboard/me overview cost loops when the source is exactly `estimated`.
+- Synthetic `estimated` rows do not count as observed activity, but their selected cost is included in the canonical “estimated API value” accumulation. This keeps verified, estimated, and total cost displays consistent without inflating observed model-call counts.
 - Available query filters are developer ids, repository ids, tool names, providers, products, models, normalized sources, metric kinds, and cost kinds. Filter arrays are deduped and sorted before execution.
 - Measures include requests, sessions, all token types, active seconds, productivity line/commit fields, cost micros, and active developers. Most UI token totals use input + output only; cache and reasoning are displayed separately.
 
@@ -73,9 +73,9 @@ Filters/views:
 
 Calculations:
 
-- KPI “Actual spend”: sum of subscription cycle seat micros × seat count. Current/previous cycle views use the full cycle cost. Last-30/custom uses `overlapDays / cycle.totalDays` and rounds prorated micros.
+- KPI “Subscription commitment”: sum of subscription cycle seat micros × purchased seat count. Current/previous cycle views use the full cycle cost. Last-30/custom uses `overlapDays / cycle.totalDays` and rounds prorated micros.
 - KPI “Verified usage”: sum of usage rows classified `costKind=verified_usage`, converted to dollars.
-- KPI “Estimated API value”: sum of `costKind=estimated_api` rows except source `estimated`, converted to dollars.
+- KPI “Estimated API value”: sum of selected `costKind=estimated_api` rows, including source `estimated`, converted to dollars.
 - KPI “Model calls”: canonical request sum allocated to subscription cycles.
 - Subscription-cycle slices use the intersection of cycle and report window. Cycle windows are half-open internally; the displayed end is the last inclusive day.
 - For current/previous cycles, usage for identical tool/window groups is allocated across slices by `max(1, seatCount) / max(1, totalSeats)`.
@@ -167,7 +167,7 @@ Sources: `lib/queries/dashboard/tool-detail.ts`, `components/tools/tool-provider
 
 - Tool route resolves a catalog tool and queries the canonical name plus aliases.
 - 7-day requests and input+output tokens sum across source-dimension rows.
-- 7-day spend excludes rows whose source is exactly `estimated`; all other cost rows are included.
+- 7-day usage cost sums selected canonical costs, including source `estimated`; observed request counts still exclude synthetic estimated activity.
 - People are a union of detected installations, tool accounts, and active assignments, keyed by developer. The display is alphabetic by name.
 - A detected plan is mapped to a catalog plan. `planMismatch` is true only when mapped vendor and assigned catalog keys differ and assignment source is `detected`.
 - Devices are deduped by installation `deviceId`; people count is the size of the union.

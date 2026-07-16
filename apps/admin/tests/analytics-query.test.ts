@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { analyticsCacheKey } from "../lib/analytics/query/execute";
 import { normalizeUsageQuery, stableQueryJson } from "../lib/analytics/query/normalize";
 
@@ -102,6 +102,76 @@ test("usage query includes DATE rows on the inclusive cycle start day", { skip: 
 
     assert.equal(metricNumber(result.data.rows[0], "requests"), 7);
     assert.equal(metricNumber(result.data.rows[0], "costMicros"), 1_230_000);
+  } finally {
+    await prisma.organization.delete({ where: { id: orgId } }).catch(() => {});
+  }
+});
+
+test("canonical usage keeps estimated cost while preserving observed activity precedence", { skip: !process.env.DATABASE_URL }, async () => {
+  const [{ prisma }, { UTC_TIMEZONE }, { metricNumber, dimension, readUsageMetrics }] = await Promise.all([
+    import("@usejunction/db"),
+    import("../lib/analytics/contracts/time-window"),
+    import("../lib/analytics/query"),
+  ]);
+  const orgId = `test_org_cost_${Date.now()}`;
+  await prisma.organization.create({ data: { id: orgId, name: "Cost Query Test", slug: orgId } });
+  try {
+    await prisma.usageDaily.createMany({
+      data: [
+        {
+          id: `${orgId}_verified`,
+          orgId,
+          date: new Date("2026-07-10T00:00:00.000Z"),
+          provider: "cursor",
+          product: "cursor",
+          toolName: "cursor",
+          model: "gpt-4.1",
+          source: "vendor_verified",
+          verified: true,
+          requests: 10,
+          inputTokens: BigInt(1_000_000),
+          outputTokens: BigInt(500_000),
+          costMicros: BigInt(5_000_000),
+          costKind: "verified_usage",
+          dedupeKey: `${orgId}:verified`,
+        },
+        {
+          id: `${orgId}_estimated`,
+          orgId,
+          date: new Date("2026-07-11T00:00:00.000Z"),
+          provider: "cursor",
+          product: "cursor",
+          toolName: "cursor",
+          model: "gpt-4.1",
+          source: "estimated",
+          requests: 5,
+          inputTokens: BigInt(100),
+          outputTokens: BigInt(50),
+          costMicros: BigInt(1_000_000),
+          costKind: "estimated_api",
+          dedupeKey: `${orgId}:estimated`,
+        },
+      ],
+    });
+
+    const result = await readUsageMetrics({
+      orgId,
+      window: {
+        from: new Date("2026-07-10T00:00:00.000Z"),
+        to: new Date("2026-07-11T00:00:00.000Z"),
+        timezone: UTC_TIMEZONE,
+        grain: "day",
+      },
+      measures: ["requests", "costMicros"],
+      dimensions: ["costKind"],
+    });
+
+    const verified = result.data.rows.find((row) => dimension(row, "costKind") === "verified_usage");
+    const estimated = result.data.rows.find((row) => dimension(row, "costKind") === "estimated_api");
+    assert.equal(metricNumber(verified, "requests"), 10);
+    assert.equal(metricNumber(verified, "costMicros"), 5_000_000);
+    assert.equal(metricNumber(estimated, "requests"), 0);
+    assert.equal(metricNumber(estimated, "costMicros"), 1_000_000);
   } finally {
     await prisma.organization.delete({ where: { id: orgId } }).catch(() => {});
   }

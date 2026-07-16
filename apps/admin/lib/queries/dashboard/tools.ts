@@ -1,5 +1,6 @@
 import { prisma } from "@usejunction/db";
 import { usageWindowDays } from "@/lib/metrics/date-range";
+import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
 import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
 
 export interface DashboardToolsData {
@@ -40,7 +41,7 @@ export async function getDashboardTools(orgId: string): Promise<DashboardToolsDa
       orgId,
       window: usage7d,
       measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
-      dimensions: ["tool"],
+      dimensions: ["tool", "costKind"],
     }),
     prisma.developerToolClaim.groupBy({
       by: ["toolName", "source"],
@@ -62,16 +63,19 @@ export async function getDashboardTools(orgId: string): Promise<DashboardToolsDa
   ]);
 
   const configuredMap = new Map(configured.map((c) => [c.toolName, c._count.id]));
-  const activityMap = new Map(
-    usageRows.data.rows.map((row) => [
-      dimension(row, "tool") || "unknown",
-      {
-        requests7d: metricNumber(row, "requests"),
-        cost7d: metricNumber(row, "costMicros") / 1_000_000,
-        tokens7d: metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens"),
-      },
-    ]),
-  );
+  const activityMap = new Map<string, { requests7d: number; cost7d: number; tokens7d: number }>();
+  for (const row of usageRows.data.rows) {
+    const toolName = dimension(row, "tool") || "unknown";
+    const current = activityMap.get(toolName) ?? { requests7d: 0, cost7d: 0, tokens7d: 0 };
+    const cost = summarizeCanonicalCosts([{
+      costMicros: metricNumber(row, "costMicros"),
+      costKind: dimension(row, "costKind"),
+    }]);
+    current.requests7d += metricNumber(row, "requests");
+    current.cost7d += cost.totalUsageCost;
+    current.tokens7d += metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens");
+    activityMap.set(toolName, current);
+  }
 
   const quotasByTool = new Map<string, DashboardToolsData["tools"][number]["quotas"]>();
 

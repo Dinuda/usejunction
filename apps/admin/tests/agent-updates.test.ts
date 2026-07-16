@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { agentReleaseManifestSchema, compareAgentVersions } from "../lib/agent-updates/contracts";
 import { requireAgentReleaseOps } from "../lib/agent-updates/ops-auth";

@@ -8,7 +8,11 @@
     "db:generate": "pnpm --filter @usejunction/db generate",
     "db:migrate": "pnpm --filter @usejunction/db migrate",
     "db:seed": "pnpm --filter @usejunction/db seed",
-    "db:push": "pnpm --filter @usejunction/db push"
+    "db:push": "pnpm --filter @usejunction/db push",
+    "test": "pnpm --filter @usejunction/admin test",
+    "test:coverage": "pnpm --filter @usejunction/admin test:coverage",
+    "test:e2e": "pnpm --filter @usejunction/admin test:e2e",
+    "test:all": "pnpm --filter @usejunction/admin test:all"
   },
   "engines": {
     "node": ">=20"

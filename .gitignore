@@ -10,6 +10,9 @@ agent/usejunction
 agent/agent
 agent/dist/
 apps/admin/public/releases/
+apps/admin/e2e/.auth/
+apps/admin/playwright-report/
+apps/admin/test-results/
 packages/db/prisma/migrations/**/migration_lock.toml
 .vercel
 .env*.local

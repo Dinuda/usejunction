@@ -2,6 +2,7 @@ import { prisma } from "@usejunction/db";
 import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
 import { findCatalogTool } from "@/lib/tools/catalog";
 import { usageWindowDays } from "@/lib/metrics/date-range";
+import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
 import { mapVendorPlanToCatalog } from "@/lib/tools/sync-detected";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 
@@ -20,7 +21,7 @@ export type ToolDetailData = {
     seatsFree: number;
     seatsPurchased: number;
     seatsAssigned: number;
-    spend7d: number;
+    usageCost7d: number;
     requests7d: number;
     tokens7d: number;
   };
@@ -114,7 +115,7 @@ export async function getToolDetail(orgId: string, toolKey: string): Promise<Too
         orgId,
         window: usage7d,
         measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
-        dimensions: ["source"],
+        dimensions: ["source", "costKind"],
         filters: { toolNames: names },
       }),
       listSubscriptions(orgId),
@@ -157,11 +158,12 @@ export async function getToolDetail(orgId: string, toolKey: string): Promise<Too
     }));
 
   const requests7d = usageRows.data.rows.reduce((sum, row) => sum + metricNumber(row, "requests"), 0);
-  const spend7d = usageRows.data.rows.reduce((sum, row) => {
-    return dimension(row, "source") === "estimated"
-      ? sum
-      : sum + metricNumber(row, "costMicros") / 1_000_000;
-  }, 0);
+  const usageCost7d = summarizeCanonicalCosts(
+    usageRows.data.rows.map((row) => ({
+      costMicros: metricNumber(row, "costMicros"),
+      costKind: dimension(row, "costKind"),
+    })),
+  ).totalUsageCost;
   const tokens7d = usageRows.data.rows.reduce(
     (sum, row) => sum + metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens"),
     0,
@@ -285,7 +287,7 @@ export async function getToolDetail(orgId: string, toolKey: string): Promise<Too
       seatsFree: Math.max(0, seatsPurchased - seatsAssigned),
       seatsPurchased,
       seatsAssigned,
-      spend7d,
+      usageCost7d,
       requests7d,
       tokens7d,
     },

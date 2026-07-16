@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import {
   DEFAULT_ROLLING_PERIOD,
   parseRollingPeriodFromSearch,
@@ -13,6 +13,7 @@ test("parseRollingPeriodFromSearch defaults to 30 days", () => {
 });
 
 test("parseRollingPeriodFromSearch accepts presets and custom bounds", () => {
+  assert.deepEqual(parseRollingPeriodFromSearch({ days: "3" }), { kind: "preset", days: 3 });
   assert.deepEqual(parseRollingPeriodFromSearch({ days: "60" }), { kind: "preset", days: 60 });
   assert.deepEqual(parseRollingPeriodFromSearch({ from: "2026-05-01", to: "2026-06-15" }), {
     kind: "custom",
@@ -29,6 +30,7 @@ test("parseRollingPeriodFromSearch rejects inverted custom ranges", () => {
 test("rollingPeriodHref omits days for the 30-day default", () => {
   assert.equal(rollingPeriodHref(DEFAULT_ROLLING_PERIOD), "/dashboard?view=last_30_days");
   assert.equal(rollingPeriodHref({ kind: "preset", days: 90 }), "/dashboard?view=last_30_days&days=90");
+  assert.equal(rollingPeriodHref({ kind: "preset", days: 3 }, "/team/developer-1"), "/team/developer-1?view=last_30_days&days=3");
   assert.equal(
     rollingPeriodHref({ kind: "custom", id: "x", from: "2026-05-01", to: "2026-06-01" }),
     "/dashboard?view=last_30_days&from=2026-05-01&to=2026-06-01",

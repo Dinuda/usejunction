@@ -1,5 +1,6 @@
 import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
 import { usageWindowDays } from "@/lib/metrics/date-range";
+import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
 
 export interface DashboardUsageData {
   byModel: Array<{
@@ -35,6 +36,7 @@ export interface DashboardUsageData {
     verifiedUsageCost: number;
     estimatedApiCost: number;
     actualSpendCost: number;
+    totalUsageCost: number;
     inputTokens: number;
     outputTokens: number;
     cacheReadTokens: number;
@@ -86,17 +88,12 @@ export async function getDashboardUsage(orgId: string, days = 30): Promise<Dashb
   ]);
 
   const summaryRow = summary.data.rows[0];
-  let verifiedUsageCost = 0;
-  let estimatedApiCost = 0;
-  let actualSpendCost = 0;
-  for (const row of costs.data.rows) {
-    const dollars = metricNumber(row, "costMicros") / 1_000_000;
-    const kind = dimension(row, "costKind");
-    const source = dimension(row, "source");
-    if (kind === "verified_usage") verifiedUsageCost += dollars;
-    else if (kind === "actual_spend") actualSpendCost += dollars;
-    else if (kind === "estimated_api" && source !== "estimated") estimatedApiCost += dollars;
-  }
+  const costSummary = summarizeCanonicalCosts(
+    costs.data.rows.map((row) => ({
+      costMicros: metricNumber(row, "costMicros"),
+      costKind: dimension(row, "costKind"),
+    })),
+  );
 
   const byModel: DashboardUsageData["byModel"] = [];
   const productivityModels: DashboardUsageData["productivityModels"] = [];
@@ -166,9 +163,10 @@ export async function getDashboardUsage(orgId: string, days = 30): Promise<Dashb
     kpis: {
       modelCalls: metricNumber(summaryRow, "requests"),
       sessions: metricNumber(summaryRow, "sessions"),
-      verifiedUsageCost,
-      estimatedApiCost,
-      actualSpendCost,
+      verifiedUsageCost: costSummary.verifiedUsageCost,
+      estimatedApiCost: costSummary.estimatedApiCost,
+      actualSpendCost: costSummary.actualSpendCost,
+      totalUsageCost: costSummary.totalUsageCost,
       inputTokens: metricNumber(summaryRow, "inputTokens"),
       outputTokens: metricNumber(summaryRow, "outputTokens"),
       cacheReadTokens: metricNumber(summaryRow, "cacheReadTokens"),

@@ -397,11 +397,18 @@ export default async function DashboardPage({
         <>
           <div className="grid gap-8 sm:grid-cols-2 xl:grid-cols-4">
             <Kpi
-              label="Actual spend"
+              label="Subscription commitment"
               value={currency(data.kpis.actualSpend.value)}
               delta={data.kpis.actualSpend.deltaPercent}
               inverse
               accent
+              sub={
+                data.cycleView === "last_30_days"
+                  ? "prorated for selected window"
+                  : data.cycleView === "previous_cycles"
+                    ? "purchased seats · previous cycle"
+                    : "purchased seats · current cycle"
+              }
             />
             <Kpi
               label="Verified usage"

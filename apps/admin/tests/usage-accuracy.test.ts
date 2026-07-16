@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import {
   activityPriority,
   costKindForRow,
@@ -32,4 +32,13 @@ test("cost kind classification keeps spend categories separate", () => {
   assert.equal(costKindForRow({ verified: true, source: "device_observed", costMicros: BigInt(1) }), "verified_usage");
   assert.equal(costKindForRow({ verified: false, source: "invoice_imported", costMicros: BigInt(1) }), "actual_spend");
   assert.equal(costKindForRow({ verified: false, source: "otel_observed", costMicros: BigInt(1) }), "estimated_api");
+});
+
+test("source policy handles unknown, zero-cost, and non-productivity boundaries", () => {
+  assert.equal(normalizeSource("unknown_source"), "unknown_source");
+  assert.equal(activityPriority("unknown_source"), 99);
+  assert.equal(costPriority("unknown_source"), 99);
+  assert.equal(isProductivityMetric(null, "other_source"), false);
+  assert.equal(costKindForRow({ verified: false, source: "vendor_verified", costMicros: BigInt(0) }), null);
+  assert.equal(isObservedSource("local_scan"), true);
 });

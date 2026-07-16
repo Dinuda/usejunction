@@ -3,9 +3,12 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { StatusBadge } from "@/components/app-shell";
 import { AiCodingPanel } from "@/components/dashboard/ai-coding-panel";
+import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
 import { MemberPlanUsage } from "@/components/developers/member-plan-usage";
 import { MemberPlansPanel } from "@/components/developers/member-plans-panel";
-import { resolveReportWindow, UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
+import { resolveReportWindow, UTC_TIMEZONE, type MetricWindow } from "@/lib/analytics/contracts/time-window";
+import { resolveBillingCycle, resolveBillingCycleOffset } from "@/lib/billing/cycles";
+import { parseRollingPeriodFromSearch, rollingPeriodLabel, type RollingPeriod } from "@/lib/dashboard/period-prefs";
 import { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
 import { getDeveloperOverview } from "@/lib/queries/me/overview";
 import { getDeveloperRoster } from "@/lib/read-models/developers";
@@ -24,6 +27,45 @@ function money(value: number) {
 
 function compact(value: number) {
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+type CycleView = "current_cycles" | "previous_cycles" | "last_30_days";
+
+function parseCycleView(value: string | undefined): CycleView {
+  if (value === "previous_cycles" || value === "last_30_days") return value;
+  return "current_cycles";
+}
+
+type CyclePlan = Parameters<typeof resolveBillingCycle>[0];
+
+function reportWindowForMember(
+  view: CycleView,
+  period: RollingPeriod,
+  plans: CyclePlan[],
+  now: Date,
+): MetricWindow {
+  if (view === "last_30_days") {
+    return period.kind === "custom"
+      ? resolveReportWindow({ from: period.from, to: period.to })
+      : resolveReportWindow({ range: period.days, now });
+  }
+
+  const cycles = plans.map((plan) =>
+    view === "previous_cycles"
+      ? resolveBillingCycleOffset(plan, now, -1)
+      : resolveBillingCycle(plan, now),
+  );
+  if (!cycles.length) return resolveReportWindow({ range: 30, now });
+
+  const from = new Date(Math.min(...cycles.map((cycle) => cycle.cycleStart.getTime())));
+  const to = new Date(Math.max(...cycles.map((cycle) => cycle.cycleEnd.getTime())) - 86_400_000);
+  return { from, to, timezone: UTC_TIMEZONE, grain: "day" };
+}
+
+function periodDescription(view: CycleView, period: RollingPeriod) {
+  if (view === "current_cycles") return "current billing cycles";
+  if (view === "previous_cycles") return "previous billing cycles";
+  return rollingPeriodLabel(period).toLowerCase();
 }
 
 function Kpi({
@@ -53,31 +95,43 @@ function Kpi({
 
 export default async function TeamMemberPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ developerId: string }>;
+  searchParams: Promise<{ view?: string; days?: string; from?: string; to?: string }>;
 }) {
   const { orgId, userId, role } = await requireWorkspaceRole(["owner", "admin"]);
   const { developerId } = await params;
-  const reportWindow = resolveReportWindow({ range: 30 });
+  const paramsValue = await searchParams;
+  const cycleView = parseCycleView(paramsValue.view);
+  const rollingPeriod = parseRollingPeriodFromSearch({
+    days: paramsValue.days,
+    from: paramsValue.from,
+    to: paramsValue.to,
+  });
+  const now = new Date();
 
-  const [personal, planUsage, roster, subscriptions] = await Promise.all([
-    getDeveloperOverview(orgId, developerId),
+  const [roster, subscriptions] = await Promise.all([
+    getDeveloperRoster(orgId, { developerId }),
+    listSubscriptions(orgId),
+  ]);
+  const rosterDeveloper = roster.developers[0];
+  if (!rosterDeveloper) notFound();
+  const reportWindow = reportWindowForMember(cycleView, rollingPeriod, rosterDeveloper.manualPlans, now);
+  const [personal, planUsage] = await Promise.all([
+    getDeveloperOverview(orgId, developerId, { reportWindow }),
     getPlanUsage(
       {
         orgId,
         actorId: userId,
         roles: [role],
-        now: new Date(),
+        now,
         timezone: UTC_TIMEZONE,
       },
       { reportWindow, developerId },
     ),
-    getDeveloperRoster(orgId, { developerId }),
-    listSubscriptions(orgId),
   ]);
   if (!personal) notFound();
-  const rosterDeveloper = roster.developers[0];
-  if (!rosterDeveloper) notFound();
   const plansInitial = serializeBigInts({ developer: rosterDeveloper, subscriptions }) as unknown as {
     developer: Parameters<typeof MemberPlansPanel>[0]["initialDeveloper"];
     subscriptions: Parameters<typeof MemberPlansPanel>[0]["initialSubscriptions"];
@@ -86,6 +140,7 @@ export default async function TeamMemberPage({
   const tokens = Number(BigInt(personal.usage30d.inputTokens) + BigInt(personal.usage30d.outputTokens));
   const spend = Number(BigInt(personal.usage30d.costMicros)) / 1_000_000;
   const online = personal.developer.devices.filter((device) => device.status === "online").length;
+  const selectedPeriodLabel = periodDescription(cycleView, rollingPeriod);
 
   return (
     <>
@@ -99,17 +154,24 @@ export default async function TeamMemberPage({
         </Link>
       </div>
 
-      <div className="mb-10">
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">{personal.developer.name}.</h1>
-        <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-          {personal.developer.email} · how well plans are used, plus machines and traffic.
-        </p>
+      <div className="mb-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">{personal.developer.name}.</h1>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+            {personal.developer.email} · how well plans are used, plus machines and traffic.
+          </p>
+        </div>
+        <CycleViewPicker
+          view={cycleView}
+          period={rollingPeriod}
+          basePath={`/team/${developerId}`}
+        />
       </div>
 
       <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="Requests" value={compact(personal.usage30d.requests)} accent />
-        <Kpi label="Tokens" value={compact(tokens)} sub="input + output" />
-        <Kpi label="Spend" value={money(spend)} sub="estimated / verified" />
+        <Kpi label="Requests" value={compact(personal.usage30d.requests)} sub={selectedPeriodLabel} accent />
+        <Kpi label="Tokens" value={compact(tokens)} sub={`input + output · ${selectedPeriodLabel}`} />
+        <Kpi label="Usage cost" value={money(spend)} sub={`verified + estimated · ${selectedPeriodLabel}`} />
         <Kpi
           label="Machines"
           value={`${online}/${personal.developer.devices.length}`}
@@ -164,7 +226,7 @@ export default async function TeamMemberPage({
         <section>
           <div className="mb-4 border-b pb-3">
             <h2 className="text-lg font-semibold tracking-tight">By tool.</h2>
-            <p className="mt-1 text-xs text-muted-foreground">Detected on their machines · 30 days.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Detected on their machines · {selectedPeriodLabel}.</p>
           </div>
           {personal.toolsUsage30d.length ? (
             <ul className="divide-y">

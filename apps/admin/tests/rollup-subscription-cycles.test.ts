@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { rollupSubscriptionCyclesByTool } from "../lib/insights/queries/rollup-subscription-cycles";
 
 const cycle = (nextRenewalDate: string, elapsedPercent = 0.5) => ({

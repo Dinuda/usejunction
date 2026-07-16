@@ -16,6 +16,7 @@ import {
   usageWindowDays,
   utcDateOnly,
 } from "@/lib/metrics/date-range";
+import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
 import {
   assertInsightRoles,
   makeInsightEnvelope,
@@ -85,22 +86,19 @@ async function readOverviewUsage(
       : Promise.resolve(null),
   ]);
 
-  let verifiedUsageCost = 0;
-  let estimatedApiCost = 0;
-  for (const row of costs.data.rows) {
-    const cost = metricNumber(row, "costMicros") / 1_000_000;
-    if (dimension(row, "costKind") === "verified_usage") verifiedUsageCost += cost;
-    else if (dimension(row, "costKind") === "estimated_api" && dimension(row, "source") !== "estimated") {
-      estimatedApiCost += cost;
-    }
-  }
+  const costSummary = summarizeCanonicalCosts(
+    costs.data.rows.map((row) => ({
+      costMicros: metricNumber(row, "costMicros"),
+      costKind: dimension(row, "costKind"),
+    })),
+  );
 
   return {
     dataThrough: summary.dataThrough ? new Date(summary.dataThrough) : null,
     kpis: {
       modelCalls: metricNumber(summary.data.rows[0], "requests"),
-      verifiedUsageCost,
-      estimatedApiCost,
+      verifiedUsageCost: costSummary.verifiedUsageCost,
+      estimatedApiCost: costSummary.estimatedApiCost,
       partialData: false,
     },
     trend: trend.data.rows.map((row) => ({
@@ -314,11 +312,12 @@ async function readAllocatedCycleUsage(orgId: string, slices: SubscriptionSlice[
     for (const row of costs.data.rows) {
       const day = dimension(row, "day");
       const existing = daily.get(day) ?? { modelCalls: 0, verifiedUsageCost: 0, estimatedApiCost: 0 };
-      const cost = metricNumber(row, "costMicros") / 1_000_000;
-      if (dimension(row, "costKind") === "verified_usage") existing.verifiedUsageCost += cost;
-      else if (dimension(row, "costKind") === "estimated_api" && dimension(row, "source") !== "estimated") {
-        existing.estimatedApiCost += cost;
-      }
+      const summary = summarizeCanonicalCosts([{
+        costMicros: metricNumber(row, "costMicros"),
+        costKind: dimension(row, "costKind"),
+      }]);
+      existing.verifiedUsageCost += summary.verifiedUsageCost;
+      existing.estimatedApiCost += summary.estimatedApiCost;
       daily.set(day, existing);
     }
 
