@@ -1,4 +1,5 @@
 import { prisma } from "@usejunction/db";
+import { isDeviceOnline } from "@/lib/devices/presence";
 import { canonicalToolKey, findCatalogTool } from "@/lib/tools/catalog";
 
 export type LocalSyncContext = {
@@ -72,7 +73,6 @@ export async function getLocalSyncContext(orgId: string, authUserId: string): Pr
   });
   if (!developer) return null;
 
-  const onlineThreshold = Date.now() - 5 * 60_000;
   let latestSeen: Date | null = null;
   let latestUsageSync: Date | null = null;
   let latestAccountSync: Date | null = null;
@@ -102,7 +102,7 @@ export async function getLocalSyncContext(orgId: string, authUserId: string): Pr
     lastSeenAt: latestSeen?.toISOString() ?? null,
     lastUsageSyncAt: latestUsageSync?.toISOString() ?? null,
     lastAccountSyncAt: latestAccountSync?.toISOString() ?? null,
-    stale: !developer.devices.some((device) => device.lastSeenAt.getTime() >= onlineThreshold),
+    stale: !developer.devices.some((device) => isDeviceOnline(device.lastSeenAt)),
     hasLocalEndpoint: developer.devices.some((device) => Boolean(device.localEndpoint)),
     needsPlanSync: personalNeedsPlanSync || orgWideNeedsPlanSync,
   };

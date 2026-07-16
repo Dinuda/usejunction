@@ -1,14 +1,19 @@
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
+import type { PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
 import type { AttentionItem } from "@/lib/insights/policies/attention";
+import type { BillingCycleInfo } from "@/lib/insights/contracts/plan-usage.v1";
 
 export type OverviewInput = {
   reportWindow: MetricWindow;
-  range: 7 | 30 | 90;
+  /** Inclusive calendar-day count for the report window. */
+  range: number;
   previousWindow: MetricWindow;
+  cycleView?: "current_cycles" | "previous_cycles" | "last_30_days";
 };
 
 export type OrgOverviewV1 = {
-  range: 7 | 30 | 90;
+  range: number;
+  cycleView: "current_cycles" | "previous_cycles" | "last_30_days";
   period: { from: string; to: string; previousFrom: string; previousTo: string };
   hasActivity: boolean;
   partialData: boolean;
@@ -29,6 +34,39 @@ export type OrgOverviewV1 = {
     estimatedApiCost: { value: number; previousValue: number; deltaPercent: number | null };
     modelCalls: { value: number; previousValue: number; deltaPercent: number | null };
   };
+  /** One row per tool line (plans/cycles rolled up). */
+  subscriptionCycles: Array<{
+    id: string;
+    toolName: string;
+    toolKey: string | null;
+    planNames: string[];
+    planCount: number;
+    cycleSpend: number;
+    verifiedUsageCost: number;
+    estimatedApiCost: number;
+    modelCalls: number;
+    windowFrom: string;
+    windowTo: string;
+    /** Share of total tool-line spend in this view (0–100). */
+    spendSharePercent: number;
+    /** Provider quota or included-allowance utilization (0–100+). */
+    utilizationPercent: number | null;
+    /** Capped utilization for progress bars (0–100). */
+    utilizationDisplayPercent: number | null;
+    verdictCode: PlanVerdictCode | null;
+    /** Soonest renewal among plans under this tool. */
+    billingCycle: BillingCycleInfo;
+  }>;
+  renewals: Array<{
+    id: string;
+    toolName: string;
+    toolKey: string | null;
+    planNames: string[];
+    planCount: number;
+    nextRenewalDate: string;
+    remainingDays: number;
+    elapsedPercent: number;
+  }>;
   trend: Array<{
     date: string;
     requests: number;
@@ -55,12 +93,4 @@ export type OrgOverviewV1 = {
     latencyMs: number;
     status: string;
   }>;
-  planUsageSummary: {
-    avgUtilizationPercent: number | null;
-    nearLimitCount: number;
-    lightUseCount: number;
-    noSignalCount: number;
-    seatCapacity: number;
-    assignedSeats: number;
-  };
 };

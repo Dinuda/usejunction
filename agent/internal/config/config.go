@@ -10,20 +10,29 @@ import (
 	"strings"
 )
 
-const Version = "0.1.0"
+// Version is replaced by release builds through -ldflags. The fallback keeps
+// local source builds and the first updater bootstrap identifiable.
+var Version = "0.1.0"
+
+// LocalSyncProtocol identifies the background-job localhost sync contract.
+const LocalSyncProtocol = 2
 
 // Config holds the persisted enrollment state.
 type Config struct {
-	ControlPlaneURL     string `json:"controlPlaneUrl"`
-	DeviceToken         string `json:"deviceToken"`
-	DeviceID            string `json:"deviceId"`
-	UserID              string `json:"userId"`
-	OrgID               string `json:"orgId"`
-	GatewayURL          string `json:"gatewayUrl"`
-	OtelEnabled         bool   `json:"otelEnabled,omitempty"`
-	OtelMetricsEndpoint string `json:"otelMetricsEndpoint,omitempty"`
-	LocalSyncPort       int    `json:"localSyncPort,omitempty"`
-	LocalSyncToken      string `json:"localSyncToken,omitempty"`
+	ControlPlaneURL        string `json:"controlPlaneUrl"`
+	DeviceToken            string `json:"deviceToken"`
+	DeviceID               string `json:"deviceId"`
+	UserID                 string `json:"userId"`
+	OrgID                  string `json:"orgId"`
+	GatewayURL             string `json:"gatewayUrl"`
+	OtelEnabled            bool   `json:"otelEnabled,omitempty"`
+	OtelMetricsEndpoint    string `json:"otelMetricsEndpoint,omitempty"`
+	LocalSyncPort          int    `json:"localSyncPort,omitempty"`
+	LocalSyncToken         string `json:"localSyncToken,omitempty"`
+	SignalsEnabled         bool   `json:"signalsEnabled,omitempty"`
+	SignalsPolicyUpdatedAt string `json:"signalsPolicyUpdatedAt,omitempty"`
+	SignalsLastUploadAt    string `json:"signalsLastUploadAt,omitempty"`
+	BlockedUpdateVersion   string `json:"blockedUpdateVersion,omitempty"`
 }
 
 const DefaultLocalSyncPort = 47832
@@ -74,6 +83,14 @@ func BackupDir() string {
 // CacheDir returns the cost-cache directory.
 func CacheDir() string {
 	return filepath.Join(ConfigDir(), "cache", "cost-usage")
+}
+
+func UpdateStatePath() string {
+	return filepath.Join(ConfigDir(), "update-state.json")
+}
+
+func UpdateHistoryPath() string {
+	return filepath.Join(ConfigDir(), "update-history.json")
 }
 
 // Load reads and parses the config file. Returns an error when not enrolled.

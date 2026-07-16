@@ -10,6 +10,15 @@ export type PlanUsageInput = {
   developerId?: string;
 };
 
+export type BillingCycleInfo = {
+  cycleStart: string;
+  cycleEnd: string;
+  nextRenewalDate: string;
+  elapsedPercent: number;
+  remainingDays: number;
+  totalDays: number;
+};
+
 export type PlanUsageSubscriptionRow = {
   planTemplateId: string;
   toolKey: string | null;
@@ -19,8 +28,10 @@ export type PlanUsageSubscriptionRow = {
   seatCapacity: number;
   assignedSeats: number;
   availableSeats: number;
-  monthlySeatMicros: string;
-  includedMonthlyMicros: string;
+  billingCadence: string;
+  billingCycle: BillingCycleInfo;
+  cycleSeatMicros: string;
+  includedCycleMicros: string;
   primaryQuota: QuotaUtilization | null;
   quotas: QuotaUtilization[];
   included: IncludedAllowanceUtilization | null;
@@ -41,15 +52,18 @@ export type PlanUsageDeveloperPlanRow = {
   toolName: string;
   planName: string;
   seatCount: number;
-  monthlySeatMicros: string;
-  includedMonthlyMicros: string;
+  billingCadence: string;
+  billingCycle: BillingCycleInfo;
+  cycleSeatMicros: string;
+  includedCycleMicros: string;
   primaryQuota: QuotaUtilization | null;
   quotas: QuotaUtilization[];
   included: IncludedAllowanceUtilization | null;
   primaryRatio: number | null;
   verdict: PlanVerdict;
   billing: {
-    month: string;
+    cycleStart: string;
+    cycleEnd: string;
     grossSeatMicros: string;
     grossUsageMicros: string;
     includedCreditsMicros: string;

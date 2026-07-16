@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
+import { isDeviceOnline } from "@/lib/devices/presence";
 import { requireOrgRole } from "@/lib/rbac";
 import { decryptSecret } from "@/lib/security";
 
@@ -59,8 +60,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const onlineThreshold = Date.now() - 5 * 60_000;
-    const online = device.lastSeenAt.getTime() >= onlineThreshold;
+    const online = isDeviceOnline(device.lastSeenAt);
 
     return NextResponse.json({
       available: true,

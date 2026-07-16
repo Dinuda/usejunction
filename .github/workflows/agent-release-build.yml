@@ -1,0 +1,47 @@
+name: Agent release candidate
+
+on:
+  push:
+    tags:
+      - "agent-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: Resolve immutable version
+        id: version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#agent-v}"
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; tags and artifacts are immutable." >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Test agent
+        working-directory: agent
+        run: go test ./...
+      - name: Build release artifacts
+        run: ./scripts/build-agent-releases.sh "${{ steps.version.outputs.value }}" normal
+      - name: Create draft candidate
+        shell: bash
+        run: |
+          out="apps/admin/public/releases/download/v${{ steps.version.outputs.value }}"
+          gh release create "$GITHUB_REF_NAME" "$out"/* \
+            --draft \
+            --title "UseJunction Agent v${{ steps.version.outputs.value }}" \
+            --notes "Immutable daemon release candidate. Promotion is a separate protected action."
+        env:
+          GH_TOKEN: ${{ github.token }}

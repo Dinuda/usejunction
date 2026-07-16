@@ -64,8 +64,8 @@ function listFilter(column: Prisma.Sql, values: string[] | undefined) {
 function canonicalUsageCtes(scope: AnalyticsScope, query: NormalizedUsageQueryV1) {
   const baseWhere: Prisma.Sql[] = [
     Prisma.sql`org_id = ${scope.orgId}`,
-    Prisma.sql`date >= ${new Date(`${query.window.from}T00:00:00.000Z`)}`,
-    Prisma.sql`date <= ${new Date(`${query.window.to}T00:00:00.000Z`)}`,
+    Prisma.sql`date >= ${query.window.from}::date`,
+    Prisma.sql`date <= ${query.window.to}::date`,
   ];
   if (scope.developerId) baseWhere.push(Prisma.sql`developer_id = ${scope.developerId}`);
 

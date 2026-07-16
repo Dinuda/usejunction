@@ -42,12 +42,7 @@ var doctorCmd = &cobra.Command{
 		for _, r := range detected {
 			configured := "no"
 			if r.Configured {
-				switch r.ToolName {
-				case "codex", "claude", "continue":
-					configured = "yes (gateway)"
-				default:
-					configured = "yes (observed)"
-				}
+				configured = "yes"
 			}
 			fmt.Printf("%-14s  %-10s  %-14s  %s\n", r.ToolName, "yes", configured, r.ConfigPath)
 		}

@@ -1,7 +1,15 @@
 import { utcDateOnly, usageInclusiveEnd } from "@/lib/metrics/date-range";
+import { resolveBillingCycle, type BillingCycle } from "@/lib/billing/cycles";
 
 export type SubscriptionSeatRow = {
-  monthlySeatMicros: bigint;
+  id?: string;
+  name?: string;
+  toolName?: string | null;
+  toolKey?: string | null;
+  billingCadence: string;
+  billingCycleAnchorDate: Date | null;
+  billingCycleDays?: number | null;
+  cycleSeatMicros: bigint;
   seatCount: number;
   /** When the subscription was configured — no spend attributed before this. */
   startDate: Date;
@@ -9,9 +17,17 @@ export type SubscriptionSeatRow = {
 };
 
 export type ActualSpendBreakdown = {
-  /** Full monthly dollars for active coding subscriptions (not prorated by day). */
+  /** Full cycle dollars for active coding subscriptions. */
   total: number;
   basis: "subscriptions" | "none";
+  cycles: Array<{
+    id?: string;
+    name?: string;
+    toolName?: string | null;
+    toolKey?: string | null;
+    cycle: BillingCycle;
+    spendMicros: bigint;
+  }>;
 };
 
 export function microsToDollars(micros: bigint) {
@@ -20,7 +36,7 @@ export function microsToDollars(micros: bigint) {
 
 /** True when the subscription overlaps the period and has started by period end. */
 export function subscriptionActiveInPeriod(row: SubscriptionSeatRow, from: Date, to: Date) {
-  if (row.seatCount <= 0 || row.monthlySeatMicros <= BigInt(0)) return false;
+  if (row.seatCount <= 0 || row.cycleSeatMicros <= BigInt(0)) return false;
   const start = utcDateOnly(row.startDate);
   const end = row.endDate ? utcDateOnly(row.endDate) : null;
   const rangeStart = utcDateOnly(from);
@@ -30,39 +46,50 @@ export function subscriptionActiveInPeriod(row: SubscriptionSeatRow, from: Date,
   return true;
 }
 
-/** Sum full monthly seat cost for each subscription active in the period. */
-export function monthlySubscriptionMicros(rows: SubscriptionSeatRow[], from: Date, to: Date): bigint {
+/** Sum full cycle seat cost for each subscription active in the period. */
+export function cycleSubscriptionMicros(rows: SubscriptionSeatRow[], from: Date, to: Date): bigint {
   let total = BigInt(0);
   for (const row of rows) {
     if (!subscriptionActiveInPeriod(row, from, to)) continue;
-    total += row.monthlySeatMicros * BigInt(row.seatCount);
+    total += row.cycleSeatMicros * BigInt(row.seatCount);
   }
   return total;
 }
 
 /**
- * Actual spend = full monthly coding-subscription cost.
+ * Actual spend = full current-cycle coding-subscription cost.
  * Not prorated by calendar day. Only subscriptions that have started by period end.
  */
 export function computeActualSpend(input: {
   subscriptions: SubscriptionSeatRow[];
   from: Date;
   to: Date;
+  now?: Date;
 }): ActualSpendBreakdown {
-  const micros = monthlySubscriptionMicros(input.subscriptions, input.from, input.to);
+  const cycles = input.subscriptions
+    .filter((row) => subscriptionActiveInPeriod(row, input.from, input.to))
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      toolName: row.toolName,
+      toolKey: row.toolKey,
+      cycle: resolveBillingCycle(row, input.now ?? input.to),
+      spendMicros: row.cycleSeatMicros * BigInt(row.seatCount),
+    }));
+  const micros = cycles.reduce((sum, row) => sum + row.spendMicros, BigInt(0));
   return {
     total: microsToDollars(micros),
     basis: micros > BigInt(0) ? "subscriptions" : "none",
+    cycles,
   };
 }
 
-/** Keep only monthly-billed coding-tool subscriptions for Actual spend. */
-export function filterMonthlyCodingSubscriptions<
+/** Keep only coding-tool subscriptions for cycle spend. */
+export function filterCycleCodingSubscriptions<
   T extends { billingCadence: string; toolKey?: string | null; toolName?: string | null },
 >(plans: T[], isCodingTool: (keyOrName: string | null | undefined) => boolean): T[] {
   return plans.filter(
     (plan) =>
-      plan.billingCadence === "monthly" &&
       isCodingTool(plan.toolKey ?? plan.toolName ?? null),
   );
 }

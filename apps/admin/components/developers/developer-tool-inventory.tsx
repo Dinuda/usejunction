@@ -9,6 +9,7 @@ import { AddSubscriptionSheet } from "@/components/tools/add-subscription-sheet"
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { RosterPlanUsage, type RosterPlanUsagePlan } from "@/components/developers/roster-plan-usage";
 import { SubscriptionChoices, toolLabel } from "@/components/developers/member-plans-panel";
+import { isDeviceOnline } from "@/lib/devices/presence";
 import type { PlanUsageDeveloperRow } from "@/lib/insights/contracts/plan-usage.v1";
 
 type Subscription = {
@@ -19,8 +20,9 @@ type Subscription = {
   seatCapacity: number;
   assignedSeats: number;
   availableSeats: number;
-  monthlySeatMicros: string;
-  estimatedMonthlyMicros: string;
+  billingCadence: string;
+  cycleSeatMicros: string;
+  estimatedCycleMicros: string;
 };
 type ManualPlan = {
   id: string;
@@ -32,7 +34,7 @@ type ManualPlan = {
   seatStatus: string;
   startDate: string;
   endDate: string | null;
-  monthlySeatMicros: string;
+  cycleSeatMicros: string;
   vendorAccountEmail: string | null;
   template: { toolKey: string | null; catalogPlanKey: string | null };
 };
@@ -194,9 +196,8 @@ export function DeveloperToolInventory({
         ) : (
           <ul className="divide-y divide-border/70">
             {developers.map((developer) => {
-              const onlineCutoff = Date.now() - 5 * 60_000;
               const online = developer.devices.filter((device) => {
-                if (device.lastSeenAt) return new Date(device.lastSeenAt).getTime() >= onlineCutoff;
+                if (device.lastSeenAt) return isDeviceOnline(device.lastSeenAt);
                 return device.status === "online";
               }).length;
               const machineCount = developer.devices.length;
@@ -218,7 +219,7 @@ export function DeveloperToolInventory({
 
               return (
                 <li key={developer.id}>
-                  <div className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="grid gap-4 py-4 lg:grid-cols-[minmax(18rem,1fr)_minmax(16rem,auto)] lg:items-center">
                     <div className="flex min-w-0 items-start gap-3">
                       {canBulkAssign && (
                         <input
@@ -235,7 +236,7 @@ export function DeveloperToolInventory({
                           className="mt-1 size-4 rounded border-input accent-primary"
                         />
                       )}
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="truncate text-base font-semibold tracking-tight">{developer.name}</p>
                         <p className="mt-0.5 truncate text-xs text-muted-foreground">{developer.email}</p>
                         {meta ? <p className="mt-1.5 text-xs text-muted-foreground">{meta}</p> : null}
@@ -243,20 +244,23 @@ export function DeveloperToolInventory({
                       </div>
                     </div>
 
-                    <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
                       {developer.manualPlans.length ? (
                         developer.manualPlans.map((plan) => (
                           <span
                             key={plan.id}
-                            className="inline-flex items-center gap-1.5 bg-brand-yellow-pale py-1 pr-2.5 pl-1 text-xs font-medium text-brand-yellow-dark"
+                            className="inline-flex max-w-full min-w-0 items-center gap-1.5 bg-brand-yellow-pale py-1 pr-2.5 pl-1 text-xs font-medium text-brand-yellow-dark lg:max-w-60"
+                            title={`${toolLabel(plan.template.toolKey ?? plan.toolName)} ${plan.planName}`}
                           >
                             <ToolLogoTile
                               tool={plan.template.toolKey ?? plan.toolName}
                               size="sm"
                               className="size-6 border-0 shadow-none"
                             />
-                            {toolLabel(plan.template.toolKey ?? plan.toolName)} {plan.planName}
-                            {(plan.seatCount ?? 1) > 1 ? ` ×${plan.seatCount}` : ""}
+                            <span className="min-w-0 truncate">
+                              {toolLabel(plan.template.toolKey ?? plan.toolName)} {plan.planName}
+                              {(plan.seatCount ?? 1) > 1 ? ` ×${plan.seatCount}` : ""}
+                            </span>
                           </span>
                         ))
                       ) : (

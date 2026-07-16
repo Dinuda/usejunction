@@ -119,17 +119,19 @@ export function assignmentSnapshot(template: {
   name: string;
   tier: string | null;
   currency: string;
-  monthlySeatMicros: bigint;
-  includedMonthlyMicros: bigint;
+  billingCadence: string;
+  billingCycleAnchorDate: Date | null;
+  billingCycleDays: number | null;
+  cycleSeatMicros: bigint;
+  includedCycleMicros: bigint;
   inputRateMicrosPerMillion: bigint;
   outputRateMicrosPerMillion: bigint;
   cacheRateMicrosPerMillion: bigint;
   billingOwner: string | null;
-  renewalDate: Date | null;
   externalReference: string | null;
 }, overrides: {
-  monthlySeatMicros?: bigint;
-  includedMonthlyMicros?: bigint;
+  cycleSeatMicros?: bigint;
+  includedCycleMicros?: bigint;
   inputRateMicrosPerMillion?: bigint;
   outputRateMicrosPerMillion?: bigint;
   cacheRateMicrosPerMillion?: bigint;
@@ -141,13 +143,15 @@ export function assignmentSnapshot(template: {
     planName: template.name,
     planTier: template.tier,
     currency: template.currency,
-    monthlySeatMicros: overrides.monthlySeatMicros ?? template.monthlySeatMicros,
-    includedMonthlyMicros: overrides.includedMonthlyMicros ?? template.includedMonthlyMicros,
+    billingCadence: template.billingCadence,
+    billingCycleAnchorDate: template.billingCycleAnchorDate,
+    billingCycleDays: template.billingCycleDays,
+    cycleSeatMicros: overrides.cycleSeatMicros ?? template.cycleSeatMicros,
+    includedCycleMicros: overrides.includedCycleMicros ?? template.includedCycleMicros,
     inputRateMicrosPerMillion: overrides.inputRateMicrosPerMillion ?? template.inputRateMicrosPerMillion,
     outputRateMicrosPerMillion: overrides.outputRateMicrosPerMillion ?? template.outputRateMicrosPerMillion,
     cacheRateMicrosPerMillion: overrides.cacheRateMicrosPerMillion ?? template.cacheRateMicrosPerMillion,
     billingOwner: template.billingOwner,
-    renewalDate: template.renewalDate,
     externalReference: template.externalReference,
   };
 }

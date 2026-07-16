@@ -1,4 +1,5 @@
 import { prisma } from "@usejunction/db";
+import { isDeviceOnline } from "@/lib/devices/presence";
 
 export interface DashboardDeviceRow {
   id: string;
@@ -27,8 +28,6 @@ export interface DashboardDevicesData {
 }
 
 export async function getDashboardDevices(orgId: string): Promise<DashboardDevicesData> {
-  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
-
   const [devices, requestCounts] = await Promise.all([
     prisma.device.findMany({
       where: { orgId },
@@ -66,7 +65,7 @@ export async function getDashboardDevices(orgId: string): Promise<DashboardDevic
       os: d.os,
       architecture: d.architecture,
       agentVersion: d.agentVersion,
-      status: d.lastSeenAt > fiveMinAgo ? "online" : "offline",
+      status: isDeviceOnline(d.lastSeenAt) ? "online" : "offline",
       lastSeenAt: d.lastSeenAt,
       createdAt: d.createdAt,
       user: d.user,

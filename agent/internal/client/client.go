@@ -31,6 +31,10 @@ func New(cfg *config.Config) *APIClient {
 }
 
 func (c *APIClient) post(path string, body any) error {
+	return c.postJSON(path, body, nil)
+}
+
+func (c *APIClient) postJSON(path string, body any, out any) error {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -51,6 +55,11 @@ func (c *APIClient) post(path string, body any) error {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("POST %s returned %d: %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
+	if out != nil {
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			return fmt.Errorf("decode POST %s: %w", path, err)
+		}
+	}
 	return nil
 }
 
@@ -63,6 +72,39 @@ type HeartbeatPayload struct {
 	AgentVersion   string `json:"agentVersion"`
 	LocalEndpoint  string `json:"localEndpoint,omitempty"`
 	LocalSyncToken string `json:"localSyncToken,omitempty"`
+}
+
+type AgentUpdateDirective struct {
+	ReleaseID     string `json:"releaseId"`
+	AttemptID     string `json:"attemptId"`
+	TargetVersion string `json:"targetVersion"`
+	Urgency       string `json:"urgency"`
+	ArtifactURL   string `json:"artifactUrl"`
+	SHA256        string `json:"sha256"`
+	Size          int64  `json:"size"`
+	EligibleAt    string `json:"eligibleAt"`
+}
+
+type HeartbeatResponse struct {
+	OK       bool                  `json:"ok"`
+	DeviceID string                `json:"deviceId"`
+	Update   *AgentUpdateDirective `json:"update,omitempty"`
+}
+
+type AgentUpdateEvent struct {
+	AttemptID      string `json:"attemptId"`
+	EventID        string `json:"eventId"`
+	ReleaseVersion string `json:"releaseVersion"`
+	Event          string `json:"event"`
+	CurrentVersion string `json:"currentVersion,omitempty"`
+	TargetVersion  string `json:"targetVersion"`
+	Stage          string `json:"stage,omitempty"`
+	ErrorCode      string `json:"errorCode,omitempty"`
+}
+
+type AgentUpdateCheckResponse struct {
+	OK     bool                  `json:"ok"`
+	Update *AgentUpdateDirective `json:"update,omitempty"`
 }
 
 type ToolReport struct {
@@ -98,29 +140,63 @@ type QuotaReport struct {
 }
 
 type UsageAggregate struct {
-	Date             string            `json:"date"`
-	ToolName         string            `json:"toolName"`
-	Model            string            `json:"model"`
-	InputTokens      int               `json:"inputTokens"`
-	OutputTokens     int               `json:"outputTokens"`
-	CacheReadTokens  int               `json:"cacheReadTokens"`
-	CacheWriteTokens int               `json:"cacheWriteTokens,omitempty"`
-	ReasoningTokens  int               `json:"reasoningTokens,omitempty"`
-	EstimatedCost    float64           `json:"estimatedCost"`
-	SuggestedLines   int               `json:"suggestedLines,omitempty"`
-	AcceptedLines    int               `json:"acceptedLines,omitempty"`
-	AddedLines       int               `json:"addedLines,omitempty"`
-	DeletedLines     int               `json:"deletedLines,omitempty"`
-	Commits          int               `json:"commits,omitempty"`
-	AiPercent        *float64          `json:"aiPercent,omitempty"`
-	Requests         int               `json:"requests,omitempty"`
-	Source           string            `json:"source,omitempty"`
-	Verified         bool              `json:"verified,omitempty"`
-	MetricKind       string            `json:"metricKind,omitempty"`
-	CostKind         string            `json:"costKind,omitempty"`
-	TokenSemantics   string            `json:"tokenSemantics,omitempty"`
-	CalculationVersion string          `json:"calculationVersion,omitempty"`
-	Repository       *RepositoryReport `json:"repository,omitempty"`
+	Date               string            `json:"date"`
+	ToolName           string            `json:"toolName"`
+	Model              string            `json:"model"`
+	InputTokens        int               `json:"inputTokens"`
+	OutputTokens       int               `json:"outputTokens"`
+	CacheReadTokens    int               `json:"cacheReadTokens"`
+	CacheWriteTokens   int               `json:"cacheWriteTokens,omitempty"`
+	ReasoningTokens    int               `json:"reasoningTokens,omitempty"`
+	EstimatedCost      float64           `json:"estimatedCost"`
+	SuggestedLines     int               `json:"suggestedLines,omitempty"`
+	AcceptedLines      int               `json:"acceptedLines,omitempty"`
+	AddedLines         int               `json:"addedLines,omitempty"`
+	DeletedLines       int               `json:"deletedLines,omitempty"`
+	Commits            int               `json:"commits,omitempty"`
+	AiPercent          *float64          `json:"aiPercent,omitempty"`
+	Requests           int               `json:"requests,omitempty"`
+	Source             string            `json:"source,omitempty"`
+	Verified           bool              `json:"verified,omitempty"`
+	MetricKind         string            `json:"metricKind,omitempty"`
+	CostKind           string            `json:"costKind,omitempty"`
+	TokenSemantics     string            `json:"tokenSemantics,omitempty"`
+	CalculationVersion string            `json:"calculationVersion,omitempty"`
+	Repository         *RepositoryReport `json:"repository,omitempty"`
+}
+
+type SignalsPolicy struct {
+	Enabled         bool     `json:"enabled"`
+	RetentionDays   int      `json:"retentionDays"`
+	CollectionMode  string   `json:"collectionMode"`
+	ExcludedApps    []string `json:"excludedApps"`
+	ExcludedDomains []string `json:"excludedDomains"`
+	StoreEvents     bool     `json:"storeEvents"`
+	UpdatedAt       string   `json:"updatedAt,omitempty"`
+}
+
+type SignalsStep struct {
+	App       string  `json:"app,omitempty"`
+	Domain    *string `json:"domain"`
+	StartedAt string  `json:"startedAt"`
+	EndedAt   string  `json:"endedAt"`
+}
+
+type SignalsSession struct {
+	LocalID         string         `json:"localId"`
+	StartedAt       string         `json:"startedAt"`
+	EndedAt         string         `json:"endedAt"`
+	DurationSeconds int            `json:"durationSeconds"`
+	AITool          string         `json:"aiTool"`
+	AppBefore       string         `json:"appBefore,omitempty"`
+	DomainBefore    *string        `json:"domainBefore"`
+	AppAfter        string         `json:"appAfter,omitempty"`
+	DomainAfter     *string        `json:"domainAfter"`
+	FlowSignature   string         `json:"flowSignature"`
+	Confidence      float64        `json:"confidence"`
+	CollectionMode  string         `json:"collectionMode"`
+	Steps           []SignalsStep  `json:"steps"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
 }
 
 type RepositoryReport struct {
@@ -131,8 +207,24 @@ type RepositoryReport struct {
 
 // --- API calls --------------------------------------------------------------
 
-func (c *APIClient) Heartbeat(p HeartbeatPayload) error {
-	return c.post("/api/devices/heartbeat", p)
+func (c *APIClient) Heartbeat(p HeartbeatPayload) (*HeartbeatResponse, error) {
+	var out HeartbeatResponse
+	if err := c.postJSON("/api/devices/heartbeat", p, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *APIClient) ReportAgentUpdate(event AgentUpdateEvent) error {
+	return c.post("/api/devices/agent-update", event)
+}
+
+func (c *APIClient) CheckAgentUpdate() (*AgentUpdateDirective, error) {
+	var out AgentUpdateCheckResponse
+	if err := c.postJSON("/api/devices/agent-update/check", map[string]any{}, &out); err != nil {
+		return nil, err
+	}
+	return out.Update, nil
 }
 
 func (c *APIClient) ReportTools(tools []ToolReport) error {
@@ -155,6 +247,34 @@ func (c *APIClient) ReportLocalUsage(aggregates []UsageAggregate) error {
 	return c.post("/api/ingest/local-usage", map[string]any{"aggregates": aggregates})
 }
 
+func (c *APIClient) SignalsPolicy() (*SignalsPolicy, error) {
+	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/api/devices/signals-policy", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("GET /api/devices/signals-policy returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var out struct {
+		Policy SignalsPolicy `json:"policy"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	return &out.Policy, nil
+}
+
+func (c *APIClient) ReportSignalsSessions(sessions []SignalsSession) error {
+	return c.post("/api/ingest/signals-sessions", map[string]any{"sessions": sessions})
+}
+
 // --- Enrollment (no Bearer token needed) ------------------------------------
 
 type EnrollRequest struct {
@@ -168,11 +288,11 @@ type EnrollRequest struct {
 }
 
 type EnrollResponse struct {
-	DeviceID    string `json:"deviceId"`
-	UserID      string `json:"userId"`
-	OrgID       string `json:"orgId"`
-	DeviceToken string `json:"deviceToken"`
-	GatewayURL  string `json:"gatewayUrl"`
+	DeviceID    string      `json:"deviceId"`
+	UserID      string      `json:"userId"`
+	OrgID       string      `json:"orgId"`
+	DeviceToken string      `json:"deviceToken"`
+	GatewayURL  string      `json:"gatewayUrl"`
 	Otel        *EnrollOtel `json:"otel,omitempty"`
 }
 

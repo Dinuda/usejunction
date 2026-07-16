@@ -17,8 +17,9 @@ type Subscription = {
   seatCapacity: number;
   assignedSeats: number;
   availableSeats: number;
-  monthlySeatMicros: string;
-  estimatedMonthlyMicros: string;
+  billingCadence: string;
+  cycleSeatMicros: string;
+  estimatedCycleMicros: string;
 };
 
 type ManualPlan = {
@@ -31,7 +32,8 @@ type ManualPlan = {
   seatStatus: string;
   startDate: string;
   endDate: string | null;
-  monthlySeatMicros: string;
+  billingCadence: string;
+  cycleSeatMicros: string;
   vendorAccountEmail: string | null;
   template: { toolKey: string | null; catalogPlanKey: string | null };
 };
@@ -171,7 +173,7 @@ export function MemberPlansPanel({
                   {(plan.seatCount ?? 1) > 1 ? ` · ${plan.seatCount} seats` : ""}
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  {money(plan.monthlySeatMicros)}/mo · since {new Date(plan.startDate).toLocaleDateString()}
+                  {money(plan.cycleSeatMicros)}/cycle · {plan.billingCadence} · since {new Date(plan.startDate).toLocaleDateString()}
                 </p>
               </div>
               <Button

@@ -36,6 +36,28 @@ test("mapQuotaSnapshots keeps null absolutes and converts percent to ratio", () 
   assert.equal(row.stale, false);
 });
 
+test("mapQuotaSnapshots treats Codex OAuth quota readings as provider data", () => {
+  const now = new Date("2026-07-14T12:00:00.000Z");
+  const [row] = mapQuotaSnapshots(
+    [
+      {
+        toolName: "codex",
+        windowType: "session_5h",
+        usedPercent: 42,
+        creditsRemaining: null,
+        resetAt: new Date("2026-07-14T17:00:00.000Z"),
+        source: "oauth_api",
+        updatedAt: now,
+        developerId: "dev-1",
+      },
+    ],
+    now,
+  );
+  assert.equal(row.toolKey, "chatgpt-codex");
+  assert.equal(row.source, "provider");
+  assert.equal(row.resetsAt, "2026-07-14T17:00:00.000Z");
+});
+
 test("selectPrimaryQuota prefers monthly over weekly", () => {
   const now = new Date("2026-07-14T12:00:00.000Z");
   const rows = mapQuotaSnapshots(
@@ -100,7 +122,7 @@ test("dedupeQuotaUtilizations keeps highest ratio", () => {
 
 test("included allowance caps display ratio but preserves raw over 100%", () => {
   const included = includedAllowanceUtilization({
-    includedMonthlyMicros: BigInt(10_000_000),
+    includedCycleMicros: BigInt(10_000_000),
     grossUsageMicros: BigInt(12_700_000),
   });
   assert.ok(included.rawRatio != null && included.rawRatio > 1);
@@ -124,7 +146,7 @@ test("primaryUtilizationRatio prefers quota over included", () => {
     now,
   );
   const included = includedAllowanceUtilization({
-    includedMonthlyMicros: BigInt(10_000_000),
+    includedCycleMicros: BigInt(10_000_000),
     grossUsageMicros: BigInt(8_000_000),
   });
   assert.equal(primaryUtilizationRatio({ primaryQuota: quota, included }), 0.3);

@@ -1,5 +1,11 @@
 import { randomBytes } from "crypto";
 import { prisma } from "@usejunction/db";
+import {
+  AuthUserNotFoundError,
+  isMissingAuthUserPrismaError,
+  resolveAuthUser,
+  type AuthUserInput,
+} from "@/lib/ensure-auth-user";
 import { trialEndsAtFromNow } from "@/lib/billing/entitlements";
 
 function slugify(value: string) {
@@ -40,34 +46,45 @@ export function suggestedWorkspaceName(user: { email: string; name?: string | nu
   return `${person} workspace`.slice(0, 80);
 }
 
-type WorkspaceUser = {
-  id: string;
-  email: string;
-  name?: string | null;
-};
+export type WorkspaceUser = AuthUserInput;
 
 export async function createWorkspace(user: WorkspaceUser, options?: { name?: string }) {
-  const name = options?.name?.trim() || suggestedWorkspaceName(user);
+  const authUser = await resolveAuthUser(user);
+  const name = options?.name?.trim() || suggestedWorkspaceName(authUser);
   const slug = `${slugify(name)}-${randomBytes(2).toString("hex")}`;
-  const organization = await prisma.$transaction(async (tx) => {
-    const org = await tx.organization.create({
-      data: { name, slug, plan: "trial", trialEndsAt: trialEndsAtFromNow() },
+
+  let organization;
+  try {
+    organization = await prisma.$transaction(async (tx) => {
+      const org = await tx.organization.create({
+        data: { name, slug, plan: "trial", trialEndsAt: trialEndsAtFromNow() },
+      });
+      const team = await tx.team.create({ data: { orgId: org.id, name: "Platform" } });
+      await tx.organizationMembership.create({
+        data: { userId: authUser.id, orgId: org.id, role: "owner" },
+      });
+      await tx.developer.create({
+        data: {
+          orgId: org.id,
+          teamId: team.id,
+          authUserId: authUser.id,
+          name: authUser.name?.trim() || authUser.email.split("@")[0],
+          email: authUser.email.trim().toLowerCase(),
+          role: "owner",
+        },
+      });
+      await tx.planInterest.updateMany({
+        where: { userId: authUser.id, orgId: null },
+        data: { orgId: org.id },
+      });
+      return org;
     });
-    const team = await tx.team.create({ data: { orgId: org.id, name: "Platform" } });
-    await tx.organizationMembership.create({ data: { userId: user.id, orgId: org.id, role: "owner" } });
-    await tx.developer.create({
-      data: {
-        orgId: org.id,
-        teamId: team.id,
-        authUserId: user.id,
-        name: user.name?.trim() || user.email.split("@")[0],
-        email: user.email.trim().toLowerCase(),
-        role: "owner",
-      },
-    });
-    await tx.planInterest.updateMany({ where: { userId: user.id, orgId: null }, data: { orgId: org.id } });
-    return org;
-  });
+  } catch (error) {
+    if (isMissingAuthUserPrismaError(error)) {
+      throw new AuthUserNotFoundError();
+    }
+    throw error;
+  }
 
   return {
     orgId: organization.id,
@@ -80,8 +97,9 @@ export async function createWorkspace(user: WorkspaceUser, options?: { name?: st
 
 /** Returns an existing membership (newest first) or creates a personal workspace. */
 export async function ensureOwnerWorkspace(user: WorkspaceUser, options?: { name?: string }) {
+  const authUser = await resolveAuthUser(user);
   const existing = await prisma.organizationMembership.findFirst({
-    where: { userId: user.id },
+    where: { userId: authUser.id },
     select: { orgId: true, role: true },
     orderBy: { createdAt: "desc" },
   });
@@ -89,5 +107,5 @@ export async function ensureOwnerWorkspace(user: WorkspaceUser, options?: { name
     return { orgId: existing.orgId, role: existing.role, created: false as const };
   }
 
-  return createWorkspace(user, options);
+  return createWorkspace(authUser, options);
 }

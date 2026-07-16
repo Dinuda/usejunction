@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/usejunction/agent/internal/scan"
 	"github.com/usejunction/agent/internal/types"
@@ -28,16 +27,10 @@ func (p *ContinueProvider) Detect(ctx context.Context) (*types.ToolStatus, error
 		}
 	}
 	detected := configPath != ""
-	configured := false
-	if configPath != "" {
-		data, _ := os.ReadFile(configPath)
-		s := string(data)
-		configured = strings.Contains(s, "usejunction") || strings.Contains(s, "localhost:4000")
-	}
 	return &types.ToolStatus{
 		ToolName:   p.ID(),
 		Detected:   detected,
-		Configured: configured,
+		Configured: detected,
 		ConfigPath: configPath,
 	}, nil
 }

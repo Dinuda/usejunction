@@ -110,7 +110,7 @@ async function ensureTemplate(input: {
     planKey: input.catalogPlanKey,
     billingCadence: "monthly",
     seatCapacity: 1,
-    ...(catalogPlan?.customPrice ? { monthlySeatMicros: BigInt(0) } : {}),
+    ...(catalogPlan?.customPrice ? { cycleSeatMicros: BigInt(0) } : {}),
     notes: "Auto-synced from detected device usage",
   });
 

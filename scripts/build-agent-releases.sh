@@ -3,9 +3,28 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${USEJUNCTION_AGENT_VERSION:-0.1.0}"
+VERSION="${1:-${USEJUNCTION_AGENT_VERSION:-}}"
+URGENCY="${2:-normal}"
+if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+  echo "Usage: $0 <semver> [normal|critical]" >&2
+  exit 1
+fi
+if [[ "$VERSION" == *-* ]]; then
+  IFS=. read -ra prerelease_parts <<< "${VERSION#*-}"
+  for part in "${prerelease_parts[@]}"; do
+    if [[ "$part" =~ ^[0-9]+$ && "$part" != "0" && "$part" == 0* ]]; then
+      echo "Invalid semantic version: numeric prerelease identifiers cannot have leading zeroes" >&2
+      exit 1
+    fi
+  done
+fi
+if [[ "$URGENCY" != "normal" && "$URGENCY" != "critical" ]]; then
+  echo "Urgency must be normal or critical" >&2
+  exit 1
+fi
 OUT="${ROOT}/apps/admin/public/releases/download/v${VERSION}"
 AGENT_DIR="${ROOT}/agent"
+LDFLAGS="-s -w -X github.com/usejunction/agent/internal/config.Version=${VERSION}"
 
 mkdir -p "$OUT"
 rm -f "${OUT}"/usejunction-* "${OUT}/checksums.txt"
@@ -23,7 +42,7 @@ for target in "${targets[@]}"; do
   arch="${target#*/}"
   name="usejunction-${os}-${arch}"
   echo "  ${name}"
-  (cd "$AGENT_DIR" && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -ldflags="-s -w" -o "${OUT}/${name}" .)
+  (cd "$AGENT_DIR" && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -ldflags="$LDFLAGS" -o "${OUT}/${name}" .)
   if [[ "$os" == "darwin" && "$(uname -s)" == "Darwin" ]]; then
     app_zip="${name}.app.zip"
     echo "  ${app_zip}"
@@ -48,3 +67,47 @@ done
 
 echo "Wrote checksums:"
 cat "${OUT}/checksums.txt"
+
+(
+  cd "$OUT"
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 -c checksums.txt
+  else
+    sha256sum -c checksums.txt
+  fi
+)
+
+node - "$OUT" "$VERSION" "$URGENCY" <<'NODE'
+const fs = require("fs");
+const path = require("path");
+const [out, version, urgency] = process.argv.slice(2);
+const checksums = new Map(
+  fs.readFileSync(path.join(out, "checksums.txt"), "utf8")
+    .trim().split(/\n+/).map((line) => {
+      const [sha256, name] = line.trim().split(/\s+/, 2);
+      return [name, sha256];
+    }),
+);
+const artifacts = {};
+for (const key of ["darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64"]) {
+  const name = `usejunction-${key}`;
+  const file = path.join(out, name);
+  if (!checksums.has(name) || !fs.existsSync(file)) throw new Error(`missing ${name}`);
+  artifacts[key] = {
+    url: `https://github.com/usejunction/usejunction/releases/download/agent-v${version}/${name}`,
+    sha256: checksums.get(name),
+    size: fs.statSync(file).size,
+  };
+}
+const manifest = {
+  schemaVersion: 1,
+  version,
+  publishedAt: new Date().toISOString(),
+  urgency,
+  rolloutHours: urgency === "critical" ? 0 : 24,
+  artifacts,
+};
+fs.writeFileSync(path.join(out, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+NODE
+
+echo "Wrote release manifest: ${OUT}/manifest.json"

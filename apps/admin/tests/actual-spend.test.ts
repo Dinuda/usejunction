@@ -2,37 +2,60 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   computeActualSpend,
-  filterMonthlyCodingSubscriptions,
-  monthlySubscriptionMicros,
+  cycleSubscriptionMicros,
+  filterCycleCodingSubscriptions,
   subscriptionActiveInPeriod,
 } from "../lib/billing/actual-spend";
+import { resolveBillingCycle } from "../lib/billing/cycles";
 import { isCodingTool } from "../lib/tools/catalog";
 
-test("monthly subscription cost is not prorated by days in the window", () => {
-  const micros = monthlySubscriptionMicros(
+const base = {
+  billingCycleAnchorDate: new Date("2026-07-08T00:00:00.000Z"),
+  billingCycleDays: null,
+  startDate: new Date("2026-07-08T00:00:00.000Z"),
+  endDate: null,
+};
+
+test("billing cycles resolve monthly, weekly, annual, and custom boundaries", () => {
+  assert.deepEqual(resolveBillingCycle({ ...base, billingCadence: "monthly" }, new Date("2026-07-15T00:00:00.000Z")), {
+    cycleStart: new Date("2026-07-08T00:00:00.000Z"),
+    cycleEnd: new Date("2026-08-08T00:00:00.000Z"),
+    nextRenewalDate: new Date("2026-08-08T00:00:00.000Z"),
+    elapsedPercent: 8 / 31,
+    remainingDays: 24,
+    totalDays: 31,
+  });
+  assert.equal(resolveBillingCycle({ ...base, billingCadence: "weekly" }, new Date("2026-07-15T00:00:00.000Z")).cycleStart.toISOString().slice(0, 10), "2026-07-15");
+  assert.equal(resolveBillingCycle({ ...base, billingCadence: "annual" }, new Date("2027-01-01T00:00:00.000Z")).cycleEnd.toISOString().slice(0, 10), "2027-07-08");
+  assert.equal(resolveBillingCycle({ ...base, billingCadence: "custom", billingCycleDays: 10 }, new Date("2026-07-29T00:00:00.000Z")).cycleStart.toISOString().slice(0, 10), "2026-07-28");
+});
+
+test("cycle subscription cost is not prorated by days in the window", () => {
+  const micros = cycleSubscriptionMicros(
     [
       {
-        monthlySeatMicros: BigInt(80_000_000),
+        ...base,
+        billingCadence: "monthly",
+        cycleSeatMicros: BigInt(80_000_000),
         seatCount: 2,
-        startDate: new Date("2026-01-01T00:00:00.000Z"),
-        endDate: null,
       },
     ],
-    new Date("2026-06-15T00:00:00.000Z"),
-    new Date("2026-07-14T00:00:00.000Z"),
+    new Date("2026-07-15T00:00:00.000Z"),
+    new Date("2026-07-21T00:00:00.000Z"),
   );
   assert.equal(micros, BigInt(160_000_000));
 });
 
 test("subscription is excluded before its known start", () => {
   const row = {
-    monthlySeatMicros: BigInt(80_000_000),
+    ...base,
+    billingCadence: "monthly",
+    cycleSeatMicros: BigInt(80_000_000),
     seatCount: 1,
     startDate: new Date("2026-07-10T00:00:00.000Z"),
-    endDate: null,
   };
   assert.equal(
-    subscriptionActiveInPeriod(row, new Date("2026-06-01T00:00:00.000Z"), new Date("2026-07-09T00:00:00.000Z")),
+    subscriptionActiveInPeriod(row, new Date("2026-07-01T00:00:00.000Z"), new Date("2026-07-09T00:00:00.000Z")),
     false,
   );
   assert.equal(
@@ -41,50 +64,26 @@ test("subscription is excluded before its known start", () => {
   );
 });
 
-test("computeActualSpend returns full monthly dollars once subscription has started", () => {
+test("computeActualSpend returns full cycle dollars for mixed cadences", () => {
   const spend = computeActualSpend({
     subscriptions: [
-      {
-        monthlySeatMicros: BigInt(80_000_000),
-        seatCount: 2,
-        startDate: new Date("2026-06-01T00:00:00.000Z"),
-        endDate: null,
-      },
+      { ...base, billingCadence: "monthly", cycleSeatMicros: BigInt(80_000_000), seatCount: 2 },
+      { ...base, billingCadence: "weekly", cycleSeatMicros: BigInt(10_000_000), seatCount: 1 },
+      { ...base, billingCadence: "annual", cycleSeatMicros: BigInt(192_000_000), seatCount: 1 },
     ],
-    from: new Date("2026-06-15T00:00:00.000Z"),
-    to: new Date("2026-07-14T00:00:00.000Z"),
+    from: new Date("2026-07-15T00:00:00.000Z"),
+    to: new Date("2026-07-15T00:00:00.000Z"),
+    now: new Date("2026-07-15T00:00:00.000Z"),
   });
   assert.equal(spend.basis, "subscriptions");
-  assert.equal(spend.total, 160);
+  assert.equal(spend.total, 362);
+  assert.equal(spend.cycles.length, 3);
 });
 
-test("7d and 30d windows show the same monthly subscription total", () => {
-  const subscriptions = [
-    {
-      monthlySeatMicros: BigInt(40_000_000),
-      seatCount: 2,
-      startDate: new Date("2026-01-01T00:00:00.000Z"),
-      endDate: null,
-    },
-  ];
-  const sevenDay = computeActualSpend({
-    subscriptions,
-    from: new Date("2026-07-08T00:00:00.000Z"),
-    to: new Date("2026-07-14T00:00:00.000Z"),
-  });
-  const thirtyDay = computeActualSpend({
-    subscriptions,
-    from: new Date("2026-06-15T00:00:00.000Z"),
-    to: new Date("2026-07-14T00:00:00.000Z"),
-  });
-  assert.equal(sevenDay.total, 80);
-  assert.equal(thirtyDay.total, 80);
-});
-
-test("filterMonthlyCodingSubscriptions keeps only monthly catalog coding tools", () => {
-  const filtered = filterMonthlyCodingSubscriptions(
+test("filterCycleCodingSubscriptions keeps all coding cadences", () => {
+  const filtered = filterCycleCodingSubscriptions(
     [
-      { billingCadence: "monthly", toolKey: "cursor", toolName: "cursor" },
+      { billingCadence: "weekly", toolKey: "cursor", toolName: "cursor" },
       { billingCadence: "annual", toolKey: "cursor", toolName: "cursor" },
       { billingCadence: "monthly", toolKey: "slack", toolName: "slack" },
       { billingCadence: "custom", toolKey: "claude", toolName: "claude" },
@@ -94,6 +93,6 @@ test("filterMonthlyCodingSubscriptions keeps only monthly catalog coding tools",
   );
   assert.deepEqual(
     filtered.map((row) => row.toolKey),
-    ["cursor", "github-copilot"],
+    ["cursor", "cursor", "claude", "github-copilot"],
   );
 });

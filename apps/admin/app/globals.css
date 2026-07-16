@@ -34,6 +34,10 @@
   --color-brand-yellow-pale: var(--brand-yellow-pale);
   --color-brand-yellow-hover: var(--brand-yellow-hover);
   --color-brand-yellow-dark: var(--brand-yellow-dark);
+  --color-brand-orange: var(--brand-orange);
+  --color-brand-orange-pale: var(--brand-orange-pale);
+  --color-brand-orange-hover: var(--brand-orange-hover);
+  --color-brand-orange-dark: var(--brand-orange-dark);
   --color-brand-charcoal: var(--brand-olive);
   --color-brand-olive: var(--brand-olive);
   --color-brand-olive-secondary: var(--brand-olive-secondary);
@@ -87,11 +91,18 @@
   --primary-pale: #dceef1;
   --primary-hover: #06697c;
 
-  /* Brand yellow */
-  --brand-yellow: #e5ed66;
-  --brand-yellow-pale: #f2f5c8;
-  --brand-yellow-hover: #dce650;
-  --brand-yellow-dark: #626a12;
+  /* Brand yellow — signal + focus (tonal ramp) */
+  --brand-yellow: #e5ec67;
+  --brand-yellow-pale: #f9fbcf;
+  --brand-yellow-hover: #edf17b;
+  --brand-yellow-dark: #838a20;
+
+  /* Brand orange — attention + highlight (tonal ramp)
+     50 #fdf3ec · 100 #fae5d5 · 300 #efb388 · 600 #c0682c · 800 #894521 · 950 #3a1e0f */
+  --brand-orange: #c0682c;
+  --brand-orange-pale: #fdf3ec;
+  --brand-orange-hover: #d4773a;
+  --brand-orange-dark: #894521;
 
   /* Dark olive */
   --brand-olive: #202419;

@@ -17,11 +17,12 @@ import {
 import { AddSubscriptionSheet } from "./add-subscription-sheet";
 import { ToolLogoTile } from "./tool-brand-icon";
 import type { ToolDetailData } from "@/lib/queries/dashboard/tool-detail";
+import { quotaResetLabel, quotaWindowLabel } from "@/lib/quotas/display";
 import { cn } from "@/lib/utils";
 
 type PlanRow = ToolDetailData["plans"][number] & {
-  monthlySeatMicros: string | bigint;
-  estimatedMonthlyMicros: string | bigint;
+  cycleSeatMicros: string | bigint;
+  estimatedCycleMicros: string | bigint;
 };
 
 type DetailProps = Omit<ToolDetailData, "plans"> & {
@@ -217,21 +218,30 @@ export function ToolProviderDetail({ data }: { data: DetailProps }) {
           <p className="mt-1 text-xs text-muted-foreground">Windows reported from connected machines</p>
         </div>
         {data.quotas.length ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="divide-y border-y">
             {data.quotas.map((quota) => (
-              <span
+              <div
                 key={`${quota.toolName}-${quota.windowType}-${quota.deviceHostname ?? "org"}`}
-                className="border bg-muted/40 px-2 py-1 font-mono text-[0.65rem] text-muted-foreground"
-                title={
-                  quota.deviceHostname
-                    ? `${quota.developerName ?? "Developer"} · ${quota.deviceHostname}`
-                    : undefined
-                }
+                className="grid gap-1 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_7rem_minmax(12rem,auto)] sm:items-center sm:gap-4"
               >
-                {quota.toolName} {quota.windowType}
-                {quota.usedPercent != null ? ` ${quota.usedPercent.toFixed(0)}%` : ""}
-                {quota.resetAt ? ` · resets ${new Date(quota.resetAt).toLocaleDateString()}` : ""}
-              </span>
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{quota.developerName ?? "Unassigned device"}</p>
+                  {quota.deviceHostname ? (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{quota.deviceHostname}</p>
+                  ) : null}
+                </div>
+                <p className="text-xs font-medium text-muted-foreground">
+                  {quotaWindowLabel(quota.windowType)}
+                </p>
+                <p className="tabular-nums sm:text-right">
+                  <span className="font-semibold">
+                    {quota.usedPercent != null ? `${quota.usedPercent.toFixed(0)}% used` : "Usage unavailable"}
+                  </span>
+                  {quotaResetLabel(quota.resetAt) ? (
+                    <span className="ml-2 text-xs text-muted-foreground">· {quotaResetLabel(quota.resetAt)}</span>
+                  ) : null}
+                </p>
+              </div>
             ))}
           </div>
         ) : (
@@ -264,7 +274,7 @@ export function ToolProviderDetail({ data }: { data: DetailProps }) {
                       {plan.customPrice && <Badge variant="outline">Custom price</Badge>}
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {money(plan.monthlySeatMicros)} per seat ·{" "}
+                      {money(plan.cycleSeatMicros)} per seat / cycle ·{" "}
                       <span className="capitalize">{plan.billingCadence}</span> billing
                     </p>
                     {plan.priceSource === "detected" && (

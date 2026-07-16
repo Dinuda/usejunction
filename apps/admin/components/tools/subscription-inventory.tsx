@@ -11,7 +11,7 @@ import { canonicalToolKey, findCatalogTool } from "@/lib/tools/catalog";
 import type { DashboardToolsData } from "@/lib/queries/dashboard/tools";
 import { cn } from "@/lib/utils";
 
-type Cadence = "monthly" | "annual" | "custom";
+type Cadence = "weekly" | "monthly" | "annual" | "custom";
 type CatalogTool = {
   key: string;
   name: string;
@@ -25,7 +25,7 @@ type CatalogTool = {
     tier: string;
     description: string;
     prices: Partial<Record<Cadence, string>>;
-    includedMonthlyMicros: string;
+    includedCycleMicros: string;
     customPrice?: boolean;
     minimumSeats?: number;
   }>;
@@ -38,8 +38,8 @@ type Subscription = {
   tier: string | null;
   billingCadence: Cadence;
   seatCapacity: number;
-  monthlySeatMicros: string;
-  estimatedMonthlyMicros: string;
+  cycleSeatMicros: string;
+  estimatedCycleMicros: string;
   assignedSeats: number;
   availableSeats: number;
   customPrice: boolean;
@@ -106,7 +106,7 @@ export function SubscriptionInventory({
       tools: groups.length,
       purchased: subscriptions.reduce((sum, item) => sum + item.seatCapacity, 0),
       available: subscriptions.reduce((sum, item) => sum + item.availableSeats, 0),
-      monthly: subscriptions.reduce((sum, item) => sum + BigInt(item.estimatedMonthlyMicros), BigInt(0)),
+      cycle: subscriptions.reduce((sum, item) => sum + BigInt(item.estimatedCycleMicros), BigInt(0)),
     }),
     [groups.length, subscriptions],
   );
@@ -145,7 +145,7 @@ export function SubscriptionInventory({
               ["Active tools", totals.tools],
               ["Purchased seats", totals.purchased],
               ["Available seats", totals.available],
-              ["Monthly subscription cost", money(totals.monthly)],
+              ["Subscription cycle cost", money(totals.cycle)],
             ] as const
           ).map(([label, value], index) => (
             <div
@@ -166,7 +166,7 @@ export function SubscriptionInventory({
                     ? "Across every plan"
                     : index === 2
                       ? "Ready to assign"
-                      : "Estimated monthly"}
+                      : "Current cycles"}
               </p>
             </div>
           ))}
@@ -195,7 +195,7 @@ export function SubscriptionInventory({
             {groups.map(({ tool, subscriptions: items }) => {
               const purchased = items.reduce((sum, item) => sum + item.seatCapacity, 0);
               const assigned = items.reduce((sum, item) => sum + item.assignedSeats, 0);
-              const monthly = items.reduce((sum, item) => sum + BigInt(item.estimatedMonthlyMicros), BigInt(0));
+              const cycle = items.reduce((sum, item) => sum + BigInt(item.estimatedCycleMicros), BigInt(0));
               const summary = items.map((item) => `${item.seatCapacity} ${item.name}`).join(" · ");
               return (
                 <Link
@@ -225,9 +225,9 @@ export function SubscriptionInventory({
                     </div>
                     <div>
                       <span className="mb-1 block text-[0.65rem] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                        Monthly
+                        Cycle cost
                       </span>
-                      {money(monthly)}
+                      {money(cycle)}
                     </div>
                   </div>
                   <ChevronRight className="hidden size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 md:block" />

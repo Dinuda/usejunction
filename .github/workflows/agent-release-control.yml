@@ -1,0 +1,79 @@
+name: Agent release control
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Promote or pause the release"
+        required: true
+        type: choice
+        options: [promote, pause]
+      version:
+        description: "Semantic version without the agent-v prefix"
+        required: true
+        type: string
+      urgency:
+        description: "Rollout urgency for promotion"
+        required: true
+        default: normal
+        type: choice
+        options: [normal, critical]
+
+permissions:
+  contents: write
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    environment: agent-production
+    steps:
+      - name: Validate input
+        shell: bash
+        run: '[[ "${{ inputs.version }}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]'
+      - name: Download immutable candidate
+        if: inputs.action == 'promote'
+        shell: bash
+        run: |
+          mkdir release
+          gh release download "agent-v${{ inputs.version }}" --dir release
+          test -f release/manifest.json
+          test -f release/checksums.txt
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Set approved rollout mode
+        if: inputs.action == 'promote'
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require("fs");
+          const path = "release/manifest.json";
+          const manifest = JSON.parse(fs.readFileSync(path, "utf8"));
+          manifest.urgency = "${{ inputs.urgency }}";
+          manifest.rolloutHours = manifest.urgency === "critical" ? 0 : 24;
+          fs.writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+          gh release edit "agent-v${{ inputs.version }}" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Activate release and snapshot cohort
+        if: inputs.action == 'promote'
+        run: |
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $AGENT_RELEASE_OPERATIONS_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @release/manifest.json \
+            "$CONTROL_PLANE_URL/api/internal/agent-releases/promote"
+        env:
+          CONTROL_PLANE_URL: ${{ secrets.CONTROL_PLANE_URL }}
+          AGENT_RELEASE_OPERATIONS_TOKEN: ${{ secrets.AGENT_RELEASE_OPERATIONS_TOKEN }}
+      - name: Pause release
+        if: inputs.action == 'pause'
+        run: |
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $AGENT_RELEASE_OPERATIONS_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data '{"version":"${{ inputs.version }}"}' \
+            "$CONTROL_PLANE_URL/api/internal/agent-releases/pause"
+        env:
+          CONTROL_PLANE_URL: ${{ secrets.CONTROL_PLANE_URL }}
+          AGENT_RELEASE_OPERATIONS_TOKEN: ${{ secrets.AGENT_RELEASE_OPERATIONS_TOKEN }}

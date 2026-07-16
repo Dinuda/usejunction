@@ -2,6 +2,7 @@ export { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
 export {
   ACTIVE_PEOPLE_WINDOW_DAYS,
   getOrgOverview,
+  overviewInputFromBounds,
   overviewInputFromRange,
 } from "@/lib/insights/queries/get-org-overview";
 export type { InsightContext, InsightEnvelope, InsightKind } from "@/lib/insights/contracts/envelope";

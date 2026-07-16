@@ -2,6 +2,7 @@ import type { PlanUsageDeveloperPlanRow, PlanUsageV1 } from "@/lib/insights/cont
 import { verdictLabel, type PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { canonicalToolKey } from "@/lib/tools/catalog";
+import { quotaResetLabel, quotaWindowLabel } from "@/lib/quotas/display";
 import { cn } from "@/lib/utils";
 
 function money(value: number) {
@@ -69,9 +70,9 @@ function PlanRow({ plan }: { plan: PlanUsageDeveloperPlanRow }) {
               {toolLabel(plan.toolName)} · {plan.planName}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {money(microsToDollars(plan.monthlySeatMicros))}/mo seat
-              {Number(plan.includedMonthlyMicros) > 0
-                ? ` · ${money(microsToDollars(plan.includedMonthlyMicros))} included`
+              {money(microsToDollars(plan.cycleSeatMicros))}/cycle seat
+              {Number(plan.includedCycleMicros) > 0
+                ? ` · ${money(microsToDollars(plan.includedCycleMicros))} included`
                 : ""}
             </p>
           </div>
@@ -105,12 +106,10 @@ function PlanRow({ plan }: { plan: PlanUsageDeveloperPlanRow }) {
                   key={quota.quotaKey}
                   className="flex items-center justify-between gap-2 text-xs"
                 >
-                  <span className="text-muted-foreground">{quota.label}</span>
+                  <span className="text-muted-foreground">{quotaWindowLabel(quota.windowType)}</span>
                   <span className="tabular-nums font-medium">
                     {quota.rawRatio != null ? `${(quota.rawRatio * 100).toFixed(0)}%` : "—"}
-                    {quota.resetsAt
-                      ? ` · resets ${new Date(quota.resetsAt).toLocaleDateString()}`
-                      : ""}
+                    {quotaResetLabel(quota.resetsAt) ? ` · ${quotaResetLabel(quota.resetsAt)}` : ""}
                   </span>
                 </li>
               ))}
@@ -126,18 +125,18 @@ function PlanRow({ plan }: { plan: PlanUsageDeveloperPlanRow }) {
           <p className="font-mono text-[0.65rem] uppercase tracking-[0.12em] text-muted-foreground">
             Included allowance
           </p>
-          {plan.included && Number(plan.included.includedMonthlyMicros) > 0 ? (
+          {plan.included && Number(plan.included.includedCycleMicros) > 0 ? (
             <div className="mt-2">
               <p className="text-sm font-medium tabular-nums">
                 {money(microsToDollars(plan.included.grossUsageMicros))} of{" "}
-                {money(microsToDollars(plan.included.includedMonthlyMicros))}
+                {money(microsToDollars(plan.included.includedCycleMicros))}
                 {plan.included.rawRatio != null
                   ? ` · ${(plan.included.rawRatio * 100).toFixed(0)}%`
                   : ""}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 Estimated usage vs plan include
-                {plan.billing?.month ? ` · ${plan.billing.month}` : ""}
+                {plan.billing ? ` · ${plan.billing.cycleStart} to ${plan.billing.cycleEnd}` : ""}
               </p>
             </div>
           ) : (

@@ -56,11 +56,11 @@ var statusCmd = &cobra.Command{
 		fmt.Printf("Agent:        v%s\n", config.Version)
 		fmt.Printf("Tools found:  %d\n", len(tools))
 		for _, t := range tools {
-			gwTag := ""
+			tag := ""
 			if t.Configured {
-				gwTag = " [gateway]"
+				tag = " [ready]"
 			}
-			fmt.Printf("  • %s%s\n", t.ToolName, gwTag)
+			fmt.Printf("  • %s%s\n", t.ToolName, tag)
 		}
 		return nil
 	},

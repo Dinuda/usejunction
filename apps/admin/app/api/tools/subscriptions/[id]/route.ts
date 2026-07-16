@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma, Prisma } from "@usejunction/db";
 import { audit, requireOrgRole } from "@/lib/rbac";
 import { serializeBigInts } from "@/lib/billing/validation";
+import { cycleFromNextRenewal } from "@/lib/billing/cycles";
 import { catalogPrice, findCatalogPlan, type BillingCadence } from "@/lib/tools/catalog";
 import { subscriptionUpdateSchema } from "@/lib/tools/subscriptions";
 
@@ -13,13 +14,33 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!parsed.success) return NextResponse.json({ error: "invalid subscription", details: parsed.error.flatten() }, { status: 400 });
   const existing = await prisma.billingPlanTemplate.findFirst({ where: { id, orgId: auth.orgId } });
   if (!existing) return NextResponse.json({ error: "subscription not found" }, { status: 404 });
-  const data = { ...parsed.data };
+  const { nextRenewalDate, ...data } = { ...parsed.data };
+  const nextCadence = (data.billingCadence ?? existing.billingCadence) as BillingCadence;
+  if (nextCadence === "custom" && !data.billingCycleDays && !existing.billingCycleDays) {
+    return NextResponse.json({ error: "custom billing cycles require a day count" }, { status: 400 });
+  }
+  const nextCycleDays = data.billingCycleDays ?? existing.billingCycleDays;
+  if (nextRenewalDate) {
+    const anchor = cycleFromNextRenewal({
+      nextRenewalDate,
+      billingCadence: nextCadence,
+      billingCycleDays: nextCycleDays,
+    });
+    if (
+      data.billingCycleAnchorDate &&
+      data.billingCycleAnchorDate.toISOString().slice(0, 10) !== anchor.toISOString().slice(0, 10)
+    ) {
+      return NextResponse.json({ error: "cycle start and next renewal do not describe the same billing cycle" }, { status: 400 });
+    }
+    data.billingCycleAnchorDate = anchor;
+  }
   if (data.billingCadence && existing.toolKey && existing.catalogPlanKey) {
     const plan = findCatalogPlan(existing.toolKey, existing.catalogPlanKey);
     const catalogMicros = plan && catalogPrice(plan, data.billingCadence as BillingCadence);
     if (!existing.customPrice && catalogMicros === undefined) return NextResponse.json({ error: "billing cadence is not available for this plan" }, { status: 400 });
-    if (!existing.customPrice && catalogMicros !== undefined) data.monthlySeatMicros = catalogMicros;
+    if (!existing.customPrice && catalogMicros !== undefined) data.cycleSeatMicros = catalogMicros;
   }
+  if (data.billingCadence && data.billingCadence !== "custom") data.billingCycleDays = null;
   let result;
   try {
     result = await prisma.$transaction(async (tx) => {
@@ -38,7 +59,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
   const { subscription, assignedSeats } = result;
   await audit({ orgId: auth.orgId, actorType: "user", actorId: auth.userId, action: "tools.subscription_updated", targetType: "billing_plan_template", targetId: id });
-  return NextResponse.json(serializeBigInts({ subscription, assignedSeats, availableSeats: Math.max(0, subscription.seatCapacity - assignedSeats), estimatedMonthlyMicros: subscription.monthlySeatMicros * BigInt(subscription.seatCapacity) }));
+  return NextResponse.json(serializeBigInts({ subscription, assignedSeats, availableSeats: Math.max(0, subscription.seatCapacity - assignedSeats), estimatedCycleMicros: subscription.cycleSeatMicros * BigInt(subscription.seatCapacity) }));
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

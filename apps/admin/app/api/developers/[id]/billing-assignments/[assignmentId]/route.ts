@@ -18,8 +18,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const snapshot = assignmentSnapshot(template, parsed.data.planTemplateId
     ? parsed.data
     : {
-        monthlySeatMicros: parsed.data.monthlySeatMicros ?? existing.monthlySeatMicros,
-        includedMonthlyMicros: parsed.data.includedMonthlyMicros ?? existing.includedMonthlyMicros,
+        cycleSeatMicros: parsed.data.cycleSeatMicros ?? existing.cycleSeatMicros,
+        includedCycleMicros: parsed.data.includedCycleMicros ?? existing.includedCycleMicros,
         inputRateMicrosPerMillion: parsed.data.inputRateMicrosPerMillion ?? existing.inputRateMicrosPerMillion,
         outputRateMicrosPerMillion: parsed.data.outputRateMicrosPerMillion ?? existing.outputRateMicrosPerMillion,
         cacheRateMicrosPerMillion: parsed.data.cacheRateMicrosPerMillion ?? existing.cacheRateMicrosPerMillion,
@@ -29,7 +29,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     snapshot.planTier = existing.planTier;
     snapshot.currency = existing.currency;
     snapshot.billingOwner = existing.billingOwner;
-    snapshot.renewalDate = existing.renewalDate;
+    snapshot.billingCadence = existing.billingCadence;
+    snapshot.billingCycleAnchorDate = existing.billingCycleAnchorDate;
+    snapshot.billingCycleDays = existing.billingCycleDays;
     snapshot.externalReference = existing.externalReference;
   }
   const startDate = parsed.data.startDate ?? existing.startDate;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { bearerToken } from "@/lib/auth";
+import { updateDirectiveForHeartbeat } from "@/lib/agent-updates";
 import { encryptSecret, hashOpaqueToken } from "@/lib/security";
 
 export async function POST(req: NextRequest) {
@@ -62,7 +63,20 @@ export async function POST(req: NextRequest) {
       });
     });
 
-    return NextResponse.json({ ok: true, deviceId: device.id });
+    let update = null;
+    try {
+      update = await updateDirectiveForHeartbeat({
+        id: device.id,
+        orgId: device.orgId,
+        os: typeof body.os === "string" ? body.os : device.os,
+        architecture: typeof body.architecture === "string" ? body.architecture : device.architecture,
+        agentVersion: typeof body.agentVersion === "string" ? body.agentVersion : device.agentVersion,
+      });
+    } catch (error) {
+      console.error("[devices/heartbeat-update]", error);
+    }
+
+    return NextResponse.json({ ok: true, deviceId: device.id, update });
   } catch (e) {
     console.error("[devices/heartbeat]", e);
     return NextResponse.json({ error: "heartbeat failed" }, { status: 500 });

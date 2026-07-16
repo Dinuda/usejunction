@@ -1,0 +1,56 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@usejunction/db";
+import { audit, requireOrgRole } from "@/lib/rbac";
+import {
+  SIGNALS_COLLECTION_MODE,
+  SIGNALS_DEFAULT_RETENTION_DAYS,
+  defaultExcludedApps,
+  defaultExcludedDomains,
+  normalizeList,
+  signalsPolicyInputSchema,
+} from "@/lib/signals/contracts";
+import { getOrgSignalsPolicy } from "@/lib/signals/service";
+
+export async function GET(req: NextRequest) {
+  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  if (auth instanceof NextResponse) return auth;
+  const policy = await getOrgSignalsPolicy(auth.orgId);
+  return NextResponse.json({ policy });
+}
+
+export async function PATCH(req: NextRequest) {
+  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  if (auth instanceof NextResponse) return auth;
+
+  const body = await req.json().catch(() => ({}));
+  const parsed = signalsPolicyInputSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "invalid signals policy", details: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const existing = await prisma.signalsPolicy.findFirst({ where: { orgId: auth.orgId, teamId: null } });
+  const data = {
+    enabled: parsed.data.enabled ?? existing?.enabled ?? false,
+    retentionDays: parsed.data.retentionDays ?? existing?.retentionDays ?? SIGNALS_DEFAULT_RETENTION_DAYS,
+    collectionMode: SIGNALS_COLLECTION_MODE,
+    excludedApps: normalizeList(parsed.data.excludedApps ?? existing?.excludedApps, defaultExcludedApps),
+    excludedDomains: normalizeList(parsed.data.excludedDomains ?? existing?.excludedDomains, defaultExcludedDomains),
+    storeEvents: parsed.data.storeEvents ?? existing?.storeEvents ?? false,
+    updatedByUserId: auth.userId,
+  };
+  const policy = existing
+    ? await prisma.signalsPolicy.update({ where: { id: existing.id }, data })
+    : await prisma.signalsPolicy.create({ data: { orgId: auth.orgId, teamId: null, ...data } });
+
+  await audit({
+    orgId: auth.orgId,
+    actorType: "user",
+    actorId: auth.userId,
+    action: "signals_policy.updated",
+    targetType: "signals_policy",
+    targetId: policy.id,
+    metadata: { enabled: policy.enabled, collectionMode: policy.collectionMode, retentionDays: policy.retentionDays },
+  });
+
+  return NextResponse.json({ policy: await getOrgSignalsPolicy(auth.orgId) });
+}

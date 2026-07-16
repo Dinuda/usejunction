@@ -1,6 +1,7 @@
 import { prisma } from "@usejunction/db";
 import { internalAnalyticsScope, readCanonicalBillingFacts, readDataThrough } from "@/lib/analytics/query";
 import { calculateBilling, serializeBillingLine } from "@/lib/billing/calculator";
+import { cycleToJson, resolveBillingCycle } from "@/lib/billing/cycles";
 import {
   dedupeQuotaUtilizations,
   evaluatePlanUtilization,
@@ -28,6 +29,8 @@ import { readAssignments } from "@/lib/insights/readers/assignments";
 import { readQuotas } from "@/lib/insights/readers/quotas";
 import { readSubscriptions } from "@/lib/insights/readers/subscriptions";
 import { canonicalToolKey } from "@/lib/tools/catalog";
+
+const DAY_MS = 86_400_000;
 
 function emptyVerdict(): PlanVerdict {
   return evaluatePlanUtilization({ primaryQuota: null, included: null });
@@ -61,13 +64,24 @@ export async function getPlanUsage(
   assertInsightRoles(context, ["owner", "admin"]);
 
   const analyticsScope = internalAnalyticsScope(context.orgId, input.developerId);
-  const [subscriptions, assignments, quotaRows, billingFacts, dataThrough] = await Promise.all([
+  const [subscriptions, assignments, quotaRows, dataThrough] = await Promise.all([
     readSubscriptions(context.orgId),
     readAssignments(context.orgId, { developerId: input.developerId }),
     readQuotas(context.orgId, { developerId: input.developerId }),
-    readCanonicalBillingFacts(prisma, analyticsScope, input.reportWindow),
     readDataThrough(prisma, analyticsScope),
   ]);
+  const assignmentCycles = assignments.map((assignment) => resolveBillingCycle(assignment, context.now));
+  const subscriptionCycles = subscriptions.map((subscription) => resolveBillingCycle(subscription, context.now));
+  const allCycles = [...assignmentCycles, ...subscriptionCycles];
+  const billingWindow = allCycles.length
+    ? {
+        from: new Date(Math.min(...allCycles.map((cycle) => cycle.cycleStart.getTime()))),
+        to: new Date(Math.max(...allCycles.map((cycle) => cycle.cycleEnd.getTime())) - DAY_MS),
+        timezone: input.reportWindow.timezone,
+        grain: input.reportWindow.grain,
+      }
+    : input.reportWindow;
+  const billingFacts = await readCanonicalBillingFacts(prisma, analyticsScope, billingWindow);
 
   const billingLines = calculateBilling({
     assignments,
@@ -79,7 +93,7 @@ export async function getPlanUsage(
   const billingByAssignment = new Map<string, (typeof billingLines)[number]>();
   for (const line of billingLines) {
     const existing = billingByAssignment.get(line.assignmentId);
-    if (!existing || line.month > existing.month) {
+    if (!existing || line.cycleStart > existing.cycleStart) {
       billingByAssignment.set(line.assignmentId, line);
     }
   }
@@ -88,6 +102,7 @@ export async function getPlanUsage(
 
   const subscriptionRows: PlanUsageSubscriptionRow[] = subscriptions.map((subscription) => {
     const toolKey = subscription.toolKey ?? canonicalToolKey(subscription.toolName);
+    const billingCycle = resolveBillingCycle(subscription, context.now);
     const quotas = allQuotas.filter(
       (quota) => quota.toolKey === toolKey || quota.toolKey === canonicalToolKey(subscription.toolName),
     );
@@ -105,7 +120,7 @@ export async function getPlanUsage(
       net += line.netMicros;
     }
     const included = includedAllowanceUtilization({
-      includedMonthlyMicros: subscription.includedMonthlyMicros * BigInt(Math.max(1, subscription.assignedSeats || 1)),
+      includedCycleMicros: subscription.includedCycleMicros * BigInt(Math.max(1, subscription.assignedSeats || 1)),
       grossUsageMicros: grossUsage,
     });
     const primaryQuota = selectPrimaryQuota(quotas);
@@ -120,8 +135,10 @@ export async function getPlanUsage(
       seatCapacity: subscription.seatCapacity,
       assignedSeats: subscription.assignedSeats,
       availableSeats: subscription.availableSeats,
-      monthlySeatMicros: subscription.monthlySeatMicros.toString(),
-      includedMonthlyMicros: subscription.includedMonthlyMicros.toString(),
+      billingCadence: subscription.billingCadence,
+      billingCycle: cycleToJson(billingCycle),
+      cycleSeatMicros: subscription.cycleSeatMicros.toString(),
+      includedCycleMicros: subscription.includedCycleMicros.toString(),
       primaryQuota,
       quotas,
       included,
@@ -159,7 +176,7 @@ export async function getPlanUsage(
     );
     const line = billingByAssignment.get(assignment.id);
     const included = includedAllowanceUtilization({
-      includedMonthlyMicros: assignment.includedMonthlyMicros,
+      includedCycleMicros: assignment.includedCycleMicros,
       grossUsageMicros: line?.grossUsageMicros ?? BigInt(0),
     });
     const primaryQuota = selectPrimaryQuota(quotas);
@@ -174,8 +191,10 @@ export async function getPlanUsage(
       toolName: assignment.toolName,
       planName: assignment.planName,
       seatCount: assignment.seatCount,
-      monthlySeatMicros: assignment.monthlySeatMicros.toString(),
-      includedMonthlyMicros: assignment.includedMonthlyMicros.toString(),
+      billingCadence: assignment.billingCadence,
+      billingCycle: cycleToJson(resolveBillingCycle(assignment, context.now)),
+      cycleSeatMicros: assignment.cycleSeatMicros.toString(),
+      includedCycleMicros: assignment.includedCycleMicros.toString(),
       primaryQuota,
       quotas,
       included,
@@ -183,7 +202,8 @@ export async function getPlanUsage(
       verdict,
       billing: serialized
         ? {
-            month: serialized.month,
+            cycleStart: serialized.cycleStart,
+            cycleEnd: serialized.cycleEnd,
             grossSeatMicros: serialized.grossSeatMicros,
             grossUsageMicros: serialized.grossUsageMicros,
             includedCreditsMicros: serialized.includedCreditsMicros,
@@ -201,7 +221,7 @@ export async function getPlanUsage(
       developer.plans.find((plan) => plan.primaryRatio === primaryRatio)?.verdict ??
       evaluatePlanUtilization({
         primaryQuota: null,
-        included: primaryRatio == null ? null : { includedMonthlyMicros: "0", grossUsageMicros: "0", rawRatio: primaryRatio, displayRatio: Math.min(primaryRatio, 1) },
+        included: primaryRatio == null ? null : { includedCycleMicros: "0", grossUsageMicros: "0", rawRatio: primaryRatio, displayRatio: Math.min(primaryRatio, 1) },
       });
     return { ...developer, primaryRatio, verdict: worst };
   });

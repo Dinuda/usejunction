@@ -59,16 +59,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user, trigger, session }) {
       if (user) {
         token.userId = user.id;
+        token.email = user.email ?? null;
         token.picture = user.image ?? null;
         token.orgId = (user as { orgId?: string | null }).orgId ?? null;
         token.role = (user as { role?: string | null }).role ?? null;
       }
-      if (token.userId && !("picture" in token)) {
-        const dbUser = await prisma.user.findUnique({
+      if (token.userId) {
+        let dbUser = await prisma.user.findUnique({
           where: { id: String(token.userId) },
-          select: { image: true },
+          select: { id: true, image: true, email: true },
         });
-        token.picture = dbUser?.image ?? null;
+        if (!dbUser && token.email) {
+          dbUser = await prisma.user.findUnique({
+            where: { email: String(token.email).trim().toLowerCase() },
+            select: { id: true, image: true, email: true },
+          });
+          if (dbUser) {
+            token.userId = dbUser.id;
+            token.email = dbUser.email;
+          }
+        }
+        if (!dbUser) {
+          return {};
+        }
+        token.picture = dbUser.image ?? null;
       }
       if (trigger === "update" && session?.orgId && token.userId) {
         const membership = await prisma.organizationMembership.findUnique({

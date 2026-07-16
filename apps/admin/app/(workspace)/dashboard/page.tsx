@@ -2,19 +2,30 @@ import Link from "next/link";
 import { ArrowUpRight, CircleAlert } from "lucide-react";
 import { AiCodingPanel } from "@/components/dashboard/ai-coding-panel";
 import { ConnectMachineBanner } from "@/components/dashboard/connect-machine-banner";
+import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
 import { OverviewChart } from "@/components/dashboard/overview-chart";
 import { DashboardSetupPanel } from "@/components/dashboard/setup-panel";
+import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { verdictLabel, type PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
+import {
+  parseRollingPeriodFromSearch,
+  rollingPeriodLabel,
+  type RollingPeriod,
+} from "@/lib/dashboard/period-prefs";
+import { toolDisplayName } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 import {
   ACTIVE_PEOPLE_WINDOW_DAYS,
   getOrgOverview,
+  overviewInputFromBounds,
   overviewInputFromRange,
   type OrgOverviewV1,
 } from "@/lib/insights";
+import { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
 import { getMeOverview } from "@/lib/queries/me/overview";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
 import { prisma } from "@usejunction/db";
@@ -32,37 +43,13 @@ function compactNumber(value: number) {
 }
 
 function Delta({ value, inverse = false }: { value: number | null; inverse?: boolean }) {
-  if (value === null) return <span className="text-xs text-muted-foreground">—</span>;
+  if (value === null) return null;
   const good = inverse ? value <= 0 : value >= 0;
   return (
     <span className={cn("text-xs font-medium tabular-nums", good ? "text-success" : "text-destructive")}>
       {value >= 0 ? "+" : ""}
       {value.toFixed(0)}%
     </span>
-  );
-}
-
-type DashboardRange = OrgOverviewV1["range"];
-
-function RangePicker({ range }: { range: DashboardRange }) {
-  return (
-    <div className="flex items-center gap-1 rounded-md border bg-card p-1" aria-label="Date range">
-      {([7, 30, 90] as DashboardRange[]).map((value) => (
-        <Button key={value} asChild size="sm" variant="ghost">
-          <Link
-            href={`/dashboard?range=${value}`}
-            className={cn(
-              "h-8 rounded-md px-3 text-xs font-semibold uppercase tracking-[0.08em]",
-              range === value
-                ? "!bg-secondary !text-foreground hover:!bg-secondary hover:!text-foreground"
-                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-            )}
-          >
-            {value}d
-          </Link>
-        </Button>
-      ))}
-    </div>
   );
 }
 
@@ -86,7 +73,7 @@ function Kpi({
       <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
       <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{value}</p>
       {sub ? <p className="mt-1 text-xs text-muted-foreground">{sub}</p> : null}
-      {delta !== undefined && (
+      {delta != null && (
         <div className="mt-2">
           <Delta value={delta} inverse={inverse} />
         </div>
@@ -95,35 +82,109 @@ function Kpi({
   );
 }
 
-function actualSpendSub(kpi: { basis: "subscriptions" | "none" }) {
-  if (kpi.basis === "none") return "no monthly coding subscriptions";
-  return "full monthly subscription cost";
+type CycleView = OrgOverviewV1["cycleView"];
+
+const cycleViewLabels: Record<CycleView, string> = {
+  current_cycles: "Current cycles",
+  previous_cycles: "Previous cycles",
+  last_30_days: "Last 30 days",
+};
+
+function sectionTitleForView(view: CycleView, period: RollingPeriod) {
+  if (view === "last_30_days") return rollingPeriodLabel(period);
+  return cycleViewLabels[view];
 }
 
-function observedDaysSub(observation: {
-  partialWindow: boolean;
-  daysWithActivity: number;
-  rangeDays: number;
-  firstActivityDate: string | null;
-}) {
-  if (observation.partialWindow) {
-    if (observation.firstActivityDate) {
-      return `observed · ${observation.daysWithActivity}/${observation.rangeDays}d from ${observation.firstActivityDate}`;
-    }
-    return `observed · ${observation.daysWithActivity}/${observation.rangeDays}d`;
+function toneForVerdict(code: PlanVerdictCode | null) {
+  switch (code) {
+    case "LIGHT_USE":
+      return "text-muted-foreground";
+    case "HEALTHY":
+      return "text-primary";
+    case "NEAR_LIMIT":
+      return "text-brand-yellow-dark";
+    case "LIMIT_EXCEEDED":
+      return "text-destructive";
+    default:
+      return "text-muted-foreground";
   }
-  return "observed";
 }
 
-function estimatedApiSub(observation: {
-  partialWindow: boolean;
-  daysWithActivity: number;
-  rangeDays: number;
+function barToneForVerdict(code: PlanVerdictCode | null) {
+  if (code === "LIMIT_EXCEEDED") return "bg-destructive";
+  if (code === "NEAR_LIMIT") return "bg-brand-yellow-dark";
+  if (code === "LIGHT_USE") return "bg-muted-foreground/35";
+  if (code == null) return "bg-muted";
+  return "bg-primary";
+}
+
+function cycleUsageMeta(row: OrgOverviewV1["subscriptionCycles"][number]) {
+  return `${compactNumber(row.modelCalls)} ${row.modelCalls === 1 ? "call" : "calls"}`;
+}
+
+function orgCycleSummary(cycles: OrgOverviewV1["subscriptionCycles"]) {
+  const withSignal = cycles.filter((row) => row.utilizationPercent != null);
+  const avgUtilization =
+    withSignal.length > 0
+      ? withSignal.reduce((sum, row) => sum + (row.utilizationPercent ?? 0), 0) / withSignal.length
+      : null;
+  const nearLimit = cycles.filter(
+    (row) => row.verdictCode === "NEAR_LIMIT" || row.verdictCode === "LIMIT_EXCEEDED",
+  ).length;
+  return { avgUtilization, nearLimit };
+}
+
+function CycleSectionHeader({
+  view,
+  period,
+  cycles,
+}: {
+  view: CycleView;
+  period: RollingPeriod;
+  cycles: OrgOverviewV1["subscriptionCycles"];
 }) {
-  if (observation.partialWindow) {
-    return `rate-card · ${observation.daysWithActivity}/${observation.rangeDays}d observed`;
+  const { avgUtilization, nearLimit } = orgCycleSummary(cycles);
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2 border-b pb-3">
+      <h2 className="text-lg font-semibold tracking-tight">{sectionTitleForView(view, period)}.</h2>
+      <div className="ml-auto flex flex-wrap items-center gap-2">
+        {avgUtilization != null ? (
+          <Badge variant="outline" className="font-normal text-muted-foreground">
+            {avgUtilization.toFixed(0)}% utilized
+          </Badge>
+        ) : null}
+        {nearLimit > 0 ? (
+          <Badge
+            variant="outline"
+            className="border-brand-yellow-dark/40 bg-brand-yellow-pale font-normal text-brand-yellow-dark"
+          >
+            {nearLimit} near limit
+          </Badge>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function shortDate(value: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function cycleWindowLabel(row: OrgOverviewV1["subscriptionCycles"][number], view: CycleView) {
+  if (view === "current_cycles") {
+    const renew = `Renews ${shortDate(row.billingCycle.nextRenewalDate)}`;
+    if (row.planCount > 1) return `${row.planCount} plans · next ${shortDate(row.billingCycle.nextRenewalDate)}`;
+    if (row.planNames[0]) return `${row.planNames[0]} · ${renew}`;
+    return renew;
   }
-  return "rate-card on observed usage";
+  if (view === "last_30_days") {
+    return `${shortDate(row.windowFrom)} – ${shortDate(row.windowTo)}`;
+  }
+  return `${shortDate(row.billingCycle.cycleStart)} – ${shortDate(row.billingCycle.cycleEnd)}`;
 }
 
 function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>> }) {
@@ -151,8 +212,6 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
               lastUsageSyncAt={data.sync.lastUsageSyncAt}
               lastAccountSyncAt={data.sync.lastAccountSyncAt}
               stale={data.sync.stale}
-              needsPlanSync={data.sync.needsPlanSync}
-              autoAttempt
             />
           </div>
           <div className="grid gap-8 sm:grid-cols-3">
@@ -228,7 +287,26 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
   );
 }
 
-export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ range?: string }> }) {
+function parseCycleView(value: string | undefined): CycleView {
+  if (value === "previous_cycles" || value === "last_30_days") return value;
+  return "current_cycles";
+}
+
+function overviewInputForView(cycleView: CycleView, period: RollingPeriod) {
+  if (cycleView !== "last_30_days") {
+    return overviewInputFromRange(30, new Date(), cycleView);
+  }
+  if (period.kind === "custom") {
+    return overviewInputFromBounds(period.from, period.to, cycleView);
+  }
+  return overviewInputFromRange(period.days, new Date(), cycleView);
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string; days?: string; from?: string; to?: string }>;
+}) {
   const { orgId, role, userId } = await requireWorkspaceRole(["owner", "admin", "developer"]);
   if (role === "developer") {
     const personal = await getMeOverview(orgId, userId, role);
@@ -236,7 +314,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   }
 
   const params = await searchParams;
-  const range = params.range === "7" || params.range === "90" ? (Number(params.range) as DashboardRange) : 30;
+  const cycleView = parseCycleView(params.view);
+  const rollingPeriod = parseRollingPeriodFromSearch({
+    days: params.days,
+    from: params.from,
+    to: params.to,
+  });
   let data: OrgOverviewV1 | null = null;
   let error: string | null = null;
   try {
@@ -248,7 +331,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         now: new Date(),
         timezone: UTC_TIMEZONE,
       },
-      overviewInputFromRange(range),
+      overviewInputForView(cycleView, rollingPeriod),
     );
     data = envelope.data;
   } catch (cause) {
@@ -256,10 +339,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   }
 
   const empty = data && !data.hasActivity && data.coverage.devices === 0;
-  const myDeveloper = await prisma.developer.findFirst({
-    where: { orgId, authUserId: userId },
-    select: { id: true, _count: { select: { devices: true } } },
-  });
+  const [myDeveloper, syncContext] = await Promise.all([
+    prisma.developer.findFirst({
+      where: { orgId, authUserId: userId },
+      select: { id: true, _count: { select: { devices: true } } },
+    }),
+    getLocalSyncContext(orgId, userId),
+  ]);
   const needsPersonalConnect = !myDeveloper || myDeveloper._count.devices === 0;
 
   return (
@@ -270,21 +356,32 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">
             {empty ? "Nothing reporting yet." : "Spend, traffic, coverage."}
           </h1>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-            {empty
-              ? "Connect a machine, then invite people. Metrics show up as soon as the first request lands."
-              : `Last ${range} days through today across tools and developers.`}
-          </p>
+          {empty ? (
+            <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+              Connect a machine, then invite people. Metrics show up as soon as the first request lands.
+            </p>
+          ) : null}
         </div>
-        {!empty && data && <RangePicker range={range} />}
+        {!empty && data ? <CycleViewPicker view={cycleView} period={rollingPeriod} /> : null}
       </div>
+
+      {syncContext ? (
+        <div className="mb-8">
+          <LocalSyncPanel
+            lastSeenAt={syncContext.lastSeenAt}
+            lastUsageSyncAt={syncContext.lastUsageSyncAt}
+            lastAccountSyncAt={syncContext.lastAccountSyncAt}
+            stale={syncContext.stale}
+          />
+        </div>
+      ) : null}
 
       {error ? (
         <div className="flex flex-wrap items-center gap-3 border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <CircleAlert className="size-4 shrink-0" />
           <span className="flex-1">{error}</span>
           <Button asChild variant="outline" size="sm">
-            <Link href={`/dashboard?range=${range}`}>Retry</Link>
+            <Link href="/dashboard">Retry</Link>
           </Button>
         </div>
       ) : empty ? (
@@ -305,54 +402,111 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               delta={data.kpis.actualSpend.deltaPercent}
               inverse
               accent
-              sub={actualSpendSub(data.kpis.actualSpend)}
             />
             <Kpi
               label="Verified usage"
               value={currency(data.kpis.verifiedUsageCost.value)}
               delta={data.kpis.verifiedUsageCost.deltaPercent}
               inverse
-              sub="vendor-reported charges"
             />
             <Kpi
               label="Estimated API value"
               value={currency(data.kpis.estimatedApiCost.value)}
               delta={data.kpis.estimatedApiCost.deltaPercent}
               inverse
-              sub={estimatedApiSub(data.observation)}
             />
             <Kpi
               label="Model calls"
               value={compactNumber(data.kpis.modelCalls.value)}
               delta={data.kpis.modelCalls.deltaPercent}
-              sub={observedDaysSub(data.observation)}
             />
           </div>
-          {data.planUsageSummary &&
-          (data.planUsageSummary.nearLimitCount > 0 ||
-            data.planUsageSummary.avgUtilizationPercent != null) ? (
-            <p className="mt-4 text-sm text-muted-foreground">
-              Plan seats {data.planUsageSummary.assignedSeats}/{data.planUsageSummary.seatCapacity}
-              {data.planUsageSummary.avgUtilizationPercent != null
-                ? ` · avg utilization ${data.planUsageSummary.avgUtilizationPercent.toFixed(0)}%`
-                : ""}
-              {data.planUsageSummary.nearLimitCount > 0
-                ? ` · ${data.planUsageSummary.nearLimitCount} near limit`
-                : ""}
-              {" · "}
-              <Link href="/team" className="underline-offset-4 hover:text-foreground hover:underline">
-                View roster
-              </Link>
-            </p>
-          ) : null}
+
+          <div className="mt-10">
+            <section>
+              <CycleSectionHeader view={data.cycleView} period={rollingPeriod} cycles={data.subscriptionCycles} />
+              {data.subscriptionCycles.length ? (
+                <ul className="divide-y">
+                  {data.subscriptionCycles.map((row) => (
+                    <li key={row.id} className="py-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <ToolLogoTile tool={row.toolKey ?? row.toolName} size="md" />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">
+                              {toolDisplayName(row.toolKey ?? row.toolName)}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {cycleWindowLabel(row, data.cycleView)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold tabular-nums">{currency(row.cycleSpend)}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{cycleUsageMeta(row)}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex items-center gap-3">
+                        <div
+                          className="h-1.5 min-w-0 flex-1 overflow-hidden bg-muted"
+                          role="meter"
+                          aria-label={
+                            row.utilizationDisplayPercent != null
+                              ? `${toolDisplayName(row.toolKey ?? row.toolName)} plan use ${row.utilizationDisplayPercent.toFixed(0)} percent`
+                              : `${toolDisplayName(row.toolKey ?? row.toolName)} plan use waiting for quota signal`
+                          }
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={
+                            row.utilizationDisplayPercent != null
+                              ? Math.round(row.utilizationDisplayPercent)
+                              : undefined
+                          }
+                        >
+                          <div
+                            className={cn(
+                              "h-full transition-[width]",
+                              barToneForVerdict(row.verdictCode),
+                            )}
+                            style={{
+                              width:
+                                row.utilizationDisplayPercent != null
+                                  ? `${Math.min(100, Math.max(2, row.utilizationDisplayPercent))}%`
+                                  : "0%",
+                            }}
+                          />
+                        </div>
+                        {row.utilizationPercent != null ? (
+                          <p
+                            className={cn(
+                              "shrink-0 text-xs font-semibold tabular-nums",
+                              toneForVerdict(row.verdictCode),
+                            )}
+                          >
+                            {row.utilizationPercent.toFixed(0)}%
+                          </p>
+                        ) : (
+                          <p className="shrink-0 text-xs text-muted-foreground">—</p>
+                        )}
+                      </div>
+                      {row.verdictCode ? (
+                        <p className="mt-1.5 text-xs text-muted-foreground">
+                          {verdictLabel(row.verdictCode)}
+                        </p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="py-4 text-sm text-muted-foreground">Add subscriptions to see cycle utilization.</p>
+              )}
+            </section>
+          </div>
 
           <div className="mt-10 grid gap-10 xl:grid-cols-[1.4fr_0.6fr]">
             <section>
-              <div className="mb-4 flex items-end justify-between gap-3 border-b pb-3">
-                <div>
-                  <h2 className="text-lg font-semibold tracking-tight">Model calls.</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">Solid = this period · dashed = prior</p>
-                </div>
+              <div className="mb-4 border-b pb-3">
+                <h2 className="text-lg font-semibold tracking-tight">Model calls.</h2>
               </div>
               <OverviewChart data={data.trend} />
             </section>

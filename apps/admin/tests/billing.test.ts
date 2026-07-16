@@ -12,8 +12,11 @@ const assignment = {
   planName: "Enterprise",
   planTier: "Enterprise",
   currency: "USD",
-  monthlySeatMicros: BigInt(31_000_000),
-  includedMonthlyMicros: BigInt(1_000_000),
+  billingCadence: "monthly",
+  billingCycleAnchorDate: new Date("2026-01-01T00:00:00.000Z"),
+  billingCycleDays: null,
+  cycleSeatMicros: BigInt(31_000_000),
+  includedCycleMicros: BigInt(1_000_000),
   inputRateMicrosPerMillion: BigInt(2_000_000),
   outputRateMicrosPerMillion: BigInt(4_000_000),
   cacheRateMicrosPerMillion: BigInt(1_000_000),
@@ -40,18 +43,22 @@ test("manual billing calculates seat, token usage, and included credits", () => 
   assert.equal(line.grossUsageMicros, BigInt(4_250_000));
   assert.equal(line.includedCreditsMicros, BigInt(1_000_000));
   assert.equal(line.netMicros, BigInt(34_250_000));
-  assert.equal(line.calculationVersion, "manual-v1");
+  assert.equal(line.cycleStart, "2026-01-01");
+  assert.equal(line.cycleEnd, "2026-02-01");
+  assert.equal(line.calculationVersion, "cycle-v1");
 });
 
-test("manual billing prorates an effective-dated assignment across calendar months", () => {
+test("manual billing emits full cycle lines instead of calendar-month proration", () => {
   const [january, february] = calculateBilling({
     assignments: [{ ...assignment, startDate: new Date("2026-01-15T00:00:00.000Z"), endDate: new Date("2026-02-15T00:00:00.000Z") }],
     from: new Date("2026-01-15T00:00:00.000Z"),
     to: new Date("2026-02-14T00:00:00.000Z"),
     usage: [],
   });
-  assert.equal(january.grossSeatMicros, BigInt(17_000_000));
-  assert.equal(february.grossSeatMicros, BigInt(15_500_000));
+  assert.equal(january.cycleStart, "2026-01-01");
+  assert.equal(january.grossSeatMicros, BigInt(31_000_000));
+  assert.equal(february.cycleStart, "2026-02-01");
+  assert.equal(february.grossSeatMicros, BigInt(31_000_000));
 });
 
 test("usage outside the assignment window is excluded", () => {

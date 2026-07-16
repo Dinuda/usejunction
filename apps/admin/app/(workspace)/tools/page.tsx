@@ -64,8 +64,6 @@ function PersonalTools({
             lastUsageSyncAt={sync.lastUsageSyncAt}
             lastAccountSyncAt={sync.lastAccountSyncAt}
             stale={sync.stale}
-            needsPlanSync={sync.needsPlanSync}
-            autoAttempt
           />
         </div>
       ) : null}
@@ -166,8 +164,6 @@ export default async function ToolsPage() {
             lastUsageSyncAt={syncContext.lastUsageSyncAt}
             lastAccountSyncAt={syncContext.lastAccountSyncAt}
             stale={syncContext.stale}
-            needsPlanSync={syncContext.needsPlanSync}
-            autoAttempt
           />
         </div>
       ) : null}

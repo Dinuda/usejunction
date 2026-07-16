@@ -19,9 +19,8 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "usejunction",
 	Short: "UseJunction local agent — AI coding observability",
-	Long: `UseJunction local agent detects AI coding tools on this device,
-configures them to route through the organization gateway, and reports
-usage telemetry to the control plane.`,
+	Long: `UseJunction local agent detects AI coding tools on this device
+and reports usage telemetry to the control plane.`,
 }
 
 // Execute is the entry point called by main.

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestCodexPlanFromClaims(t *testing.T) {
@@ -70,6 +71,29 @@ func TestParseCodexUsageResponse(t *testing.T) {
 	}
 	if usage.RateLimit.PrimaryWindow.UsedPercent != 42.5 {
 		t.Fatalf("primary used = %v", usage.RateLimit.PrimaryWindow.UsedPercent)
+	}
+	snapshots := codexQuotaSnapshots(usage, "oauth_api")
+	if len(snapshots) != 3 {
+		t.Fatalf("snapshots = %d, want 5-hour, weekly, and credits", len(snapshots))
+	}
+	if snapshots[0].WindowType != "session_5h" || snapshots[1].WindowType != "weekly" {
+		t.Fatalf("window types = %q, %q", snapshots[0].WindowType, snapshots[1].WindowType)
+	}
+	primaryReset := time.Unix(1784526148, 0).UTC().Format(time.RFC3339)
+	if snapshots[0].ResetAt == nil || *snapshots[0].ResetAt != primaryReset {
+		t.Fatalf("primary reset = %v, want %s", snapshots[0].ResetAt, primaryReset)
+	}
+	if snapshots[1].ResetAt == nil || *snapshots[1].ResetAt != "2026-07-20T00:00:00Z" {
+		t.Fatalf("weekly reset = %v", snapshots[1].ResetAt)
+	}
+}
+
+func TestCodexResetAtRejectsMissingOrInvalidValues(t *testing.T) {
+	if got := codexResetAt(nil); got != nil {
+		t.Fatalf("nil reset = %v", got)
+	}
+	if got := codexResetAt("not-a-date"); got != nil {
+		t.Fatalf("invalid reset = %v", got)
 	}
 }
 

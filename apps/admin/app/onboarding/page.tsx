@@ -1,9 +1,12 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { OnboardingExperience } from "@/components/onboarding/onboarding-experience";
+import { isAuthUserNotFoundError } from "@/lib/ensure-auth-user";
 import { createWorkspace } from "@/lib/ensure-workspace";
 import { resolveOrgId } from "@/lib/require-organization";
 import { prisma } from "@usejunction/db";
+
+const STALE_SESSION_REDIRECT = "/api/auth/signout?callbackUrl=/login?error=session_expired";
 
 export const metadata = { title: "Set up your workspace — UseJunction" };
 
@@ -28,12 +31,19 @@ export default async function OnboardingPage({
     if (anyMembership) {
       orgId = anyMembership.orgId;
     } else {
-      const created = await createWorkspace({
-        id: session.user.id,
-        email: session.user.email,
-        name: session.user.name,
-      });
-      orgId = created.orgId;
+      try {
+        const created = await createWorkspace({
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.name,
+        });
+        orgId = created.orgId;
+      } catch (error) {
+        if (isAuthUserNotFoundError(error)) {
+          redirect(STALE_SESSION_REDIRECT);
+        }
+        throw error;
+      }
     }
   }
 

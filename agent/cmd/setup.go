@@ -9,20 +9,18 @@ import (
 
 var setupCmd = &cobra.Command{
 	Use:   "setup",
-	Short: "Configure tools, enable Claude OTEL, and send an initial report",
-	Long: `setup runs after enroll to wire detected tools through the organization gateway,
-write Claude Code OTEL environment variables, and push the first telemetry report.`,
+	Short: "Enable Claude OTEL and send an initial report",
+	Long: `setup runs after enroll to write Claude Code OTEL environment variables
+and push the first telemetry report.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := requireConfig()
 		if err != nil {
 			return err
 		}
 
-		configured, err := configure.RunSetup(cfg, configure.SetupOptions{
-			ConfigureGateway: true,
-			EnableOtel:       true,
-		})
-		if err != nil {
+		if err := configure.RunSetup(cfg, configure.SetupOptions{
+			EnableOtel: true,
+		}); err != nil {
 			return err
 		}
 
@@ -31,13 +29,10 @@ write Claude Code OTEL environment variables, and push the first telemetry repor
 		}
 
 		if format == "json" {
-			printJSON(map[string]any{"configured": configured, "reported": true})
+			printJSON(map[string]any{"otelEnabled": true, "reported": true})
 			return nil
 		}
 
-		if len(configured) > 0 {
-			fmt.Printf("Configured tools: %v\n", configured)
-		}
 		fmt.Println("Claude OTEL env written to ~/.usejunction/claude-env.sh")
 		fmt.Println("Initial report sent.")
 		fmt.Println("Source Claude env in your shell: source ~/.usejunction/claude-env.sh")

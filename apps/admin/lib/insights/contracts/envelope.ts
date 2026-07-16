@@ -2,7 +2,14 @@ import type { OrganizationRole } from "@/lib/workspace-context";
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import { serializeMetricWindow } from "@/lib/analytics/contracts/time-window";
 
-export type InsightKind = "overview" | "plan-usage";
+export type InsightKind =
+  | "overview"
+  | "plan-usage"
+  | "signals-overview"
+  | "signals-journeys"
+  | "signals-tools"
+  | "signals-activity"
+  | "signals-journey-detail";
 
 export type InsightContext = {
   orgId: string;

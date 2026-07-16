@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/auth";
+import { isAuthUserNotFoundError } from "@/lib/ensure-auth-user";
 import { createWorkspace } from "@/lib/ensure-workspace";
 import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 import { audit } from "@/lib/rbac";
@@ -20,14 +21,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "workspace name required" }, { status: 400 });
   }
 
-  const result = await createWorkspace(
-    {
-      id: session.user.id,
-      email: session.user.email,
-      name: session.user.name,
-    },
-    { name: parsed.data.name },
-  );
+  let result;
+  try {
+    result = await createWorkspace(
+      {
+        id: session.user.id,
+        email: session.user.email,
+        name: session.user.name,
+      },
+      { name: parsed.data.name },
+    );
+  } catch (error) {
+    if (isAuthUserNotFoundError(error)) {
+      return NextResponse.json({ error: "session_expired" }, { status: 401 });
+    }
+    throw error;
+  }
 
   await audit({
     orgId: result.orgId,

@@ -58,8 +58,8 @@ export type ToolDetailData = {
     tier: string | null;
     billingCadence: string;
     seatCapacity: number;
-    monthlySeatMicros: bigint;
-    estimatedMonthlyMicros: bigint;
+    cycleSeatMicros: bigint;
+    estimatedCycleMicros: bigint;
     assignedSeats: number;
     availableSeats: number;
     customPrice: boolean;
@@ -147,8 +147,8 @@ export async function getToolDetail(orgId: string, toolKey: string): Promise<Too
       tier: subscription.tier,
       billingCadence: subscription.billingCadence,
       seatCapacity: subscription.seatCapacity,
-      monthlySeatMicros: subscription.monthlySeatMicros,
-      estimatedMonthlyMicros: subscription.estimatedMonthlyMicros,
+      cycleSeatMicros: subscription.cycleSeatMicros,
+      estimatedCycleMicros: subscription.estimatedCycleMicros,
       assignedSeats: subscription.assignedSeats,
       availableSeats: subscription.availableSeats,
       customPrice: subscription.customPrice,

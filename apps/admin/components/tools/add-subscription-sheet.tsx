@@ -17,14 +17,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToolLogoTile } from "./tool-brand-icon";
 import { cn } from "@/lib/utils";
 
-type Cadence = "monthly" | "annual" | "custom";
+type Cadence = "weekly" | "monthly" | "annual" | "custom";
 type CatalogPlan = {
   key: string;
   name: string;
   tier: string;
   description: string;
   prices: Partial<Record<Cadence, string>>;
-  includedMonthlyMicros: string;
+  includedCycleMicros: string;
   customPrice?: boolean;
   minimumSeats?: number;
 };
@@ -75,7 +75,9 @@ export function AddSubscriptionSheet({
     output: "",
     cache: "",
     billingOwner: "",
-    renewalDate: "",
+    billingCycleAnchorDate: "",
+    nextRenewalDate: "",
+    billingCycleDays: "",
     externalReference: "",
     notes: "",
   });
@@ -93,7 +95,9 @@ export function AddSubscriptionSheet({
       output: "",
       cache: "",
       billingOwner: "",
-      renewalDate: "",
+      billingCycleAnchorDate: "",
+      nextRenewalDate: "",
+      billingCycleDays: "",
       externalReference: "",
       notes: "",
     });
@@ -137,6 +141,12 @@ export function AddSubscriptionSheet({
     );
   }
 
+  function priceForCadence(plan: CatalogPlan, selectedCadence: Cadence) {
+    const value = plan.prices[selectedCadence];
+    if (!value) return "0";
+    return selectedCadence === "annual" ? String(BigInt(value) * BigInt(12)) : value;
+  }
+
   async function createSubscription() {
     if (!selectedTool || !selectedPlan) return;
     setSaving(true);
@@ -149,13 +159,15 @@ export function AddSubscriptionSheet({
         planKey: selectedPlan.key,
         billingCadence: cadence,
         seatCapacity: seats,
-        ...(needsCustomPrice ? { monthlySeatMicros: dollarsToMicros(customPrice) } : {}),
-        ...(advanced.included ? { includedMonthlyMicros: dollarsToMicros(advanced.included) } : {}),
+        ...(needsCustomPrice ? { cycleSeatMicros: dollarsToMicros(customPrice) } : {}),
+        ...(advanced.included ? { includedCycleMicros: dollarsToMicros(advanced.included) } : {}),
         ...(advanced.input ? { inputRateMicrosPerMillion: dollarsToMicros(advanced.input) } : {}),
         ...(advanced.output ? { outputRateMicrosPerMillion: dollarsToMicros(advanced.output) } : {}),
         ...(advanced.cache ? { cacheRateMicrosPerMillion: dollarsToMicros(advanced.cache) } : {}),
+        ...(advanced.billingCycleAnchorDate ? { billingCycleAnchorDate: advanced.billingCycleAnchorDate } : {}),
+        ...(advanced.nextRenewalDate ? { nextRenewalDate: advanced.nextRenewalDate } : {}),
+        ...(cadence === "custom" ? { billingCycleDays: Number(advanced.billingCycleDays || 0) } : {}),
         billingOwner: advanced.billingOwner || null,
-        renewalDate: advanced.renewalDate || null,
         externalReference: advanced.externalReference || null,
         notes: advanced.notes || null,
       }),
@@ -232,9 +244,7 @@ export function AddSubscriptionSheet({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <p className="font-medium">{plan.name}</p>
-                    <p className="text-sm font-semibold">
-                      {plan.prices.monthly ? `${money(plan.prices.monthly)}/mo` : "Custom"}
-                    </p>
+                    <p className="text-sm font-semibold">{plan.prices.monthly ? `${money(plan.prices.monthly)}/cycle` : "Custom"}</p>
                   </div>
                   <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{plan.description}</p>
                   {Object.keys(plan.prices).length > 1 && (
@@ -318,9 +328,9 @@ export function AddSubscriptionSheet({
                     {money(
                       needsCustomPrice
                         ? dollarsToMicros(customPrice || "0")
-                        : (selectedPlan.prices[cadence] ?? "0"),
+                        : priceForCadence(selectedPlan, cadence),
                     )}{" "}
-                    per seat / month
+                    per seat / cycle
                   </span>
                 </div>
                 {selectedPlan.minimumSeats && (
@@ -332,7 +342,7 @@ export function AddSubscriptionSheet({
               {needsCustomPrice && (
                 <div>
                   <Label htmlFor="custom-price" className="mb-2">
-                    Monthly price per seat (USD)
+                    Cycle price per seat (USD)
                   </Label>
                   <Input
                     id="custom-price"
@@ -351,7 +361,7 @@ export function AddSubscriptionSheet({
                   </p>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <AdvancedField
-                      label="Included monthly credits (USD)"
+                      label="Included cycle credits (USD)"
                       value={advanced.included}
                       onChange={(value) => setAdvanced({ ...advanced, included: value })}
                       type="number"
@@ -380,11 +390,25 @@ export function AddSubscriptionSheet({
                       type="number"
                     />
                     <AdvancedField
-                      label="Renewal date"
-                      value={advanced.renewalDate}
-                      onChange={(value) => setAdvanced({ ...advanced, renewalDate: value })}
+                      label="Current cycle start"
+                      value={advanced.billingCycleAnchorDate}
+                      onChange={(value) => setAdvanced({ ...advanced, billingCycleAnchorDate: value })}
                       type="date"
                     />
+                    <AdvancedField
+                      label="Next renewal"
+                      value={advanced.nextRenewalDate}
+                      onChange={(value) => setAdvanced({ ...advanced, nextRenewalDate: value })}
+                      type="date"
+                    />
+                    {cadence === "custom" && (
+                      <AdvancedField
+                        label="Custom cycle days"
+                        value={advanced.billingCycleDays}
+                        onChange={(value) => setAdvanced({ ...advanced, billingCycleDays: value })}
+                        type="number"
+                      />
+                    )}
                     <AdvancedField
                       label="Account reference"
                       value={advanced.externalReference}
@@ -427,7 +451,7 @@ export function AddSubscriptionSheet({
         </div>
         {selectedPlan && (
           <SheetFooter className="border-t px-6 py-4">
-            <Button onClick={createSubscription} disabled={saving || (needsCustomPrice && !customPrice)}>
+            <Button onClick={createSubscription} disabled={saving || (needsCustomPrice && !customPrice) || (cadence === "custom" && !advanced.billingCycleDays)}>
               {saving && <Loader2 className="animate-spin" />} Add {seats}{" "}
               {seats === 1 ? "seat" : "seats"}
             </Button>

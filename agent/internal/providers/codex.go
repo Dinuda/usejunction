@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/usejunction/agent/internal/probe"
 	"github.com/usejunction/agent/internal/scan"
@@ -35,10 +34,10 @@ func (p *CodexProvider) Detect(ctx context.Context) (*types.ToolStatus, error) {
 	}
 
 	configured := false
-	if detected && fileExists(configPath) {
-		data, _ := os.ReadFile(configPath)
-		s := string(data)
-		configured = strings.Contains(s, "usejunction") || strings.Contains(s, "localhost:4000")
+	if detected && fileExists(authPath) {
+		if auth, err := probe.LoadCodexAuth(home); err == nil && auth.AccessToken != "" {
+			configured = true
+		}
 	}
 
 	return &types.ToolStatus{

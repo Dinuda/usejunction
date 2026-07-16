@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,45 @@ type LocalSyncInfo =
       message?: string;
     };
 
+type LocalSyncJob = {
+  ok?: boolean;
+  jobId?: string;
+  status?: "running" | "succeeded" | "failed";
+  step?: string;
+  message?: string;
+  tools?: number;
+  accounts?: number;
+  quotas?: number;
+  usageRows?: number;
+  hostname?: string;
+  debounced?: boolean;
+  error?: string;
+  warnings?: string[];
+};
+
+type LocalAgentHealth = {
+  ok?: boolean;
+  syncProtocol?: number;
+};
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isAbortError(cause: unknown) {
+  return cause instanceof DOMException && cause.name === "AbortError";
+}
+
 function formatRelative(iso: string | null | undefined) {
   if (!iso) return "never";
   const ms = Date.now() - new Date(iso).getTime();
@@ -31,24 +71,25 @@ function formatRelative(iso: string | null | undefined) {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
+function latestTimestamp(...values: Array<string | null | undefined>) {
+  let latest: string | null = null;
+  let latestMs = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (!value) continue;
+    const timestamp = Date.parse(value);
+    if (Number.isFinite(timestamp) && timestamp > latestMs) {
+      latest = value;
+      latestMs = timestamp;
+    }
+  }
+  return latest;
+}
+
 function formatSyncDetail(body: {
-  debounced?: boolean;
-  accounts?: number;
-  usageRows?: number;
-  hostname: string;
+  warnings?: string[];
 }) {
-  if (body.debounced) return "Already synced recently.";
-  const parts: string[] = [];
-  if ((body.accounts ?? 0) > 0) {
-    parts.push(`${body.accounts} plan account${body.accounts === 1 ? "" : "s"}`);
-  }
-  if ((body.usageRows ?? 0) > 0) {
-    parts.push(`${body.usageRows} usage row${body.usageRows === 1 ? "" : "s"}`);
-  }
-  if (parts.length === 0) {
-    return `Synced tools and plans from ${body.hostname}.`;
-  }
-  return `Synced ${parts.join(" and ")} from ${body.hostname}.`;
+  if (!body.warnings?.length) return null;
+  return `Synced with ${body.warnings.length} warning${body.warnings.length === 1 ? "" : "s"}.`;
 }
 
 export function LocalSyncPanel({
@@ -56,23 +97,17 @@ export function LocalSyncPanel({
   lastUsageSyncAt,
   lastAccountSyncAt,
   stale,
-  autoAttempt = false,
-  needsPlanSync = false,
 }: {
   lastSeenAt?: string | null;
   lastUsageSyncAt?: string | null;
   lastAccountSyncAt?: string | null;
   stale?: boolean;
-  autoAttempt?: boolean;
-  needsPlanSync?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "syncing" | "ok" | "unreachable" | "error">("idle");
   const [detail, setDetail] = useState<string | null>(null);
-  const [info, setInfo] = useState<LocalSyncInfo | null>(null);
-
-  const planFreshness = lastAccountSyncAt ?? lastUsageSyncAt;
+  const lastSuccessfulSyncAt = latestTimestamp(lastUsageSyncAt, lastAccountSyncAt) ?? lastSeenAt;
 
   async function loadInfo(): Promise<LocalSyncInfo | null> {
     const res = await fetch("/api/me/local-sync", { cache: "no-store" });
@@ -80,36 +115,52 @@ export function LocalSyncPanel({
     return (await res.json()) as LocalSyncInfo;
   }
 
-  async function bounce(opts: { refresh: boolean; timeoutMs: number }) {
+  async function syncNow() {
     setStatus("syncing");
-    setDetail("Syncing tools, plans, and usage…");
-    const local = info ?? (await loadInfo());
+    setDetail("Starting local sync…");
+    let local: LocalSyncInfo | null;
+    try {
+      local = await loadInfo();
+    } catch {
+      setStatus("error");
+      setDetail("Could not load local sync credentials.");
+      return;
+    }
     if (!local) {
       setStatus("error");
       setDetail("Could not load local sync credentials.");
       return;
     }
-    setInfo(local);
     if (!local.available) {
       setStatus("unreachable");
       setDetail(local.message ?? "Local agent endpoint not registered.");
       return;
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
     try {
+      const healthUrl = new URL("/health", local.url);
+      const healthRes = await fetchWithTimeout(healthUrl.toString(), { method: "GET" }, 3_000);
+      if (!healthRes.ok) {
+        setStatus("unreachable");
+        setDetail(`Local agent health check failed (${healthRes.status}). Confirm the daemon is running.`);
+        return;
+      }
+      const health = (await healthRes.json().catch(() => ({}))) as LocalAgentHealth;
+      if (health.syncProtocol !== 2) {
+        setStatus("error");
+        setDetail("The local agent is out of date for progress sync. Restart or reinstall the agent, then try again.");
+        return;
+      }
+
       const url = new URL("/v1/sync", local.url);
-      if (opts.refresh) url.searchParams.set("refresh", "1");
-      const res = await fetch(url.toString(), {
+      url.searchParams.set("refresh", "1");
+      const res = await fetchWithTimeout(url.toString(), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${local.token}`,
           "Content-Type": "application/json",
         },
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
+      }, 5_000);
       if (!res.ok) {
         setStatus("error");
         setDetail(
@@ -119,57 +170,79 @@ export function LocalSyncPanel({
         );
         return;
       }
-      const body = await res.json().catch(() => ({}));
+      const body = (await res.json().catch(() => ({}))) as LocalSyncJob;
+      if (body.status === "running" && body.jobId) {
+        await pollJob(local, body.jobId);
+        return;
+      }
+      if (body.status === "failed") {
+        setStatus("error");
+        setDetail(body.error ?? body.message ?? "Local sync failed.");
+        return;
+      }
       setStatus("ok");
-      setDetail(
-        formatSyncDetail({
-          debounced: body.debounced,
-          accounts: body.accounts,
-          usageRows: body.usageRows,
-          hostname: local.hostname,
-        }),
-      );
+      setDetail(formatSyncDetail({ warnings: body.warnings }));
       startTransition(() => router.refresh());
-    } catch {
-      clearTimeout(timer);
+    } catch (cause) {
       setStatus("unreachable");
       setDetail(
-        "Could not reach the local agent. Open this dashboard on your linked machine with the daemon running.",
+        isAbortError(cause)
+          ? "Local agent health or sync start timed out. Confirm the daemon is running, then try again."
+          : "Could not contact the local agent on this machine. Confirm the daemon is running and the dashboard is open on the linked computer.",
       );
     }
   }
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const local = await loadInfo();
-      if (cancelled || !local) return;
-      setInfo(local);
-      if (autoAttempt && local.available) {
-        if (needsPlanSync) {
-          await bounce({ refresh: true, timeoutMs: 30_000 });
-        } else {
-          await bounce({ refresh: false, timeoutMs: 2000 });
-        }
+  async function pollJob(local: Extract<LocalSyncInfo, { available: true }>, jobId: string) {
+    const started = Date.now();
+    for (;;) {
+      await sleep(1_500);
+      const statusUrl = new URL("/v1/sync/status", local.url);
+      statusUrl.searchParams.set("jobId", jobId);
+      let res: Response;
+      try {
+        res = await fetchWithTimeout(statusUrl.toString(), {
+          method: "GET",
+          headers: { Authorization: `Bearer ${local.token}` },
+        }, 5_000);
+      } catch (cause) {
+        setStatus("error");
+        setDetail(
+          isAbortError(cause)
+            ? "Local sync is running, but status polling timed out."
+            : "Lost contact with the local sync job.",
+        );
+        return;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // Intentionally once on mount for silent bounce.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoAttempt, needsPlanSync]);
+      if (!res.ok) {
+        setStatus("error");
+        setDetail(res.status === 401 ? "Local sync token mismatch. Restart the agent daemon." : `Could not read sync status (${res.status}).`);
+        return;
+      }
+      const body = (await res.json().catch(() => ({}))) as LocalSyncJob;
+      if (body.status === "running") {
+        const longRunning = Date.now() - started > 45_000;
+        setStatus("syncing");
+        setDetail(`${body.message ?? "Syncing tools, plans, and usage"}${longRunning ? " · still running" : ""}`);
+        continue;
+      }
+      if (body.status === "failed") {
+        setStatus("error");
+        setDetail(body.error ?? body.message ?? "Local sync failed.");
+        return;
+      }
+      setStatus("ok");
+      setDetail(formatSyncDetail({ warnings: body.warnings }));
+      startTransition(() => router.refresh());
+      return;
+    }
+  }
 
   return (
-    <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
-        <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">Sync</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Last seen {formatRelative(lastSeenAt)}
-          {" · "}
-          Plans {formatRelative(planFreshness)}
-          {" · "}
-          Usage {formatRelative(lastUsageSyncAt)}
+        <p className="text-sm text-muted-foreground">
+          Last synced {formatRelative(lastSuccessfulSyncAt)}
           {stale ? " · Agent may be offline" : ""}
         </p>
         {detail ? (
@@ -188,10 +261,15 @@ export function LocalSyncPanel({
       <Button
         type="button"
         size="sm"
-        variant="outline"
+        variant="ghost"
         disabled={pending || status === "syncing"}
-        onClick={() => bounce({ refresh: true, timeoutMs: 30_000 })}
+        onClick={syncNow}
       >
+        {status === "syncing" ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <RefreshCw className="size-3.5" />
+        )}
         {status === "syncing" ? "Syncing…" : "Sync now"}
       </Button>
     </div>

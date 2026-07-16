@@ -1,16 +1,19 @@
 package localsync
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/usejunction/agent/internal/config"
 )
 
 func TestOriginAllowed(t *testing.T) {
-	s := New(&config.Config{ControlPlaneURL: "https://app.usejunction.com"}, func(bool) (int, int, int, int, error) {
-		return 0, 0, 0, 0, nil
+	s := New(&config.Config{ControlPlaneURL: "https://app.usejunction.com"}, func(context.Context, bool, ProgressFunc) (int, int, int, int, []string, error) {
+		return 0, 0, 0, 0, nil, nil
 	})
 	if !s.originAllowed("https://app.usejunction.com") {
 		t.Fatal("control plane origin should be allowed")
@@ -18,14 +21,20 @@ func TestOriginAllowed(t *testing.T) {
 	if !s.originAllowed("http://localhost:3001") {
 		t.Fatal("local admin origin should be allowed")
 	}
+	if !s.originAllowed("http://localhost:3002") {
+		t.Fatal("any localhost development port should be allowed")
+	}
+	if !s.originAllowed("http://127.0.0.1:5173") {
+		t.Fatal("any loopback development port should be allowed")
+	}
 	if s.originAllowed("https://evil.example") {
 		t.Fatal("foreign origin must be denied")
 	}
 }
 
 func TestAuthorizeBearer(t *testing.T) {
-	s := New(&config.Config{LocalSyncToken: "uj_local_secret"}, func(bool) (int, int, int, int, error) {
-		return 1, 2, 3, 4, nil
+	s := New(&config.Config{LocalSyncToken: "uj_local_secret"}, func(context.Context, bool, ProgressFunc) (int, int, int, int, []string, error) {
+		return 1, 2, 3, 4, nil, nil
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/sync", nil)
 	req.Header.Set("Authorization", "Bearer uj_local_secret")
@@ -35,5 +44,115 @@ func TestAuthorizeBearer(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer wrong")
 	if s.authorize(req) {
 		t.Fatal("expected bearer auth to fail")
+	}
+}
+
+func TestHealthReportsBackgroundSyncProtocol(t *testing.T) {
+	s := New(&config.Config{DeviceID: "device-1", LocalSyncToken: "uj_local_secret"}, func(context.Context, bool, ProgressFunc) (int, int, int, int, []string, error) {
+		return 0, 0, 0, 0, nil, nil
+	})
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	res := httptest.NewRecorder()
+	s.handleHealth(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["syncProtocol"] != float64(config.LocalSyncProtocol) {
+		t.Fatalf("expected syncProtocol=%d, got %#v", config.LocalSyncProtocol, body["syncProtocol"])
+	}
+}
+
+func TestSyncStartsBackgroundJobAndStatusCompletes(t *testing.T) {
+	done := make(chan struct{})
+	s := New(&config.Config{LocalSyncToken: "uj_local_secret"}, func(ctx context.Context, refresh bool, progress ProgressFunc) (int, int, int, int, []string, error) {
+		progress("scan", "Scanning tools")
+		<-done
+		return 1, 2, 3, 4, nil, nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/sync?refresh=1", nil)
+	req.Header.Set("Authorization", "Bearer uj_local_secret")
+	res := httptest.NewRecorder()
+	s.handleSync(res, req)
+	if res.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", res.Code)
+	}
+	var started map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	if started["status"] != "running" {
+		t.Fatalf("expected running job, got %#v", started)
+	}
+	jobID, _ := started["jobId"].(string)
+	if jobID == "" {
+		t.Fatal("expected job id")
+	}
+
+	close(done)
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		statusReq := httptest.NewRequest(http.MethodGet, "/v1/sync/status?jobId="+jobID, nil)
+		statusReq.Header.Set("Authorization", "Bearer uj_local_secret")
+		statusRes := httptest.NewRecorder()
+		s.handleSyncStatus(statusRes, statusReq)
+		if statusRes.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", statusRes.Code)
+		}
+		var status map[string]any
+		if err := json.Unmarshal(statusRes.Body.Bytes(), &status); err != nil {
+			t.Fatal(err)
+		}
+		if status["status"] == "succeeded" {
+			if status["usageRows"] != float64(4) {
+				t.Fatalf("expected usageRows=4, got %#v", status["usageRows"])
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("job did not complete")
+}
+
+func TestConcurrentSyncAttachesToActiveJob(t *testing.T) {
+	block := make(chan struct{})
+	s := New(&config.Config{LocalSyncToken: "uj_local_secret"}, func(ctx context.Context, refresh bool, progress ProgressFunc) (int, int, int, int, []string, error) {
+		<-block
+		return 0, 0, 0, 0, nil, nil
+	})
+	defer close(block)
+
+	firstReq := httptest.NewRequest(http.MethodPost, "/v1/sync?refresh=1", nil)
+	firstReq.Header.Set("Authorization", "Bearer uj_local_secret")
+	firstRes := httptest.NewRecorder()
+	s.handleSync(firstRes, firstReq)
+	var first map[string]any
+	_ = json.Unmarshal(firstRes.Body.Bytes(), &first)
+
+	secondReq := httptest.NewRequest(http.MethodPost, "/v1/sync?refresh=1", nil)
+	secondReq.Header.Set("Authorization", "Bearer uj_local_secret")
+	secondRes := httptest.NewRecorder()
+	s.handleSync(secondRes, secondReq)
+	var second map[string]any
+	_ = json.Unmarshal(secondRes.Body.Bytes(), &second)
+
+	if first["jobId"] == "" || first["jobId"] != second["jobId"] {
+		t.Fatalf("expected same active job, got first=%#v second=%#v", first["jobId"], second["jobId"])
+	}
+}
+
+func TestSyncStatusUnauthorized(t *testing.T) {
+	s := New(&config.Config{LocalSyncToken: "uj_local_secret"}, func(context.Context, bool, ProgressFunc) (int, int, int, int, []string, error) {
+		return 0, 0, 0, 0, nil, nil
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/sync/status", nil)
+	res := httptest.NewRecorder()
+	s.handleSyncStatus(res, req)
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", res.Code)
 	}
 }

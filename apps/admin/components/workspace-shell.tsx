@@ -25,6 +25,7 @@ import {
 const adminNav = [
   ["/dashboard", "Home"],
   ["/team", "Team"],
+  ["/signals", "Signals"],
   ["/tools", "Tools"],
   ["/activity", "Activity"],
 ] as const;

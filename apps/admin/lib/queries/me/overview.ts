@@ -1,6 +1,7 @@
 import { prisma } from "@usejunction/db";
 import { usageWindowDays } from "@/lib/metrics/date-range";
 import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
+import { isDeviceOnline } from "@/lib/devices/presence";
 import { orgNeedsPlanSync } from "@/lib/queries/me/local-sync-context";
 import { canonicalToolKey, findCatalogTool } from "@/lib/tools/catalog";
 import type { OrganizationRole } from "@/lib/workspace-context";
@@ -88,8 +89,8 @@ export interface MeOverviewData {
       planName: string;
       planTier: string | null;
       currency: string;
-      monthlySeatMicros: bigint;
-      includedMonthlyMicros: bigint;
+      cycleSeatMicros: bigint;
+      includedCycleMicros: bigint;
       seatCount: number;
       seatStatus: string;
       startDate: Date;
@@ -325,8 +326,6 @@ async function buildMeOverview(
     verifiedCost: verifiedUsageCost,
   };
 
-  const onlineThreshold = new Date(Date.now() - 5 * 60_000);
-
   const primaryDevice = developer.devices[0] ?? null;
   let latestUsageSync: Date | null = null;
   let latestAccountSync: Date | null = null;
@@ -362,7 +361,7 @@ async function buildMeOverview(
         os: device.os,
         architecture: device.architecture,
         agentVersion: device.agentVersion,
-        status: device.lastSeenAt >= onlineThreshold ? "online" : "offline",
+        status: isDeviceOnline(device.lastSeenAt) ? "online" : "offline",
         lastSeenAt: device.lastSeenAt,
         lastUsageSyncAt: device.lastUsageSyncAt ?? null,
         lastAccountSyncAt: device.lastAccountSyncAt ?? null,
@@ -389,7 +388,7 @@ async function buildMeOverview(
       lastSeenAt: primaryDevice?.lastSeenAt?.toISOString() ?? null,
       lastUsageSyncAt: latestUsageSync?.toISOString() ?? null,
       lastAccountSyncAt: latestAccountSync?.toISOString() ?? null,
-      stale: !developer.devices.some((d) => d.lastSeenAt >= onlineThreshold),
+      stale: !developer.devices.some((device) => isDeviceOnline(device.lastSeenAt)),
       hasLocalEndpoint: developer.devices.some((d) => Boolean(d.localEndpoint)),
       needsPlanSync,
     },

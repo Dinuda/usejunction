@@ -16,7 +16,7 @@ var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
 	Short: "Restore tool configs, remove agent data, and stop background services",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Unconfiguring tools…")
+		fmt.Println("Restoring legacy tool config backups…")
 		if err := configure.UnconfigureAll(); err != nil && verbose {
 			fmt.Printf("  warning: %v\n", err)
 		}

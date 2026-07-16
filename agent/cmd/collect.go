@@ -6,12 +6,25 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/usejunction/agent/internal/client"
 	"github.com/usejunction/agent/internal/probe"
 	"github.com/usejunction/agent/internal/providers"
 	"github.com/usejunction/agent/internal/types"
 )
+
+const providerCollectTimeout = 20 * time.Second
+
+type collectProgress = func(step, message string)
+
+type providerCollectResult struct {
+	toolReports    []client.ToolReport
+	accountReports []client.AccountReport
+	modelReports   []client.LocalModelReport
+	usageReports   []client.UsageAggregate
+	quotaReports   []client.QuotaReport
+}
 
 func mergeToolAccounts(base, richer *types.ToolAccount) *types.ToolAccount {
 	if base == nil && richer == nil {
@@ -63,10 +76,23 @@ func codexHomeForProbe() string {
 // collectAndReport gathers telemetry from all providers and posts to the control plane.
 // When refresh is false, providers may use on-disk usage caches.
 func collectAndReport(api *client.APIClient, refresh bool) (tools int, accounts int, quotas int, usage int, err error) {
-	ctx := context.Background()
+	tools, accounts, quotas, usage, _, err = collectAndReportWithProgress(context.Background(), api, refresh, func(string, string) {})
+	return tools, accounts, quotas, usage, err
+}
 
+func collectAndReportWithProgress(
+	ctx context.Context,
+	api *client.APIClient,
+	refresh bool,
+	progress collectProgress,
+) (tools int, accounts int, quotas int, usage int, warnings []string, err error) {
+	if progress == nil {
+		progress = func(string, string) {}
+	}
+
+	progress("heartbeat", "Registering local agent")
 	if err = sendHeartbeat(api); err != nil {
-		return 0, 0, 0, 0, fmt.Errorf("heartbeat: %w", err)
+		return 0, 0, 0, 0, warnings, fmt.Errorf("heartbeat: %w", err)
 	}
 
 	var toolReports []client.ToolReport
@@ -76,98 +102,136 @@ func collectAndReport(api *client.APIClient, refresh bool) (tools int, accounts 
 	var quotaReports []client.QuotaReport
 
 	for _, p := range providers.All() {
-		status, _ := p.Detect(ctx)
-		if status == nil || !status.Detected {
+		progress("scan", fmt.Sprintf("Scanning %s", p.ID()))
+		result, timedOut := collectProviderWithTimeout(ctx, p, refresh)
+		if timedOut {
+			warnings = append(warnings, fmt.Sprintf("%s scan timed out", p.ID()))
+			progress("scan", fmt.Sprintf("Skipped slow %s scan", p.ID()))
 			continue
 		}
-
-		toolReports = append(toolReports, client.ToolReport{
-			ToolName:   status.ToolName,
-			Detected:   true,
-			Configured: status.Configured,
-			ConfigPath: status.ConfigPath,
-			Version:    status.Version,
-		})
-
-		acc, _ := p.AccountIdentity(ctx)
-		acc = mergeToolAccounts(acc, accountFromProbe(ctx, p))
-		if acc != nil && acc.AuthPresent {
-			accountReports = append(accountReports, client.AccountReport{
-				ToolName:    acc.ToolName,
-				Email:       acc.Email,
-				Plan:        acc.Plan,
-				LoginMethod: acc.LoginMethod,
-				AuthPresent: acc.AuthPresent,
-			})
-		}
-
-		if snaps, _ := p.ProbeQuota(ctx); len(snaps) > 0 {
-			for _, snap := range snaps {
-				quotaReports = append(quotaReports, client.QuotaReport{
-					ToolName:         snap.ToolName,
-					WindowType:       snap.WindowType,
-					UsedPercent:      snap.UsedPercent,
-					ResetAt:          snap.ResetAt,
-					CreditsRemaining: snap.CreditsRemaining,
-					Source:           snap.Source,
-				})
-			}
-		}
-
-		if daily, scanErr := p.ScanLocalUsage(ctx, refresh); scanErr == nil {
-			for _, row := range daily {
-				usageReports = append(usageReports, usageToAggregate(row))
-			}
-		}
-
-		if o, ok := p.(*providers.OllamaProvider); ok {
-			if ms, localErr := o.LocalModels(ctx); localErr == nil {
-				for _, m := range ms {
-					modelReports = append(modelReports, client.LocalModelReport{
-						Provider:  m.Provider,
-						ModelName: m.ModelName,
-						Size:      m.Size,
-						Running:   m.Running,
-					})
-				}
-			}
-		}
-		if l, ok := p.(*providers.LMStudioProvider); ok {
-			if ms, localErr := l.LocalModels(ctx); localErr == nil {
-				for _, m := range ms {
-					modelReports = append(modelReports, client.LocalModelReport{
-						Provider:  m.Provider,
-						ModelName: m.ModelName,
-						Running:   m.Running,
-					})
-				}
-			}
-		}
+		toolReports = append(toolReports, result.toolReports...)
+		accountReports = append(accountReports, result.accountReports...)
+		modelReports = append(modelReports, result.modelReports...)
+		usageReports = append(usageReports, result.usageReports...)
+		quotaReports = append(quotaReports, result.quotaReports...)
 	}
 
+	progress("upload-tools", fmt.Sprintf("Uploading %d tool reports", len(toolReports)))
 	if err := api.ReportTools(toolReports); err != nil {
-		return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), fmt.Errorf("tools: %w", err)
+		return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, fmt.Errorf("tools: %w", err)
 	}
 	if len(accountReports) > 0 {
+		progress("upload-accounts", fmt.Sprintf("Uploading %d account reports", len(accountReports)))
 		if err := api.ReportAccounts(accountReports); err != nil {
-			return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), fmt.Errorf("accounts: %w", err)
+			return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, fmt.Errorf("accounts: %w", err)
 		}
 	}
 	if len(quotaReports) > 0 {
+		progress("upload-quotas", fmt.Sprintf("Uploading %d quota windows", len(quotaReports)))
 		if err := api.ReportQuotas(quotaReports); err != nil {
-			return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), fmt.Errorf("quotas: %w", err)
+			return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, fmt.Errorf("quotas: %w", err)
 		}
 	}
 	if len(modelReports) > 0 {
+		progress("upload-models", fmt.Sprintf("Uploading %d local model reports", len(modelReports)))
 		if err := api.ReportLocalModels(modelReports); err != nil && verbose {
 			fmt.Printf("[report] models: %v\n", err)
 		}
 	}
 	if len(usageReports) > 0 {
+		progress("upload-usage", fmt.Sprintf("Uploading %d usage rows", len(usageReports)))
 		if err := api.ReportLocalUsage(usageReports); err != nil {
-			return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), fmt.Errorf("usage: %w", err)
+			return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, fmt.Errorf("usage: %w", err)
 		}
 	}
 
-	return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), nil
+	progress("complete", "Sync complete")
+	return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, nil
+}
+
+func collectProviderWithTimeout(ctx context.Context, p providers.Provider, refresh bool) (providerCollectResult, bool) {
+	providerCtx, cancel := context.WithTimeout(ctx, providerCollectTimeout)
+	defer cancel()
+	ch := make(chan providerCollectResult, 1)
+	go func() {
+		ch <- collectProvider(providerCtx, p, refresh)
+	}()
+	select {
+	case result := <-ch:
+		return result, false
+	case <-providerCtx.Done():
+		return providerCollectResult{}, true
+	}
+}
+
+func collectProvider(ctx context.Context, p providers.Provider, refresh bool) providerCollectResult {
+	var result providerCollectResult
+	status, _ := p.Detect(ctx)
+	if status == nil || !status.Detected {
+		return result
+	}
+
+	result.toolReports = append(result.toolReports, client.ToolReport{
+		ToolName:   status.ToolName,
+		Detected:   true,
+		Configured: status.Configured,
+		ConfigPath: status.ConfigPath,
+		Version:    status.Version,
+	})
+
+	acc, _ := p.AccountIdentity(ctx)
+	acc = mergeToolAccounts(acc, accountFromProbe(ctx, p))
+	if acc != nil && acc.AuthPresent {
+		result.accountReports = append(result.accountReports, client.AccountReport{
+			ToolName:    acc.ToolName,
+			Email:       acc.Email,
+			Plan:        acc.Plan,
+			LoginMethod: acc.LoginMethod,
+			AuthPresent: acc.AuthPresent,
+		})
+	}
+
+	if snaps, _ := p.ProbeQuota(ctx); len(snaps) > 0 {
+		for _, snap := range snaps {
+			result.quotaReports = append(result.quotaReports, client.QuotaReport{
+				ToolName:         snap.ToolName,
+				WindowType:       snap.WindowType,
+				UsedPercent:      snap.UsedPercent,
+				ResetAt:          snap.ResetAt,
+				CreditsRemaining: snap.CreditsRemaining,
+				Source:           snap.Source,
+			})
+		}
+	}
+
+	if daily, scanErr := p.ScanLocalUsage(ctx, refresh); scanErr == nil {
+		for _, row := range daily {
+			result.usageReports = append(result.usageReports, usageToAggregate(row))
+		}
+	}
+
+	if o, ok := p.(*providers.OllamaProvider); ok {
+		if ms, localErr := o.LocalModels(ctx); localErr == nil {
+			for _, m := range ms {
+				result.modelReports = append(result.modelReports, client.LocalModelReport{
+					Provider:  m.Provider,
+					ModelName: m.ModelName,
+					Size:      m.Size,
+					Running:   m.Running,
+				})
+			}
+		}
+	}
+	if l, ok := p.(*providers.LMStudioProvider); ok {
+		if ms, localErr := l.LocalModels(ctx); localErr == nil {
+			for _, m := range ms {
+				result.modelReports = append(result.modelReports, client.LocalModelReport{
+					Provider:  m.Provider,
+					ModelName: m.ModelName,
+					Running:   m.Running,
+				})
+			}
+		}
+	}
+	return result
 }

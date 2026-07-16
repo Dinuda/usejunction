@@ -51,14 +51,19 @@ export type PlanVerdict = {
 };
 
 export type IncludedAllowanceUtilization = {
-  includedMonthlyMicros: string;
+  includedCycleMicros: string;
   grossUsageMicros: string;
   rawRatio: number | null;
   displayRatio: number | null;
 };
 
 function mapSource(source: string): QuotaUtilization["source"] {
-  if (source === "cli_rpc" || source === "vendor_verified" || source.startsWith("provider")) return "provider";
+  if (
+    source === "cli_rpc" ||
+    source === "oauth_api" ||
+    source === "vendor_verified" ||
+    source.startsWith("provider")
+  ) return "provider";
   if (source.includes("estimat")) return "estimated";
   return "observed";
 }
@@ -140,19 +145,19 @@ export function selectPrimaryQuota(rows: QuotaUtilization[]): QuotaUtilization |
 }
 
 export function includedAllowanceUtilization(input: {
-  includedMonthlyMicros: bigint | string | number;
+  includedCycleMicros: bigint | string | number;
   grossUsageMicros: bigint | string | number;
 }): IncludedAllowanceUtilization {
-  const included = BigInt(input.includedMonthlyMicros);
+  const included = BigInt(input.includedCycleMicros);
   const gross = BigInt(input.grossUsageMicros);
-  const includedMonthlyMicros = included.toString();
+  const includedCycleMicros = included.toString();
   const grossUsageMicros = gross.toString();
   if (included <= BigInt(0)) {
-    return { includedMonthlyMicros, grossUsageMicros, rawRatio: null, displayRatio: null };
+    return { includedCycleMicros, grossUsageMicros, rawRatio: null, displayRatio: null };
   }
   const rawRatio = Number(gross) / Number(included);
   return {
-    includedMonthlyMicros,
+    includedCycleMicros,
     grossUsageMicros,
     rawRatio,
     displayRatio: Math.min(rawRatio, 1),

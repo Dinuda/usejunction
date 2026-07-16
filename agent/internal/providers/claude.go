@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/usejunction/agent/internal/probe"
 	"github.com/usejunction/agent/internal/scan"
@@ -31,16 +30,9 @@ func (p *ClaudeProvider) Detect(ctx context.Context) (*types.ToolStatus, error) 
 	dir := claudeConfigDir()
 	creds := filepath.Join(dir, ".credentials.json")
 	detected := fileExists(creds) || dirExists(dir)
-	if os.Getenv("ANTHROPIC_BASE_URL") != "" {
-		detected = true
-	}
 	configured := false
-	baseURL := os.Getenv("ANTHROPIC_BASE_URL")
-	if strings.Contains(baseURL, "4000") || strings.Contains(baseURL, "usejunction") {
-		configured = true
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		if fileExists(filepath.Join(home, ".usejunction", "claude-env.sh")) && baseURL != "" {
+	if detected {
+		if account, err := probe.ClaudeAccountFromCredentials(dir); err == nil && account != nil && account.AuthPresent {
 			configured = true
 		}
 	}

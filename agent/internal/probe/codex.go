@@ -148,6 +148,18 @@ func codexResetAtString(v any) string {
 	}
 }
 
+func codexResetAt(v any) *string {
+	raw := strings.TrimSpace(codexResetAtString(v))
+	if raw == "" {
+		return nil
+	}
+	parsed := parseUnixOrRFC3339(raw)
+	if parsed.IsZero() {
+		return nil
+	}
+	return strPtr(parsed.UTC().Format(time.RFC3339))
+}
+
 type codexUsageResponse struct {
 	PlanType  string `json:"plan_type"`
 	Email     string `json:"email"`
@@ -163,6 +175,39 @@ type codexUsageResponse struct {
 
 func codexCreditsBalance(v any) float64 {
 	return numberValue(v)
+}
+
+func codexQuotaSnapshots(usage codexUsageResponse, source string) []types.QuotaSnapshot {
+	var snapshots []types.QuotaSnapshot
+	if primary := usage.RateLimit.PrimaryWindow; primary.UsedPercent > 0 || codexResetAt(primary.ResetAt) != nil {
+		snapshots = append(snapshots, types.QuotaSnapshot{
+			ToolName:    "codex",
+			WindowType:  "session_5h",
+			UsedPercent: floatPtr(primary.UsedPercent),
+			ResetAt:     codexResetAt(primary.ResetAt),
+			Source:      source,
+		})
+	}
+	if secondary := usage.RateLimit.SecondaryWindow; secondary != nil {
+		if secondary.UsedPercent > 0 || codexResetAt(secondary.ResetAt) != nil {
+			snapshots = append(snapshots, types.QuotaSnapshot{
+				ToolName:    "codex",
+				WindowType:  "weekly",
+				UsedPercent: floatPtr(secondary.UsedPercent),
+				ResetAt:     codexResetAt(secondary.ResetAt),
+				Source:      source,
+			})
+		}
+	}
+	if usage.Credits.HasCredits {
+		snapshots = append(snapshots, types.QuotaSnapshot{
+			ToolName:         "codex",
+			WindowType:       "credits",
+			CreditsRemaining: floatPtr(codexCreditsBalance(usage.Credits.Balance)),
+			Source:           source,
+		})
+	}
+	return snapshots
 }
 
 func CodexAccountFromAuth(home string) (*types.ToolAccount, error) {
@@ -272,36 +317,7 @@ func ProbeCodexQuota(ctx context.Context, home string) ([]types.QuotaSnapshot, *
 		}
 	}
 
-	var snapshots []types.QuotaSnapshot
-	if primary := usage.RateLimit.PrimaryWindow; primary.UsedPercent > 0 || codexResetAtString(primary.ResetAt) != "" {
-		snapshots = append(snapshots, types.QuotaSnapshot{
-			ToolName:    "codex",
-			WindowType:  "session_5h",
-			UsedPercent: floatPtr(primary.UsedPercent),
-			ResetAt:     strPtr(parseUnixOrRFC3339(codexResetAtString(primary.ResetAt)).UTC().Format(time.RFC3339)),
-			Source:      "oauth_api",
-		})
-	}
-	if secondary := usage.RateLimit.SecondaryWindow; secondary != nil {
-		if secondary.UsedPercent > 0 || codexResetAtString(secondary.ResetAt) != "" {
-			snapshots = append(snapshots, types.QuotaSnapshot{
-				ToolName:    "codex",
-				WindowType:  "weekly",
-				UsedPercent: floatPtr(secondary.UsedPercent),
-				ResetAt:     strPtr(parseUnixOrRFC3339(codexResetAtString(secondary.ResetAt)).UTC().Format(time.RFC3339)),
-				Source:      "oauth_api",
-			})
-		}
-	}
-	if usage.Credits.HasCredits {
-		snapshots = append(snapshots, types.QuotaSnapshot{
-			ToolName:         "codex",
-			WindowType:       "credits",
-			CreditsRemaining: floatPtr(codexCreditsBalance(usage.Credits.Balance)),
-			Source:           "oauth_api",
-		})
-	}
-	return snapshots, account, nil
+	return codexQuotaSnapshots(usage, "oauth_api"), account, nil
 }
 
 func shouldRefreshCodexToken(auth *codexAuthFile) bool {

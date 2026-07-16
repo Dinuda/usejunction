@@ -33,7 +33,7 @@ Provider-native semantics are preserved:
 
 Three non-overlapping categories:
 
-1. **actual_spend** — invoices, subscriptions, seats (manual billing / integrations)
+1. **actual_spend** — invoices, subscriptions, seats, and current billing-cycle spend (manual billing / integrations)
 2. **verified_usage** — vendor-reported charges (`chargedCents`, invoice imports)
 3. **estimated_api** — locally reconstructed token usage × rate card
 

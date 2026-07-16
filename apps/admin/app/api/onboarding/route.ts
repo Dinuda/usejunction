@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/auth";
+import { isAuthUserNotFoundError } from "@/lib/ensure-auth-user";
 import { ensureOwnerWorkspace } from "@/lib/ensure-workspace";
 import { resolveOrgId } from "@/lib/require-organization";
 import { prisma } from "@usejunction/db";
@@ -15,13 +16,21 @@ export async function POST() {
 
   // Prefer an existing membership; only create when the user has none.
   const existingOrgId = await resolveOrgId(session.user.id, session.user.orgId);
-  const result = existingOrgId
-    ? { orgId: existingOrgId, created: false as const }
-    : await ensureOwnerWorkspace({
-        id: session.user.id,
-        email: session.user.email,
-        name: session.user.name,
-      });
+  let result;
+  try {
+    result = existingOrgId
+      ? { orgId: existingOrgId, created: false as const }
+      : await ensureOwnerWorkspace({
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.name,
+        });
+  } catch (error) {
+    if (isAuthUserNotFoundError(error)) {
+      return NextResponse.json({ error: "session_expired" }, { status: 401 });
+    }
+    throw error;
+  }
 
   const organization = await prisma.organization.findUnique({
     where: { id: result.orgId },

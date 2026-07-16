@@ -66,9 +66,8 @@ var enrollCmd = &cobra.Command{
 		}
 
 		if enrollSetup {
-			if _, err := configure.RunSetup(cfg, configure.SetupOptions{
-				ConfigureGateway: true,
-				EnableOtel:       true,
+			if err := configure.RunSetup(cfg, configure.SetupOptions{
+				EnableOtel: true,
 			}); err != nil {
 				fmt.Printf("setup warning: %v\n", err)
 			}
@@ -97,6 +96,6 @@ func init() {
 	enrollCmd.Flags().StringVar(&controlPlaneURL, "url", "", "Control plane URL (default: $USEJUNCTION_URL or http://localhost:3001)")
 	enrollCmd.Flags().StringVar(&enrollEmail, "email", "", "Developer email")
 	enrollCmd.Flags().StringVar(&enrollName, "name", "", "Developer name")
-	enrollCmd.Flags().BoolVar(&enrollSetup, "setup", true, "Configure gateway, OTEL, and send initial report")
+	enrollCmd.Flags().BoolVar(&enrollSetup, "setup", true, "Enable Claude OTEL and send initial report")
 	rootCmd.AddCommand(enrollCmd)
 }

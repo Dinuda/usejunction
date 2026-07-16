@@ -1,4 +1,4 @@
-// Package providers implements detect/configure logic for each AI coding tool.
+// Package providers implements detect/observe logic for each AI coding tool.
 package providers
 
 import (
@@ -11,8 +11,8 @@ import (
 type Provider interface {
 	// ID returns the stable identifier used in config, flags, and API payloads.
 	ID() string
-	// Detect checks whether the tool is installed and whether it is already
-	// configured to route through the UseJunction gateway.
+	// Detect checks whether the tool is installed and whether local auth or
+	// config is present for observability.
 	Detect(ctx context.Context) (*types.ToolStatus, error)
 	// AccountIdentity returns any authenticated identity available locally
 	// (e.g. from a credentials file). Implementations that cannot determine

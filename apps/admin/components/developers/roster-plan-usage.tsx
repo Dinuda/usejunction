@@ -74,6 +74,10 @@ export function RosterPlanUsage({ plans }: { plans: RosterPlanUsagePlan[] }) {
 
   const { avgRatio, verdict, withSignal } = aggregateUsage(plans);
   const avgPercent = avgRatio != null ? avgRatio * 100 : null;
+  const meterLabel =
+    avgPercent != null
+      ? `Average plan use ${avgPercent.toFixed(0)} percent${verdict ? `, ${verdictLabel(verdict.code)}` : ""}`
+      : "Plan use waiting for quota signal";
 
   const aggregatePercent =
     avgPercent != null ? Math.min(100, Math.max(4, avgPercent)) : 0;
@@ -83,12 +87,12 @@ export function RosterPlanUsage({ plans }: { plans: RosterPlanUsagePlan[] }) {
       <div className="flex items-center gap-3">
         <div
           className="h-1.5 min-w-0 flex-1 overflow-hidden bg-muted"
-          aria-hidden
-          title={
-            avgPercent != null
-              ? `Avg plan use · ${avgPercent.toFixed(0)}%${verdict ? ` · ${verdictLabel(verdict.code)}` : ""}`
-              : "Plan use · waiting for quota signal"
-          }
+          role="meter"
+          aria-label={meterLabel}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={avgPercent != null ? Math.round(avgPercent) : undefined}
+          title={meterLabel}
         >
           <div
             className={cn(

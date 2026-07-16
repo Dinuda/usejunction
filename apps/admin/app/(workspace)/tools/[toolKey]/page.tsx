@@ -19,16 +19,11 @@ export default async function ToolProviderPage({
   ]);
   if (!detail) notFound();
 
-  const needsPlanSync =
-    syncContext?.needsPlanSync ||
-    detail.people.some((person) => person.detected && !person.vendorPlan) ||
-    detail.people.some((person) => person.planMismatch);
-
   const serialized = serializeBigInts(detail) as typeof detail & {
     plans: Array<
       (typeof detail.plans)[number] & {
-        monthlySeatMicros: string;
-        estimatedMonthlyMicros: string;
+        cycleSeatMicros: string;
+        estimatedCycleMicros: string;
       }
     >;
   };
@@ -42,8 +37,6 @@ export default async function ToolProviderPage({
             lastUsageSyncAt={syncContext.lastUsageSyncAt}
             lastAccountSyncAt={syncContext.lastAccountSyncAt}
             stale={syncContext.stale}
-            needsPlanSync={needsPlanSync}
-            autoAttempt
           />
         </div>
       ) : null}

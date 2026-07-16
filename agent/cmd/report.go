@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -8,6 +10,13 @@ import (
 	"github.com/usejunction/agent/internal/client"
 	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/localsync"
+	ujsignals "github.com/usejunction/agent/internal/signals"
+	"github.com/usejunction/agent/internal/updater"
+)
+
+const (
+	heartbeatInterval  = 15 * time.Minute
+	collectionInterval = 30 * time.Minute
 )
 
 var reportCmd = &cobra.Command{
@@ -35,8 +44,8 @@ var daemonCmd = &cobra.Command{
 		}
 
 		api := client.New(cfg)
-		syncFn := func(refresh bool) (int, int, int, int, error) {
-			return collectAndReport(api, refresh)
+		syncFn := func(ctx context.Context, refresh bool, progress localsync.ProgressFunc) (int, int, int, int, []string, error) {
+			return collectAndReportWithProgress(ctx, api, refresh, progress)
 		}
 
 		go func() {
@@ -47,24 +56,61 @@ var daemonCmd = &cobra.Command{
 			}
 		}()
 
-		// Register endpoint on the control plane immediately.
-		_ = sendHeartbeat(api)
+		if _, err := updater.ConfirmPending(cfg, api, config.Version); err != nil && verbose {
+			fmt.Printf("[daemon] update confirmation: %v\n", err)
+		}
+
+		// Register endpoint on the control plane immediately and apply an eligible update.
+		if response, err := heartbeat(api); err != nil {
+			if verbose {
+				fmt.Printf("[daemon] initial heartbeat: %v\n", err)
+			}
+		} else if updated, updateErr := applyUpdate(cmd.Context(), cfg, api, response.Update); updateErr != nil {
+			if verbose {
+				fmt.Printf("[daemon] automatic update: %v\n", updateErr)
+			}
+		} else if updated {
+			fmt.Printf("Updated UseJunction agent; restarting service…\n")
+			return nil
+		}
+		go ujsignals.NewRunner(api, cfg, verbose).Run(context.Background())
 
 		fmt.Println("Starting UseJunction daemon (Ctrl-C to stop)…")
-		iteration := 0
+		if _, _, _, _, err := collectAndReport(api, true); err != nil && verbose {
+			fmt.Printf("[daemon] initial collect error: %v\n", err)
+		}
+
+		heartbeatTicker := time.NewTicker(heartbeatInterval)
+		collectionTicker := time.NewTicker(collectionInterval)
+		defer heartbeatTicker.Stop()
+		defer collectionTicker.Stop()
+
 		for {
 			var loopErr error
-			if iteration%15 == 0 {
-				// Full collect every ~15 minutes (refresh caches).
+			select {
+			case <-heartbeatTicker.C:
+				var response *client.HeartbeatResponse
+				response, loopErr = heartbeat(api)
+				if loopErr == nil {
+					if _, confirmErr := updater.ConfirmPending(cfg, api, config.Version); confirmErr != nil && verbose {
+						fmt.Printf("[daemon] update confirmation: %v\n", confirmErr)
+					}
+					var updated bool
+					updated, loopErr = applyUpdate(cmd.Context(), cfg, api, response.Update)
+					if updated {
+						fmt.Printf("Updated UseJunction agent; restarting service…\n")
+						return nil
+					}
+				}
+			case <-collectionTicker.C:
+				// Full collect every 30 minutes (refresh caches).
 				_, _, _, _, loopErr = collectAndReport(api, true)
-			} else {
-				loopErr = sendHeartbeat(api)
+			case <-cmd.Context().Done():
+				return nil
 			}
 			if loopErr != nil && verbose {
 				fmt.Printf("[daemon] report error: %v\n", loopErr)
 			}
-			iteration++
-			time.Sleep(60 * time.Second)
 		}
 	},
 }
@@ -106,12 +152,17 @@ func runHeartbeat() error {
 }
 
 func sendHeartbeat(api *client.APIClient) error {
+	_, err := heartbeat(api)
+	return err
+}
+
+func heartbeat(api *client.APIClient) (*client.HeartbeatResponse, error) {
 	cfg, err := config.Load()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if changed, err := cfg.EnsureLocalSyncCredentials(); err != nil {
-		return err
+		return nil, err
 	} else if changed {
 		_ = config.Save(cfg)
 	}
@@ -124,6 +175,20 @@ func sendHeartbeat(api *client.APIClient) error {
 		LocalEndpoint:  cfg.LocalSyncURL(),
 		LocalSyncToken: cfg.LocalSyncToken,
 	})
+}
+
+func applyUpdate(ctx context.Context, cfg *config.Config, api *client.APIClient, directive *client.AgentUpdateDirective) (bool, error) {
+	if directive == nil {
+		return false, nil
+	}
+	updated, err := updater.Apply(ctx, cfg, updater.ApplyOptions{
+		Directive: *directive, CurrentVersion: config.Version,
+		ControlPlaneURL: cfg.ControlPlaneURL, Reporter: api,
+	})
+	if errors.Is(err, updater.ErrBlockedVersion) {
+		return false, nil
+	}
+	return updated, err
 }
 
 func init() {

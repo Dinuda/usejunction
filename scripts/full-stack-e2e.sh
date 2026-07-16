@@ -115,7 +115,7 @@ cache_status=$(curl -sf -b "$COOKIE_JAR" -X POST "$ADMIN_URL/api/insights/query"
 echo "==> Creating an Enterprise plan and assigning it to the developer..."
 plan_resp=$(curl -s -w "\n%{http_code}" -b "$COOKIE_JAR" -X POST "$ADMIN_URL/api/billing/plans" \
   -H "Content-Type: application/json" \
-  -d '{"provider":"anthropic","product":"api_platform","toolName":"claude","name":"E2E Enterprise","tier":"Enterprise","currency":"USD","monthlySeatMicros":"31000000","includedMonthlyMicros":"0","inputRateMicrosPerMillion":"2000000","outputRateMicrosPerMillion":"4000000","cacheRateMicrosPerMillion":"1000000"}')
+  -d '{"provider":"anthropic","product":"api_platform","toolName":"claude","name":"E2E Enterprise","tier":"Enterprise","currency":"USD","cycleSeatMicros":"31000000","includedCycleMicros":"0","inputRateMicrosPerMillion":"2000000","outputRateMicrosPerMillion":"4000000","cacheRateMicrosPerMillion":"1000000"}')
 plan_code=$(echo "$plan_resp" | tail -n1)
 plan_body=$(echo "$plan_resp" | sed '$d')
 [[ "$plan_code" == "201" ]] || { echo "ERROR: plan creation failed (HTTP $plan_code)" >&2; echo "$plan_body" >&2; exit 1; }
@@ -127,7 +127,7 @@ assignment_code=$(echo "$assignment_resp" | tail -n1)
 assignment_body=$(echo "$assignment_resp" | sed '$d')
 [[ "$assignment_code" == "201" ]] || { echo "ERROR: plan assignment failed (HTTP $assignment_code)" >&2; echo "$assignment_body" >&2; exit 1; }
 assignments=$(curl -sf -b "$COOKIE_JAR" "$ADMIN_URL/api/developers/$user_id/billing-assignments")
-python3 -c "import sys,json; data=json.load(sys.stdin); rows=data.get('assignments', []); assert any(row['planName']=='E2E Enterprise' and int(row['monthlySeatMicros']) > 0 for row in rows)" <<<"$assignments"
+python3 -c "import sys,json; data=json.load(sys.stdin); rows=data.get('assignments', []); assert any(row['planName']=='E2E Enterprise' and int(row['cycleSeatMicros']) > 0 for row in rows)" <<<"$assignments"
 echo "    Enterprise plan assignment verified (billing arithmetic is covered by read-model tests)"
 
 echo "==> Creating branded tool subscriptions and reserving seats..."
@@ -161,9 +161,9 @@ cursor = by_plan[('cursor', 'pro-plus')]
 assert (pro['seatCapacity'], pro['assignedSeats'], pro['availableSeats']) == (2, 1, 1)
 assert (plus['seatCapacity'], plus['assignedSeats'], plus['availableSeats']) == (1, 0, 1)
 assert (cursor['seatCapacity'], cursor['assignedSeats'], cursor['availableSeats']) == (1, 1, 0)
-assert sum(int(item['estimatedMonthlyMicros']) for item in (pro, plus, cursor)) == 480000000
+assert sum(int(item['estimatedCycleMicros']) for item in (pro, plus, cursor)) == 480000000
 " <<<"$subscriptions"
-echo "    ChatGPT Pro/Plus and Cursor Pro+ inventory verified (capacity, availability, and monthly total)"
+echo "    ChatGPT Pro/Plus and Cursor Pro+ inventory verified (capacity, availability, and cycle total)"
 
 echo "==> Verifying concurrent assignments cannot over-allocate a seat pool..."
 copilot_business=$(curl -sf -b "$COOKIE_JAR" -X POST "$ADMIN_URL/api/tools/subscriptions" \

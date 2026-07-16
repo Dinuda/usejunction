@@ -156,13 +156,13 @@ func fetchCodexRateLimitsRPC(ctx context.Context) (map[string]rpcWindow, map[str
 	if primary, ok := result["primary_window"].(map[string]any); ok {
 		windows["session_5h"] = rpcWindow{
 			UsedPercent: numberValue(primary["used_percent"]),
-			ResetAt:     strPtr(parseUnixOrRFC3339(stringValue(primary["reset_at"])).UTC().Format(time.RFC3339)),
+			ResetAt:     codexResetAt(primary["reset_at"]),
 		}
 	}
 	if secondary, ok := result["secondary_window"].(map[string]any); ok {
 		windows["weekly"] = rpcWindow{
 			UsedPercent: numberValue(secondary["used_percent"]),
-			ResetAt:     strPtr(parseUnixOrRFC3339(stringValue(secondary["reset_at"])).UTC().Format(time.RFC3339)),
+			ResetAt:     codexResetAt(secondary["reset_at"]),
 		}
 	}
 	account, _ := runCodexAppServerRPC(ctx, "account/read", nil)

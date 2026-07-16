@@ -93,14 +93,14 @@ From a repo checkout (builds the Go agent locally — preferred for development)
 ```bash
 chmod +x install.sh
 ./install.sh --token <token> --url http://localhost:3001
-# enrolls, configures tools, enables Claude OTEL, sends first report, and starts the daemon
+# enrolls, enables Claude OTEL, sends first report, and starts the daemon
 ```
 
 One-liner (downloads a prebuilt binary from the control plane, or builds from source if the repo is on disk):
 
 ```bash
 # optional for pnpm/dev without Docker: publish binaries into apps/admin/public
-./scripts/build-agent-releases.sh
+./scripts/build-agent-releases.sh 0.2.0
 
 curl -fsSL http://localhost:3001/install.sh | sh -s -- --token <token> --url http://localhost:3001
 ```
@@ -135,20 +135,51 @@ Coding tools → LiteLLM Proxy → Providers
   Provider Admin APIs + Claude Code OTLP/HTTP JSON
 ```
 
-Analytical reads are centralized through `UsageDaily`, the SQL query engine, and a PostgreSQL result cache. See [Central Analytics Engine](docs/central-analytics-engine.md) and [Usage Accounting Contract](docs/usage-accounting.md).
+Analytical reads are centralized through `UsageDaily`, the SQL query engine, and a PostgreSQL result cache. See [Central Analytics Engine](docs/central-analytics-engine.md), [Usage Accounting Contract](docs/usage-accounting.md), and [Subscription Cycle Utilization](docs/subscription-cycle-utilization.md).
+
+Signals collection is documented in [docs/signals-collection.md](docs/signals-collection.md). It covers the optional activity-flow layer that collects AI-adjacent app/domain sessions from the enrolled desktop agent.
 
 ## CLI commands
 
 | Command | Description |
 |---------|-------------|
 | `usejunction enroll --token <t>` | Enroll device (runs setup by default) |
-| `usejunction setup` | Configure gateway, Claude OTEL, and send initial report |
+| `usejunction setup` | Enable Claude OTEL and send initial report |
 | `usejunction doctor` | Detect installed tools |
-| `usejunction configure` | Point supported tools at the org gateway |
-| `usejunction unconfigure` | Restore config backups |
 | `usejunction status` | Show enrollment state |
 | `usejunction cost --tool all` | Local JSONL usage scan |
+| `usejunction update --check` | Check the active release without installing |
+| `usejunction update` | Download, verify, and install an available update |
+| `usejunction update --rollback` | Restore the retained previous binary |
+| `usejunction update --force` | Reinstall a version locally blocked after rollback |
 | `usejunction uninstall` | Remove agent |
+
+Existing `0.1.0` installations need one final updater bootstrap after the first release is promoted:
+
+```bash
+curl -fsSL <control-plane>/install.sh | sh -s -- --upgrade --url <control-plane>
+```
+
+Agent release operations, triggers, rollout behavior, and fleet coverage are documented in [Controlled Agent Releases](docs/agent-releases.md).
+
+### Release development
+
+When you are changing the release system itself, this is the fastest local loop:
+
+```bash
+cd agent && go test ./...
+pnpm test
+./scripts/build-agent-releases.sh 0.2.0
+```
+
+Then exercise the rollout path against a local or staging control plane:
+
+```bash
+git tag agent-v0.2.0
+git push origin agent-v0.2.0
+```
+
+The protected promotion workflow and the control-plane endpoints are described in [docs/agent-releases.md](docs/agent-releases.md).
 
 ## Project structure
 
@@ -164,6 +195,8 @@ scripts/        Full-stack E2E
 ## Privacy
 
 Metadata-only logging by default. Local scans read token counts from session JSONL files — never prompts or responses.
+
+Signals collection adds a separate, opt-in activity layer for app/domain flows around AI usage. It does not collect screenshots, raw prompts, clipboard text, or full URLs, and the employee ledger shows exactly what was uploaded.
 
 ## License
 
