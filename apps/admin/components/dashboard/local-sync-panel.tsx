@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ToolBrandIcon, hasToolBrandIcon } from "@/components/tools/tool-brand-icon";
+import { toolDisplayName } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
 
 type LocalSyncInfo =
@@ -85,11 +87,61 @@ function latestTimestamp(...values: Array<string | null | undefined>) {
   return latest;
 }
 
+function SyncDetailLine({
+  detail,
+  status,
+}: {
+  detail: string;
+  status: "idle" | "syncing" | "ok" | "unreachable" | "error";
+}) {
+  const { toolKey, label } = parseSyncDetail(detail);
+  const showLogo = Boolean(toolKey && hasToolBrandIcon(toolKey));
+  const syncing = status === "syncing";
+
+  return (
+    <p
+      className={cn(
+        "mt-1 flex items-center gap-1.5 text-xs",
+        status === "ok" && "text-success",
+        (status === "unreachable" || status === "error") && "text-destructive",
+        syncing && "text-muted-foreground",
+      )}
+    >
+      {showLogo && toolKey ? (
+        <ToolBrandIcon tool={toolKey} size={12} className="shrink-0 text-muted-foreground" />
+      ) : null}
+      <span className={cn(syncing && "shimmer")}>{label}</span>
+    </p>
+  );
+}
+
 function formatSyncDetail(body: {
   warnings?: string[];
 }) {
   if (!body.warnings?.length) return null;
   return `Synced with ${body.warnings.length} warning${body.warnings.length === 1 ? "" : "s"}.`;
+}
+
+const STILL_RUNNING_SUFFIX = " · still running";
+
+function parseSyncDetail(detail: string): { toolKey: string | null; label: string } {
+  const stillRunning = detail.endsWith(STILL_RUNNING_SUFFIX);
+  const base = stillRunning ? detail.slice(0, -STILL_RUNNING_SUFFIX.length) : detail;
+  const suffix = stillRunning ? STILL_RUNNING_SUFFIX : "";
+
+  const scanning = /^Scanning (.+)$/i.exec(base);
+  if (scanning?.[1]) {
+    const toolKey = scanning[1].trim();
+    return { toolKey, label: `Scanning ${toolDisplayName(toolKey)}${suffix}` };
+  }
+
+  const skipped = /^Skipped slow (.+) scan$/i.exec(base);
+  if (skipped?.[1]) {
+    const toolKey = skipped[1].trim();
+    return { toolKey, label: `Skipped slow ${toolDisplayName(toolKey)} scan${suffix}` };
+  }
+
+  return { toolKey: null, label: detail };
 }
 
 export function LocalSyncPanel({
@@ -117,7 +169,7 @@ export function LocalSyncPanel({
 
   async function syncNow() {
     setStatus("syncing");
-    setDetail("Starting local sync…");
+    setDetail("Syncing…");
     let local: LocalSyncInfo | null;
     try {
       local = await loadInfo();
@@ -239,23 +291,14 @@ export function LocalSyncPanel({
   }
 
   return (
-    <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <p className="text-sm text-muted-foreground">
           Last synced {formatRelative(lastSuccessfulSyncAt)}
           {stale ? " · Agent may be offline" : ""}
         </p>
         {detail ? (
-          <p
-            className={cn(
-              "mt-1 text-xs",
-              status === "ok" && "text-success",
-              (status === "unreachable" || status === "error") && "text-destructive",
-              status === "syncing" && "text-muted-foreground",
-            )}
-          >
-            {detail}
-          </p>
+          <SyncDetailLine detail={detail} status={status} />
         ) : null}
       </div>
       <Button
@@ -266,11 +309,11 @@ export function LocalSyncPanel({
         onClick={syncNow}
       >
         {status === "syncing" ? (
-          <Loader2 className="size-3.5 animate-spin" />
+          <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
         ) : (
           <RefreshCw className="size-3.5" />
         )}
-        {status === "syncing" ? "Syncing…" : "Sync now"}
+        {status === "syncing" ? <span className="shimmer text-muted-foreground">Syncing…</span> : "Sync now"}
       </Button>
     </div>
   );

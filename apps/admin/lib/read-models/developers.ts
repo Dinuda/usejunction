@@ -1,9 +1,13 @@
 import { prisma } from "@usejunction/db";
 import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
-import { usageWindowDays } from "@/lib/metrics/date-range";
+import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
+import { resolveReportWindow } from "@/lib/analytics/contracts/time-window";
 
-export async function getDeveloperRoster(orgId: string, options: { developerId?: string } = {}) {
-  const usage7d = usageWindowDays(7);
+export async function getDeveloperRoster(
+  orgId: string,
+  options: { developerId?: string; reportWindow?: MetricWindow } = {},
+) {
+  const reportWindow = options.reportWindow ?? resolveReportWindow({ range: 30 });
   const [developers, activity] = await Promise.all([
     prisma.developer.findMany({
       where: { orgId, ...(options.developerId ? { id: options.developerId } : {}) },
@@ -73,7 +77,7 @@ export async function getDeveloperRoster(orgId: string, options: { developerId?:
     }),
     readUsageMetrics({
       orgId,
-      window: usage7d,
+      window: reportWindow,
       measures: ["requests", "costMicros"],
       dimensions: ["developer"],
       ...(options.developerId ? { filters: { developerIds: [options.developerId] } } : {}),
@@ -84,8 +88,8 @@ export async function getDeveloperRoster(orgId: string, options: { developerId?:
     activity.data.rows.map((row) => [
       dimension(row, "developer"),
       {
-        requests7d: metricNumber(row, "requests"),
-        cost7d: metricNumber(row, "costMicros") / 1_000_000,
+        requests: metricNumber(row, "requests"),
+        cost: metricNumber(row, "costMicros") / 1_000_000,
       },
     ]),
   );
@@ -103,7 +107,7 @@ export async function getDeveloperRoster(orgId: string, options: { developerId?:
       assignedPlans: developer.seatAssignments,
       manualPlans: developer.planAssignments,
       toolEvidence: developer.toolClaims,
-      ...(activityMap.get(developer.id) ?? { requests7d: 0, cost7d: 0 }),
+      ...(activityMap.get(developer.id) ?? { requests: 0, cost: 0 }),
     })),
   };
 }

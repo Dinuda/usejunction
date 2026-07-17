@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { TokenBreakdownChart } from "@/components/dashboard/token-breakdown-chart";
+import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -25,73 +27,17 @@ function pct(value: number | null) {
   return `${Math.round(value)}%`;
 }
 
-function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="border-l-2 border-border-strong pl-4">
-      <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
-      {sub ? <p className="mt-1 text-xs text-muted-foreground">{sub}</p> : null}
-    </div>
-  );
-}
-
-function TokenBar({
-  input,
-  output,
-  cacheRead,
-  cacheWrite,
-}: {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-}) {
-  const total = input + output + cacheRead + cacheWrite;
-  if (total <= 0) {
-    return <p className="text-sm text-muted-foreground">No token breakdown yet.</p>;
-  }
-  const parts = [
-    { label: "In", value: input, className: "bg-foreground/80" },
-    { label: "Out", value: output, className: "bg-foreground/50" },
-    { label: "Cache read", value: cacheRead, className: "bg-brand-yellow-dark" },
-    { label: "Cache write", value: cacheWrite, className: "bg-border-strong" },
-  ].filter((part) => part.value > 0);
-
-  return (
-    <div>
-      <div className="flex h-2 overflow-hidden rounded-sm bg-muted">
-        {parts.map((part) => (
-          <div
-            key={part.label}
-            className={cn(part.className)}
-            style={{ width: `${Math.max(2, (part.value / total) * 100)}%` }}
-            title={`${part.label}: ${compact(part.value)}`}
-          />
-        ))}
-      </div>
-      <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-        {parts.map((part) => (
-          <div key={part.label}>
-            <dt className="text-muted-foreground">{part.label}</dt>
-            <dd className="font-medium tabular-nums">{compact(part.value)}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
-}
-
 function CostBadge({ row }: { row: ModelUsageRow }) {
   if (row.metricKind === "productivity") {
-    return <Badge variant="outline">Productivity</Badge>;
+    return <Badge variant="outline" className="rounded-none">Productivity</Badge>;
   }
   if (row.costKind === "verified_usage" || row.verified) {
-    return <Badge variant="default">Verified</Badge>;
+    return <Badge variant="default" className="rounded-none">Verified</Badge>;
   }
   if (row.costKind === "estimated_api") {
-    return <Badge variant="secondary">Estimated</Badge>;
+    return <Badge variant="secondary" className="rounded-none">Estimated</Badge>;
   }
-  return <Badge variant="outline">{row.source}</Badge>;
+  return <Badge variant="outline" className="rounded-none">{row.source}</Badge>;
 }
 
 function ModelTable({ title, description, rows }: { title: string; description: string; rows: ModelUsageRow[] }) {
@@ -126,38 +72,41 @@ function ModelTable({ title, description, rows }: { title: string; description: 
             setPage(0);
           }}
           placeholder="Search models…"
-          className="h-8 w-full max-w-xs text-sm"
+          className="h-8 w-full max-w-xs rounded-none text-sm"
         />
       </div>
       {filtered.length ? (
         <>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
-              <thead className="border-b text-xs uppercase tracking-[0.06em] text-muted-foreground">
+              <thead className="border-b border-border/70 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
                 <tr>
-                  <th className="py-2 pr-3 font-medium">Tool</th>
-                  <th className="py-2 pr-3 font-medium">Model</th>
-                  <th className="py-2 pr-3 font-medium tabular-nums">Calls</th>
-                  <th className="py-2 pr-3 font-medium tabular-nums">In</th>
-                  <th className="py-2 pr-3 font-medium tabular-nums">Out</th>
-                  <th className="py-2 pr-3 font-medium tabular-nums">Cache</th>
-                  <th className="py-2 pr-3 font-medium tabular-nums">Cost</th>
-                  <th className="py-2 font-medium">Kind</th>
+                  <th className="pb-3 pr-4 pt-1 font-medium">Tool</th>
+                  <th className="pb-3 pr-4 pt-1 font-medium">Model</th>
+                  <th className="pb-3 pr-4 pt-1 text-right font-medium">Calls</th>
+                  <th className="pb-3 pr-4 pt-1 text-right font-medium">In</th>
+                  <th className="pb-3 pr-4 pt-1 text-right font-medium">Out</th>
+                  <th className="pb-3 pr-4 pt-1 text-right font-medium">Cache</th>
+                  <th className="pb-3 pr-4 pt-1 text-right font-medium">Cost</th>
+                  <th className="pb-3 pt-1 font-medium">Kind</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody>
                 {pageRows.map((row) => (
-                  <tr key={`${row.toolName}-${row.model}-${row.source}-${row.metricKind}`}>
-                    <td className="py-2.5 pr-3 font-medium">{row.toolName}</td>
-                    <td className="max-w-[220px] truncate py-2.5 pr-3 font-mono text-xs">{row.model}</td>
-                    <td className="py-2.5 pr-3 tabular-nums">{compact(row.requests)}</td>
-                    <td className="py-2.5 pr-3 tabular-nums">{compact(row.inputTokens)}</td>
-                    <td className="py-2.5 pr-3 tabular-nums">{compact(row.outputTokens)}</td>
-                    <td className="py-2.5 pr-3 tabular-nums">
+                  <tr
+                    key={`${row.toolName}-${row.model}-${row.source}-${row.metricKind}`}
+                    className="transition-colors hover:bg-muted/30"
+                  >
+                    <td className="py-5 pr-4 font-medium">{row.toolName}</td>
+                    <td className="max-w-[220px] truncate py-5 pr-4 font-mono text-xs">{row.model}</td>
+                    <td className="py-5 pr-4 text-right tabular-nums">{compact(row.requests)}</td>
+                    <td className="py-5 pr-4 text-right tabular-nums">{compact(row.inputTokens)}</td>
+                    <td className="py-5 pr-4 text-right tabular-nums">{compact(row.outputTokens)}</td>
+                    <td className="py-5 pr-4 text-right tabular-nums">
                       {compact(row.cacheReadTokens + row.cacheWriteTokens)}
                     </td>
-                    <td className="py-2.5 pr-3 tabular-nums">{money(row.cost)}</td>
-                    <td className="py-2.5">
+                    <td className="py-5 pr-4 text-right tabular-nums">{money(row.cost)}</td>
+                    <td className="py-5">
                       <CostBadge row={row} />
                     </td>
                   </tr>
@@ -199,9 +148,11 @@ function ModelTable({ title, description, rows }: { title: string; description: 
 export function AiCodingPanel({
   metrics,
   models,
+  embedded = false,
 }: {
   metrics: AiCodingMetrics;
   models: ModelUsageRow[];
+  embedded?: boolean;
 }) {
   const acceptance =
     metrics.suggestedLines > 0 ? (metrics.acceptedLines / metrics.suggestedLines) * 100 : null;
@@ -209,17 +160,17 @@ export function AiCodingPanel({
   const productivityModels = models.filter((row) => row.metricKind === "productivity");
 
   return (
-    <section className="mt-10">
-      <div className="mb-4 border-b pb-3">
-        <h2 className="text-lg font-semibold tracking-tight">AI coding.</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Verified vendor charges and estimated API-equivalent values are shown separately. Prompt text is never collected.
-        </p>
-      </div>
+    <section className={cn(!embedded && "mt-10 border bg-card p-5")}>
+      <SignalsSectionHeader
+        title="AI coding."
+        description="Verified vendor charges and estimated API-equivalent values are shown separately. Prompt text is never collected."
+        bordered={false}
+      />
 
-      <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-5">
-        <Metric
+      <div className="mb-8 grid gap-y-8 sm:grid-cols-2 xl:grid-cols-5">
+        <SignalsKpi
           label="AI lines accepted"
+          className="pl-5"
           value={compact(metrics.acceptedLines)}
           sub={
             metrics.suggestedLines > 0
@@ -227,23 +178,27 @@ export function AiCodingPanel({
               : undefined
           }
         />
-        <Metric
+        <SignalsKpi
           label="AI-driven commits"
+          className="sm:border-l sm:border-border sm:pl-8"
           value={metrics.aiPercent != null ? pct(metrics.aiPercent) : compact(metrics.commits)}
           sub={metrics.commits > 0 ? `${metrics.commits} scored commits` : "from Cursor tracking"}
         />
-        <Metric
+        <SignalsKpi
           label="Tokens"
+          className="xl:border-l xl:border-border xl:pl-8"
           value={compact(metrics.inputTokens + metrics.outputTokens)}
           sub={`${compact(metrics.cacheReadTokens)} cache read · ${compact(metrics.cacheWriteTokens)} write`}
         />
-        <Metric
+        <SignalsKpi
           label="Verified usage"
+          className="sm:border-l sm:border-border sm:pl-8"
           value={money(metrics.verifiedCost)}
           sub="vendor-reported charges"
         />
-        <Metric
+        <SignalsKpi
           label="Estimated API value"
+          className="xl:border-l xl:border-border xl:pl-8"
           value={money(Math.max(0, metrics.cost - metrics.verifiedCost))}
           sub="rate-card reconstruction"
         />
@@ -251,7 +206,7 @@ export function AiCodingPanel({
 
       <div className="mt-8">
         <h3 className="mb-3 text-sm font-medium">Token breakdown</h3>
-        <TokenBar
+        <TokenBreakdownChart
           input={metrics.inputTokens}
           output={metrics.outputTokens}
           cacheRead={metrics.cacheReadTokens}

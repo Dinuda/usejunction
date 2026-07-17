@@ -1,20 +1,46 @@
 import { notFound } from "next/navigation";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
 import { ToolProviderDetail } from "@/components/tools/tool-provider-detail";
+import {
+  cycleViewPeriodLabel,
+  cycleViewShortSuffix,
+  parseCycleView,
+  reportWindowForCycleView,
+} from "@/lib/dashboard/cycle-view";
+import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
 import { getToolDetail } from "@/lib/queries/dashboard/tool-detail";
 import { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
+import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { serializeBigInts } from "@/lib/billing/validation";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
 
 export default async function ToolProviderPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ toolKey: string }>;
+  searchParams: Promise<{ view?: string; days?: string; from?: string; to?: string }>;
 }) {
   const { orgId, userId } = await requireWorkspaceRole(["owner", "admin"]);
   const { toolKey } = await params;
+  const query = await searchParams;
+  const cycleView = parseCycleView(query.view);
+  const rollingPeriod = parseRollingPeriodFromSearch({
+    days: query.days,
+    from: query.from,
+    to: query.to,
+  });
+  const now = new Date();
+  const subscriptions = await listSubscriptions(orgId);
+  const toolPlans = subscriptions.filter((plan) => plan.toolKey === toolKey);
+  const reportWindow = reportWindowForCycleView(
+    cycleView,
+    rollingPeriod,
+    toolPlans.length ? toolPlans : subscriptions,
+    now,
+  );
   const [detail, syncContext] = await Promise.all([
-    getToolDetail(orgId, toolKey),
+    getToolDetail(orgId, toolKey, reportWindow),
     getLocalSyncContext(orgId, userId),
   ]);
   if (!detail) notFound();
@@ -40,7 +66,14 @@ export default async function ToolProviderPage({
           />
         </div>
       ) : null}
-      <ToolProviderDetail data={serialized} />
+      <ToolProviderDetail
+        data={serialized}
+        cycleView={cycleView}
+        period={rollingPeriod}
+        periodLabel={cycleViewPeriodLabel(cycleView, rollingPeriod)}
+        periodSuffix={cycleViewShortSuffix(cycleView, rollingPeriod)}
+        periodBasePath={`/tools/${toolKey}`}
+      />
     </>
   );
 }

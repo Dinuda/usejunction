@@ -48,16 +48,20 @@ export function suggestedWorkspaceName(user: { email: string; name?: string | nu
 
 export type WorkspaceUser = AuthUserInput;
 
-export async function createWorkspace(user: WorkspaceUser, options?: { name?: string }) {
+export async function createWorkspace(
+  user: WorkspaceUser,
+  options?: { name?: string; color?: string | null },
+) {
   const authUser = await resolveAuthUser(user);
   const name = options?.name?.trim() || suggestedWorkspaceName(authUser);
   const slug = `${slugify(name)}-${randomBytes(2).toString("hex")}`;
+  const color = options?.color?.trim() || null;
 
   let organization;
   try {
     organization = await prisma.$transaction(async (tx) => {
       const org = await tx.organization.create({
-        data: { name, slug, plan: "trial", trialEndsAt: trialEndsAtFromNow() },
+        data: { name, slug, color, plan: "trial", trialEndsAt: trialEndsAtFromNow() },
       });
       const team = await tx.team.create({ data: { orgId: org.id, name: "Platform" } });
       await tx.organizationMembership.create({
@@ -90,6 +94,7 @@ export async function createWorkspace(user: WorkspaceUser, options?: { name?: st
     orgId: organization.id,
     name: organization.name,
     slug: organization.slug,
+    color: organization.color,
     role: "owner" as const,
     created: true as const,
   };

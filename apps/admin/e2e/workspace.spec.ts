@@ -7,6 +7,7 @@ const workspaceRoutes = [
   "/dashboard?view=last_30_days&days=90",
   "/dashboard?view=last_30_days&from=2026-07-01&to=2026-07-16",
   "/activity",
+  "/settings",
   "/team",
   "/team/e2e-developer",
   "/tools",
@@ -64,6 +65,17 @@ test("Signals settings shows policy calculation boundaries", async ({ page }) =>
   await expect(page.locator("#signals-retention")).toContainText("90 days");
 });
 
+test("Settings shows workspace, Signals, and activity visibility controls", async ({ page }) => {
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Settings.", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Workspace", level: 2 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Signals", level: 2 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Activity visibility", level: 2 })).toBeVisible();
+  await expect(page.getByLabel("Workspace name")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Turn on|Turn off/ }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /Allow for team|Restrict to admins/ }).first()).toBeVisible();
+});
+
 test("seeded usage totals stay consistent across owner calculation views", async ({ page }) => {
   await page.goto("/activity");
   await expect(page.getByText("Model calls").first()).toBeVisible();
@@ -76,9 +88,13 @@ test("seeded usage totals stay consistent across owner calculation views", async
   await expect(page.getByText("2 Cursor Pro")).toBeVisible();
 
   await page.goto("/tools/cursor");
-  await expect(page.getByText("Usage cost (7d)")).toBeVisible();
+  await expect(page.getByText(/Usage cost \(/)).toBeVisible();
   await expect(page.getByText("verified + estimated")).toBeVisible();
   await expect(page.getByText("$6.00").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Adjust period" })).toBeVisible();
+
+  await page.goto("/tools/cursor?view=last_30_days&days=3");
+  await expect(page.getByText("Usage cost (3d)")).toBeVisible();
 
   await page.goto("/team/e2e-developer");
   await expect(page.getByText("Usage cost").first()).toBeVisible();

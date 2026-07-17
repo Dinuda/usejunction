@@ -163,6 +163,7 @@ type UsageAggregate struct {
 	TokenSemantics     string            `json:"tokenSemantics,omitempty"`
 	CalculationVersion string            `json:"calculationVersion,omitempty"`
 	Repository         *RepositoryReport `json:"repository,omitempty"`
+	Metadata           map[string]any    `json:"metadata,omitempty"`
 }
 
 type SignalsPolicy struct {

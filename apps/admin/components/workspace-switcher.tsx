@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,28 +22,69 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { WorkspaceColorSwatches, WorkspaceIcon } from "@/components/workspace-icon";
+import {
+  WORKSPACE_COLORS,
+  resolveWorkspaceColor,
+  type WorkspaceColor,
+} from "@/lib/workspace-colors";
 
 const CREATE_WORKSPACE_VALUE = "__create_workspace__";
+const EDIT_WORKSPACE_VALUE = "__edit_workspace__";
 
 export type WorkspaceOption = {
   id: string;
   name: string;
+  color?: string | null;
   role: string;
 };
+
+type WorkspaceFormMode = "create" | "edit";
 
 export function WorkspaceSwitcher({
   organizations,
   currentOrgId,
+  role,
 }: {
   organizations: WorkspaceOption[];
   currentOrgId: string | null;
+  role?: string | null;
 }) {
   const router = useRouter();
   const value = currentOrgId ?? organizations[0]?.id;
-  const [createOpen, setCreateOpen] = useState(false);
+  const current = organizations.find((org) => org.id === value) ?? organizations[0];
+  const canEdit = role === "owner" || role === "admin";
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [formMode, setFormMode] = useState<WorkspaceFormMode>("create");
   const [name, setName] = useState("");
+  const [color, setColor] = useState<WorkspaceColor>(WORKSPACE_COLORS[2]!);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  function openCreate() {
+    setFormMode("create");
+    setName("");
+    setColor(WORKSPACE_COLORS[2]!);
+    setError(null);
+    setFormOpen(true);
+  }
+
+  function openEdit() {
+    if (!current) return;
+    setFormMode("edit");
+    setName(current.name);
+    setColor(resolveWorkspaceColor(current.id, current.color));
+    setError(null);
+    setFormOpen(true);
+  }
+
+  function closeForm() {
+    setFormOpen(false);
+    setName("");
+    setColor(WORKSPACE_COLORS[2]!);
+    setError(null);
+  }
 
   async function switchWorkspace(orgId: string) {
     if (orgId === value) return;
@@ -56,7 +97,7 @@ export function WorkspaceSwitcher({
     router.refresh();
   }
 
-  async function createWorkspace(event: React.FormEvent) {
+  async function submitForm(event: React.FormEvent) {
     event.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) {
@@ -67,28 +108,43 @@ export function WorkspaceSwitcher({
     setPending(true);
     setError(null);
     try {
-      const response = await fetch("/api/organizations", {
-        method: "POST",
+      if (formMode === "create") {
+        const response = await fetch("/api/organizations", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: trimmed, color }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) {
+          setError(payload.error ?? "Could not create workspace.");
+          return;
+        }
+        closeForm();
+        router.push("/onboarding?resume=1");
+        router.refresh();
+        return;
+      }
+
+      const response = await fetch("/api/organizations/current", {
+        method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: trimmed }),
+        body: JSON.stringify({ name: trimmed, color }),
       });
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        setError(payload.error ?? "Could not create workspace.");
+        setError(payload.error ?? "Could not update workspace.");
         return;
       }
-      setCreateOpen(false);
-      setName("");
-      router.push("/onboarding?resume=1");
+      closeForm();
       router.refresh();
     } catch {
-      setError("Could not create workspace.");
+      setError(formMode === "create" ? "Could not create workspace." : "Could not update workspace.");
     } finally {
       setPending(false);
     }
   }
 
-  if (!organizations.length || !value) {
+  if (!organizations.length || !value || !current) {
     return <span className="text-sm font-medium text-foreground">UseJunction</span>;
   }
 
@@ -98,7 +154,11 @@ export function WorkspaceSwitcher({
         value={value}
         onValueChange={(next) => {
           if (next === CREATE_WORKSPACE_VALUE) {
-            setCreateOpen(true);
+            openCreate();
+            return;
+          }
+          if (next === EDIT_WORKSPACE_VALUE) {
+            openEdit();
             return;
           }
           void switchWorkspace(next);
@@ -114,10 +174,17 @@ export function WorkspaceSwitcher({
         <SelectContent>
           {organizations.map((org) => (
             <SelectItem key={org.id} value={org.id}>
-              {org.name}
+              <WorkspaceIcon id={org.id} color={org.color} />
+              <span className="truncate">{org.name}</span>
             </SelectItem>
           ))}
           <SelectSeparator />
+          {canEdit ? (
+            <SelectItem value={EDIT_WORKSPACE_VALUE}>
+              <Pencil className="size-4" />
+              Edit workspace
+            </SelectItem>
+          ) : null}
           <SelectItem value={CREATE_WORKSPACE_VALUE}>
             <Plus className="size-4" />
             Create workspace
@@ -126,42 +193,61 @@ export function WorkspaceSwitcher({
       </Select>
 
       <Dialog
-        open={createOpen}
+        open={formOpen}
         onOpenChange={(open) => {
-          setCreateOpen(open);
-          if (!open) {
-            setName("");
-            setError(null);
-          }
+          if (open) setFormOpen(true);
+          else closeForm();
         }}
       >
         <DialogContent className="max-w-md gap-5">
           <DialogHeader>
-            <DialogTitle>Create a workspace.</DialogTitle>
+            <DialogTitle>
+              {formMode === "create" ? "Create a workspace." : "Edit workspace."}
+            </DialogTitle>
             <DialogDescription>
-              Start a separate organization for another team, product, or client.
+              {formMode === "create"
+                ? "Start a separate organization for another team, product, or client."
+                : "Update the name and color for this workspace."}
             </DialogDescription>
           </DialogHeader>
-          <form className="space-y-4" onSubmit={createWorkspace}>
+          <form className="space-y-4" onSubmit={submitForm}>
             <div className="space-y-2">
               <Label htmlFor="workspace-name">Workspace name</Label>
-              <Input
-                id="workspace-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Acme"
-                autoFocus
-                maxLength={80}
-                disabled={pending}
-              />
+              <div className="flex items-center gap-3">
+                <WorkspaceIcon
+                  id={formMode === "edit" ? current.id : "new-workspace"}
+                  color={color}
+                  size="lg"
+                />
+                <Input
+                  id="workspace-name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Acme"
+                  autoFocus
+                  maxLength={80}
+                  disabled={pending}
+                  className="flex-1"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Color</Label>
+              <WorkspaceColorSwatches value={color} onChange={setColor} disabled={pending} />
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={pending}>
+              <Button type="button" variant="outline" onClick={closeForm} disabled={pending}>
                 Cancel
               </Button>
               <Button type="submit" disabled={pending}>
-                {pending ? "Creating…" : "Create workspace"}
+                {pending
+                  ? formMode === "create"
+                    ? "Creating…"
+                    : "Saving…"
+                  : formMode === "create"
+                    ? "Create workspace"
+                    : "Save changes"}
               </Button>
             </DialogFooter>
           </form>

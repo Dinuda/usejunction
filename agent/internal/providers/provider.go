@@ -37,7 +37,7 @@ func All() []Provider {
 		&ContinueProvider{},
 		&ClineProvider{Tool: "cline"},
 		&ClineProvider{Tool: "roo"},
-		&ClineProvider{Tool: "opencode"},
+		&OpenCodeProvider{},
 		&OllamaProvider{},
 		&LMStudioProvider{},
 	}

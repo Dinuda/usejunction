@@ -88,6 +88,45 @@ test("selectPrimaryQuota prefers monthly over weekly", () => {
   assert.equal(primary?.rawRatio, 0.4);
 });
 
+test("selectPrimaryQuota ignores promo grants and rate-limit resets when plan windows exist", () => {
+  const now = new Date("2026-07-14T12:00:00.000Z");
+  const rows = mapQuotaSnapshots(
+    [
+      {
+        toolName: "codex",
+        windowType: "rate_limit_resets",
+        usedPercent: null,
+        creditsRemaining: 4,
+        resetAt: new Date("2026-07-25T00:00:00.000Z"),
+        source: "oauth_api",
+        updatedAt: now,
+      },
+      {
+        toolName: "codex",
+        windowType: "weekly",
+        usedPercent: 63,
+        creditsRemaining: null,
+        resetAt: new Date("2026-07-23T00:00:00.000Z"),
+        source: "oauth_api",
+        updatedAt: now,
+      },
+      {
+        toolName: "cursor",
+        windowType: "promo_grant",
+        usedPercent: null,
+        creditsRemaining: 15,
+        resetAt: null,
+        source: "local_app",
+        updatedAt: now,
+      },
+    ],
+    now,
+  );
+  const primary = selectPrimaryQuota(rows);
+  assert.equal(primary?.windowType, "weekly");
+  assert.equal(primary?.rawRatio, 0.63);
+});
+
 test("dedupeQuotaUtilizations keeps highest ratio", () => {
   const now = new Date("2026-07-14T12:00:00.000Z");
   const rows = mapQuotaSnapshots(

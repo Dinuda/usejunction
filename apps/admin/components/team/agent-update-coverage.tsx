@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
 
 type Coverage = {
   release: {
@@ -47,16 +48,6 @@ type Coverage = {
   }>;
 };
 
-function metric(value: number, label: string, detail?: string) {
-  return (
-    <div className="border-l-2 border-border-strong pl-3">
-      <p className="text-xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 text-xs font-medium text-foreground">{label}</p>
-      {detail ? <p className="mt-0.5 text-[11px] text-muted-foreground">{detail}</p> : null}
-    </div>
-  );
-}
-
 function formatTime(value: string | null) {
   if (!value) return "—";
   return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -78,33 +69,53 @@ export function AgentUpdateCoverage({ coverage }: { coverage: Coverage }) {
 
   const { release, metrics } = coverage;
   return (
-    <section className="mb-10 border border-border bg-card">
-      <div className="flex flex-col gap-4 border-b border-border p-5 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold">Agent update coverage</h2>
-            <Badge variant={release.urgency === "critical" ? "destructive" : "outline"}>
-              {release.urgency}
-            </Badge>
+    <section className="mt-10 border bg-card p-5">
+      <SignalsSectionHeader
+        title="Agent update coverage."
+        description={`Version ${release.version} · ${release.rolloutHours === 0 ? "immediate rollout" : `${release.rolloutHours}-hour rollout`}`}
+        bordered={false}
+        action={
+          <div className="text-right">
+            <p className="text-2xl font-semibold tabular-nums tracking-tight">{metrics.installCoveragePercent}%</p>
+            <p className="text-xs text-muted-foreground">confirmed installation</p>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Version {release.version} · {release.rolloutHours === 0 ? "immediate rollout" : `${release.rolloutHours}-hour rollout`}
-          </p>
-        </div>
-        <div className="text-left sm:text-right">
-          <p className="text-2xl font-semibold tabular-nums">{metrics.installCoveragePercent}%</p>
-          <p className="text-xs text-muted-foreground">confirmed installation coverage</p>
-        </div>
+        }
+      />
+
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <Badge variant={release.urgency === "critical" ? "destructive" : "outline"} className="rounded-none">
+          {release.urgency}
+        </Badge>
       </div>
 
-      <div className="grid gap-5 border-b border-border p-5 sm:grid-cols-2 lg:grid-cols-4">
-        {metric(metrics.downloaded, "Pulled update", `${metrics.pullCoveragePercent}% of ${metrics.total} devices`)}
-        {metric(metrics.confirmed, "Installed + restarted", `${metrics.downloadToInstallPercent}% of downloads`)}
-        {metric(metrics.failed, "Currently failed", `${metrics.failureRatePercent}% of attempts`)}
-        {metric(metrics.eligible, "Currently eligible", `${metrics.pendingOnline} pending online · ${metrics.pendingOffline} offline`)}
+      <div className="mb-6 grid gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
+        <SignalsKpi
+          label="Pulled update"
+          className="pl-5"
+          value={metrics.downloaded}
+          sub={`${metrics.pullCoveragePercent}% of ${metrics.total} devices`}
+        />
+        <SignalsKpi
+          label="Installed + restarted"
+          className="sm:border-l sm:border-border sm:pl-8"
+          value={metrics.confirmed}
+          sub={`${metrics.downloadToInstallPercent}% of downloads`}
+        />
+        <SignalsKpi
+          label="Currently failed"
+          className="xl:border-l xl:border-border xl:pl-8"
+          value={metrics.failed}
+          sub={`${metrics.failureRatePercent}% of attempts`}
+        />
+        <SignalsKpi
+          label="Currently eligible"
+          className="sm:border-l sm:border-border sm:pl-8"
+          value={metrics.eligible}
+          sub={`${metrics.pendingOnline} pending online · ${metrics.pendingOffline} offline`}
+        />
       </div>
 
-      <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row">
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -117,46 +128,62 @@ export function AgentUpdateCoverage({ coverage }: { coverage: Coverage }) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All lifecycle states</SelectItem>
-            {states.map((value) => <SelectItem key={value} value={value}>{value.replaceAll("_", " ")}</SelectItem>)}
+            {states.map((value) => (
+              <SelectItem key={value} value={value}>
+                {value.replaceAll("_", " ")}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[900px] text-left text-sm">
-          <thead className="border-b border-border bg-muted/35 text-xs uppercase tracking-[0.06em] text-muted-foreground">
+          <thead className="border-b border-border/70 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
             <tr>
-              <th className="px-4 py-3 font-medium">Machine</th>
-              <th className="px-4 py-3 font-medium">Developer</th>
-              <th className="px-4 py-3 font-medium">Version</th>
-              <th className="px-4 py-3 font-medium">Stage</th>
-              <th className="px-4 py-3 font-medium">Update activity</th>
-              <th className="px-4 py-3 font-medium">Last seen</th>
-              <th className="px-4 py-3 font-medium">Failure</th>
+              <th className="pb-3 pr-4 pt-1 font-medium">Machine</th>
+              <th className="pb-3 pr-4 pt-1 font-medium">Developer</th>
+              <th className="pb-3 pr-4 pt-1 font-medium">Version</th>
+              <th className="pb-3 pr-4 pt-1 font-medium">Stage</th>
+              <th className="pb-3 pr-4 pt-1 font-medium">Update activity</th>
+              <th className="pb-3 pr-4 pt-1 font-medium">Last seen</th>
+              <th className="pb-3 pr-4 pt-1 font-medium">Failure</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
+          <tbody>
             {rows.map((row) => (
-              <tr key={row.attemptId}>
-                <td className="px-4 py-3">
+              <tr key={row.attemptId} className="transition-colors hover:bg-muted/30">
+                <td className="py-5 pr-4">
                   <p className="font-medium">{row.device.hostname}</p>
-                  <p className="text-xs text-muted-foreground">{row.device.os}/{row.device.architecture}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {row.device.os}/{row.device.architecture}
+                  </p>
                 </td>
-                <td className="px-4 py-3">
+                <td className="py-5 pr-4">
                   <p>{row.device.user.name}</p>
                   <p className="text-xs text-muted-foreground">{row.device.user.email}</p>
                 </td>
-                <td className="px-4 py-3 font-mono text-xs">{row.device.agentVersion} → {row.targetVersion}</td>
-                <td className="px-4 py-3"><Badge variant="outline">{row.state.replaceAll("_", " ")}</Badge></td>
-                <td className="px-4 py-3 text-xs text-muted-foreground">{formatTime(row.lastEventAt)}</td>
-                <td className="px-4 py-3 text-xs text-muted-foreground">{formatTime(row.device.lastSeenAt)}</td>
-                <td className="px-4 py-3 text-xs text-destructive">
+                <td className="py-5 pr-4 font-mono text-xs tabular-nums">
+                  {row.device.agentVersion} → {row.targetVersion}
+                </td>
+                <td className="py-5 pr-4">
+                  <Badge variant="outline" className="rounded-none">
+                    {row.state.replaceAll("_", " ")}
+                  </Badge>
+                </td>
+                <td className="py-5 pr-4 text-xs text-muted-foreground">{formatTime(row.lastEventAt)}</td>
+                <td className="py-5 pr-4 text-xs text-muted-foreground">{formatTime(row.device.lastSeenAt)}</td>
+                <td className="py-5 pr-4 text-xs text-destructive">
                   {row.lastErrorCode ? `${row.lastErrorStage ?? "update"}: ${row.lastErrorCode}` : "—"}
                 </td>
               </tr>
             ))}
             {!rows.length ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">No devices match this filter.</td></tr>
+              <tr>
+                <td colSpan={7} className="py-8 text-center text-muted-foreground">
+                  No devices match this filter.
+                </td>
+              </tr>
             ) : null}
           </tbody>
         </table>

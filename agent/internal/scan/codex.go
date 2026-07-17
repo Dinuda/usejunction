@@ -1,11 +1,11 @@
 package scan
 
 import (
-	"bufio"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/types"
@@ -13,16 +13,30 @@ import (
 
 const calculationVersion = "usage-v2"
 
+const (
+	codexToolName     = "codex"
+	codexWorkToolName = "codex-work"
+	maxToolNameLen    = 64
+	maxFlowTools      = 12
+)
+
 type tokenTuple struct {
 	input, output, cacheRead, reasoning int
 }
 
 type codexSessionState struct {
-	lastModel string
-	prevTotal tokenTuple
+	lastModel  string
+	prevTotal  tokenTuple
+	originator string
+	toolName   string
+	lastDate   string
+	// first-seen tool names for a discreet flow digest (names only).
+	flowOrder []string
+	flowSeen  map[string]bool
 }
 
 // ScanCodex walks session logs using cumulative total_token_usage deltas.
+// Sessions are attributed to "codex" or "codex-work" via session_meta.originator.
 func ScanCodex(codexHome string, refresh bool) ([]types.DailyUsage, error) {
 	cacheFile := filepath.Join(config.CacheDir(), "codex.json")
 	if !refresh {
@@ -50,8 +64,12 @@ func ScanCodex(codexHome string, refresh bool) ([]types.DailyUsage, error) {
 	result := make([]types.DailyUsage, 0, len(buckets))
 	for _, b := range buckets {
 		if b.EstimatedCost == 0 && b.MetricKind != types.MetricKindProductivity {
+			pricingTool := b.ToolName
+			if pricingTool == codexWorkToolName {
+				pricingTool = codexToolName
+			}
 			b.EstimatedCost = EstimateCostForTool(
-				"codex", b.Model, b.InputTokens, b.OutputTokens, b.CacheReadTokens, b.CacheWriteTokens,
+				pricingTool, b.Model, b.InputTokens, b.OutputTokens, b.CacheReadTokens, b.CacheWriteTokens,
 			)
 		}
 		if b.Source == "" {
@@ -76,7 +94,14 @@ func ScanCodex(codexHome string, refresh bool) ([]types.DailyUsage, error) {
 
 func processCodexFile(path string, buckets map[string]*types.DailyUsage) {
 	repository := repositoryForSessionFile(path)
-	state := &codexSessionState{}
+	state := &codexSessionState{
+		toolName: codexToolName,
+		flowSeen: map[string]bool{},
+	}
+	if originator := peekCodexOriginator(path); originator != "" {
+		state.originator = originator
+		state.toolName = codexToolNameFromOriginator(originator)
+	}
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -84,19 +109,31 @@ func processCodexFile(path string, buckets map[string]*types.DailyUsage) {
 	}
 	defer f.Close()
 
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1<<20), 1<<20)
-	for sc.Scan() {
+	_ = forEachJSONLLine(f, defaultJSONLMaxKeep, func(line []byte) error {
 		var row map[string]any
-		if json.Unmarshal(sc.Bytes(), &row) != nil {
-			continue
+		if json.Unmarshal(line, &row) != nil {
+			return nil
+		}
+
+		if originator := codexOriginatorFromRow(row); originator != "" {
+			state.originator = originator
+			state.toolName = codexToolNameFromOriginator(originator)
 		}
 		if model := codexModelFromRow(row); model != "" {
 			state.lastModel = model
 		}
+
+		if name := codexToolCallName(row); name != "" {
+			date := parseCodexTimestamp(row)
+			recordCodexToolCall(buckets, state, name, date, repository)
+			if date != "" {
+				state.lastDate = date
+			}
+		}
+
 		hit := parseCodexCumulativeDelta(row, state)
 		if !hit.ok {
-			continue
+			return nil
 		}
 		if hit.model == "" {
 			hit.model = state.lastModel
@@ -104,17 +141,21 @@ func processCodexFile(path string, buckets map[string]*types.DailyUsage) {
 		if hit.model == "" {
 			hit.model = "unknown"
 		}
+		if hit.date != "" {
+			state.lastDate = hit.date
+		}
 
 		repoKey := ""
 		if repository != nil {
 			repoKey = repository.Host + "/" + repository.Owner + "/" + repository.Name
 		}
-		key := hit.date + "|" + hit.model + "|" + repoKey
+		key := hit.date + "|" + state.toolName + "|" + hit.model + "|" + repoKey
 		if buckets[key] == nil {
 			buckets[key] = &types.DailyUsage{
-				Date: hit.date, ToolName: "codex", Model: hit.model,
+				Date: hit.date, ToolName: state.toolName, Model: hit.model,
 				Repository: repository, Source: "local_scan",
 				MetricKind: types.MetricKindUsage, TokenSemantics: types.TokenSemanticsOpenAI,
+				Metadata: codexSurfaceMetadata(state.originator, "usage"),
 			}
 		}
 		b := buckets[key]
@@ -123,7 +164,145 @@ func processCodexFile(path string, buckets map[string]*types.DailyUsage) {
 		b.CacheReadTokens += hit.cacheRead
 		b.ReasoningTokens += hit.reasoning
 		b.Requests++
+		return nil
+	})
+
+	emitCodexFlowDigest(buckets, state)
+}
+
+func recordCodexToolCall(
+	buckets map[string]*types.DailyUsage,
+	state *codexSessionState,
+	name, date string,
+	repository *types.RepositoryIdentity,
+) {
+	if date == "" {
+		return
 	}
+	if !state.flowSeen[name] && len(state.flowOrder) < maxFlowTools {
+		state.flowSeen[name] = true
+		state.flowOrder = append(state.flowOrder, name)
+	}
+
+	model := "tool:" + name
+	key := date + "|" + state.toolName + "|" + model + "|"
+	if buckets[key] == nil {
+		buckets[key] = &types.DailyUsage{
+			Date: date, ToolName: state.toolName, Model: model,
+			Source: "local_scan", MetricKind: types.MetricKindProductivity,
+			Metadata: codexSurfaceMetadata(state.originator, "tool_inventory"),
+		}
+	}
+	buckets[key].Requests++
+}
+
+func emitCodexFlowDigest(buckets map[string]*types.DailyUsage, state *codexSessionState) {
+	if len(state.flowOrder) == 0 || state.lastDate == "" {
+		return
+	}
+	digest := strings.Join(state.flowOrder, ">")
+	if len(digest) > 200 {
+		digest = digest[:200]
+	}
+	model := "flow:" + digest
+	key := state.lastDate + "|" + state.toolName + "|" + model + "|"
+	if buckets[key] == nil {
+		buckets[key] = &types.DailyUsage{
+			Date: state.lastDate, ToolName: state.toolName, Model: model,
+			Source: "local_scan", MetricKind: types.MetricKindProductivity,
+			Metadata: codexSurfaceMetadata(state.originator, "tool_flow"),
+		}
+	}
+	buckets[key].Requests++
+}
+
+func peekCodexOriginator(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	originator := ""
+	lines := 0
+	_ = forEachJSONLLine(f, defaultJSONLMaxKeep, func(line []byte) error {
+		if lines >= 50 || originator != "" {
+			return errStopJSONL
+		}
+		lines++
+		var row map[string]any
+		if json.Unmarshal(line, &row) != nil {
+			return nil
+		}
+		if o := codexOriginatorFromRow(row); o != "" {
+			originator = o
+			return errStopJSONL
+		}
+		return nil
+	})
+	return originator
+}
+
+func codexSurfaceMetadata(originator, kind string) map[string]any {
+	meta := map[string]any{"kind": kind}
+	if originator != "" {
+		meta["originator"] = originator
+	}
+	return meta
+}
+
+// codexToolNameFromOriginator maps Codex runtime originators to Junction tool names.
+func codexToolNameFromOriginator(originator string) string {
+	o := strings.ToLower(strings.TrimSpace(originator))
+	if o == "codex_work_desktop" || strings.Contains(o, "codex_work") || strings.HasPrefix(o, "codex-work") {
+		return codexWorkToolName
+	}
+	return codexToolName
+}
+
+func codexOriginatorFromRow(row map[string]any) string {
+	typ, _ := row["type"].(string)
+	if typ != "session_meta" {
+		return ""
+	}
+	if payload, ok := row["payload"].(map[string]any); ok {
+		if originator, _ := payload["originator"].(string); originator != "" {
+			return originator
+		}
+	}
+	if originator, _ := row["originator"].(string); originator != "" {
+		return originator
+	}
+	return ""
+}
+
+func codexToolCallName(row map[string]any) string {
+	payload, _ := row["payload"].(map[string]any)
+	if payload == nil {
+		return ""
+	}
+	payloadType, _ := payload["type"].(string)
+	if payloadType != "custom_tool_call" && payloadType != "function_call" {
+		return ""
+	}
+	name, _ := payload["name"].(string)
+	return sanitizeCodexToolName(name)
+}
+
+func sanitizeCodexToolName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > maxToolNameLen {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(name))
+	for _, r := range name {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '.' || r == ':' || r == '-' {
+			b.WriteRune(r)
+		} else {
+			return ""
+		}
+	}
+	return b.String()
 }
 
 func parseCodexCumulativeDelta(row map[string]any, state *codexSessionState) usageHit {

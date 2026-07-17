@@ -6,9 +6,13 @@ import { AiCodingPanel } from "@/components/dashboard/ai-coding-panel";
 import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
 import { MemberPlanUsage } from "@/components/developers/member-plan-usage";
 import { MemberPlansPanel } from "@/components/developers/member-plans-panel";
-import { resolveReportWindow, UTC_TIMEZONE, type MetricWindow } from "@/lib/analytics/contracts/time-window";
-import { resolveBillingCycle, resolveBillingCycleOffset } from "@/lib/billing/cycles";
-import { parseRollingPeriodFromSearch, rollingPeriodLabel, type RollingPeriod } from "@/lib/dashboard/period-prefs";
+import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
+import {
+  cycleViewPeriodLabel,
+  parseCycleView,
+  reportWindowForCycleView,
+} from "@/lib/dashboard/cycle-view";
+import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
 import { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
 import { getDeveloperOverview } from "@/lib/queries/me/overview";
 import { getDeveloperRoster } from "@/lib/read-models/developers";
@@ -27,45 +31,6 @@ function money(value: number) {
 
 function compact(value: number) {
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
-}
-
-type CycleView = "current_cycles" | "previous_cycles" | "last_30_days";
-
-function parseCycleView(value: string | undefined): CycleView {
-  if (value === "previous_cycles" || value === "last_30_days") return value;
-  return "current_cycles";
-}
-
-type CyclePlan = Parameters<typeof resolveBillingCycle>[0];
-
-function reportWindowForMember(
-  view: CycleView,
-  period: RollingPeriod,
-  plans: CyclePlan[],
-  now: Date,
-): MetricWindow {
-  if (view === "last_30_days") {
-    return period.kind === "custom"
-      ? resolveReportWindow({ from: period.from, to: period.to })
-      : resolveReportWindow({ range: period.days, now });
-  }
-
-  const cycles = plans.map((plan) =>
-    view === "previous_cycles"
-      ? resolveBillingCycleOffset(plan, now, -1)
-      : resolveBillingCycle(plan, now),
-  );
-  if (!cycles.length) return resolveReportWindow({ range: 30, now });
-
-  const from = new Date(Math.min(...cycles.map((cycle) => cycle.cycleStart.getTime())));
-  const to = new Date(Math.max(...cycles.map((cycle) => cycle.cycleEnd.getTime())) - 86_400_000);
-  return { from, to, timezone: UTC_TIMEZONE, grain: "day" };
-}
-
-function periodDescription(view: CycleView, period: RollingPeriod) {
-  if (view === "current_cycles") return "current billing cycles";
-  if (view === "previous_cycles") return "previous billing cycles";
-  return rollingPeriodLabel(period).toLowerCase();
 }
 
 function Kpi({
@@ -117,7 +82,7 @@ export default async function TeamMemberPage({
   ]);
   const rosterDeveloper = roster.developers[0];
   if (!rosterDeveloper) notFound();
-  const reportWindow = reportWindowForMember(cycleView, rollingPeriod, rosterDeveloper.manualPlans, now);
+  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, rosterDeveloper.manualPlans, now);
   const [personal, planUsage] = await Promise.all([
     getDeveloperOverview(orgId, developerId, { reportWindow }),
     getPlanUsage(
@@ -140,7 +105,7 @@ export default async function TeamMemberPage({
   const tokens = Number(BigInt(personal.usage30d.inputTokens) + BigInt(personal.usage30d.outputTokens));
   const spend = Number(BigInt(personal.usage30d.costMicros)) / 1_000_000;
   const online = personal.developer.devices.filter((device) => device.status === "online").length;
-  const selectedPeriodLabel = periodDescription(cycleView, rollingPeriod);
+  const selectedPeriodLabel = cycleViewPeriodLabel(cycleView, rollingPeriod);
 
   return (
     <>
@@ -198,14 +163,14 @@ export default async function TeamMemberPage({
 
       <div className="mt-10 grid gap-10 lg:grid-cols-2">
         <section>
-          <div className="mb-4 border-b pb-3">
+          <div className="mb-6">
             <h2 className="text-lg font-semibold tracking-tight">Machines.</h2>
             <p className="mt-1 text-xs text-muted-foreground">Reporting into this workspace.</p>
           </div>
           {personal.developer.devices.length ? (
-            <ul className="divide-y">
+            <ul>
               {personal.developer.devices.map((device) => (
-                <li key={device.id} className="flex items-center justify-between gap-3 py-4">
+                <li key={device.id} className="flex items-center justify-between gap-3 py-5">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{device.hostname}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
@@ -219,19 +184,19 @@ export default async function TeamMemberPage({
               ))}
             </ul>
           ) : (
-            <p className="py-4 text-sm text-muted-foreground">No machines enrolled yet.</p>
+            <p className="py-6 text-sm text-muted-foreground">No machines enrolled yet.</p>
           )}
         </section>
 
         <section>
-          <div className="mb-4 border-b pb-3">
+          <div className="mb-6">
             <h2 className="text-lg font-semibold tracking-tight">By tool.</h2>
             <p className="mt-1 text-xs text-muted-foreground">Detected on their machines · {selectedPeriodLabel}.</p>
           </div>
           {personal.toolsUsage30d.length ? (
-            <ul className="divide-y">
+            <ul>
               {personal.toolsUsage30d.map((tool) => (
-                <li key={tool.toolName} className="flex items-center justify-between gap-3 py-4">
+                <li key={tool.toolName} className="flex items-center justify-between gap-3 py-5">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{tool.toolName}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
@@ -244,7 +209,7 @@ export default async function TeamMemberPage({
               ))}
             </ul>
           ) : (
-            <p className="py-4 text-sm text-muted-foreground">No tools detected yet.</p>
+            <p className="py-6 text-sm text-muted-foreground">No tools detected yet.</p>
           )}
         </section>
       </div>

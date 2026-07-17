@@ -58,6 +58,7 @@ export function SignalsKpi({
   sub,
   hero,
   accent,
+  action,
   className,
 }: {
   label: string;
@@ -65,12 +66,27 @@ export function SignalsKpi({
   sub?: ReactNode;
   hero?: boolean;
   accent?: boolean;
+  action?: ReactNode;
   className?: string;
 }) {
   return (
-    <div className={cn(className)}>
-      <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
-      <div className={cn("mt-2 font-semibold tracking-tight tabular-nums", hero ? "text-4xl" : "text-3xl", accent && "text-primary")}>
+    <div className={cn("relative", className)}>
+      {action ? <div className="absolute right-3 top-0 z-10 sm:right-4">{action}</div> : null}
+      <p
+        className={cn(
+          "text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground",
+          action && "pr-12",
+        )}
+      >
+        {label}
+      </p>
+      <div
+        className={cn(
+          "mt-2 font-semibold tracking-tight tabular-nums",
+          hero ? "text-4xl" : "text-3xl",
+          accent && "text-primary",
+        )}
+      >
         {value}
       </div>
       {sub ? <div className="mt-1 text-xs text-muted-foreground">{sub}</div> : null}
@@ -82,7 +98,7 @@ export function SignalsSectionHeader({
   title,
   description,
   action,
-  bordered = true,
+  bordered = false,
 }: {
   title: string;
   description?: string;
@@ -90,10 +106,10 @@ export function SignalsSectionHeader({
   bordered?: boolean;
 }) {
   return (
-    <div className={cn("mb-4 flex items-end justify-between gap-3", bordered && "border-b pb-3")}>
+    <div className={cn("mb-6 flex items-end justify-between gap-3", bordered && "border-b pb-4")}>
       <div>
         <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-        {description ? <p className="mt-1 text-xs text-muted-foreground">{description}</p> : null}
+        {description ? <p className="mt-1.5 text-xs text-muted-foreground">{description}</p> : null}
       </div>
       {action}
     </div>

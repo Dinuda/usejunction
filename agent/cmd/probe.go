@@ -47,6 +47,6 @@ var probeCmd = &cobra.Command{
 }
 
 func init() {
-	probeCmd.Flags().StringVar(&probeTool, "tool", "", "Probe a specific tool (codex|claude)")
+	probeCmd.Flags().StringVar(&probeTool, "tool", "", "Probe a specific tool (codex|claude|cursor|copilot|opencode)")
 	rootCmd.AddCommand(probeCmd)
 }

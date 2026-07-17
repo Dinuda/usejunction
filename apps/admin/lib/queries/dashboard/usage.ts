@@ -1,3 +1,4 @@
+import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
 import { usageWindowDays } from "@/lib/metrics/date-range";
 import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
@@ -67,8 +68,12 @@ const usageMeasures = [
   "costMicros",
 ] as const;
 
-export async function getDashboardUsage(orgId: string, days = 30): Promise<DashboardUsageData> {
-  const window = usageWindowDays(Math.min(days, 90));
+export async function getDashboardUsage(
+  orgId: string,
+  daysOrWindow: number | MetricWindow = 30,
+): Promise<DashboardUsageData> {
+  const window =
+    typeof daysOrWindow === "number" ? usageWindowDays(Math.min(daysOrWindow, 90)) : daysOrWindow;
   const [summary, costs, models, tools, trend] = await Promise.all([
     readUsageMetrics({ orgId, window, measures: [...usageMeasures], limit: 1 }),
     readUsageMetrics({ orgId, window, measures: ["costMicros"], dimensions: ["source", "costKind"] }),

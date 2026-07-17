@@ -79,6 +79,7 @@ type DailyUsage struct {
 	TokenSemantics      TokenSemantics      `json:"tokenSemantics,omitempty"`
 	CalculationVersion  string              `json:"calculationVersion,omitempty"`
 	Repository          *RepositoryIdentity `json:"repository,omitempty"`
+	Metadata            map[string]any      `json:"metadata,omitempty"`
 }
 
 // RepositoryIdentity is the canonical remote identity of a repository. Local

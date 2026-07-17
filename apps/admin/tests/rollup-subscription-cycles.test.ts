@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { rollupSubscriptionCyclesByTool } from "../lib/insights/queries/rollup-subscription-cycles";
+import { filterActiveSubscriptionCycles, rollupSubscriptionCyclesByTool } from "../lib/insights/queries/rollup-subscription-cycles";
 
 const cycle = (nextRenewalDate: string, elapsedPercent = 0.5) => ({
   cycleStart: "2026-06-16",
@@ -125,4 +125,71 @@ test("rollup merges multiple plans under the same tool", () => {
   assert.equal(rows[0]?.modelCalls, 300);
   assert.equal(rows[0]?.billingCycle.nextRenewalDate, "2026-08-01");
   assert.equal(rows[0]?.spendSharePercent, 100);
+});
+
+test("active cycle filter hides unused seats with no quota signal", () => {
+  const filtered = filterActiveSubscriptionCycles([
+    {
+      id: "cursor",
+      toolName: "cursor",
+      toolKey: "cursor",
+      planNames: ["Pro+"],
+      planCount: 1,
+      cycleSpend: 60,
+      verifiedUsageCost: 0,
+      estimatedApiCost: 0,
+      modelCalls: 117,
+      windowFrom: "2026-07-16",
+      windowTo: "2026-08-15",
+      spendSharePercent: 60,
+      utilizationPercent: 1,
+      utilizationDisplayPercent: 1,
+      verdictCode: "LIGHT_USE",
+      billingCycle: cycle("2026-08-16"),
+    },
+    {
+      id: "claude",
+      toolName: "claude",
+      toolKey: "claude",
+      planNames: ["Pro"],
+      planCount: 1,
+      cycleSpend: 20,
+      verifiedUsageCost: 0,
+      estimatedApiCost: 0,
+      modelCalls: 0,
+      windowFrom: "2026-07-16",
+      windowTo: "2026-08-15",
+      spendSharePercent: 20,
+      utilizationPercent: null,
+      utilizationDisplayPercent: null,
+      verdictCode: "UNKNOWN",
+      billingCycle: cycle("2026-08-17"),
+    },
+    {
+      id: "copilot",
+      toolName: "copilot",
+      toolKey: "github-copilot",
+      planNames: ["Free"],
+      planCount: 1,
+      cycleSpend: 0,
+      verifiedUsageCost: 0,
+      estimatedApiCost: 0,
+      modelCalls: 0,
+      windowFrom: "2026-07-16",
+      windowTo: "2026-08-15",
+      spendSharePercent: 0,
+      utilizationPercent: 0,
+      utilizationDisplayPercent: 0,
+      verdictCode: "LIGHT_USE",
+      billingCycle: cycle("2026-08-17"),
+    },
+  ]);
+
+  assert.equal(filtered.length, 2);
+  assert.deepEqual(
+    filtered.map((row) => row.toolKey),
+    ["cursor", "github-copilot"],
+  );
+  assert.equal(Math.round(filtered[0]!.spendSharePercent), 100);
+  assert.equal(filtered[1]!.spendSharePercent, 0);
 });

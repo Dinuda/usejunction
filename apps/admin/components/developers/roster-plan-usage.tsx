@@ -42,7 +42,7 @@ function barTone(ratio: number | null, code: PlanVerdictCode) {
   if (code === "LIMIT_EXCEEDED") return "bg-destructive";
   if (code === "NEAR_LIMIT") return "bg-brand-yellow-dark";
   if (code === "LIGHT_USE") return "bg-muted-foreground/35";
-  return "bg-primary";
+  return "bg-primary/80";
 }
 
 const VERDICT_RANK: Record<PlanVerdictCode, number> = {

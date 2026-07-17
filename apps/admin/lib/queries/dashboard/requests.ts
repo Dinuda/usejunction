@@ -30,6 +30,8 @@ export interface DashboardRequestsOptions {
   cursor?: string;
   toolName?: string;
   status?: string;
+  from?: Date;
+  to?: Date;
 }
 
 export async function getDashboardRequests(
@@ -37,12 +39,20 @@ export async function getDashboardRequests(
   options: DashboardRequestsOptions = {}
 ): Promise<DashboardRequestsData> {
   const limit = Math.min(options.limit ?? 50, 200);
-  const { cursor, toolName, status } = options;
+  const { cursor, toolName, status, from, to } = options;
 
   const where = {
     orgId,
     ...(toolName ? { toolName } : {}),
     ...(status ? { status } : {}),
+    ...(from || to
+      ? {
+          createdAt: {
+            ...(from ? { gte: from } : {}),
+            ...(to ? { lte: to } : {}),
+          },
+        }
+      : {}),
   };
 
   const requests = await prisma.requestMetadata.findMany({

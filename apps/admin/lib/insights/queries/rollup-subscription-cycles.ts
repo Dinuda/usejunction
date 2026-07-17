@@ -91,6 +91,25 @@ export function enrichSubscriptionCyclesWithUtilization(
   }));
 }
 
+/**
+ * Dashboard "Current cycles" should only show tools with real pressure or traffic.
+ * Detected-but-unused seats with no quota window stay off the board.
+ */
+export function isActiveSubscriptionCycle(row: Pick<ToolSubscriptionCycleRow, "modelCalls" | "utilizationPercent">) {
+  return row.modelCalls > 0 || row.utilizationPercent != null;
+}
+
+export function filterActiveSubscriptionCycles(
+  cycles: ToolSubscriptionCycleRow[],
+): ToolSubscriptionCycleRow[] {
+  const visible = cycles.filter(isActiveSubscriptionCycle);
+  const totalSpend = visible.reduce((sum, row) => sum + row.cycleSpend, 0);
+  return visible.map((row) => ({
+    ...row,
+    spendSharePercent: totalSpend > 0 ? (row.cycleSpend / totalSpend) * 100 : 0,
+  }));
+}
+
 /** Collapse plan/cycle slices into one overview row per tool. */
 export function rollupSubscriptionCyclesByTool(slices: SubscriptionCycleSliceRow[]): ToolSubscriptionCycleRow[] {
   type Acc = {

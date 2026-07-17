@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/usejunction/agent/internal/probe"
 	"github.com/usejunction/agent/internal/scan"
 	"github.com/usejunction/agent/internal/types"
 )
@@ -45,11 +46,16 @@ func (p *CopilotProvider) Detect(ctx context.Context) (*types.ToolStatus, error)
 }
 
 func (p *CopilotProvider) AccountIdentity(ctx context.Context) (*types.ToolAccount, error) {
-	return &types.ToolAccount{ToolName: p.ID(), LoginMethod: "github", AuthPresent: false}, nil
+	account, err := probe.CopilotAccountIdentity(ctx)
+	if err != nil || account == nil {
+		return &types.ToolAccount{ToolName: p.ID(), LoginMethod: "github", AuthPresent: false}, nil
+	}
+	return account, nil
 }
 
 func (p *CopilotProvider) ProbeQuota(ctx context.Context) ([]types.QuotaSnapshot, error) {
-	return nil, nil
+	quotas, _, err := probe.ProbeCopilotQuota(ctx)
+	return quotas, err
 }
 
 func (p *CopilotProvider) ScanLocalUsage(ctx context.Context, refresh bool) ([]types.DailyUsage, error) {

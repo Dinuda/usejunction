@@ -1,6 +1,5 @@
 export { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
 export {
-  ACTIVE_PEOPLE_WINDOW_DAYS,
   getOrgOverview,
   overviewInputFromBounds,
   overviewInputFromRange,

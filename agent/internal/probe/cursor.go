@@ -19,9 +19,9 @@ import (
 )
 
 type cursorUsageSummary struct {
-	BillingCycleEnd  string                 `json:"billingCycleEnd"`
-	MembershipType   string                 `json:"membershipType"`
-	IndividualUsage  *cursorIndividualUsage `json:"individualUsage"`
+	BillingCycleEnd string                 `json:"billingCycleEnd"`
+	MembershipType  string                 `json:"membershipType"`
+	IndividualUsage *cursorIndividualUsage `json:"individualUsage"`
 }
 
 type cursorStripeProfile struct {
@@ -42,6 +42,12 @@ type cursorPlanUsage struct {
 	ApiPercentUsed   float64 `json:"apiPercentUsed"`
 	Used             int     `json:"used"`
 	Limit            int     `json:"limit"`
+	Remaining        int     `json:"remaining"`
+	Breakdown        *struct {
+		Included int `json:"included"`
+		Bonus    int `json:"bonus"`
+		Total    int `json:"total"`
+	} `json:"breakdown"`
 }
 
 type cursorOnDemandUsage struct {
@@ -51,10 +57,10 @@ type cursorOnDemandUsage struct {
 }
 
 type cursorUserInfo struct {
-	Email            string `json:"email"`
-	Name             string `json:"name"`
-	MembershipType   string `json:"membershipType"`
-	Sub              string `json:"sub"`
+	Email          string `json:"email"`
+	Name           string `json:"name"`
+	MembershipType string `json:"membershipType"`
+	Sub            string `json:"sub"`
 }
 
 func cursorStateDBPath() string {
@@ -308,9 +314,92 @@ func ProbeCursorQuota(ctx context.Context) ([]types.QuotaSnapshot, *types.ToolAc
 		account.Plan = resolveCursorPlan(ctx, cookie, &summary)
 	}
 
+	snapshots := cursorUsageSummarySnapshots(summary, "local_app")
+	if grants := fetchCursorActiveGrants(ctx, token); len(grants) > 0 {
+		snapshots = append(snapshots, grants...)
+	}
+
+	return snapshots, account, nil
+}
+
+type cursorActiveGrant struct {
+	GrantID          string   `json:"grantId"`
+	TotalCents       int64    `json:"totalCents"`
+	RemainingCents   int64    `json:"remainingCents"`
+	ExpiresAtMs      int64    `json:"expiresAtMs"`
+	AllowedModelIDs  []string `json:"allowedModelIds"`
+	AllowedModelTags []string `json:"allowedModelTags"`
+	GrantType        string   `json:"grantType"`
+	Source           string   `json:"source"`
+	CampaignName     string   `json:"campaignName"`
+	ShowInClient     bool     `json:"showInClient"`
+}
+
+type cursorGrantsResponse struct {
+	ActiveGrants []cursorActiveGrant `json:"activeGrants"`
+}
+
+func fetchCursorActiveGrants(ctx context.Context, accessToken string) []types.QuotaSnapshot {
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		"https://api2.cursor.sh/aiserver.v1.DashboardService/GetUsageLimitStatusAndActiveGrants",
+		strings.NewReader("{}"),
+	)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Connect-Protocol-Version", "1")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil || resp == nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return nil
+	}
+	var out cursorGrantsResponse
+	if json.Unmarshal(body, &out) != nil || len(out.ActiveGrants) == 0 {
+		return nil
+	}
+	return cursorActiveGrantSnapshots(out.ActiveGrants, time.Now())
+}
+
+func cursorActiveGrantSnapshots(grants []cursorActiveGrant, now time.Time) []types.QuotaSnapshot {
+	var snapshots []types.QuotaSnapshot
+	nowMs := now.UnixMilli()
+	for _, grant := range grants {
+		if grant.ExpiresAtMs > 0 && grant.ExpiresAtMs <= nowMs {
+			continue
+		}
+		windowType := "credit_grant"
+		if strings.EqualFold(grant.Source, "promo_campaign") || grant.ShowInClient {
+			windowType = "promo_grant"
+		}
+		var resetAt *string
+		if grant.ExpiresAtMs > 0 {
+			resetAt = strPtr(time.UnixMilli(grant.ExpiresAtMs).UTC().Format(time.RFC3339))
+		}
+		snapshots = append(snapshots, types.QuotaSnapshot{
+			ToolName:         "cursor",
+			WindowType:       windowType,
+			CreditsRemaining: floatPtr(float64(grant.RemainingCents) / 100),
+			ResetAt:          resetAt,
+			Source:           "local_app",
+		})
+	}
+	return snapshots
+}
+
+func cursorUsageSummarySnapshots(summary cursorUsageSummary, source string) []types.QuotaSnapshot {
 	var snapshots []types.QuotaSnapshot
 	resetAt := strPtr(parseUnixOrRFC3339(summary.BillingCycleEnd).UTC().Format(time.RFC3339))
-
 	if summary.IndividualUsage != nil && summary.IndividualUsage.Plan != nil {
 		plan := summary.IndividualUsage.Plan
 		if plan.TotalPercentUsed > 0 || plan.Limit > 0 {
@@ -320,19 +409,26 @@ func ProbeCursorQuota(ctx context.Context) ([]types.QuotaSnapshot, *types.ToolAc
 			}
 			snapshots = append(snapshots, types.QuotaSnapshot{
 				ToolName: "cursor", WindowType: "plan",
-				UsedPercent: floatPtr(used), ResetAt: resetAt, Source: "local_app",
+				UsedPercent: floatPtr(used), ResetAt: resetAt, Source: source,
+			})
+		}
+		if plan.Breakdown != nil && plan.Breakdown.Bonus > 0 {
+			snapshots = append(snapshots, types.QuotaSnapshot{
+				ToolName: "cursor", WindowType: "bonus",
+				CreditsRemaining: floatPtr(float64(plan.Breakdown.Bonus)),
+				ResetAt:          resetAt, Source: source,
 			})
 		}
 		if plan.AutoPercentUsed > 0 {
 			snapshots = append(snapshots, types.QuotaSnapshot{
 				ToolName: "cursor", WindowType: "auto",
-				UsedPercent: floatPtr(plan.AutoPercentUsed), ResetAt: resetAt, Source: "local_app",
+				UsedPercent: floatPtr(plan.AutoPercentUsed), ResetAt: resetAt, Source: source,
 			})
 		}
 		if plan.ApiPercentUsed > 0 {
 			snapshots = append(snapshots, types.QuotaSnapshot{
 				ToolName: "cursor", WindowType: "api",
-				UsedPercent: floatPtr(plan.ApiPercentUsed), ResetAt: resetAt, Source: "local_app",
+				UsedPercent: floatPtr(plan.ApiPercentUsed), ResetAt: resetAt, Source: source,
 			})
 		}
 	}
@@ -346,12 +442,11 @@ func ProbeCursorQuota(ctx context.Context) ([]types.QuotaSnapshot, *types.ToolAc
 			snapshots = append(snapshots, types.QuotaSnapshot{
 				ToolName: "cursor", WindowType: "on_demand",
 				UsedPercent: floatPtr(float64(od.Used) / 100), ResetAt: resetAt,
-				CreditsRemaining: floatPtr(remaining), Source: "local_app",
+				CreditsRemaining: floatPtr(remaining), Source: source,
 			})
 		}
 	}
-
-	return snapshots, account, nil
+	return snapshots
 }
 
 // ScanCursorUsage is deprecated in favor of local + events merge in the provider.
@@ -387,10 +482,10 @@ func ScanCursorUsage(ctx context.Context) ([]types.DailyUsage, error) {
 type cursorUsageEventsResponse struct {
 	TotalUsageEventsCount int `json:"totalUsageEventsCount"`
 	UsageEventsDisplay    []struct {
-		Timestamp        string `json:"timestamp"`
-		Model            string `json:"model"`
-		Kind             string `json:"kind"`
-		IsTokenBasedCall bool   `json:"isTokenBasedCall"`
+		Timestamp        string   `json:"timestamp"`
+		Model            string   `json:"model"`
+		Kind             string   `json:"kind"`
+		IsTokenBasedCall bool     `json:"isTokenBasedCall"`
 		ChargedCents     *float64 `json:"chargedCents"`
 		TokenUsage       *struct {
 			InputTokens      int     `json:"inputTokens"`

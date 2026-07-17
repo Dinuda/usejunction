@@ -4,7 +4,6 @@
 package scan
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -131,12 +130,10 @@ func processFile(
 	defer f.Close()
 
 	lastModel := ""
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1<<20), 1<<20)
-	for sc.Scan() {
+	_ = forEachJSONLLine(f, defaultJSONLMaxKeep, func(line []byte) error {
 		var row map[string]any
-		if json.Unmarshal(sc.Bytes(), &row) != nil {
-			continue
+		if json.Unmarshal(line, &row) != nil {
+			return nil
 		}
 
 		if tool == "codex" {
@@ -147,7 +144,7 @@ func processFile(
 
 		hit := parser(row)
 		if !hit.ok {
-			continue
+			return nil
 		}
 		if hit.model == "" {
 			hit.model = lastModel
@@ -165,7 +162,7 @@ func processFile(
 			strconv.Itoa(hit.input) + "|" + strconv.Itoa(hit.output) + "|" + strconv.Itoa(hit.cacheRead)
 		if dedupeKey != "|||" {
 			if seen[dedupeKey] {
-				continue
+				return nil
 			}
 			seen[dedupeKey] = true
 		}
@@ -188,7 +185,8 @@ func processFile(
 		b.CacheWriteTokens += hit.cacheWrite
 		b.ReasoningTokens += hit.reasoning
 		b.Requests++
-	}
+		return nil
+	})
 }
 
 func codexModelFromRow(row map[string]any) string {
@@ -278,28 +276,34 @@ func repositoryForSessionFile(path string) *types.RepositoryIdentity {
 		return nil
 	}
 	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for lines := 0; lines < 200 && scanner.Scan(); lines++ {
+	var found *types.RepositoryIdentity
+	lines := 0
+	_ = forEachJSONLLine(f, defaultJSONLMaxKeep, func(line []byte) error {
+		if lines >= 200 || found != nil {
+			return errStopJSONL
+		}
+		lines++
 		var row map[string]any
-		if json.Unmarshal(scanner.Bytes(), &row) != nil {
-			continue
+		if json.Unmarshal(line, &row) != nil {
+			return nil
 		}
 		cwd := stringField(row, "cwd")
 		if payload, ok := row["payload"].(map[string]any); ok && cwd == "" {
 			cwd = stringField(payload, "cwd")
 		}
 		if cwd == "" || isPrivacyProtectedPath(cwd) {
-			continue
+			return nil
 		}
 		command := exec.Command("git", "-C", cwd, "config", "--get", "remote.origin.url")
 		remote, err := command.Output()
 		if err != nil {
-			return nil
+			found = nil
+			return errStopJSONL
 		}
-		return normalizeRemote(strings.TrimSpace(string(remote)))
-	}
-	return nil
+		found = normalizeRemote(strings.TrimSpace(string(remote)))
+		return errStopJSONL
+	})
+	return found
 }
 
 func isPrivacyProtectedPath(path string) bool {

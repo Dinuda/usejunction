@@ -10,10 +10,10 @@ import (
 	"github.com/usejunction/agent/internal/types"
 )
 
-// ClineProvider handles Cline, Roo, and OpenCode — all VS Code extension-based
-// tools detected by their globalStorage directory name.
+// ClineProvider handles Cline and Roo — VS Code extension-based tools
+// detected by their globalStorage directory name. OpenCode has its own provider.
 type ClineProvider struct {
-	// Tool is one of "cline", "roo", or "opencode".
+	// Tool is one of "cline" or "roo".
 	Tool string
 }
 
@@ -67,8 +67,6 @@ func (p *ClineProvider) matchesExtension(dirName string) bool {
 		return strings.Contains(dirName, "cline")
 	case "roo":
 		return strings.Contains(dirName, "roo") || strings.Contains(dirName, "rooveterinary")
-	case "opencode":
-		return strings.Contains(dirName, "opencode")
 	default:
 		return strings.Contains(dirName, p.Tool)
 	}

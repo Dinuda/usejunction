@@ -1,23 +1,33 @@
 import { SubscriptionInventory } from "@/components/tools/subscription-inventory";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
+import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
+import {
+  cycleViewShortSuffix,
+  parseCycleView,
+  reportWindowForCycleView,
+} from "@/lib/dashboard/cycle-view";
+import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
 import { getDashboardTools } from "@/lib/queries/dashboard/tools";
 import { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
 import { getMeOverview } from "@/lib/queries/me/overview";
+import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
 
 function ToolsHeader({ personal = false }: { personal?: boolean }) {
   return (
-    <div className="mb-10">
-      <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">
-        {personal ? "Your tools, in one place." : "Tools, seats, spend."}
-      </h1>
-      <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-        {personal
-          ? "Tools detected on your connected computers, with live quota windows when available."
-          : "Manage team subscriptions and compare purchased seats with detected activity and quotas."}
-      </p>
-    </div>
+    <header className="mb-10 space-y-5">
+      <div className="min-w-0">
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">
+          {personal ? "Your tools, in one place." : "Tools, seats, spend."}
+        </h1>
+        <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
+          {personal
+            ? "Tools detected on your connected computers, with live quota windows when available."
+            : "Manage team subscriptions and compare purchased seats with detected activity and quotas."}
+        </p>
+      </div>
+    </header>
   );
 }
 
@@ -58,7 +68,7 @@ function PersonalTools({
     <>
       <ToolsHeader personal />
       {sync.hasLocalEndpoint ? (
-        <div className="mb-8">
+        <div className="mb-10">
           <LocalSyncPanel
             lastSeenAt={sync.lastSeenAt}
             lastUsageSyncAt={sync.lastUsageSyncAt}
@@ -67,26 +77,27 @@ function PersonalTools({
           />
         </div>
       ) : null}
-      <div className="grid gap-8 sm:grid-cols-2">
-        <div className="border-l-2 border-primary/40 pl-4">
-          <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">Detected tools</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{rows.length}</p>
-          <p className="mt-2 text-xs text-muted-foreground">From your connected machines</p>
-        </div>
-        <div className="border-l-2 border-brand-yellow-dark bg-brand-yellow-pale py-3 pr-4 pl-4">
-          <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">Assigned plans</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{data.developer.assignedPlans.length}</p>
-          <p className="mt-2 text-xs text-muted-foreground">Available to you</p>
-        </div>
+      <div className="mb-10 grid gap-y-8 sm:grid-cols-2">
+        <SignalsKpi
+          label="Detected tools"
+          hero
+          className="pl-5"
+          value={rows.length}
+          sub="From your connected machines"
+        />
+        <SignalsKpi
+          label="Assigned plans"
+          className="sm:border-l sm:border-border sm:pl-8"
+          value={data.developer.assignedPlans.length}
+          sub="Available to you"
+        />
       </div>
-      <section className="mt-10">
-        <div className="mb-4 pb-3">
-          <h2 className="text-lg font-semibold tracking-tight">Your tools.</h2>
-        </div>
-        <div className="divide-y">
-          {rows.length ? (
-            rows.map((tool) => (
-              <div key={tool.toolName} className="py-4">
+      <section className="border bg-card p-5">
+        <SignalsSectionHeader title="Your tools." bordered={false} />
+        {rows.length ? (
+          <ul>
+            {rows.map((tool) => (
+              <li key={tool.toolName} className="py-5 transition-colors hover:bg-muted/30">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
                     <ToolLogoTile tool={tool.toolName} size="sm" />
@@ -98,12 +109,12 @@ function PersonalTools({
                     </div>
                   </div>
                 </div>
-                {tool.quotas.length > 0 && (
+                {tool.quotas.length > 0 ? (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {tool.quotas.map((quota) => (
                       <span
                         key={`${quota.toolName}-${quota.windowType}`}
-                        className="border bg-muted/40 px-2 py-1 font-mono text-[0.65rem] text-muted-foreground"
+                        className="font-mono text-[0.65rem] text-muted-foreground"
                       >
                         {quota.toolName} {quota.windowType}
                         {quota.usedPercent != null ? ` ${quota.usedPercent.toFixed(0)}%` : ""}
@@ -111,40 +122,62 @@ function PersonalTools({
                       </span>
                     ))}
                   </div>
-                )}
-              </div>
-            ))
-          ) : (
-            <p className="py-4 text-sm text-muted-foreground">Connect a computer to detect your tools.</p>
-          )}
-        </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="py-6 text-sm text-muted-foreground">Connect a computer to detect your tools.</p>
+        )}
       </section>
     </>
   );
 }
 
-export default async function ToolsPage() {
+export default async function ToolsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string; days?: string; from?: string; to?: string }>;
+}) {
   const { orgId, role, userId } = await requireWorkspaceRole(["owner", "admin", "developer"]);
   const syncContext = await getLocalSyncContext(orgId, userId);
   if (role === "developer") {
     const personal = await getMeOverview(orgId, userId, role);
     if (!syncContext) {
-      return <PersonalTools data={personal} sync={{
-        lastSeenAt: personal.sync.lastSeenAt,
-        lastUsageSyncAt: personal.sync.lastUsageSyncAt,
-        lastAccountSyncAt: personal.sync.lastAccountSyncAt,
-        stale: personal.sync.stale,
-        hasLocalEndpoint: personal.sync.hasLocalEndpoint,
-        needsPlanSync: personal.sync.needsPlanSync,
-      }} />;
+      return (
+        <PersonalTools
+          data={personal}
+          sync={{
+            lastSeenAt: personal.sync.lastSeenAt,
+            lastUsageSyncAt: personal.sync.lastUsageSyncAt,
+            lastAccountSyncAt: personal.sync.lastAccountSyncAt,
+            stale: personal.sync.stale,
+            hasLocalEndpoint: personal.sync.hasLocalEndpoint,
+            needsPlanSync: personal.sync.needsPlanSync,
+          }}
+        />
+      );
     }
     return <PersonalTools data={personal} sync={syncContext} />;
   }
+
+  const params = await searchParams;
+  const cycleView = parseCycleView(params.view);
+  const rollingPeriod = parseRollingPeriodFromSearch({
+    days: params.days,
+    from: params.from,
+    to: params.to,
+  });
+  const now = new Date();
+  const subscriptions = await listSubscriptions(orgId);
+  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
+  const periodSuffix = cycleViewShortSuffix(cycleView, rollingPeriod);
+
   let data: Awaited<ReturnType<typeof getDashboardTools>> | null = null;
   let err: string | null = null;
 
   try {
-    data = await getDashboardTools(orgId);
+    data = await getDashboardTools(orgId, reportWindow);
   } catch (e) {
     err = e instanceof Error ? e.message : "Failed to load tools";
   }
@@ -155,26 +188,28 @@ export default async function ToolsPage() {
 
   return (
     <>
-      <ToolsHeader />
+      {err ? (
+        <div className="mb-6 bg-destructive/10 px-4 py-3 text-sm text-destructive">{err}</div>
+      ) : null}
 
-      {syncContext?.hasLocalEndpoint ? (
-        <div className="mb-8">
+      <SubscriptionInventory
+        detected={data}
+        defaultTab={defaultTab}
+        hasLocalSync={Boolean(syncContext?.hasLocalEndpoint)}
+        cycleView={cycleView}
+        period={rollingPeriod}
+        periodSuffix={periodSuffix}
+        periodBasePath="/tools"
+      >
+        {syncContext?.hasLocalEndpoint ? (
           <LocalSyncPanel
             lastSeenAt={syncContext.lastSeenAt}
             lastUsageSyncAt={syncContext.lastUsageSyncAt}
             lastAccountSyncAt={syncContext.lastAccountSyncAt}
             stale={syncContext.stale}
           />
-        </div>
-      ) : null}
-
-      {err && (
-        <div className="mb-6 bg-red-500/5 px-4 py-3 text-sm text-red-700">
-          {err}
-        </div>
-      )}
-
-      <SubscriptionInventory detected={data} defaultTab={defaultTab} hasLocalSync={Boolean(syncContext?.hasLocalEndpoint)} />
+        ) : null}
+      </SubscriptionInventory>
     </>
   );
 }

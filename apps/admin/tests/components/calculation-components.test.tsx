@@ -186,16 +186,19 @@ describe("calculation-bearing components", () => {
           toolName: "cursor",
           aliases: [],
           sourceUrl: "https://example.com",
-          kpis: { devices: 0, people: 1, seatsFree: 1, seatsPurchased: 2, seatsAssigned: 1, usageCost7d: 6, requests7d: 10, tokens7d: 1_500_000 },
+          kpis: { devices: 0, people: 1, seatsFree: 1, seatsPurchased: 2, seatsAssigned: 1, usageCost: 6, requests: 10, tokens: 1_500_000 },
           people: [],
           quotas: [],
           plans: [],
+          toolsUsed: [],
+          toolSequences: [],
         }}
       />,
     );
 
-    expect(screen.getByText("Usage cost (7d)")).toBeInTheDocument();
+    expect(screen.getByText("Usage cost (current)")).toBeInTheDocument();
     expect(screen.getByText("$6.00")).toBeInTheDocument();
     expect(screen.getByText(/10 requests · verified \+ estimated/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Adjust period" })).toBeInTheDocument();
   });
 });

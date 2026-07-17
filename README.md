@@ -121,6 +121,24 @@ cd agent && go build -o usejunction .
 ./usejunction report
 ```
 
+### Hot-reload the local agent (development)
+
+After the agent is enrolled once, rebuild and reinstall into `~/.usejunction` whenever `agent/` changes:
+
+```bash
+# one-shot rebuild + swap + daemon restart
+pnpm agent:reinstall
+# or: ./scripts/dev-agent-reinstall.sh
+
+# watch agent sources and reinstall on change
+pnpm dev:agent
+# or: ./scripts/dev-agent-watch.sh
+```
+
+Requires an existing `~/.usejunction/config.json` (from `./install.sh --token …`). This path stamps a `0.0.0-dev.<sha>.<unix>` version, swaps the local binary/app bundle, and restarts launchd/systemd. It does **not** publish a control-plane release or enroll a new device.
+
+For faster change detection, install `fswatch` (`brew install fswatch`). Without it, the watcher polls every ~750ms.
+
 ## Architecture
 
 ```

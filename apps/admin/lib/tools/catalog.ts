@@ -49,6 +49,23 @@ export const TOOL_CATALOG: readonly CatalogTool[] = [
     ],
   },
   {
+    key: "codex-work",
+    name: "Codex Work",
+    shortName: "Codex Work",
+    provider: "openai",
+    product: "codex_work",
+    toolName: "codex-work",
+    aliases: ["codex-work", "codex_work"],
+    sourceUrl: "https://help.openai.com/en/articles/20001275-chatgpt-work-and-codex",
+    lastVerifiedAt: verified,
+    plans: [
+      { key: "plus", name: "Plus", tier: "Plus", description: "Shared with ChatGPT / Codex quota", prices: { monthly: usd(20) }, includedCycleMicros: zero },
+      { key: "pro", name: "Pro", tier: "Pro", description: "Shared with ChatGPT / Codex quota", prices: { monthly: usd(200) }, includedCycleMicros: zero },
+      { key: "business", name: "Business", tier: "Business", description: "Shared with ChatGPT / Codex quota", prices: { monthly: usd(25), annual: usd(20) }, includedCycleMicros: zero, minimumSeats: 2 },
+      { key: "enterprise", name: "Enterprise", tier: "Enterprise", description: "Shared with ChatGPT / Codex quota", prices: {}, includedCycleMicros: zero, customPrice: true },
+    ],
+  },
+  {
     key: "claude",
     name: "Claude",
     shortName: "Claude",

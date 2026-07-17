@@ -49,27 +49,27 @@ export default async function SignalsJourneysPage({
       {data.journeys.length ? (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="border-b text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
+            <thead className="border-b border-border/70 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
               <tr>
-                <th className="py-2.5 pr-4 font-medium">Journey</th>
-                <th className="py-2.5 pr-4 font-medium">People</th>
-                <th className="py-2.5 pr-4 font-medium">Sessions</th>
-                <th className="py-2.5 pr-4 font-medium">Median</th>
-                <th className="py-2.5 pr-4 font-medium">Change</th>
+                <th className="pb-3 pr-4 pt-1 font-medium">Journey</th>
+                <th className="pb-3 pr-4 pt-1 font-medium">People</th>
+                <th className="pb-3 pr-4 pt-1 font-medium">Sessions</th>
+                <th className="pb-3 pr-4 pt-1 font-medium">Median</th>
+                <th className="pb-3 pr-4 pt-1 font-medium">Change</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody>
               {data.journeys.map((journey) => (
                 <tr key={journey.flowKey} className="transition-colors hover:bg-muted/30">
-                  <td className="py-3 pr-4">
+                  <td className="py-5 pr-4">
                     <Link href={`/signals/journeys/${encodeURIComponent(journey.flowKey)}`} className="hover:underline">
                       <FlowPath flow={journey.flow} />
                     </Link>
                   </td>
-                  <td className="py-3 pr-4 tabular-nums">{journey.people}</td>
-                  <td className="py-3 pr-4 tabular-nums">{journey.sessions}</td>
-                  <td className="py-3 pr-4 tabular-nums">{durationLabel(journey.medianDurationSeconds)}</td>
-                  <td className="py-3 pr-4 tabular-nums text-muted-foreground">{changeLabel(journey.changePercent)}</td>
+                  <td className="py-5 pr-4 tabular-nums">{journey.people}</td>
+                  <td className="py-5 pr-4 tabular-nums">{journey.sessions}</td>
+                  <td className="py-5 pr-4 tabular-nums">{durationLabel(journey.medianDurationSeconds)}</td>
+                  <td className="py-5 pr-4 tabular-nums text-muted-foreground">{changeLabel(journey.changePercent)}</td>
                 </tr>
               ))}
             </tbody>

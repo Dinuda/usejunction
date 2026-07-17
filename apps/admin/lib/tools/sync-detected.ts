@@ -5,6 +5,7 @@ import { deriveSubscription } from "./subscriptions";
 
 const DEFAULT_PLAN_KEYS: Record<string, string> = {
   "chatgpt-codex": "free",
+  "codex-work": "plus",
   claude: "free",
   cursor: "hobby",
   "github-copilot": "free",
@@ -29,6 +30,15 @@ const VENDOR_PLAN_ALIASES: Record<string, Record<string, string>> = {
   "chatgpt-codex": {
     free: "free",
     go: "go",
+    plus: "plus",
+    pro: "pro",
+    business: "business",
+    team: "business",
+    enterprise: "enterprise",
+  },
+  "codex-work": {
+    free: "plus",
+    go: "plus",
     plus: "plus",
     pro: "pro",
     business: "business",
@@ -123,6 +133,29 @@ async function ensureTemplate(input: {
     },
   });
   return { template, created: true };
+}
+
+async function deactivateOrphanDetectedTemplate(orgId: string, templateId: string) {
+  const template = await prisma.billingPlanTemplate.findFirst({
+    where: { id: templateId, orgId, active: true, priceSource: "detected" },
+    select: { id: true },
+  });
+  if (!template) return;
+
+  const remaining = await prisma.developerPlanAssignment.count({
+    where: {
+      orgId,
+      planTemplateId: templateId,
+      active: true,
+      seatStatus: "active",
+    },
+  });
+  if (remaining > 0) return;
+
+  await prisma.billingPlanTemplate.update({
+    where: { id: templateId },
+    data: { active: false },
+  });
 }
 
 async function ensureSeatAndAssign(input: {
@@ -231,8 +264,17 @@ export async function syncDetectedPlansForDevice(input: {
       });
 
       // Never invent a seat from tool detection alone — require a vendor plan.
+      // If a prior auto-detected seat lost its vendor plan (expired auth), end it.
       if (!meta.hasVendorPlan) {
-        if (existingAssignment && meta.email && !existingAssignment.vendorAccountEmail) {
+        if (existingAssignment?.source === "detected") {
+          await prisma.developerPlanAssignment.update({
+            where: { id: existingAssignment.id },
+            data: { active: false, endDate: utcDateOnly(), seatStatus: "ended" },
+          });
+          if (existingAssignment.planTemplateId) {
+            await deactivateOrphanDetectedTemplate(input.orgId, existingAssignment.planTemplateId);
+          }
+        } else if (existingAssignment && meta.email && !existingAssignment.vendorAccountEmail) {
           await prisma.developerPlanAssignment.update({
             where: { id: existingAssignment.id },
             data: { vendorAccountEmail: meta.email },

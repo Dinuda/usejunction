@@ -61,23 +61,23 @@ export default async function SignalsActivityPage({
       {data.sessions.length ? (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="border-b text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
+            <thead className="border-b border-border/70 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
               <tr>
-                <th className="py-2.5 pr-4 font-medium">Person</th>
-                <th className="py-2.5 pr-4 font-medium">Flow</th>
-                <th className="py-2.5 pr-4 font-medium">Duration</th>
-                <th className="py-2.5 pr-4 font-medium">When</th>
-                <th className="py-2.5 pr-4 font-medium">Confidence</th>
+                <th className="pb-3 pr-4 pt-1 font-medium">Person</th>
+                <th className="pb-3 pr-4 pt-1 font-medium">Flow</th>
+                <th className="pb-3 pr-4 pt-1 font-medium">Duration</th>
+                <th className="pb-3 pr-4 pt-1 font-medium">When</th>
+                <th className="pb-3 pr-4 pt-1 font-medium">Confidence</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody>
               {data.sessions.map((session) => (
                 <tr key={session.id} className="transition-colors hover:bg-muted/30">
-                  <td className="py-3 pr-4">
+                  <td className="py-5 pr-4">
                     <div className="font-medium">{session.person}</div>
                     <div className="text-xs text-muted-foreground">{session.email}</div>
                   </td>
-                  <td className="py-3 pr-4">
+                  <td className="py-5 pr-4">
                     <Link
                       href={`/signals/journeys/${encodeURIComponent(session.flowKey)}`}
                       className="hover:underline"
@@ -85,9 +85,9 @@ export default async function SignalsActivityPage({
                       <FlowPath flow={session.flow} />
                     </Link>
                   </td>
-                  <td className="py-3 pr-4 tabular-nums">{durationLabel(session.durationSeconds)}</td>
-                  <td className="py-3 pr-4 text-muted-foreground">{formatWhen(session.startedAt)}</td>
-                  <td className="py-3 pr-4 tabular-nums text-muted-foreground">
+                  <td className="py-5 pr-4 tabular-nums">{durationLabel(session.durationSeconds)}</td>
+                  <td className="py-5 pr-4 text-muted-foreground">{formatWhen(session.startedAt)}</td>
+                  <td className="py-5 pr-4 tabular-nums text-muted-foreground">
                     {Math.round(session.confidence * 100)}%
                   </td>
                 </tr>

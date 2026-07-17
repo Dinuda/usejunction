@@ -14,7 +14,7 @@ export type WorkspaceContext = {
   orgId: string | null;
   orgName: string | null;
   role: OrganizationRole | null;
-  organizations: Array<{ id: string; name: string; role: OrganizationRole }>;
+  organizations: Array<{ id: string; name: string; color: string | null; role: OrganizationRole }>;
 };
 
 export const getWorkspaceContext = cache(async (): Promise<WorkspaceContext | null> => {
@@ -29,13 +29,14 @@ export const getWorkspaceContext = cache(async (): Promise<WorkspaceContext | nu
     select: {
       role: true,
       orgId: true,
-      organization: { select: { id: true, name: true } },
+      organization: { select: { id: true, name: true, color: true } },
     },
   });
 
   const organizations = memberships.map((membership) => ({
     id: membership.organization.id,
     name: membership.organization.name,
+    color: membership.organization.color,
     role: membership.role as OrganizationRole,
   }));
 

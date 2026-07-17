@@ -14,11 +14,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { MetricPeriodFilter } from "@/components/dashboard/metric-period-filter";
 import { AddSubscriptionSheet } from "./add-subscription-sheet";
 import { ToolLogoTile } from "./tool-brand-icon";
 import type { ToolDetailData } from "@/lib/queries/dashboard/tool-detail";
-import { quotaResetLabel, quotaWindowLabel } from "@/lib/quotas/display";
-import { cn } from "@/lib/utils";
+import type { CycleView } from "@/lib/dashboard/cycle-view";
+import { DEFAULT_ROLLING_PERIOD, type RollingPeriod } from "@/lib/dashboard/period-prefs";
+import { quotaSignalLabel, quotaWindowLabel } from "@/lib/quotas/display";
 
 type PlanRow = ToolDetailData["plans"][number] & {
   cycleSeatMicros: string | bigint;
@@ -44,13 +46,28 @@ function currency(value: number) {
   }).format(value);
 }
 
-export function ToolProviderDetail({ data }: { data: DetailProps }) {
+export function ToolProviderDetail({
+  data,
+  cycleView = "current_cycles",
+  period = DEFAULT_ROLLING_PERIOD,
+  periodLabel = "current billing cycles",
+  periodSuffix = "current",
+  periodBasePath,
+}: {
+  data: DetailProps;
+  cycleView?: CycleView;
+  period?: RollingPeriod;
+  periodLabel?: string;
+  periodSuffix?: string;
+  periodBasePath?: string;
+}) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<PlanRow | null>(null);
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  const basePath = periodBasePath ?? `/tools/${data.toolKey}`;
 
   async function refresh() {
     router.refresh();
@@ -125,26 +142,37 @@ export function ToolProviderDetail({ data }: { data: DetailProps }) {
       </div>
 
       <div className="grid gap-8 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          { label: "Devices", value: data.kpis.devices, sub: "With this tool installed" },
-          { label: "People", value: data.kpis.people, sub: "Detected or assigned" },
-          { label: "Seats free", value: data.kpis.seatsFree, sub: `${data.kpis.seatsAssigned}/${data.kpis.seatsPurchased} assigned` },
-          { label: "Usage cost (7d)", value: currency(data.kpis.usageCost7d), sub: `${data.kpis.requests7d.toLocaleString()} requests · verified + estimated`, accent: true },
-        ].map((item) => (
-          <div
-            key={item.label}
-            className={cn(
-              "pl-4",
-              item.accent
-                ? "border-l-2 border-brand-yellow-dark bg-brand-yellow-pale py-3 pr-4"
-                : "border-l-2 border-border-strong",
-            )}
-          >
-            <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{item.label}</p>
-            <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{item.value}</p>
-            <p className="mt-2 text-xs text-muted-foreground">{item.sub}</p>
+        <div className="border-l-2 border-border-strong py-3 pl-4 pr-3">
+          <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">Devices</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{data.kpis.devices}</p>
+          <p className="mt-2 text-xs text-muted-foreground">With this tool installed</p>
+        </div>
+        <div className="border-l-2 border-border-strong py-3 pl-4 pr-3">
+          <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">People</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{data.kpis.people}</p>
+          <p className="mt-2 text-xs text-muted-foreground">Detected or assigned</p>
+        </div>
+        <div className="border-l-2 border-border-strong py-3 pl-4 pr-3">
+          <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">Seats free</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{data.kpis.seatsFree}</p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {data.kpis.seatsAssigned}/{data.kpis.seatsPurchased} assigned
+          </p>
+        </div>
+        <div className="relative border-l-2 border-brand-yellow-dark bg-brand-yellow-pale py-3 pl-4 pr-4">
+          <div className="absolute right-4 top-3">
+            <MetricPeriodFilter view={cycleView} period={period} basePath={basePath} />
           </div>
-        ))}
+          <p className="pr-12 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
+            Usage cost ({periodSuffix})
+          </p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">
+            {currency(data.kpis.usageCost)}
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {data.kpis.requests.toLocaleString()} requests · verified + estimated · {periodLabel}
+          </p>
+        </div>
       </div>
 
       {error && (
@@ -154,16 +182,16 @@ export function ToolProviderDetail({ data }: { data: DetailProps }) {
       )}
 
       <section className="mt-12">
-        <div className="mb-4 border-b pb-3">
+        <div className="mb-6">
           <h2 className="text-lg font-semibold tracking-tight">People on this tool.</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             {detectedCount} detected · {assignedCount} assigned
           </p>
         </div>
         {data.people.length ? (
-          <div className="divide-y">
+          <div>
             {data.people.map((person) => (
-              <div key={person.developerId} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div key={person.developerId} className="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">{person.name}</p>
                   <p className="mt-1 truncate text-xs text-muted-foreground">
@@ -212,17 +240,58 @@ export function ToolProviderDetail({ data }: { data: DetailProps }) {
         )}
       </section>
 
+      {(data.toolsUsed?.length > 0 || data.toolSequences?.length > 0) &&
+      (data.toolKey === "chatgpt-codex" || data.toolKey === "codex-work" || data.toolName === "codex" || data.toolName === "codex-work") ? (
+        <section className="mt-12">
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold tracking-tight">Tools used.</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Agent tool names from local sessions — counts only, no prompts or arguments.
+            </p>
+          </div>
+          {data.toolsUsed.length ? (
+            <div className="mb-8">
+              {data.toolsUsed.map((tool) => (
+                <div
+                  key={tool.name}
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-3 text-sm"
+                >
+                  <p className="truncate font-medium tabular-nums">{tool.name}</p>
+                  <p className="tabular-nums text-muted-foreground">{tool.calls.toLocaleString()} calls</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {data.toolSequences.length ? (
+            <div>
+              <p className="mb-3 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
+                Common tool sequences
+              </p>
+              {data.toolSequences.map((seq) => (
+                <div
+                  key={seq.digest}
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 py-3 text-sm"
+                >
+                  <p className="break-all font-medium leading-snug">{seq.digest.replaceAll(">", " → ")}</p>
+                  <p className="tabular-nums text-muted-foreground">{seq.sessions.toLocaleString()} sessions</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
       <section className="mt-12">
-        <div className="mb-4 border-b pb-3">
+        <div className="mb-6">
           <h2 className="text-lg font-semibold tracking-tight">Live quotas.</h2>
           <p className="mt-1 text-xs text-muted-foreground">Windows reported from connected machines</p>
         </div>
         {data.quotas.length ? (
-          <div className="divide-y border-y">
+          <div>
             {data.quotas.map((quota) => (
               <div
                 key={`${quota.toolName}-${quota.windowType}-${quota.deviceHostname ?? "org"}`}
-                className="grid gap-1 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_7rem_minmax(12rem,auto)] sm:items-center sm:gap-4"
+                className="grid gap-1 py-5 text-sm sm:grid-cols-[minmax(0,1fr)_7rem_minmax(12rem,auto)] sm:items-center sm:gap-4"
               >
                 <div className="min-w-0">
                   <p className="truncate font-medium">{quota.developerName ?? "Unassigned device"}</p>
@@ -233,13 +302,13 @@ export function ToolProviderDetail({ data }: { data: DetailProps }) {
                 <p className="text-xs font-medium text-muted-foreground">
                   {quotaWindowLabel(quota.windowType)}
                 </p>
-                <p className="tabular-nums sm:text-right">
-                  <span className="font-semibold">
-                    {quota.usedPercent != null ? `${quota.usedPercent.toFixed(0)}% used` : "Usage unavailable"}
-                  </span>
-                  {quotaResetLabel(quota.resetAt) ? (
-                    <span className="ml-2 text-xs text-muted-foreground">· {quotaResetLabel(quota.resetAt)}</span>
-                  ) : null}
+                <p className="tabular-nums font-semibold sm:text-right">
+                  {quotaSignalLabel({
+                    windowType: quota.windowType,
+                    usedPercent: quota.usedPercent,
+                    remaining: quota.creditsRemaining,
+                    resetsAt: quota.resetAt,
+                  })}
                 </p>
               </div>
             ))}
@@ -252,7 +321,7 @@ export function ToolProviderDetail({ data }: { data: DetailProps }) {
       </section>
 
       <section className="mt-12">
-        <div className="mb-4 flex items-end justify-between gap-4 border-b pb-3">
+        <div className="mb-6 flex items-end justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold tracking-tight">Plans.</h2>
             <p className="mt-1 text-xs text-muted-foreground">What&apos;s bought and ready to assign.</p>
@@ -263,7 +332,7 @@ export function ToolProviderDetail({ data }: { data: DetailProps }) {
         </div>
 
         {data.plans.length ? (
-          <div className="divide-y">
+          <div>
             {data.plans.map((plan) => (
               <div key={plan.id} className="py-5">
                 <div className="flex items-start justify-between gap-3">

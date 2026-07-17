@@ -133,6 +133,18 @@ type codexUsageWindow struct {
 	UsedPercent        float64 `json:"used_percent"`
 	ResetAt            any     `json:"reset_at"`
 	LimitWindowSeconds int     `json:"limit_window_seconds"`
+	ResetAfterSeconds  int     `json:"reset_after_seconds"`
+}
+
+type codexResetCreditsSummary struct {
+	AvailableCount           int `json:"available_count"`
+	ApplicableAvailableCount int `json:"applicable_available_count"`
+}
+
+type codexPromo struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	ID          string `json:"id"`
 }
 
 func codexResetAtString(v any) string {
@@ -171,6 +183,42 @@ type codexUsageResponse struct {
 		HasCredits bool `json:"has_credits"`
 		Balance    any  `json:"balance"`
 	} `json:"credits"`
+	Promo                 *codexPromo               `json:"promo"`
+	RateLimitResetCredits *codexResetCreditsSummary `json:"rate_limit_reset_credits"`
+}
+
+type codexResetCreditsResponse struct {
+	Credits          []codexResetCredit `json:"credits"`
+	AvailableCount   int                `json:"available_count"`
+	TotalEarnedCount int                `json:"total_earned_count"`
+}
+
+type codexResetCredit struct {
+	ID          string `json:"id"`
+	ResetType   string `json:"reset_type"`
+	Status      string `json:"status"`
+	GrantedAt   string `json:"granted_at"`
+	ExpiresAt   string `json:"expires_at"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+const codexResetCreditsURL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
+
+// codexWindowType maps provider window length onto Junction window labels.
+func codexWindowType(window codexUsageWindow, fallback string) string {
+	sec := window.LimitWindowSeconds
+	if sec <= 0 {
+		return fallback
+	}
+	switch {
+	case sec <= 6*3600:
+		return "session_5h"
+	case sec <= 10*24*3600:
+		return "weekly"
+	default:
+		return "monthly"
+	}
 }
 
 func codexCreditsBalance(v any) float64 {
@@ -182,7 +230,7 @@ func codexQuotaSnapshots(usage codexUsageResponse, source string) []types.QuotaS
 	if primary := usage.RateLimit.PrimaryWindow; primary.UsedPercent > 0 || codexResetAt(primary.ResetAt) != nil {
 		snapshots = append(snapshots, types.QuotaSnapshot{
 			ToolName:    "codex",
-			WindowType:  "session_5h",
+			WindowType:  codexWindowType(primary, "session_5h"),
 			UsedPercent: floatPtr(primary.UsedPercent),
 			ResetAt:     codexResetAt(primary.ResetAt),
 			Source:      source,
@@ -192,7 +240,7 @@ func codexQuotaSnapshots(usage codexUsageResponse, source string) []types.QuotaS
 		if secondary.UsedPercent > 0 || codexResetAt(secondary.ResetAt) != nil {
 			snapshots = append(snapshots, types.QuotaSnapshot{
 				ToolName:    "codex",
-				WindowType:  "weekly",
+				WindowType:  codexWindowType(*secondary, "weekly"),
 				UsedPercent: floatPtr(secondary.UsedPercent),
 				ResetAt:     codexResetAt(secondary.ResetAt),
 				Source:      source,
@@ -207,7 +255,84 @@ func codexQuotaSnapshots(usage codexUsageResponse, source string) []types.QuotaS
 			Source:           source,
 		})
 	}
+	if summary := usage.RateLimitResetCredits; summary != nil && summary.AvailableCount > 0 {
+		snapshots = append(snapshots, types.QuotaSnapshot{
+			ToolName:         "codex",
+			WindowType:       "rate_limit_resets",
+			CreditsRemaining: floatPtr(float64(summary.AvailableCount)),
+			Source:           source,
+		})
+	}
+	if usage.Promo != nil && strings.TrimSpace(usage.Promo.Title) != "" {
+		snapshots = append(snapshots, types.QuotaSnapshot{
+			ToolName:   "codex",
+			WindowType: "promo",
+			Source:     source,
+		})
+	}
 	return snapshots
+}
+
+func fetchCodexResetCredits(ctx context.Context, auth *codexAuthFile) (*codexResetCreditsResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, codexResetCreditsURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+auth.AccessToken)
+	req.Header.Set("Accept", "application/json")
+	if auth.AccountID != "" {
+		req.Header.Set("ChatGPT-Account-Id", auth.AccountID)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("codex reset-credits http %d", resp.StatusCode)
+	}
+	var out codexResetCreditsResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func codexResetCreditSnapshots(credits *codexResetCreditsResponse, source string) []types.QuotaSnapshot {
+	if credits == nil {
+		return nil
+	}
+	available := 0
+	var nearestExpiry *string
+	for _, credit := range credits.Credits {
+		if !strings.EqualFold(strings.TrimSpace(credit.Status), "available") {
+			continue
+		}
+		available++
+		if exp := strings.TrimSpace(credit.ExpiresAt); exp != "" {
+			parsed := parseUnixOrRFC3339(exp)
+			if !parsed.IsZero() {
+				formatted := parsed.UTC().Format(time.RFC3339)
+				if nearestExpiry == nil || formatted < *nearestExpiry {
+					nearestExpiry = strPtr(formatted)
+				}
+			}
+		}
+	}
+	if available == 0 && credits.AvailableCount > 0 {
+		available = credits.AvailableCount
+	}
+	if available <= 0 {
+		return nil
+	}
+	return []types.QuotaSnapshot{{
+		ToolName:         "codex",
+		WindowType:       "rate_limit_resets",
+		CreditsRemaining: floatPtr(float64(available)),
+		ResetAt:          nearestExpiry,
+		Source:           source,
+	}}
 }
 
 func CodexAccountFromAuth(home string) (*types.ToolAccount, error) {
@@ -317,7 +442,26 @@ func ProbeCodexQuota(ctx context.Context, home string) ([]types.QuotaSnapshot, *
 		}
 	}
 
-	return codexQuotaSnapshots(usage, "oauth_api"), account, nil
+	snapshots := codexQuotaSnapshots(usage, "oauth_api")
+	// Prefer the dedicated inventory endpoint when available (includes expiry).
+	if resetCredits, err := fetchCodexResetCredits(ctx, auth); err == nil {
+		if detailed := codexResetCreditSnapshots(resetCredits, "oauth_api"); len(detailed) > 0 {
+			snapshots = replaceQuotaWindow(snapshots, "rate_limit_resets", detailed)
+		}
+	}
+
+	return snapshots, account, nil
+}
+
+func replaceQuotaWindow(existing []types.QuotaSnapshot, windowType string, replacement []types.QuotaSnapshot) []types.QuotaSnapshot {
+	out := existing[:0]
+	for _, snap := range existing {
+		if snap.WindowType == windowType {
+			continue
+		}
+		out = append(out, snap)
+	}
+	return append(out, replacement...)
 }
 
 func shouldRefreshCodexToken(auth *codexAuthFile) bool {

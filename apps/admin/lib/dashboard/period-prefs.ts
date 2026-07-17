@@ -61,6 +61,25 @@ export function rollingPeriodHref(period: RollingPeriod, basePath = "/dashboard"
   return `${basePath}?${params.toString()}`;
 }
 
+/** Query-only period href for pages that filter metrics without cycle views. */
+export function metricPeriodHref(period: RollingPeriod, basePath: string): string {
+  const params = new URLSearchParams();
+  if (period.kind === "preset") {
+    if (period.days !== 30) params.set("days", String(period.days));
+  } else {
+    params.set("from", period.from);
+    params.set("to", period.to);
+  }
+  const query = params.toString();
+  return query ? `${basePath}?${query}` : basePath;
+}
+
+export function rollingPeriodShortSuffix(period: RollingPeriod): string {
+  if (period.kind === "preset") return `${period.days}d`;
+  if (period.from === period.to) return period.from.slice(5);
+  return `${period.from.slice(5)}–${period.to.slice(5)}`;
+}
+
 export function periodsEqual(a: RollingPeriod, b: RollingPeriod): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === "preset" && b.kind === "preset") return a.days === b.days;

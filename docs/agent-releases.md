@@ -314,7 +314,37 @@ State transitions are intentionally conservative:
 
 ## Development workflow
 
-If you are working on the release system locally, this is the shortest useful loop:
+There are two different local loops. Do not confuse them.
+
+### Agent feature work (hot reload)
+
+When you are changing agent behavior on your machine, swap the local binary directly. Do **not** use tagged releases for this loop.
+
+```bash
+# enroll once (if needed)
+./install.sh --token <token> --url http://localhost:3001
+
+# one-shot rebuild into ~/.usejunction and restart the daemon
+pnpm agent:reinstall
+
+# or watch agent/ and reinstall on each change
+pnpm dev:agent
+```
+
+Hot reload:
+
+- builds from this checkout with a `0.0.0-dev.<sha>.<unix>` version stamp
+- packages/swaps into `~/.usejunction` and restarts launchd/systemd
+- keeps the existing enrollment
+- does **not** create a GitHub Release, promote a fleet rollout, or update `/api/agent-releases/latest`
+
+Scripts: [scripts/dev-agent-reinstall.sh](../scripts/dev-agent-reinstall.sh), [scripts/dev-agent-watch.sh](../scripts/dev-agent-watch.sh).
+
+Optional: install `fswatch` (`brew install fswatch`) so the watcher reacts to filesystem events instead of polling.
+
+### Release system work (candidate + promote)
+
+If you are working on the release system itself, this is the shortest useful loop:
 
 1. Run the backend and agent tests.
 2. Build a tagged candidate locally.

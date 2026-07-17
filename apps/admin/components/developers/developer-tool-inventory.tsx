@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BarChart3, ChevronDown, ChevronUp, Users } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { AddSubscriptionSheet } from "@/components/tools/add-subscription-sheet";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { RosterPlanUsage, type RosterPlanUsagePlan } from "@/components/developers/roster-plan-usage";
@@ -43,7 +44,7 @@ type Developer = {
   name: string;
   email: string;
   role: string;
-  requests7d: number;
+  requests: number;
   devices: Array<{
     id: string;
     hostname?: string;
@@ -70,11 +71,13 @@ export function DeveloperToolInventory({
   initialDevelopers,
   initialSubscriptions,
   initialPlanUsage,
+  periodSuffix = "30d",
 }: {
   showSummary?: boolean;
   initialDevelopers: Developer[];
   initialSubscriptions: Subscription[];
   initialPlanUsage: PlanUsageDeveloperRow[];
+  periodSuffix?: string;
 }) {
   const router = useRouter();
   const [developers, setDevelopers] = useState<Developer[]>(initialDevelopers);
@@ -127,101 +130,103 @@ export function DeveloperToolInventory({
   }
 
   return (
-    <div className="space-y-5">
-      {showSummary && (
-        <div className="grid gap-8 sm:grid-cols-3">
-          {[
-            ["People covered", `${configured}/${developers.length}`],
-            ["Seats available", availableSeats],
-            ["Needs a plan", unassignedActivity],
-          ].map(([label, value]) => (
-            <div key={String(label)} className="border-l-2 border-primary/40 pl-4">
-              <p className="font-mono text-[0.65rem] uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-              <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
-            </div>
-          ))}
+    <div className="space-y-10">
+      {showSummary ? (
+        <div className="grid gap-y-8 sm:grid-cols-3">
+          <div className="pl-5">
+            <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">People covered</p>
+            <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">
+              {configured}/{developers.length}
+            </p>
+          </div>
+          <div className="sm:border-l sm:border-border sm:pl-8">
+            <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">Seats available</p>
+            <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{availableSeats}</p>
+          </div>
+          <div className="sm:border-l sm:border-border sm:pl-8">
+            <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">Needs a plan</p>
+            <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{unassignedActivity}</p>
+          </div>
         </div>
-      )}
+      ) : null}
 
-      {error && (
+      {error ? (
         <div role="alert" className="bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
-      )}
+      ) : null}
 
-      <section>
-        <div className="mb-4 flex items-end justify-between gap-3 border-b pb-3">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight">Team members.</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {developers.length
-                ? `${developers.length} on the roster · open anyone for plans, machines, and usage`
-                : "Invite people, then assign plans from their profile."}
-            </p>
-          </div>
+      <section className="border bg-card">
+        <div className="border-b bg-muted/25 px-5 py-4">
+          <h2 className="text-lg font-semibold tracking-tight">Team members.</h2>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            {developers.length
+              ? `${developers.length} on the roster · open anyone for plans, machines, and usage`
+              : "Invite people, then assign plans from their profile."}
+          </p>
         </div>
 
-        {canBulkAssign && selected.size > 0 && (
-          <div className="flex flex-wrap items-center gap-3 bg-primary/5 px-4 py-3">
-            <div className="mr-auto flex items-center gap-2 text-sm font-medium">
-              <Users className="size-4" />
-              {selected.size} selected
-            </div>
-            <div className="relative">
-              <Button size="sm" onClick={() => setBulkOpen(!bulkOpen)}>
-                Assign plan {bulkOpen ? <ChevronUp /> : <ChevronDown />}
+        <div className="px-5">
+          {canBulkAssign && selected.size > 0 ? (
+            <div className="mt-4 mb-1 flex flex-wrap items-center gap-3 bg-muted/40 px-4 py-3">
+              <div className="mr-auto flex items-center gap-2 text-sm font-medium">
+                <Users className="size-4" />
+                {selected.size} selected
+              </div>
+              <div className="relative">
+                <Button size="sm" className="rounded-none" onClick={() => setBulkOpen(!bulkOpen)}>
+                  Assign plan {bulkOpen ? <ChevronUp /> : <ChevronDown />}
+                </Button>
+                {bulkOpen ? (
+                  <div className="absolute right-0 top-10 z-20 w-80 border bg-popover p-2 shadow-lg">
+                    <SubscriptionChoices
+                      subscriptions={subscriptions.filter((subscription) => subscription.availableSeats > 0)}
+                      requested={selected.size}
+                      saving={saving}
+                      onSelect={assignBulk}
+                      onAddSubscription={() => setAddSubscriptionOpen(true)}
+                    />
+                  </div>
+                ) : null}
+              </div>
+              <Button variant="ghost" size="sm" className="rounded-none" onClick={() => setSelected(new Set())}>
+                Clear
               </Button>
-              {bulkOpen && (
-                <div className="absolute right-0 top-10 z-20 w-80 border bg-popover p-2 shadow-lg">
-                  <SubscriptionChoices
-                    subscriptions={subscriptions.filter((subscription) => subscription.availableSeats > 0)}
-                    requested={selected.size}
-                    saving={saving}
-                    onSelect={assignBulk}
-                    onAddSubscription={() => setAddSubscriptionOpen(true)}
-                  />
-                </div>
-              )}
             </div>
-            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
-              Clear
-            </Button>
-          </div>
-        )}
+          ) : null}
 
-        {!developers.length ? (
-          <div className="bg-primary/5 px-5 py-10">
-            <p className="text-sm text-muted-foreground">Invite people, then open their profile to assign plans.</p>
-          </div>
-        ) : (
-          <ul className="divide-y divide-border/70">
-            {developers.map((developer) => {
-              const online = developer.devices.filter((device) => {
-                if (device.lastSeenAt) return isDeviceOnline(device.lastSeenAt);
-                return device.status === "online";
-              }).length;
-              const machineCount = developer.devices.length;
-              const meta = [
-                machineCount ? `${online}/${machineCount} online` : "No machines",
-                developer.requests7d > 0 ? `${compact(developer.requests7d)} requests · 7d` : null,
-              ]
-                .filter(Boolean)
-                .join(" · ");
-              const planUsage = planUsageByDeveloper.get(developer.id);
-              const rosterPlans: RosterPlanUsagePlan[] =
-                planUsage?.plans.map((plan) => ({
-                  toolName: plan.toolName,
-                  toolKey: plan.toolKey,
-                  planName: plan.planName,
-                  primaryRatio: plan.primaryRatio,
-                  verdict: plan.verdict,
-                })) ?? [];
+          {!developers.length ? (
+            <p className="py-6 text-sm text-muted-foreground">
+              Invite people, then open their profile to assign plans.
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {developers.map((developer) => {
+                const online = developer.devices.filter((device) => {
+                  if (device.lastSeenAt) return isDeviceOnline(device.lastSeenAt);
+                  return device.status === "online";
+                }).length;
+                const machineCount = developer.devices.length;
+                const meta = [
+                  machineCount ? `${online}/${machineCount} online` : "No machines",
+                  developer.requests > 0 ? `${compact(developer.requests)} requests · ${periodSuffix}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+                const planUsage = planUsageByDeveloper.get(developer.id);
+                const rosterPlans: RosterPlanUsagePlan[] =
+                  planUsage?.plans.map((plan) => ({
+                    toolName: plan.toolName,
+                    toolKey: plan.toolKey,
+                    planName: plan.planName,
+                    primaryRatio: plan.primaryRatio,
+                    verdict: plan.verdict,
+                  })) ?? [];
 
-              return (
-                <li key={developer.id}>
-                  <div className="grid gap-4 py-4 lg:grid-cols-[minmax(18rem,1fr)_minmax(16rem,auto)] lg:items-center">
-                    <div className="flex min-w-0 items-start gap-3">
-                      {canBulkAssign && (
+                return (
+                  <li key={developer.id}>
+                    <div className="flex items-start gap-3">
+                      {canBulkAssign ? (
                         <input
                           type="checkbox"
                           aria-label={`Select ${developer.name}`}
@@ -233,52 +238,63 @@ export function DeveloperToolInventory({
                               return next;
                             })
                           }
-                          className="mt-1 size-4 rounded border-input accent-primary"
+                          className="mt-6 size-4 shrink-0 rounded border-input accent-primary"
                         />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-base font-semibold tracking-tight">{developer.name}</p>
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground">{developer.email}</p>
-                        {meta ? <p className="mt-1.5 text-xs text-muted-foreground">{meta}</p> : null}
-                        {rosterPlans.length ? <RosterPlanUsage plans={rosterPlans} /> : null}
-                      </div>
-                    </div>
+                      ) : null}
+                      <Link
+                        href={`/team/${developer.id}`}
+                        className="group grid min-w-0 flex-1 gap-4 py-5 text-left outline-none transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/40 lg:grid-cols-[minmax(18rem,1fr)_minmax(16rem,auto)] lg:items-center"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium tracking-tight transition-colors group-hover:text-foreground">
+                            {developer.name}
+                          </p>
+                          <p className="mt-0.5 truncate text-xs text-muted-foreground">{developer.email}</p>
+                          {meta ? <p className="mt-1.5 text-xs text-muted-foreground">{meta}</p> : null}
+                          {rosterPlans.length ? <RosterPlanUsage plans={rosterPlans} /> : null}
+                        </div>
 
-                    <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
-                      {developer.manualPlans.length ? (
-                        developer.manualPlans.map((plan) => (
+                        <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
+                          {developer.manualPlans.length ? (
+                            developer.manualPlans.map((plan) => (
+                              <span
+                                key={plan.id}
+                                className="inline-flex max-w-full min-w-0 items-center gap-1.5 bg-brand-yellow-pale py-1 pr-2.5 pl-1 text-xs font-medium text-brand-yellow-dark lg:max-w-60"
+                                title={`${toolLabel(plan.template.toolKey ?? plan.toolName)} ${plan.planName}`}
+                              >
+                                <ToolLogoTile
+                                  tool={plan.template.toolKey ?? plan.toolName}
+                                  size="sm"
+                                  className="size-6 border-0 shadow-none"
+                                />
+                                <span className="min-w-0 truncate">
+                                  {toolLabel(plan.template.toolKey ?? plan.toolName)} {plan.planName}
+                                  {(plan.seatCount ?? 1) > 1 ? ` ×${plan.seatCount}` : ""}
+                                </span>
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-muted-foreground">No plan assigned</span>
+                          )}
                           <span
-                            key={plan.id}
-                            className="inline-flex max-w-full min-w-0 items-center gap-1.5 bg-brand-yellow-pale py-1 pr-2.5 pl-1 text-xs font-medium text-brand-yellow-dark lg:max-w-60"
-                            title={`${toolLabel(plan.template.toolKey ?? plan.toolName)} ${plan.planName}`}
+                            aria-hidden
+                            className={cn(
+                              buttonVariants({ variant: "outline", size: "sm" }),
+                              "pointer-events-none rounded-none transition-colors group-hover:border-foreground/25 group-hover:bg-background",
+                            )}
                           >
-                            <ToolLogoTile
-                              tool={plan.template.toolKey ?? plan.toolName}
-                              size="sm"
-                              className="size-6 border-0 shadow-none"
-                            />
-                            <span className="min-w-0 truncate">
-                              {toolLabel(plan.template.toolKey ?? plan.toolName)} {plan.planName}
-                              {(plan.seatCount ?? 1) > 1 ? ` ×${plan.seatCount}` : ""}
-                            </span>
+                            <BarChart3 className="transition-transform group-hover:scale-110" />
+                            See Usage
                           </span>
-                        ))
-                      ) : (
-                        <span className="text-xs text-muted-foreground">No plan assigned</span>
-                      )}
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/team/${developer.id}`}>
-                          <BarChart3 />
-                          See Usage
-                        </Link>
-                      </Button>
+                        </div>
+                      </Link>
                     </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       </section>
 
       <AddSubscriptionSheet

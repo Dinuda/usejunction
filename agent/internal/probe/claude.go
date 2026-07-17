@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -17,10 +19,13 @@ import (
 const claudeUsageURL = "https://api.anthropic.com/api/oauth/usage"
 
 type claudeCredentials struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	Email        string `json:"email"`
-	AccountUUID  string `json:"account_uuid"`
+	AccessToken      string `json:"access_token"`
+	RefreshToken     string `json:"refresh_token"`
+	Email            string `json:"email"`
+	AccountUUID      string `json:"account_uuid"`
+	SubscriptionType string `json:"subscription_type"`
+	RateLimitTier    string `json:"rate_limit_tiers"`
+	ExpiresAtMs      int64  `json:"expires_at_ms"`
 }
 
 type claudeUsageWindow struct {
@@ -28,7 +33,32 @@ type claudeUsageWindow struct {
 	ResetsAt    string  `json:"resets_at"`
 }
 
+type claudeKeychainOAuth struct {
+	AccessToken      string   `json:"accessToken"`
+	RefreshToken     string   `json:"refreshToken"`
+	ExpiresAt        int64    `json:"expiresAt"`
+	Scopes           []string `json:"scopes"`
+	SubscriptionType string   `json:"subscriptionType"`
+	RateLimitTier    string   `json:"rateLimitTier"`
+}
+
+type claudeKeychainBlob struct {
+	ClaudeAiOauth *claudeKeychainOAuth `json:"claudeAiOauth"`
+}
+
 func LoadClaudeCredentials(dir string) (*claudeCredentials, error) {
+	if creds, err := loadClaudeCredentialsFile(dir); err == nil {
+		return creds, nil
+	}
+	if runtime.GOOS == "darwin" {
+		if creds, err := loadClaudeCredentialsKeychain(); err == nil {
+			return creds, nil
+		}
+	}
+	return nil, fmt.Errorf("claude credentials not found")
+}
+
+func loadClaudeCredentialsFile(dir string) (*claudeCredentials, error) {
 	path := filepath.Join(dir, ".credentials.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -44,17 +74,65 @@ func LoadClaudeCredentials(dir string) (*claudeCredentials, error) {
 	return &creds, nil
 }
 
+func loadClaudeCredentialsKeychain() (*claudeCredentials, error) {
+	out, err := exec.Command("security", "find-generic-password", "-s", "Claude Code-credentials", "-w").Output()
+	if err != nil {
+		return nil, err
+	}
+	raw := strings.TrimSpace(string(out))
+	return claudeCredentialsFromKeychainJSON(raw)
+}
+
+func claudeCredentialsFromKeychainJSON(raw string) (*claudeCredentials, error) {
+	var blob claudeKeychainBlob
+	if err := json.Unmarshal([]byte(raw), &blob); err != nil {
+		return nil, err
+	}
+	if blob.ClaudeAiOauth == nil || strings.TrimSpace(blob.ClaudeAiOauth.AccessToken) == "" {
+		return nil, fmt.Errorf("claude keychain missing oauth token")
+	}
+	oauth := blob.ClaudeAiOauth
+	return &claudeCredentials{
+		AccessToken:      oauth.AccessToken,
+		RefreshToken:     oauth.RefreshToken,
+		SubscriptionType: oauth.SubscriptionType,
+		RateLimitTier:    oauth.RateLimitTier,
+		ExpiresAtMs:      oauth.ExpiresAt,
+	}, nil
+}
+
+func claudeTokenExpired(creds *claudeCredentials, now time.Time) bool {
+	if creds == nil || creds.ExpiresAtMs <= 0 {
+		return false
+	}
+	return now.UnixMilli() >= creds.ExpiresAtMs
+}
+
+func claudeAccountFromCreds(creds *claudeCredentials, now time.Time) *types.ToolAccount {
+	if creds == nil {
+		return nil
+	}
+	account := &types.ToolAccount{
+		ToolName:    "claude",
+		Email:       strings.TrimSpace(creds.Email),
+		LoginMethod: "oauth",
+		AuthPresent: true,
+	}
+	// Stale/expired oauth still leaves subscriptionType in keychain — don't claim a paid plan.
+	if claudeTokenExpired(creds, now) {
+		account.AuthPresent = false
+		return account
+	}
+	account.Plan = strings.TrimSpace(creds.SubscriptionType)
+	return account
+}
+
 func ClaudeAccountFromCredentials(dir string) (*types.ToolAccount, error) {
 	creds, err := LoadClaudeCredentials(dir)
 	if err != nil {
 		return nil, err
 	}
-	return &types.ToolAccount{
-		ToolName:    "claude",
-		Email:       strings.TrimSpace(creds.Email),
-		LoginMethod: "oauth",
-		AuthPresent: true,
-	}, nil
+	return claudeAccountFromCreds(creds, time.Now()), nil
 }
 
 func ProbeClaudeQuota(ctx context.Context, dir string) ([]types.QuotaSnapshot, *types.ToolAccount, error) {
@@ -63,9 +141,11 @@ func ProbeClaudeQuota(ctx context.Context, dir string) ([]types.QuotaSnapshot, *
 		return nil, nil, err
 	}
 
+	account := claudeAccountFromCreds(creds, time.Now())
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, claudeUsageURL, nil)
 	if err != nil {
-		return nil, nil, err
+		return nil, account, err
 	}
 	req.Header.Set("Authorization", "Bearer "+creds.AccessToken)
 	req.Header.Set("Accept", "application/json")
@@ -74,20 +154,28 @@ func ProbeClaudeQuota(ctx context.Context, dir string) ([]types.QuotaSnapshot, *
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, nil, err
+		return nil, account, err
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
-		return nil, nil, fmt.Errorf("claude oauth usage http %d", resp.StatusCode)
+		// Auth failed — drop plan so auto-sync cannot invent a paid seat from stale keychain.
+		if account != nil && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
+			account.Plan = ""
+			account.AuthPresent = false
+		}
+		return nil, account, fmt.Errorf("claude oauth usage http %d", resp.StatusCode)
 	}
 
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, nil, err
+		return nil, account, err
 	}
 
-	account, _ := ClaudeAccountFromCredentials(dir)
+	return claudeUsageSnapshots(raw), account, nil
+}
+
+func claudeUsageSnapshots(raw map[string]json.RawMessage) []types.QuotaSnapshot {
 	var snapshots []types.QuotaSnapshot
 
 	appendWindow := func(windowType, key string) {
@@ -129,5 +217,5 @@ func ProbeClaudeQuota(ctx context.Context, dir string) ([]types.QuotaSnapshot, *
 		}
 	}
 
-	return snapshots, account, nil
+	return snapshots
 }

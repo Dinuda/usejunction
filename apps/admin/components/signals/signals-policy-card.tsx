@@ -263,7 +263,7 @@ export function SignalsPolicyCard({ initialPolicy }: { initialPolicy: SignalsPol
       </div>
 
       <section>
-        <div className="mb-4 border-b pb-3">
+        <div className="mb-6">
           <h2 className="text-lg font-semibold tracking-tight">Boundaries</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             How long sessions are kept, and what agents should ignore.

@@ -4,6 +4,8 @@
   "license": "LicenseRef-UseJunction-Community-1.0",
   "scripts": {
     "dev": "pnpm --filter @usejunction/admin dev",
+    "dev:agent": "./scripts/dev-agent-watch.sh",
+    "agent:reinstall": "./scripts/dev-agent-reinstall.sh",
     "build": "pnpm --filter @usejunction/db generate && pnpm --filter @usejunction/admin build",
     "db:generate": "pnpm --filter @usejunction/db generate",
     "db:migrate": "pnpm --filter @usejunction/db migrate",

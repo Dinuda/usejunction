@@ -77,9 +77,9 @@ export default async function SignalsJourneyDetailPage({
           description="Median time in each hop across matching sessions. Metadata only."
         />
         {data.steps.length ? (
-          <ol className="space-y-0">
+          <ol>
             {data.steps.map((step, index) => (
-              <li key={`${step.label}-${index}`} className="flex items-center gap-3 border-b py-4 last:border-b-0">
+              <li key={`${step.label}-${index}`} className="flex items-center gap-3 py-5">
                 <span className="w-6 text-xs tabular-nums text-muted-foreground">{index + 1}</span>
                 <span className="min-w-0 flex-1 text-sm font-medium">{step.label}</span>
                 <span className="text-sm tabular-nums text-muted-foreground">{durationLabel(step.medianSeconds)}</span>

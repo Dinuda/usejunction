@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma, type Prisma } from "@usejunction/db";
 import { bearerToken, requireIngestAuth } from "@/lib/auth";
 import { CALCULATION_VERSION } from "@/lib/metrics/source-priority";
+import { shouldPreserveProductivityRequests } from "@/lib/metrics/local-usage-inventory";
 import { invalidateAnalyticsCache } from "@/lib/analytics/query";
 
 type UsageRow = {
@@ -29,11 +30,12 @@ type UsageRow = {
   userId?: string;
   deviceId?: string;
   repository?: { host?: string; owner?: string; name?: string };
+  metadata?: Record<string, unknown>;
 };
 
 function providerForTool(toolName: string): string {
   if (toolName === "claude") return "anthropic";
-  if (toolName === "codex") return "openai";
+  if (toolName === "codex" || toolName === "codex-work") return "openai";
   if (toolName === "copilot") return "github";
   return toolName;
 }
@@ -138,15 +140,20 @@ export async function POST(req: NextRequest) {
       const verified = Boolean(row.verified) || canonicalSource === "vendor_verified";
       const costKind = inferCostKind(row, source, estimatedCost);
       const calculationVersion = row.calculationVersion ?? CALCULATION_VERSION;
-      const requests = metricKind === "productivity"
-        ? 0
-        : Math.max(0, Number(row.requests ?? 0));
+      const modelName = model;
+      const requests =
+        metricKind === "productivity" && !shouldPreserveProductivityRequests(metricKind, modelName)
+          ? 0
+          : Math.max(0, Number(row.requests ?? 0));
 
       const metadata: Prisma.InputJsonValue = {
         cacheWriteTokens,
         reasoningTokens,
         aiPercent,
         originalSource: source,
+        ...(row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+          ? row.metadata
+          : {}),
       };
 
       await prisma.localUsageAggregate.upsert({

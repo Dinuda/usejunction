@@ -1,12 +1,15 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { ArrowUpRight, CircleAlert } from "lucide-react";
 import { AiCodingPanel } from "@/components/dashboard/ai-coding-panel";
 import { ConnectMachineBanner } from "@/components/dashboard/connect-machine-banner";
+import { CoverageChart } from "@/components/dashboard/coverage-chart";
+import { CycleUtilizationBar } from "@/components/dashboard/cycle-utilization-bar";
 import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
 import { OverviewChart } from "@/components/dashboard/overview-chart";
 import { DashboardSetupPanel } from "@/components/dashboard/setup-panel";
-import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
+import { ToolBrandIcon, ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { verdictLabel, type PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
@@ -15,11 +18,11 @@ import {
   rollingPeriodLabel,
   type RollingPeriod,
 } from "@/lib/dashboard/period-prefs";
+import { cycleViewShortSuffix, parseCycleView, type CycleView } from "@/lib/dashboard/cycle-view";
 import { toolDisplayName } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 import {
-  ACTIVE_PEOPLE_WINDOW_DAYS,
   getOrgOverview,
   overviewInputFromBounds,
   overviewInputFromRange,
@@ -53,6 +56,8 @@ function Delta({ value, inverse = false }: { value: number | null; inverse?: boo
   );
 }
 
+const dashboardCard = "border bg-card p-5";
+
 function Kpi({
   label,
   value,
@@ -60,6 +65,8 @@ function Kpi({
   inverse,
   accent,
   sub,
+  hero,
+  className,
 }: {
   label: string;
   value: string;
@@ -67,11 +74,13 @@ function Kpi({
   inverse?: boolean;
   accent?: boolean;
   sub?: string;
+  hero?: boolean;
+  className?: string;
 }) {
   return (
-    <div className={cn("border-l-2 pl-4", accent ? "border-brand-yellow-dark bg-brand-yellow-pale py-3 pr-4" : "border-border-strong")}>
+    <div className={cn(className, accent && "bg-brand-yellow-pale/70 px-4 py-3")}>
       <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
-      <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{value}</p>
+      <p className={cn("mt-2 font-semibold tracking-tight tabular-nums", hero ? "text-4xl" : "text-3xl")}>{value}</p>
       {sub ? <p className="mt-1 text-xs text-muted-foreground">{sub}</p> : null}
       {delta != null && (
         <div className="mt-2">
@@ -82,7 +91,27 @@ function Kpi({
   );
 }
 
-type CycleView = OrgOverviewV1["cycleView"];
+function DashboardSectionHeader({
+  title,
+  description,
+  action,
+  bordered = false,
+}: {
+  title: string;
+  description?: string;
+  action?: ReactNode;
+  bordered?: boolean;
+}) {
+  return (
+    <div className={cn("mb-6 flex items-end justify-between gap-3", bordered && "border-b pb-4")}>
+      <div>
+        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+        {description ? <p className="mt-1.5 text-xs text-muted-foreground">{description}</p> : null}
+      </div>
+      {action}
+    </div>
+  );
+}
 
 const cycleViewLabels: Record<CycleView, string> = {
   current_cycles: "Current cycles",
@@ -95,28 +124,6 @@ function sectionTitleForView(view: CycleView, period: RollingPeriod) {
   return cycleViewLabels[view];
 }
 
-function toneForVerdict(code: PlanVerdictCode | null) {
-  switch (code) {
-    case "LIGHT_USE":
-      return "text-muted-foreground";
-    case "HEALTHY":
-      return "text-primary";
-    case "NEAR_LIMIT":
-      return "text-brand-yellow-dark";
-    case "LIMIT_EXCEEDED":
-      return "text-destructive";
-    default:
-      return "text-muted-foreground";
-  }
-}
-
-function barToneForVerdict(code: PlanVerdictCode | null) {
-  if (code === "LIMIT_EXCEEDED") return "bg-destructive";
-  if (code === "NEAR_LIMIT") return "bg-brand-yellow-dark";
-  if (code === "LIGHT_USE") return "bg-muted-foreground/35";
-  if (code == null) return "bg-muted";
-  return "bg-primary";
-}
 
 function cycleUsageMeta(row: OrgOverviewV1["subscriptionCycles"][number]) {
   return `${compactNumber(row.modelCalls)} ${row.modelCalls === 1 ? "call" : "calls"}`;
@@ -138,14 +145,16 @@ function CycleSectionHeader({
   view,
   period,
   cycles,
+  bordered = false,
 }: {
   view: CycleView;
   period: RollingPeriod;
   cycles: OrgOverviewV1["subscriptionCycles"];
+  bordered?: boolean;
 }) {
   const { avgUtilization, nearLimit } = orgCycleSummary(cycles);
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2 border-b pb-3">
+    <div className={cn("mb-6 flex flex-wrap items-center gap-2", bordered && "border-b pb-4")}>
       <h2 className="text-lg font-semibold tracking-tight">{sectionTitleForView(view, period)}.</h2>
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {avgUtilization != null ? (
@@ -214,25 +223,30 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
               stale={data.sync.stale}
             />
           </div>
-          <div className="grid gap-8 sm:grid-cols-3">
-            <Kpi label="Model calls" value={compactNumber(usage.requests)} />
-            <Kpi label="Sessions" value={compactNumber(usage.sessions)} />
-            <Kpi label="Devices" value={`${online}/${data.developer.devices.length}`} accent />
+          <div className="grid gap-y-8 sm:grid-cols-3">
+            <Kpi label="Model calls" value={compactNumber(usage.requests)} hero className="pl-1" />
+            <Kpi label="Sessions" value={compactNumber(usage.sessions)} className="sm:border-l sm:border-border sm:pl-8" />
+            <Kpi label="Devices" value={`${online}/${data.developer.devices.length}`} accent className="sm:border-l sm:border-border sm:pl-8" />
           </div>
 
-          <AiCodingPanel metrics={data.aiCoding30d} models={data.modelUsage30d} />
+          <div className={cn("mt-10", dashboardCard)}>
+            <AiCodingPanel metrics={data.aiCoding30d} models={data.modelUsage30d} embedded />
+          </div>
 
-          <div className="mt-10 grid gap-10 lg:grid-cols-2">
-            <section>
-              <div className="mb-4 flex items-end justify-between gap-3 border-b pb-3">
-                <h2 className="text-lg font-semibold tracking-tight">Machines.</h2>
-                <Link href="/tools" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
-                  Tools
-                </Link>
-              </div>
-              <ul className="divide-y">
+          <div className="mt-10 grid gap-6 lg:grid-cols-2">
+            <section className={dashboardCard}>
+              <DashboardSectionHeader
+                title="Machines."
+                bordered={false}
+                action={
+                  <Link href="/tools" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+                    Tools
+                  </Link>
+                }
+              />
+              <ul>
                 {data.developer.devices.map((device) => (
-                  <li key={device.id} className="flex items-center justify-between gap-3 py-4">
+                  <li key={device.id} className="flex items-center justify-between gap-3 py-5">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{device.hostname}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
@@ -253,14 +267,12 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
               </ul>
             </section>
 
-            <section>
-              <div className="mb-4 border-b pb-3">
-                <h2 className="text-lg font-semibold tracking-tight">Your tools.</h2>
-              </div>
+            <section className={dashboardCard}>
+              <DashboardSectionHeader title="Your tools." bordered={false} />
               {data.toolsUsage30d.length ? (
-                <ul className="divide-y">
+                <ul>
                   {data.toolsUsage30d.map((tool) => (
-                    <li key={tool.toolName} className="flex items-center justify-between gap-3 py-4">
+                    <li key={tool.toolName} className="flex items-center justify-between gap-3 py-5">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">{tool.toolName}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
@@ -277,7 +289,7 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
                   ))}
                 </ul>
               ) : (
-                <p className="py-4 text-sm text-muted-foreground">No tools detected yet. Connect a machine to report inventory.</p>
+                <p className="py-6 text-sm text-muted-foreground">No tools detected yet. Connect a machine to report inventory.</p>
               )}
             </section>
           </div>
@@ -285,11 +297,6 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
       )}
     </>
   );
-}
-
-function parseCycleView(value: string | undefined): CycleView {
-  if (value === "previous_cycles" || value === "last_30_days") return value;
-  return "current_cycles";
 }
 
 function overviewInputForView(cycleView: CycleView, period: RollingPeriod) {
@@ -395,13 +402,15 @@ export default async function DashboardPage({
         </div>
       ) : data ? (
         <>
-          <div className="grid gap-8 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
             <Kpi
               label="Subscription commitment"
               value={currency(data.kpis.actualSpend.value)}
               delta={data.kpis.actualSpend.deltaPercent}
               inverse
               accent
+              hero
+              className="pl-1"
               sub={
                 data.cycleView === "last_30_days"
                   ? "prorated for selected window"
@@ -415,120 +424,87 @@ export default async function DashboardPage({
               value={currency(data.kpis.verifiedUsageCost.value)}
               delta={data.kpis.verifiedUsageCost.deltaPercent}
               inverse
+              className="sm:border-l sm:border-border sm:pl-8"
             />
             <Kpi
               label="Estimated API value"
               value={currency(data.kpis.estimatedApiCost.value)}
               delta={data.kpis.estimatedApiCost.deltaPercent}
               inverse
+              className="xl:border-l xl:border-border xl:pl-8"
             />
             <Kpi
               label="Model calls"
               value={compactNumber(data.kpis.modelCalls.value)}
               delta={data.kpis.modelCalls.deltaPercent}
+              className="sm:border-l sm:border-border sm:pl-8 xl:pl-8"
             />
           </div>
 
-          <div className="mt-10">
-            <section>
-              <CycleSectionHeader view={data.cycleView} period={rollingPeriod} cycles={data.subscriptionCycles} />
-              {data.subscriptionCycles.length ? (
-                <ul className="divide-y">
-                  {data.subscriptionCycles.map((row) => (
-                    <li key={row.id} className="py-4">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <ToolLogoTile tool={row.toolKey ?? row.toolName} size="md" />
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">
-                              {toolDisplayName(row.toolKey ?? row.toolName)}
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {cycleWindowLabel(row, data.cycleView)}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-semibold tabular-nums">{currency(row.cycleSpend)}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">{cycleUsageMeta(row)}</p>
-                        </div>
-                      </div>
-                      <div className="mt-3 flex items-center gap-3">
-                        <div
-                          className="h-1.5 min-w-0 flex-1 overflow-hidden bg-muted"
-                          role="meter"
-                          aria-label={
-                            row.utilizationDisplayPercent != null
-                              ? `${toolDisplayName(row.toolKey ?? row.toolName)} plan use ${row.utilizationDisplayPercent.toFixed(0)} percent`
-                              : `${toolDisplayName(row.toolKey ?? row.toolName)} plan use waiting for quota signal`
-                          }
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          aria-valuenow={
-                            row.utilizationDisplayPercent != null
-                              ? Math.round(row.utilizationDisplayPercent)
-                              : undefined
-                          }
-                        >
-                          <div
-                            className={cn(
-                              "h-full transition-[width]",
-                              barToneForVerdict(row.verdictCode),
-                            )}
-                            style={{
-                              width:
-                                row.utilizationDisplayPercent != null
-                                  ? `${Math.min(100, Math.max(2, row.utilizationDisplayPercent))}%`
-                                  : "0%",
-                            }}
-                          />
-                        </div>
-                        {row.utilizationPercent != null ? (
-                          <p
-                            className={cn(
-                              "shrink-0 text-xs font-semibold tabular-nums",
-                              toneForVerdict(row.verdictCode),
-                            )}
-                          >
-                            {row.utilizationPercent.toFixed(0)}%
+          <section className={cn("mt-10", dashboardCard)}>
+            <CycleSectionHeader
+              view={data.cycleView}
+              period={rollingPeriod}
+              cycles={data.subscriptionCycles}
+              bordered={false}
+            />
+            {data.subscriptionCycles.length ? (
+              <ul>
+                {data.subscriptionCycles.map((row) => (
+                  <li key={row.id} className="py-5">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <ToolLogoTile tool={row.toolKey ?? row.toolName} size="md" />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {toolDisplayName(row.toolKey ?? row.toolName)}
                           </p>
-                        ) : (
-                          <p className="shrink-0 text-xs text-muted-foreground">—</p>
-                        )}
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {cycleWindowLabel(row, data.cycleView)}
+                          </p>
+                        </div>
                       </div>
-                      {row.verdictCode ? (
-                        <p className="mt-1.5 text-xs text-muted-foreground">
-                          {verdictLabel(row.verdictCode)}
-                        </p>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="py-4 text-sm text-muted-foreground">Add subscriptions to see cycle utilization.</p>
-              )}
-            </section>
-          </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold tabular-nums">{currency(row.cycleSpend)}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{cycleUsageMeta(row)}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <CycleUtilizationBar
+                        percent={row.utilizationPercent}
+                        displayPercent={row.utilizationDisplayPercent}
+                        verdictCode={row.verdictCode}
+                        label={toolDisplayName(row.toolKey ?? row.toolName)}
+                      />
+                    </div>
+                    {row.verdictCode ? (
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        {verdictLabel(row.verdictCode)}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="py-6 text-sm text-muted-foreground">Add subscriptions to see cycle utilization.</p>
+            )}
+          </section>
 
-          <div className="mt-10 grid gap-10 xl:grid-cols-[1.4fr_0.6fr]">
-            <section>
-              <div className="mb-4 border-b pb-3">
-                <h2 className="text-lg font-semibold tracking-tight">Model calls.</h2>
-              </div>
+          <div className="mt-10 grid gap-6 xl:grid-cols-[1.4fr_0.6fr]">
+            <section className={dashboardCard}>
+              <DashboardSectionHeader title="Model calls." bordered={false} />
               <OverviewChart data={data.trend} />
             </section>
 
-            <section>
-              <div className="mb-4 border-b pb-3">
-                <h2 className="text-lg font-semibold tracking-tight">Notifications.</h2>
-              </div>
+            <section className={dashboardCard}>
+              <DashboardSectionHeader title="Notifications." bordered={false} />
               {data.attention.length ? (
-                <ul className="divide-y">
+                <ul>
                   {data.attention.map((item) => (
                     <li key={item.id}>
                       <Link
                         href={item.href}
-                        className="flex items-start gap-3 py-3 transition-colors hover:bg-muted/40"
+                        className="flex items-start gap-3 py-5 transition-colors hover:bg-muted/30"
                       >
                         <span
                           className={cn(
@@ -546,49 +522,53 @@ export default async function DashboardPage({
                   ))}
                 </ul>
               ) : (
-                <p className="py-4 text-sm text-muted-foreground">No notifications.</p>
+                <p className="py-6 text-sm text-muted-foreground">No notifications.</p>
               )}
             </section>
           </div>
 
-          <div className="mt-10 grid gap-10 lg:grid-cols-2">
-            <section>
-              <div className="mb-4 flex items-end justify-between gap-3 border-b pb-3">
-                <h2 className="text-lg font-semibold tracking-tight">Tools.</h2>
-                <Link href="/tools" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
-                  All tools
-                </Link>
-              </div>
+          <div className="mt-10 grid gap-6 lg:grid-cols-2">
+            <section className={dashboardCard}>
+              <DashboardSectionHeader
+                title="Tools."
+                bordered={false}
+                action={
+                  <Link href="/tools" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+                    All tools
+                  </Link>
+                }
+              />
               {data.tools.length ? (
-                <ul className="divide-y">
+                <ul>
                   {data.tools.map((tool) => (
-                    <li key={tool.name} className="flex items-center justify-between gap-3 py-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{tool.name}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {tool.activeDevelopers} active
-                        </p>
+                    <li key={tool.name} className="flex items-start justify-between gap-3 py-5">
+                      <div className="flex min-w-0 items-start gap-2">
+                        <span className="flex h-5 w-3.5 shrink-0 items-center justify-center">
+                          <ToolBrandIcon tool={tool.name} size={14} className="text-muted-foreground" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium leading-5">{toolDisplayName(tool.name)}</p>
+                          <p className="mt-1 text-xs leading-4 text-muted-foreground">{tool.activeDevelopers} active</p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium tabular-nums">{compactNumber(tool.requests)}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{currency(tool.cost)}</p>
+                      <div className="shrink-0 text-right">
+                        <p className="text-sm font-medium leading-5 tabular-nums">{compactNumber(tool.requests)}</p>
+                        <p className="mt-1 text-xs leading-4 text-muted-foreground">{currency(tool.cost)}</p>
                       </div>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="py-4 text-sm text-muted-foreground">No tools detected yet.</p>
+                <p className="py-6 text-sm text-muted-foreground">No tools detected yet.</p>
               )}
             </section>
 
-            <section>
-              <div className="mb-4 border-b pb-3">
-                <h2 className="text-lg font-semibold tracking-tight">Coverage.</h2>
-              </div>
-              <dl className="space-y-5">
-                {[
+            <section className={dashboardCard}>
+              <DashboardSectionHeader title="Coverage." bordered={false} />
+              <CoverageChart
+                rows={[
                   {
-                    label: `Active people (${ACTIVE_PEOPLE_WINDOW_DAYS}d)`,
+                    label: `Active people (${cycleViewShortSuffix(cycleView, rollingPeriod)})`,
                     value: `${data.coverage.activeDevelopers}/${data.coverage.developers}`,
                     pct: data.coverage.developers
                       ? Math.min(100, (data.coverage.activeDevelopers / data.coverage.developers) * 100)
@@ -606,29 +586,17 @@ export default async function DashboardPage({
                     value: `${data.coverage.trackedTools}`,
                     pct: data.coverage.trackedTools ? 100 : 0,
                   },
-                ].map((row) => (
-                  <div key={row.label}>
-                    <div className="mb-2 flex items-center justify-between text-sm">
-                      <dt className="text-muted-foreground">{row.label}</dt>
-                      <dd className="font-medium tabular-nums">{row.value}</dd>
-                    </div>
-                    <div className="h-1.5 overflow-hidden bg-muted">
-                      <div className="h-full bg-primary" style={{ width: `${row.pct}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </dl>
+                ]}
+              />
             </section>
           </div>
 
           {data.failures.length > 0 && (
-            <section className="mt-10">
-              <div className="mb-4 border-b border-destructive/30 pb-3">
-                <h2 className="text-lg font-semibold tracking-tight">Failed requests.</h2>
-              </div>
-              <ul className="divide-y">
+            <section className={cn("mt-10", dashboardCard)}>
+              <DashboardSectionHeader title="Failed requests." bordered={false} />
+              <ul>
                 {data.failures.map((failure) => (
-                  <li key={failure.id} className="flex flex-wrap items-center gap-3 py-3">
+                  <li key={failure.id} className="flex flex-wrap items-center gap-3 py-5">
                     <span className="size-2 rounded-full bg-destructive" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">

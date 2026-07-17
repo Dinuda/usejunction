@@ -87,7 +87,7 @@ export function SignalsFilters({
   }
 
   return (
-    <div className={cn("mb-4 flex w-full flex-wrap items-end justify-end gap-3 border-b pb-3", className)}>
+    <div className={cn("mb-6 flex w-full flex-wrap items-end justify-end gap-3", className)}>
       <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
         Range
         <select

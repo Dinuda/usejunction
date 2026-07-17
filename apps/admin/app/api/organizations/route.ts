@@ -5,9 +5,11 @@ import { isAuthUserNotFoundError } from "@/lib/ensure-auth-user";
 import { createWorkspace } from "@/lib/ensure-workspace";
 import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 import { audit } from "@/lib/rbac";
+import { WORKSPACE_COLORS } from "@/lib/workspace-colors";
 
 const schema = z.object({
   name: z.string().trim().min(1).max(80),
+  color: z.enum(WORKSPACE_COLORS).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -29,7 +31,7 @@ export async function POST(req: NextRequest) {
         email: session.user.email,
         name: session.user.name,
       },
-      { name: parsed.data.name },
+      { name: parsed.data.name, color: parsed.data.color },
     );
   } catch (error) {
     if (isAuthUserNotFoundError(error)) {
@@ -45,7 +47,7 @@ export async function POST(req: NextRequest) {
     action: "workspace.created",
     targetType: "organization",
     targetId: result.orgId,
-    metadata: { name: result.name, slug: result.slug },
+    metadata: { name: result.name, slug: result.slug, color: result.color },
   });
 
   const response = NextResponse.json(
@@ -53,6 +55,7 @@ export async function POST(req: NextRequest) {
       orgId: result.orgId,
       name: result.name,
       slug: result.slug,
+      color: result.color,
       role: result.role,
     },
     { status: 201 },

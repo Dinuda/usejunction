@@ -2,7 +2,7 @@ import type { PlanUsageDeveloperPlanRow, PlanUsageV1 } from "@/lib/insights/cont
 import { verdictLabel, type PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { canonicalToolKey } from "@/lib/tools/catalog";
-import { quotaResetLabel, quotaWindowLabel } from "@/lib/quotas/display";
+import { quotaSignalLabel, quotaWindowLabel } from "@/lib/quotas/display";
 import { cn } from "@/lib/utils";
 
 function money(value: number) {
@@ -108,8 +108,12 @@ function PlanRow({ plan }: { plan: PlanUsageDeveloperPlanRow }) {
                 >
                   <span className="text-muted-foreground">{quotaWindowLabel(quota.windowType)}</span>
                   <span className="tabular-nums font-medium">
-                    {quota.rawRatio != null ? `${(quota.rawRatio * 100).toFixed(0)}%` : "—"}
-                    {quotaResetLabel(quota.resetsAt) ? ` · ${quotaResetLabel(quota.resetsAt)}` : ""}
+                    {quotaSignalLabel({
+                      windowType: quota.windowType,
+                      rawRatio: quota.rawRatio,
+                      remaining: quota.remaining,
+                      resetsAt: quota.resetsAt,
+                    })}
                   </span>
                 </li>
               ))}
@@ -164,11 +168,11 @@ export function MemberPlanUsage({
   if (!plans.length) {
     return (
       <section>
-        <div className="mb-4 border-b pb-3">
+        <div className="mb-6">
           <h2 className="text-lg font-semibold tracking-tight">Plan usage.</h2>
           <p className="mt-1 text-xs text-muted-foreground">How well assigned seats are being used.</p>
         </div>
-        <p className="py-4 text-sm text-muted-foreground">
+        <p className="py-6 text-sm text-muted-foreground">
           Assign a plan below to track live quota and included allowance for {developerName}.
         </p>
       </section>
@@ -177,7 +181,7 @@ export function MemberPlanUsage({
 
   return (
     <section>
-      <div className="mb-4 flex items-end justify-between gap-3 border-b pb-3">
+      <div className="mb-6 flex items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Plan usage.</h2>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -196,7 +200,7 @@ export function MemberPlanUsage({
         ) : null}
       </div>
 
-      <ul className="divide-y">
+      <ul>
         {plans.map((plan) => (
           <PlanRow key={plan.assignmentId} plan={plan} />
         ))}

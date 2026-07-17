@@ -28,6 +28,7 @@ const adminNav = [
   ["/signals", "Signals"],
   ["/tools", "Tools"],
   ["/activity", "Activity"],
+  ["/settings", "Settings"],
 ] as const;
 
 const developerNav = [
@@ -37,7 +38,7 @@ const developerNav = [
 ] as const;
 
 type WorkspaceShellProps = {
-  organizations: Array<{ id: string; name: string; role: OrganizationRole }>;
+  organizations: Array<{ id: string; name: string; color: string | null; role: OrganizationRole }>;
   currentOrgId: string | null;
   role: OrganizationRole | null;
   name?: string | null;
@@ -60,8 +61,8 @@ function AppSidebar({
 
   return (
     <Sidebar collapsible="none" variant="sidebar" className="h-full border-r md:h-svh">
-      <SidebarHeader className="border-b p-4">
-        <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden">
+      <SidebarHeader className="h-14 justify-center border-b px-4 py-0">
+        <Link href="/dashboard" className="flex h-full items-center gap-3 overflow-hidden">
           <BrandLogo className="h-8 w-auto" />
         </Link>
       </SidebarHeader>
@@ -69,15 +70,21 @@ function AppSidebar({
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {nav.map(([href, label]) => (
+              {nav.map(([href, label]) => {
+                const isActive =
+                  href === "/dashboard"
+                    ? active === href || active.startsWith(`${href}?`)
+                    : active === href || active.startsWith(`${href}/`) || active.startsWith(`${href}?`);
+                return (
                 <SidebarMenuItem key={href}>
-                  <SidebarMenuButton asChild isActive={active === href} tooltip={label}>
-                    <Link href={href} aria-current={active === href ? "page" : undefined}>
+                  <SidebarMenuButton asChild isActive={isActive} tooltip={label}>
+                    <Link href={href} aria-current={isActive ? "page" : undefined}>
                       <span>{label}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              ))}
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -112,7 +119,7 @@ export function WorkspaceShell({
       <SidebarInset className="min-h-0 overflow-y-auto">
         <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
           <div className="min-w-0 flex-1">
-            <WorkspaceSwitcher organizations={organizations} currentOrgId={currentOrgId} />
+            <WorkspaceSwitcher organizations={organizations} currentOrgId={currentOrgId} role={role} />
           </div>
           <WorkspaceUserMenu name={name} email={email} image={image} role={role} />
         </header>

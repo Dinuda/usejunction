@@ -26,12 +26,10 @@ import {
 import type { OrgOverviewV1, OverviewInput } from "@/lib/insights/contracts/overview.v1";
 import { buildAttentionItems } from "@/lib/insights/policies/attention";
 import { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
-import { rollupSubscriptionCyclesByTool, enrichSubscriptionCyclesWithUtilization } from "@/lib/insights/queries/rollup-subscription-cycles";
+import { rollupSubscriptionCyclesByTool, enrichSubscriptionCyclesWithUtilization, filterActiveSubscriptionCycles } from "@/lib/insights/queries/rollup-subscription-cycles";
 import { readDeviceCoverage } from "@/lib/insights/readers/devices";
 import { getDashboardConfigHealth } from "@/lib/queries/dashboard/config-health";
 import { isCodingTool, toolUsageNames } from "@/lib/tools/catalog";
-
-export const ACTIVE_PEOPLE_WINDOW_DAYS = 7;
 
 function isoDay(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -357,8 +355,6 @@ export async function getOrgOverview(
     previousTo: usageInclusiveEnd(previousWindow.to),
     previousToExclusive: usageExclusiveEnd(previousWindow.to),
   };
-  const activeDates = usageWindowDays(ACTIVE_PEOPLE_WINDOW_DAYS, context.now);
-
   const [
     currentUsage,
     previousUsage,
@@ -377,7 +373,7 @@ export async function getOrgOverview(
     readOverviewUsage(orgId, previousWindow, false),
     readUsageMetrics({
       orgId,
-      window: toMetricWindow(activeDates.from, activeDates.to),
+      window: reportWindow,
       measures: ["activeDevelopers"],
       limit: 1,
     }),
@@ -536,27 +532,29 @@ export async function getOrgOverview(
         deltaPercent: null,
       },
     },
-    subscriptionCycles: enrichSubscriptionCyclesWithUtilization(
-      rollupSubscriptionCyclesByTool(
-        subscriptionSlices.map((slice) => {
-          const usage = allocatedUsage.get(slice.id);
-          return {
-            id: slice.id,
-            subscriptionId: slice.subscriptionId,
-            name: slice.name,
-            toolName: slice.toolName,
-            toolKey: slice.toolKey,
-            cycleSpend: microsToDollars(slice.spendMicros),
-            verifiedUsageCost: usage?.verifiedUsageCost ?? 0,
-            estimatedApiCost: usage?.estimatedApiCost ?? 0,
-            modelCalls: usage?.modelCalls ?? 0,
-            windowFrom: isoDay(slice.windowFrom),
-            windowTo: isoDay(slice.windowTo),
-            billingCycle: cycleToJson(slice.cycle),
-          };
-        }),
+    subscriptionCycles: filterActiveSubscriptionCycles(
+      enrichSubscriptionCyclesWithUtilization(
+        rollupSubscriptionCyclesByTool(
+          subscriptionSlices.map((slice) => {
+            const usage = allocatedUsage.get(slice.id);
+            return {
+              id: slice.id,
+              subscriptionId: slice.subscriptionId,
+              name: slice.name,
+              toolName: slice.toolName,
+              toolKey: slice.toolKey,
+              cycleSpend: microsToDollars(slice.spendMicros),
+              verifiedUsageCost: usage?.verifiedUsageCost ?? 0,
+              estimatedApiCost: usage?.estimatedApiCost ?? 0,
+              modelCalls: usage?.modelCalls ?? 0,
+              windowFrom: isoDay(slice.windowFrom),
+              windowTo: isoDay(slice.windowTo),
+              billingCycle: cycleToJson(slice.cycle),
+            };
+          }),
+        ),
+        planUsage.data.subscriptions,
       ),
-      planUsage.data.subscriptions,
     ),
     renewals: rollupSubscriptionCyclesByTool(
       subscriptionSlices.map((slice) => ({

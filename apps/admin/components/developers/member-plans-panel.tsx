@@ -144,7 +144,7 @@ export function MemberPlansPanel({
 
   return (
     <section>
-      <div className="mb-4 flex items-end justify-between gap-3 border-b pb-3">
+      <div className="mb-6 flex items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Plans.</h2>
           <p className="mt-1 text-xs text-muted-foreground">Seats assigned to {developerName}.</p>
@@ -163,9 +163,9 @@ export function MemberPlansPanel({
       ) : null}
 
       {plans.length ? (
-        <ul className="divide-y">
+        <ul>
           {plans.map((plan) => (
-            <li key={plan.id} className="flex flex-wrap items-center gap-3 py-4">
+            <li key={plan.id} className="flex flex-wrap items-center gap-3 py-5">
               <ToolLogoTile tool={plan.template.toolKey ?? plan.toolName} size="sm" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">
@@ -190,7 +190,7 @@ export function MemberPlansPanel({
           ))}
         </ul>
       ) : (
-        <p className="py-4 text-sm text-muted-foreground">No plans on this person yet.</p>
+        <p className="py-6 text-sm text-muted-foreground">No plans on this person yet.</p>
       )}
 
       {adding ? (
@@ -243,7 +243,7 @@ export function SubscriptionChoices({
 }) {
   if (!subscriptions.length) {
     return (
-      <div className="rounded-md bg-background/70 px-4 py-5 text-sm text-muted-foreground">
+      <div className="rounded-md bg-background/70 px-4 py-6 text-sm text-muted-foreground">
         <p>No seats are available yet.</p>
         {onAddSubscription && (
           <Button size="sm" className="mt-3" onClick={onAddSubscription}>

@@ -1,7 +1,8 @@
 import { prisma } from "@usejunction/db";
 import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
+import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
+import { resolveReportWindow } from "@/lib/analytics/contracts/time-window";
 import { findCatalogTool } from "@/lib/tools/catalog";
-import { usageWindowDays } from "@/lib/metrics/date-range";
 import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
 import { mapVendorPlanToCatalog } from "@/lib/tools/sync-detected";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
@@ -21,9 +22,9 @@ export type ToolDetailData = {
     seatsFree: number;
     seatsPurchased: number;
     seatsAssigned: number;
-    usageCost7d: number;
-    requests7d: number;
-    tokens7d: number;
+    usageCost: number;
+    requests: number;
+    tokens: number;
   };
   people: Array<{
     developerId: string;
@@ -47,6 +48,7 @@ export type ToolDetailData = {
     toolName: string;
     windowType: string;
     usedPercent: number | null;
+    creditsRemaining: number | null;
     resetAt: Date | null;
     deviceHostname: string | null;
     developerName: string | null;
@@ -67,6 +69,8 @@ export type ToolDetailData = {
     priceSource: string;
     active: boolean;
   }>;
+  toolsUsed: Array<{ name: string; calls: number }>;
+  toolSequences: Array<{ digest: string; sessions: number }>;
 };
 
 function toolNamesFor(toolKey: string) {
@@ -75,24 +79,39 @@ function toolNamesFor(toolKey: string) {
   return Array.from(new Set([tool.toolName, ...tool.aliases]));
 }
 
-export async function getToolDetail(orgId: string, toolKey: string): Promise<ToolDetailData | null> {
+/** Shared OpenAI desktop runtime: Work usage is separate, but detect/quota stay on codex. */
+function inventoryNamesFor(toolKey: string) {
+  const names = toolNamesFor(toolKey);
+  if (toolKey === "codex-work") {
+    return Array.from(new Set([...names, "codex"]));
+  }
+  return names;
+}
+
+export async function getToolDetail(
+  orgId: string,
+  toolKey: string,
+  reportWindow: MetricWindow = resolveReportWindow({ range: 30 }),
+): Promise<ToolDetailData | null> {
   const tool = findCatalogTool(toolKey);
   if (!tool) return null;
 
   const names = toolNamesFor(toolKey);
-  const usage7d = usageWindowDays(7);
+  const inventoryNames = inventoryNamesFor(toolKey);
+  const windowStart = reportWindow.from;
+  const windowEnd = reportWindow.to;
 
-  const [installations, accounts, quotas, usageRows, subscriptions, assignments] =
+  const [installations, accounts, quotas, usageRows, subscriptions, assignments, inventoryRows] =
     await Promise.all([
       prisma.toolInstallation.findMany({
-        where: { orgId, detected: true, toolName: { in: names } },
+        where: { orgId, detected: true, toolName: { in: inventoryNames } },
         include: {
           user: { select: { id: true, name: true, email: true } },
           device: { select: { hostname: true } },
         },
       }),
       prisma.toolAccount.findMany({
-        where: { orgId, toolName: { in: names } },
+        where: { orgId, toolName: { in: inventoryNames } },
         include: {
           user: { select: { id: true, name: true, email: true } },
           device: { select: { hostname: true } },
@@ -100,7 +119,7 @@ export async function getToolDetail(orgId: string, toolKey: string): Promise<Too
         orderBy: { updatedAt: "desc" },
       }),
       prisma.quotaSnapshot.findMany({
-        where: { orgId, toolName: { in: names } },
+        where: { orgId, toolName: { in: inventoryNames } },
         include: {
           device: {
             select: {
@@ -113,7 +132,7 @@ export async function getToolDetail(orgId: string, toolKey: string): Promise<Too
       }),
       readUsageMetrics({
         orgId,
-        window: usage7d,
+        window: reportWindow,
         measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
         dimensions: ["source", "costKind"],
         filters: { toolNames: names },
@@ -125,8 +144,8 @@ export async function getToolDetail(orgId: string, toolKey: string): Promise<Too
           active: true,
           seatStatus: "active",
           OR: [
-            { toolName: { in: names } },
-            { template: { toolKey } },
+            { toolName: { in: inventoryNames } },
+            { template: { toolKey: { in: toolKey === "codex-work" ? [toolKey, "chatgpt-codex"] : [toolKey] } } },
             { provider: tool.provider, product: tool.product },
           ],
         },
@@ -136,10 +155,24 @@ export async function getToolDetail(orgId: string, toolKey: string): Promise<Too
         },
         orderBy: { createdAt: "desc" },
       }),
+      prisma.localUsageAggregate.findMany({
+        where: {
+          orgId,
+          toolName: { in: names },
+          metricKind: "productivity",
+          date: { gte: windowStart, lte: windowEnd },
+          OR: [{ model: { startsWith: "tool:" } }, { model: { startsWith: "flow:" } }],
+        },
+        select: { model: true, requests: true },
+      }),
     ]);
 
   const plans = subscriptions
-    .filter((subscription) => subscription.toolKey === toolKey)
+    .filter(
+      (subscription) =>
+        subscription.toolKey === toolKey ||
+        (toolKey === "codex-work" && subscription.toolKey === "chatgpt-codex"),
+    )
     .map((subscription) => ({
       id: subscription.id,
       toolKey: subscription.toolKey,
@@ -157,14 +190,14 @@ export async function getToolDetail(orgId: string, toolKey: string): Promise<Too
       active: subscription.active,
     }));
 
-  const requests7d = usageRows.data.rows.reduce((sum, row) => sum + metricNumber(row, "requests"), 0);
-  const usageCost7d = summarizeCanonicalCosts(
+  const requests = usageRows.data.rows.reduce((sum, row) => sum + metricNumber(row, "requests"), 0);
+  const usageCost = summarizeCanonicalCosts(
     usageRows.data.rows.map((row) => ({
       costMicros: metricNumber(row, "costMicros"),
       costKind: dimension(row, "costKind"),
     })),
   ).totalUsageCost;
-  const tokens7d = usageRows.data.rows.reduce(
+  const tokens = usageRows.data.rows.reduce(
     (sum, row) => sum + metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens"),
     0,
   );
@@ -262,6 +295,7 @@ export async function getToolDetail(orgId: string, toolKey: string): Promise<Too
       toolName: quota.toolName,
       windowType: quota.windowType,
       usedPercent: quota.usedPercent,
+      creditsRemaining: quota.creditsRemaining,
       resetAt: quota.resetAt,
       deviceHostname: quota.device?.hostname ?? null,
       developerName: quota.device?.user?.name ?? null,
@@ -271,6 +305,28 @@ export async function getToolDetail(orgId: string, toolKey: string): Promise<Too
   const seatsPurchased = plans.reduce((sum, plan) => sum + plan.seatCapacity, 0);
   const seatsAssigned = plans.reduce((sum, plan) => sum + plan.assignedSeats, 0);
   const deviceIds = new Set(installations.map((item) => item.deviceId));
+
+  const toolCallCounts = new Map<string, number>();
+  const flowCounts = new Map<string, number>();
+  for (const row of inventoryRows) {
+    if (row.model.startsWith("tool:")) {
+      const name = row.model.slice("tool:".length);
+      if (!name) continue;
+      toolCallCounts.set(name, (toolCallCounts.get(name) ?? 0) + row.requests);
+    } else if (row.model.startsWith("flow:")) {
+      const digest = row.model.slice("flow:".length);
+      if (!digest) continue;
+      flowCounts.set(digest, (flowCounts.get(digest) ?? 0) + row.requests);
+    }
+  }
+  const toolsUsed = Array.from(toolCallCounts.entries())
+    .map(([name, calls]) => ({ name, calls }))
+    .sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name))
+    .slice(0, 24);
+  const toolSequences = Array.from(flowCounts.entries())
+    .map(([digest, sessions]) => ({ digest, sessions }))
+    .sort((a, b) => b.sessions - a.sessions || a.digest.localeCompare(b.digest))
+    .slice(0, 8);
 
   return {
     toolKey: tool.key,
@@ -287,12 +343,14 @@ export async function getToolDetail(orgId: string, toolKey: string): Promise<Too
       seatsFree: Math.max(0, seatsPurchased - seatsAssigned),
       seatsPurchased,
       seatsAssigned,
-      usageCost7d,
-      requests7d,
-      tokens7d,
+      usageCost,
+      requests,
+      tokens,
     },
     people,
     quotas: quotaRows,
     plans,
+    toolsUsed,
+    toolSequences,
   };
 }

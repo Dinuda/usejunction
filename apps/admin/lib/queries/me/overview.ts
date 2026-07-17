@@ -175,7 +175,8 @@ type OverviewDeveloper = NonNullable<
 export async function getMeOverview(
   orgId: string,
   userId: string,
-  role: OrganizationRole
+  role: OrganizationRole,
+  options: { reportWindow?: MetricWindow } = {},
 ): Promise<MeOverviewData> {
   const developer = await prisma.developer.findFirst({
     where: { orgId, authUserId: userId },
@@ -186,7 +187,7 @@ export async function getMeOverview(
     throw new Error("developer profile required");
   }
 
-  return buildMeOverview(orgId, developer, role);
+  return buildMeOverview(orgId, developer, role, options.reportWindow);
 }
 
 /** Admin view of any teammate by developer id. */

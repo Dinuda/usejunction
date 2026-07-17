@@ -1,4 +1,5 @@
 import { canonicalToolKey } from "@/lib/tools/catalog";
+import { isSecondaryQuotaWindow } from "@/lib/quotas/display";
 
 export const PLAN_UTILIZATION_POLICY_VERSION = "plan-utilization-v1" as const;
 
@@ -69,9 +70,29 @@ function mapSource(source: string): QuotaUtilization["source"] {
 }
 
 function windowRank(windowType: string): number {
+  if (isSecondaryQuotaWindow(windowType)) return 4;
   if (/month/i.test(windowType)) return 0;
   if (/week/i.test(windowType)) return 1;
   return 2;
+}
+
+/**
+ * Interim primary quota: prefer monthly, then weekly, then highest rawRatio.
+ * Secondary windows (promo/grant/bonus/resets/credits) never win when a
+ * billing-pressure window exists.
+ */
+export function selectPrimaryQuota(rows: QuotaUtilization[]): QuotaUtilization | null {
+  const usable = rows.filter((row) => !row.stale || row.rawRatio != null);
+  if (!usable.length) return rows[0] ?? null;
+
+  const primaryCandidates = usable.filter((row) => !isSecondaryQuotaWindow(row.windowType));
+  const pool = primaryCandidates.length > 0 ? primaryCandidates : usable;
+
+  return [...pool].sort((a, b) => {
+    const rank = windowRank(a.windowType) - windowRank(b.windowType);
+    if (rank !== 0) return rank;
+    return (b.rawRatio ?? -1) - (a.rawRatio ?? -1);
+  })[0];
 }
 
 /** Map QuotaSnapshot rows into QuotaUtilization values. Missing absolutes stay null. */
@@ -128,20 +149,6 @@ export function dedupeQuotaUtilizations(rows: QuotaUtilization[]): QuotaUtilizat
     }
   }
   return Array.from(map.values());
-}
-
-/**
- * Interim primary quota: prefer monthly, then weekly, then highest rawRatio.
- */
-export function selectPrimaryQuota(rows: QuotaUtilization[]): QuotaUtilization | null {
-  const usable = rows.filter((row) => !row.stale || row.rawRatio != null);
-  if (!usable.length) return rows[0] ?? null;
-
-  return [...usable].sort((a, b) => {
-    const rank = windowRank(a.windowType) - windowRank(b.windowType);
-    if (rank !== 0) return rank;
-    return (b.rawRatio ?? -1) - (a.rawRatio ?? -1);
-  })[0];
 }
 
 export function includedAllowanceUtilization(input: {
