@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { isDeviceOnline } from "@/lib/devices/presence";
-import { requireOrgRole } from "@/lib/rbac";
+import { requireOrgRole, rolesFor } from "@/lib/rbac";
 import { decryptSecret } from "@/lib/security";
 
 /**
@@ -9,7 +9,7 @@ import { decryptSecret } from "@/lib/security";
  * can bounce a sync to 127.0.0.1 when viewing the dashboard on that machine.
  */
 export async function GET(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin", "developer"]);
+  const auth = await requireOrgRole(req, rolesFor("self_view"));
   if (auth instanceof NextResponse) return auth;
 
   try {

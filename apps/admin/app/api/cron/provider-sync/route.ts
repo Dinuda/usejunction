@@ -12,7 +12,8 @@ export async function POST(req: NextRequest) {
     try {
       results.push({ id, ok: true, counts: await syncConnection(id) });
     } catch (error) {
-      results.push({ id, ok: false, error: error instanceof Error ? error.message : String(error) });
+      console.error("[cron/provider-sync]", id, error);
+      results.push({ id, ok: false, error: "sync failed" });
     }
   }
   return NextResponse.json({ claimed: connectionIds.length, results });

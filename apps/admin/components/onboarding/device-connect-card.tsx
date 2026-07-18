@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { canonicalToolKey } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
+import { userFacingError } from "@/lib/errors/user-facing";
 
 type Device = {
   id: string;
@@ -65,7 +66,7 @@ export function DeviceConnectCard({
     const response = await fetch("/api/me/enrollment-token", { method: "POST" });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setError(data.error ?? "Unable to create a connect command.");
+      setError(userFacingError(data.error, "Unable to create a connect command."));
       return;
     }
     setToken(data.token);

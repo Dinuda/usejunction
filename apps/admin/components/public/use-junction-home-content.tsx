@@ -6,7 +6,12 @@ import { HeroSection } from "@/components/public/hero-section";
 import { ProductWalkthrough } from "@/components/public/product-walkthrough";
 import { ToolLogosStrip } from "@/components/public/tool-logos-strip";
 import { BrandLogo } from "@/components/brand-logo";
-import { siteConfig } from "@/lib/public/config";
+import { PRICING_PLANS, siteConfig } from "@/lib/public/config";
+import {
+  DEVICE_LIMIT_FREE,
+  TEAM_PRICE_PER_DEV_USD,
+  TRIAL_DAYS,
+} from "@/lib/saas-billing/entitlements";
 import { buildJsonLd } from "@/lib/public/json-ld";
 import { cn } from "@/lib/utils";
 
@@ -35,44 +40,30 @@ const faqs = [
   ["What data does UseJunction collect?", "The agent and gateway record metadata such as tool, model, tokens, latency, estimated cost, device, and status. Prompts and responses are not stored by default."],
   ["Can we self-host it?", "Yes. UseJunction is open source and designed for infrastructure your team controls. Deploy the admin app and supporting services with the repository’s Docker or local setup."],
   ["Which tools are supported?", "The current MVP tracks Codex, Claude Code, Cursor, Continue, Cline, Roo Code, Copilot, Ollama, LM Studio, and related local runtimes."],
-  ["Is Team available today?", "Yes. New organizations start on a 14-day trial, then can upgrade to Team at $12 per developer per month for unlimited devices and full observability."],
+  ["Is Team available today?", `Yes. New organizations start on a ${TRIAL_DAYS}-day trial, then can upgrade to Team at $${TEAM_PRICE_PER_DEV_USD} per developer per month for unlimited devices and full observability.`],
 ] as const;
 
-const plans = [
-  {
-    name: "Community",
-    label: "Free tier",
-    price: "$0",
-    period: "forever",
-    description: "Self-hosted MIT or the free tier after your trial ends.",
-    cta: "Sign up free",
-    href: siteConfig.signupUrl,
-    featured: false,
-    features: ["MIT-licensed and self-hosted", "Up to 10 enrolled devices", "Usage, cost, and request visibility", "Device and configuration health"],
-  },
-  {
-    name: "Team",
-    label: null,
-    price: "$12",
-    period: "per developer / month",
-    description: "Unlimited devices and full observability for growing platform teams.",
-    cta: "Get started",
-    href: siteConfig.signupUrl,
-    featured: true,
-    features: ["Everything in Community", "Unlimited enrolled devices", "Per-developer cost attribution", "Latency, errors, and personal key detection"],
-  },
-  {
-    name: "Enterprise",
-    label: "Talk to us",
-    price: "Custom",
-    period: "annual agreement",
-    description: "A deployment conversation for organizations with specific requirements.",
-    cta: "Contact us",
-    href: "/contact?intent=enterprise",
-    featured: false,
-    features: ["Deployment planning", "Custom retention discussion", "Planned SSO and SAML", "Priority support discussion"],
-  },
-] as const;
+const plans = PRICING_PLANS.map((plan) => ({
+  name: plan.name,
+  label: plan.id === "community" ? "Free tier" : plan.id === "enterprise" ? "Talk to us" : null,
+  price: plan.price,
+  period: plan.id === "community" ? "forever" : plan.id === "enterprise" ? "annual agreement" : plan.period,
+  description:
+    plan.id === "community"
+      ? "Self-hosted MIT or the free tier after your trial ends."
+      : plan.id === "team"
+        ? "Unlimited devices and full observability for growing platform teams."
+        : "A deployment conversation for organizations with specific requirements.",
+  cta: plan.id === "enterprise" ? "Contact us" : plan.id === "team" ? "Get started" : "Sign up free",
+  href: plan.id === "enterprise" ? "/contact?intent=enterprise" : plan.cta.href,
+  featured: plan.featured,
+  features:
+    plan.id === "community"
+      ? [`MIT-licensed and self-hosted`, `Up to ${DEVICE_LIMIT_FREE} enrolled devices`, "Usage, cost, and request visibility", "Device and configuration health"]
+      : plan.id === "team"
+        ? ["Everything in Community", "Unlimited enrolled devices", "Per-developer cost attribution", "Latency, errors, and personal key detection"]
+        : ["Deployment planning", "Custom retention discussion", "Planned SSO and SAML", "Priority support discussion"],
+}));
 
 export function UseJunctionHomeContent() {
   const jsonLd = buildJsonLd();

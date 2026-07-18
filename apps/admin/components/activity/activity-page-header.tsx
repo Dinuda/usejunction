@@ -1,15 +1,12 @@
 import type { ReactNode } from "react";
-import { ActivityHubNav } from "@/components/activity/activity-hub-nav";
 
 export function ActivityPageHeader({
   title,
   description,
-  showNav = false,
   actions,
 }: {
   title: ReactNode;
   description?: string;
-  showNav?: boolean;
   actions?: ReactNode;
 }) {
   return (
@@ -21,10 +18,7 @@ export function ActivityPageHeader({
             <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>
           ) : null}
         </div>
-        <div className="flex shrink-0 flex-col items-stretch gap-3 sm:items-end sm:pb-0.5">
-          {actions}
-          {showNav ? <ActivityHubNav /> : null}
-        </div>
+        {actions ? <div className="flex shrink-0 flex-col items-stretch gap-3 sm:items-end sm:pb-0.5">{actions}</div> : null}
       </div>
     </header>
   );

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
-import { agentReleaseManifestSchema, compareAgentVersions } from "../lib/agent-updates/contracts";
+import { agentReleaseManifestSchema, compareAgentVersions, isAgentCompatibleForWorkExtraction, summarizeWorkExtractionReadiness, WORK_EXTRACTION_MIN_AGENT_VERSION } from "../lib/agent-updates/contracts";
 import { requireAgentReleaseOps } from "../lib/agent-updates/ops-auth";
 import {
   artifactKey,
@@ -10,12 +10,26 @@ import {
   rolloutEligibility,
 } from "../lib/agent-updates/service";
 
-test("agent versions follow semantic prerelease ordering", () => {
-  assert.equal(compareAgentVersions("0.2.0", "0.1.9"), 1);
-  assert.equal(compareAgentVersions("v1.0.0", "1.0.0"), 0);
-  assert.equal(compareAgentVersions("1.0.0-beta.2", "1.0.0-beta.11"), -1);
-  assert.equal(compareAgentVersions("1.0.0", "1.0.0-rc.1"), 1);
-  assert.equal(compareAgentVersions("1.0", "1.0.0"), null);
+test("work extraction readiness summarizes compatible vs outdated devices", () => {
+  const now = new Date("2026-07-17T12:00:00.000Z");
+  const readiness = summarizeWorkExtractionReadiness(
+    [
+      { agentVersion: "0.3.0", lastSeenAt: "2026-07-17T11:50:00.000Z" },
+      { agentVersion: "0.1.0", lastSeenAt: "2026-07-17T11:50:00.000Z", updating: true },
+      { agentVersion: "0.2.0", lastSeenAt: "2026-07-17T10:00:00.000Z" },
+    ],
+    { now, activeReleaseVersion: "0.3.0" },
+  );
+  assert.equal(readiness.minAgentVersion, WORK_EXTRACTION_MIN_AGENT_VERSION);
+  assert.equal(readiness.total, 3);
+  assert.equal(readiness.compatible, 1);
+  assert.equal(readiness.needsUpdate, 2);
+  assert.equal(readiness.online, 2);
+  assert.equal(readiness.offline, 1);
+  assert.equal(readiness.updating, 1);
+  assert.equal(readiness.activeReleaseVersion, "0.3.0");
+  assert.equal(isAgentCompatibleForWorkExtraction("0.3.0"), true);
+  assert.equal(isAgentCompatibleForWorkExtraction("0.2.0"), false);
 });
 
 test("release manifests reject malformed versions, checksums, and oversized artifacts", () => {

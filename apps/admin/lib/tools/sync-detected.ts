@@ -5,7 +5,6 @@ import { deriveSubscription } from "./subscriptions";
 
 const DEFAULT_PLAN_KEYS: Record<string, string> = {
   "chatgpt-codex": "free",
-  "codex-work": "plus",
   claude: "free",
   cursor: "hobby",
   "github-copilot": "free",
@@ -30,15 +29,6 @@ const VENDOR_PLAN_ALIASES: Record<string, Record<string, string>> = {
   "chatgpt-codex": {
     free: "free",
     go: "go",
-    plus: "plus",
-    pro: "pro",
-    business: "business",
-    team: "business",
-    enterprise: "enterprise",
-  },
-  "codex-work": {
-    free: "plus",
-    go: "plus",
     plus: "plus",
     pro: "pro",
     business: "business",

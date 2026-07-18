@@ -4,16 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
+/** Work-first Signals nav. Classic journeys/tools stay out of the hub until Phase 2. */
 const items = [
   ["/signals", "Overview"],
-  ["/signals/journeys", "Journeys"],
-  ["/signals/tools", "Tools"],
   ["/signals/activity", "Activity"],
   ["/signals/settings", "Settings"],
 ] as const;
 
-export function SignalsHubNav({ className }: { className?: string }) {
+export function SignalsHubNav({
+  className,
+}: {
+  className?: string;
+}) {
   const pathname = usePathname();
+
   return (
     <nav
       className={cn("flex flex-wrap items-stretch justify-end gap-0 border-b border-border", className)}
@@ -21,7 +25,9 @@ export function SignalsHubNav({ className }: { className?: string }) {
     >
       {items.map(([href, label]) => {
         const active =
-          href === "/signals" ? pathname === "/signals" : pathname === href || pathname.startsWith(`${href}/`);
+          href === "/signals"
+            ? pathname === "/signals"
+            : pathname === href || pathname.startsWith(`${href}/`);
         return (
           <Link
             key={href}

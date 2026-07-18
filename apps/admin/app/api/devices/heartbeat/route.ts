@@ -1,19 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
+import {
+  recordDeviceActivityEvent,
+} from "@/lib/activity/record-device-activity-event";
 import { bearerToken } from "@/lib/auth";
 import { updateDirectiveForHeartbeat } from "@/lib/agent-updates";
+import { revokeDeviceAuth } from "@/lib/devices/decommission";
 import { encryptSecret, hashOpaqueToken } from "@/lib/security";
 
 export async function POST(req: NextRequest) {
+  const started = Date.now();
   try {
     const token = bearerToken(req);
     if (!token) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    const device = await prisma.device.findUnique({ where: { deviceToken: token } });
+    const device = await prisma.device.findUnique({
+      where: { deviceToken: token },
+      include: { user: { select: { removedAt: true } } },
+    });
     if (!device) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+
+    const shouldUninstall = Boolean(device.decommissionedAt || device.user.removedAt);
+    if (shouldUninstall) {
+      await prisma.$transaction(async (tx) => {
+        if (!device.decommissionedAt) {
+          await tx.device.update({
+            where: { id: device.id },
+            data: {
+              decommissionedAt: device.user.removedAt ?? new Date(),
+              status: "offline",
+              localEndpoint: null,
+              localSyncTokenHash: null,
+              localSyncTokenEnc: null,
+            },
+          });
+        }
+        await revokeDeviceAuth(tx, device.id);
+      });
+      await recordDeviceActivityEvent({
+        orgId: device.orgId,
+        developerId: device.userId,
+        deviceId: device.id,
+        kind: "heartbeat",
+        direction: "directive",
+        status: "ok",
+        summary: `Heartbeat · uninstall directive · ${device.hostname}`,
+        requestSummary: { hostname: device.hostname },
+        responseSummary: { uninstall: true },
+        durationMs: Date.now() - started,
+      });
+      return NextResponse.json({ ok: true, deviceId: device.id, uninstall: true });
     }
 
     const body = await req.json().catch(() => ({}));
@@ -75,6 +115,49 @@ export async function POST(req: NextRequest) {
     } catch (error) {
       console.error("[devices/heartbeat-update]", error);
     }
+
+    const hostname =
+      typeof body.hostname === "string" ? body.hostname.slice(0, 255) : device.hostname;
+    const agentVersion =
+      typeof body.agentVersion === "string" ? body.agentVersion.slice(0, 64) : device.agentVersion;
+    const hasUpdate = Boolean(update);
+
+    await recordDeviceActivityEvent({
+      orgId: device.orgId,
+      developerId: device.userId,
+      deviceId: device.id,
+      kind: "heartbeat",
+      direction: hasUpdate ? "directive" : "ingest",
+      status: "ok",
+      summary: hasUpdate
+        ? `Heartbeat · update directive · ${hostname} · agent ${agentVersion}`
+        : `Heartbeat · ${hostname} · agent ${agentVersion}`,
+      requestSummary: {
+        hostname,
+        os: typeof body.os === "string" ? body.os.slice(0, 64) : device.os,
+        architecture:
+          typeof body.architecture === "string" ? body.architecture.slice(0, 64) : device.architecture,
+        agentVersion,
+        localEndpointPresent: Boolean(localEndpoint),
+        localSyncTokenPresent: Boolean(localSyncToken),
+      },
+      responseSummary: {
+        ok: true,
+        deviceId: device.id,
+        updatePresent: hasUpdate,
+        ...(hasUpdate && update && typeof update === "object"
+          ? {
+              update: {
+                version:
+                  "version" in update && typeof update.version === "string" ? update.version : null,
+                urgency:
+                  "urgency" in update && typeof update.urgency === "string" ? update.urgency : null,
+              },
+            }
+          : {}),
+      },
+      durationMs: Date.now() - started,
+    });
 
     return NextResponse.json({ ok: true, deviceId: device.id, update });
   } catch (e) {

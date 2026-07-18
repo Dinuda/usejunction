@@ -1,10 +1,21 @@
 import Link from "next/link";
+import { Suspense } from "react";
+import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
+import { MemberWorkSessionList } from "@/components/developers/member-work-session-list";
 import { SignalsFilters } from "@/components/signals/signals-filters";
 import { SignalsPageHeader } from "@/components/signals/signals-page-header";
-import { durationLabel, FlowPath } from "@/components/signals/signals-ui";
+import { WorkCsvExportButton } from "@/components/signals/work-csv-export-button";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
-import { getSignalsActivity, normalizeSignalsRange, readSignalsFilterOptions } from "@/lib/signals";
+import {
+  parseCycleView,
+  reportWindowForCycleView,
+} from "@/lib/dashboard/cycle-view";
+import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
+import { getWorkActivity, readSignalsFilterOptions } from "@/lib/signals";
+import { workSessionsToCsv } from "@/lib/signals/work-export";
+import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
+import { rolesFor } from "@/lib/rbac";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -12,14 +23,8 @@ function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function formatWhen(iso: string) {
-  const date = new Date(iso);
-  const ms = Date.now() - date.getTime();
-  if (ms < 60_000) return "just now";
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
-  if (ms < 7 * 86_400_000) return `${Math.floor(ms / 86_400_000)}d ago`;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+function isoDate(value: Date) {
+  return value.toISOString().slice(0, 10);
 }
 
 export default async function SignalsActivityPage({
@@ -28,76 +33,96 @@ export default async function SignalsActivityPage({
   searchParams?: Promise<SearchParams>;
 }) {
   const params = (await searchParams) ?? {};
-  const { orgId, userId, role } = await requireWorkspaceRole(["owner", "admin"]);
-  const range = normalizeSignalsRange(firstParam(params.range));
+  const { orgId, userId, role } = await requireWorkspaceRole(rolesFor("org_overview"));
+  const cycleView = parseCycleView(firstParam(params.view));
+  const rollingPeriod = parseRollingPeriodFromSearch({
+    days: firstParam(params.days),
+    from: firstParam(params.from),
+    to: firstParam(params.to),
+  });
   const developerId = firstParam(params.developerId) || undefined;
   const teamId = firstParam(params.teamId) || undefined;
   const tool = firstParam(params.tool) || undefined;
+  const now = new Date();
 
-  const [envelope, options] = await Promise.all([
-    getSignalsActivity(
-      { orgId, actorId: userId, roles: [role], now: new Date(), timezone: UTC_TIMEZONE },
-      { range, developerId, teamId, tool, limit: 50 },
-    ),
+  const [subscriptions, options] = await Promise.all([
+    listSubscriptions(orgId),
     readSignalsFilterOptions(orgId),
   ]);
-  const data = envelope.data;
+  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
+
+  const filters = {
+    from: isoDate(reportWindow.from),
+    to: isoDate(reportWindow.to),
+    developerId,
+    teamId,
+    tool,
+    limit: 100,
+  };
+  const context = { orgId, actorId: userId, roles: [role], now, timezone: UTC_TIMEZONE };
+
+  const workEnvelope = await getWorkActivity(context, filters);
+  const work = workEnvelope.data;
 
   return (
     <>
       <SignalsPageHeader
         title="Activity"
-        description="Privacy-safe session metadata. No prompts, screenshots, full URLs, or clipboard text."
-      />
-
-      <SignalsFilters
-        value={{ range, teamId, tool, developerId }}
-        teams={options.teams}
-        tools={options.tools}
-        developers={options.developers}
-        showPerson
-      />
-
-      {data.sessions.length ? (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="border-b border-border/70 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
-              <tr>
-                <th className="pb-3 pr-4 pt-1 font-medium">Person</th>
-                <th className="pb-3 pr-4 pt-1 font-medium">Flow</th>
-                <th className="pb-3 pr-4 pt-1 font-medium">Duration</th>
-                <th className="pb-3 pr-4 pt-1 font-medium">When</th>
-                <th className="pb-3 pr-4 pt-1 font-medium">Confidence</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.sessions.map((session) => (
-                <tr key={session.id} className="transition-colors hover:bg-muted/30">
-                  <td className="py-5 pr-4">
-                    <div className="font-medium">{session.person}</div>
-                    <div className="text-xs text-muted-foreground">{session.email}</div>
-                  </td>
-                  <td className="py-5 pr-4">
-                    <Link
-                      href={`/signals/journeys/${encodeURIComponent(session.flowKey)}`}
-                      className="hover:underline"
-                    >
-                      <FlowPath flow={session.flow} />
-                    </Link>
-                  </td>
-                  <td className="py-5 pr-4 tabular-nums">{durationLabel(session.durationSeconds)}</td>
-                  <td className="py-5 pr-4 text-muted-foreground">{formatWhen(session.startedAt)}</td>
-                  <td className="py-5 pr-4 tabular-nums text-muted-foreground">
-                    {Math.round(session.confidence * 100)}%
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        description="Coding-tool work from enrolled agents. Asks, change summaries, and file activity — not full chat transcripts."
+      >
+        <div className="flex justify-end">
+          <CycleViewPicker view={cycleView} period={rollingPeriod} basePath="/signals/activity" />
         </div>
-      ) : (
-        <p className="py-4 text-sm text-muted-foreground">No sessions match these filters.</p>
-      )}
+      </SignalsPageHeader>
+
+      <Suspense fallback={null}>
+        <SignalsFilters
+          value={{ teamId, tool, developerId }}
+          teams={options.teams}
+          tools={options.tools}
+          developers={options.developers}
+          showPerson
+        />
+      </Suspense>
+
+      <section>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold tracking-tight">Work</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Structured traces from local AI tools when work extraction is on.
+            </p>
+          </div>
+          {work.enabled && work.sessions.length ? (
+            <WorkCsvExportButton
+              filename={`work-activity-${new Date().toISOString().slice(0, 10)}.csv`}
+              csv={workSessionsToCsv(work.sessions)}
+            />
+          ) : null}
+        </div>
+
+        {!work.enabled ? (
+          <p className="py-2 text-sm text-muted-foreground">
+            Work extraction is off. Turn it on under{" "}
+            <Link href="/settings" className="underline underline-offset-2 hover:text-foreground">
+              Settings → Signals
+            </Link>
+            .
+          </p>
+        ) : work.sessions.length ? (
+          <MemberWorkSessionList
+            sessions={work.sessions}
+            density="table"
+            fromTeam={false}
+            showPerson
+            maxHeightClass="max-h-[40rem]"
+          />
+        ) : (
+          <p className="py-2 text-sm text-muted-foreground">
+            No extracted work sessions in this period yet.
+          </p>
+        )}
+      </section>
     </>
   );
 }

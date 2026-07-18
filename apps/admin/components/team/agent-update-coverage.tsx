@@ -88,7 +88,7 @@ export function AgentUpdateCoverage({ coverage }: { coverage: Coverage }) {
         </Badge>
       </div>
 
-      <div className="mb-6 grid gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-6 grid items-start gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
         <SignalsKpi
           label="Pulled update"
           className="pl-5"
@@ -97,19 +97,19 @@ export function AgentUpdateCoverage({ coverage }: { coverage: Coverage }) {
         />
         <SignalsKpi
           label="Installed + restarted"
-          className="sm:border-l sm:border-border sm:pl-8"
+          className="sm:pl-8"
           value={metrics.confirmed}
           sub={`${metrics.downloadToInstallPercent}% of downloads`}
         />
         <SignalsKpi
           label="Currently failed"
-          className="xl:border-l xl:border-border xl:pl-8"
+          className="xl:pl-8"
           value={metrics.failed}
           sub={`${metrics.failureRatePercent}% of attempts`}
         />
         <SignalsKpi
           label="Currently eligible"
-          className="sm:border-l sm:border-border sm:pl-8"
+          className="sm:pl-8"
           value={metrics.eligible}
           sub={`${metrics.pendingOnline} pending online · ${metrics.pendingOffline} offline`}
         />

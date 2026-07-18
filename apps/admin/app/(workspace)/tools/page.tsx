@@ -24,7 +24,7 @@ function ToolsHeader({ personal = false }: { personal?: boolean }) {
         <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
           {personal
             ? "Tools detected on your connected computers, with live quota windows when available."
-            : "Manage team subscriptions and compare purchased seats with detected activity and quotas."}
+            : "Manage team subscriptions and compare purchased seats with usage and quotas."}
         </p>
       </div>
     </header>
@@ -77,7 +77,7 @@ function PersonalTools({
           />
         </div>
       ) : null}
-      <div className="mb-10 grid gap-y-8 sm:grid-cols-2">
+      <div className="mb-10 grid items-start gap-y-8 sm:grid-cols-2">
         <SignalsKpi
           label="Detected tools"
           hero
@@ -139,9 +139,9 @@ export default async function ToolsPage({
 }: {
   searchParams: Promise<{ view?: string; days?: string; from?: string; to?: string }>;
 }) {
-  const { orgId, role, userId } = await requireWorkspaceRole(["owner", "admin", "developer"]);
+  const { orgId, role, userId } = await requireWorkspaceRole(["owner", "admin", "user"]);
   const syncContext = await getLocalSyncContext(orgId, userId);
-  if (role === "developer") {
+  if (role === "user") {
     const personal = await getMeOverview(orgId, userId, role);
     if (!syncContext) {
       return (
@@ -182,9 +182,12 @@ export default async function ToolsPage({
     err = e instanceof Error ? e.message : "Failed to load tools";
   }
 
-  const defaultTab = data?.tools.some((tool) => (tool.quotas?.length ?? 0) > 0 || tool.installedOn > 0)
-    ? "activity"
-    : "subscriptions";
+  // Period/view query params come from the Activity picker — keep that tab open.
+  // Plain /tools always lands on Subscriptions.
+  const defaultTab =
+    params.view != null || params.days != null || params.from != null || params.to != null
+      ? "activity"
+      : "subscriptions";
 
   return (
     <>

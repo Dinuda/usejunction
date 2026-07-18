@@ -72,7 +72,9 @@ export interface MeOverviewData {
         toolName: string;
         windowType: string;
         usedPercent: number | null;
+        creditsRemaining: number | null;
         resetAt: Date | null;
+        source: string;
         updatedAt: Date;
       }>;
     }>;
@@ -85,20 +87,6 @@ export interface MeOverviewData {
       lastActivityAt: Date | null;
       observedAt: Date;
     }>;
-    manualPlans: Array<{
-      id: string;
-      toolName: string;
-      planName: string;
-      planTier: string | null;
-      currency: string;
-      cycleSeatMicros: bigint;
-      includedCycleMicros: bigint;
-      seatCount: number;
-      seatStatus: string;
-      startDate: Date;
-      endDate: Date | null;
-      active: boolean;
-    }>;
     reportedTools: Array<{ toolName: string; source: string; observedAt: Date }>;
   };
   usage30d: {
@@ -107,6 +95,10 @@ export interface MeOverviewData {
     inputTokens: string;
     outputTokens: string;
     costMicros: string;
+    /** Vendor-verified usage dollars for the selected window. */
+    verifiedUsageCost: number;
+    /** Modeled API-equivalent dollars when vendor cost is missing. */
+    estimatedApiCost: number;
   };
   toolsUsage30d: Array<{
     toolName: string;
@@ -130,6 +122,7 @@ export interface MeOverviewData {
 const overviewInclude = {
   organization: { select: { name: true, slug: true } },
   devices: {
+    where: { decommissionedAt: null },
     orderBy: { lastSeenAt: "desc" as const },
     include: {
       toolInstallations: {
@@ -144,7 +137,9 @@ const overviewInclude = {
           toolName: true,
           windowType: true,
           usedPercent: true,
+          creditsRemaining: true,
           resetAt: true,
+          source: true,
           updatedAt: true,
         },
         orderBy: { updatedAt: "desc" as const },
@@ -161,9 +156,6 @@ const overviewInclude = {
       lastActivityAt: true,
       observedAt: true,
     },
-  },
-  planAssignments: {
-    orderBy: { startDate: "desc" as const },
   },
   toolClaims: { where: { enabled: true }, select: { toolName: true, source: true, observedAt: true } },
 };
@@ -375,7 +367,6 @@ async function buildMeOverview(
         quotas: device.quotaSnapshots,
       })),
       assignedPlans: developer.seatAssignments,
-      manualPlans: developer.planAssignments.filter((assignment) => assignment.active),
       reportedTools: developer.toolClaims,
     },
     usage30d: {
@@ -384,6 +375,8 @@ async function buildMeOverview(
       inputTokens: String(metricNumber(summaryRow, "inputTokens")),
       outputTokens: String(metricNumber(summaryRow, "outputTokens")),
       costMicros: String(Math.round((verifiedUsageCost + estimatedApiCost) * 1_000_000)),
+      verifiedUsageCost,
+      estimatedApiCost,
     },
     toolsUsage30d,
     aiCoding30d,

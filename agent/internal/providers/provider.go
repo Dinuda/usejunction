@@ -22,8 +22,9 @@ type Provider interface {
 	// making network calls that require browser auth. Returns nil when not
 	// available.
 	ProbeQuota(ctx context.Context) ([]types.QuotaSnapshot, error)
-	// ScanLocalUsage reads local JSONL session logs to aggregate token counts
-	// and estimated cost. refresh=true bypasses the on-disk cache.
+	// ScanLocalUsage reads local tool storage (JSONL sessions, sqlite DBs,
+	// extension task JSON) to aggregate token counts and estimated cost.
+	// refresh=true bypasses the on-disk scan cache; upload filtering is separate.
 	ScanLocalUsage(ctx context.Context, refresh bool) ([]types.DailyUsage, error)
 }
 

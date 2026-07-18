@@ -21,7 +21,8 @@ import (
 // ProgressFunc records the current phase for a running sync job.
 type ProgressFunc func(step, message string)
 
-// SyncFunc runs a collect+report cycle. refresh=true bypasses usage caches.
+// SyncFunc runs a collect+report cycle. refresh=true bypasses on-disk usage
+// scan caches; usage/work uploads remain delta-filtered (fingerprints + watermark).
 type SyncFunc func(ctx context.Context, refresh bool, progress ProgressFunc) (tools, accounts, quotas, usage int, warnings []string, err error)
 
 type syncJob struct {
@@ -331,10 +332,12 @@ func (s *Server) finishJob(jobID string, tools, accounts, quotas, usage int, war
 	s.active.UpdatedAt = now.Format(time.RFC3339)
 	s.active.FinishedAt = now.Format(time.RFC3339)
 	if err != nil {
+		fmt.Printf("[localsync] sync failed: %v\n", err)
 		s.active.Status = "failed"
 		s.active.Step = "failed"
 		s.active.Message = "Sync failed"
-		s.active.Error = err.Error()
+		// Keep the dashboard message generic; details stay in the agent log.
+		s.active.Error = "Sync failed"
 	} else {
 		s.active.Status = "succeeded"
 		s.active.Step = "complete"

@@ -3,8 +3,9 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
 import { resolveOrgId } from "@/lib/require-organization";
+import type { OrganizationRole } from "@/lib/rbac/permissions";
 
-export type OrganizationRole = "owner" | "admin" | "developer";
+export type { OrganizationRole };
 
 export type WorkspaceContext = {
   userId: string;

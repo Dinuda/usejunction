@@ -65,6 +65,79 @@ export type AgentUpdateDirective = {
   eligibleAt: string;
 };
 
+/**
+ * Minimum agent version that includes Signals work extraction + changeNarrative.
+ * Devices below this must update before they can collect/upload work sessions.
+ * Bump when shipping the release that first includes that capability.
+ */
+export const WORK_EXTRACTION_MIN_AGENT_VERSION = "0.3.0";
+
+/**
+ * Minimum agent version for classic app/domain journey collection quality.
+ * Reserved for a later OTA; enforcement lands when that agent ships.
+ * Until then, policy `enabled` may start early sampling but product UI treats journeys as secondary.
+ */
+export const CLASSIC_SIGNALS_MIN_AGENT_VERSION = "0.4.0";
+
+export type WorkExtractionDeviceReadiness = {
+  total: number;
+  compatible: number;
+  needsUpdate: number;
+  online: number;
+  offline: number;
+  updating: number;
+  minAgentVersion: string;
+  activeReleaseVersion: string | null;
+};
+
+export function isAgentCompatibleForWorkExtraction(agentVersion: string, minVersion = WORK_EXTRACTION_MIN_AGENT_VERSION) {
+  const comparison = compareAgentVersions(agentVersion, minVersion);
+  return comparison !== null && comparison >= 0;
+}
+
+/** Reserved for Phase 2 classic Signals / journey quality gate. */
+export function isAgentCompatibleForClassicSignals(agentVersion: string, minVersion = CLASSIC_SIGNALS_MIN_AGENT_VERSION) {
+  const comparison = compareAgentVersions(agentVersion, minVersion);
+  return comparison !== null && comparison >= 0;
+}
+
+export function summarizeWorkExtractionReadiness(
+  devices: Array<{ agentVersion: string; lastSeenAt: Date | string; updating?: boolean }>,
+  opts: {
+    minAgentVersion?: string;
+    activeReleaseVersion?: string | null;
+    now?: Date;
+  } = {},
+): WorkExtractionDeviceReadiness {
+  const minAgentVersion = opts.minAgentVersion ?? WORK_EXTRACTION_MIN_AGENT_VERSION;
+  const now = opts.now ?? new Date();
+  const onlineCutoff = now.getTime() - 30 * 60_000;
+  let compatible = 0;
+  let needsUpdate = 0;
+  let online = 0;
+  let offline = 0;
+  let updating = 0;
+  for (const device of devices) {
+    const lastSeen = typeof device.lastSeenAt === "string" ? new Date(device.lastSeenAt) : device.lastSeenAt;
+    const isOnline = lastSeen.getTime() >= onlineCutoff;
+    if (isOnline) online += 1;
+    else offline += 1;
+    if (device.updating) updating += 1;
+    if (isAgentCompatibleForWorkExtraction(device.agentVersion, minAgentVersion)) compatible += 1;
+    else needsUpdate += 1;
+  }
+  return {
+    total: devices.length,
+    compatible,
+    needsUpdate,
+    online,
+    offline,
+    updating,
+    minAgentVersion,
+    activeReleaseVersion: opts.activeReleaseVersion ?? null,
+  };
+}
+
 export function compareAgentVersions(left: string, right: string) {
   const parse = (value: string) => {
     const normalized = value.trim().replace(/^v/, "");

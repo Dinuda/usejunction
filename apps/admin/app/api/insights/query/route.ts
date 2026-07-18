@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { ZodError } from "zod";
 import { executeUsageQuery, type AnalyticsScope } from "@/lib/analytics/query";
-import { requireOrgRole } from "@/lib/rbac";
+import { requireOrgRole, rolesFor } from "@/lib/rbac";
 
 export async function POST(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin", "developer"]);
+  const auth = await requireOrgRole(req, rolesFor("self_view"));
   if (auth instanceof NextResponse) return auth;
 
   const scope: AnalyticsScope = {
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     role: auth.role,
   };
 
-  if (auth.role === "developer") {
+  if (auth.role === "user") {
     const developer = await prisma.developer.findFirst({
       where: { orgId: auth.orgId, authUserId: auth.userId },
       select: { id: true },
@@ -38,7 +38,8 @@ export async function POST(req: NextRequest) {
       error.message.startsWith("Query window") ||
       error.message.startsWith("orderBy field")
     )) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      console.error("[insights/query] invalid query", error);
+      return NextResponse.json({ error: "invalid query" }, { status: 400 });
     }
     console.error("[insights/query]", error);
     return NextResponse.json({ error: "query failed" }, { status: 500 });

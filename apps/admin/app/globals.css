@@ -202,6 +202,32 @@ a {
   z-index: 1;
 }
 
+/* Always-visible thin scrollbar for capped Activity lists (macOS overlay scrollbars hide by default). */
+.uj-scrollbar {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 45%, transparent) transparent;
+}
+
+.uj-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.uj-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.uj-scrollbar::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklab, var(--muted-foreground) 40%, transparent);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+.uj-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklab, var(--muted-foreground) 60%, transparent);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

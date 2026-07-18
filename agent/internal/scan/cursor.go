@@ -32,7 +32,8 @@ func cursorAITrackingDBPath() string {
 }
 
 // ScanCursorLocal harvests WakaTime-style AI line metrics and model attribution
-// from Cursor's local SQLite stores. It never reads prompt text.
+// from Cursor's local sqlite stores (User/globalStorage/state.vscdb and
+// ~/.cursor/ai-tracking/ai-code-tracking.db). It never reads prompt text.
 func ScanCursorLocal(refresh bool) ([]types.DailyUsage, error) {
 	cacheFile := filepath.Join(config.CacheDir(), "cursor-local.json")
 	if !refresh {

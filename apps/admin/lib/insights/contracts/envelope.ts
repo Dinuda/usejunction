@@ -9,7 +9,10 @@ export type InsightKind =
   | "signals-journeys"
   | "signals-tools"
   | "signals-activity"
-  | "signals-journey-detail";
+  | "signals-journey-detail"
+  | "work-activity"
+  | "work-overview"
+  | "work-session-detail";
 
 export type InsightContext = {
   orgId: string;

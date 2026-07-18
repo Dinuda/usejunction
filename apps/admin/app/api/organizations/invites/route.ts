@@ -3,17 +3,17 @@ import { prisma } from "@usejunction/db";
 import { z } from "zod";
 import { appUrl, sendAuthEmail } from "@/lib/auth-actions";
 import { normalizeEmail } from "@/lib/developer-identity";
-import { requireOrgRole, audit } from "@/lib/rbac";
+import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
 
 const schema = z.object({
   email: z.string().email().optional(),
   emails: z.array(z.string().email()).min(1).max(100).optional(),
-  role: z.enum(["admin", "developer"]).default("developer"),
+  role: z.enum(["admin", "manager", "user"]).default("user"),
 }).refine((value) => Boolean(value.email || value.emails?.length), { message: "at least one email is required" });
 
 export async function GET(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
   const invites = await prisma.organizationInvite.findMany({
     where: { orgId: auth.orgId },
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "valid email and role required" }, { status: 400 });
@@ -45,7 +45,8 @@ export async function POST(req: NextRequest) {
       await sendAuthEmail({ to: email, subject: "Join your UseJunction workspace", url });
     } catch (cause) {
       status = "email_failed";
-      error = cause instanceof Error ? cause.message : "Unable to send invitation email";
+      console.error("[organizations/invites] email failed", cause);
+      error = "Unable to send invitation email";
     }
     await audit({ orgId: auth.orgId, actorType: "user", actorId: auth.userId, action: "invite.created", targetType: "invite", targetId: invite.id, metadata: { email, role: invite.role, status } });
     results.push({ invite, status, error, ...(process.env.NODE_ENV === "production" ? {} : { token, url }) });

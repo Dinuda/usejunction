@@ -6,7 +6,7 @@ import {
   resolveAuthUser,
   type AuthUserInput,
 } from "@/lib/ensure-auth-user";
-import { trialEndsAtFromNow } from "@/lib/billing/entitlements";
+import { trialEndsAtFromNow } from "@/lib/saas-billing/entitlements";
 
 function slugify(value: string) {
   return (

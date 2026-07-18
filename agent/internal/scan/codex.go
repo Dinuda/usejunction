@@ -35,7 +35,8 @@ type codexSessionState struct {
 	flowSeen  map[string]bool
 }
 
-// ScanCodex walks session logs using cumulative total_token_usage deltas.
+// ScanCodex walks ~/.codex/sessions (+ archived_sessions) JSONL using
+// cumulative total_token_usage deltas.
 // Sessions are attributed to "codex" or "codex-work" via session_meta.originator.
 func ScanCodex(codexHome string, refresh bool) ([]types.DailyUsage, error) {
 	cacheFile := filepath.Join(config.CacheDir(), "codex.json")
@@ -93,15 +94,11 @@ func ScanCodex(codexHome string, refresh bool) ([]types.DailyUsage, error) {
 }
 
 func processCodexFile(path string, buckets map[string]*types.DailyUsage) {
-	repository := repositoryForSessionFile(path)
 	state := &codexSessionState{
 		toolName: codexToolName,
 		flowSeen: map[string]bool{},
 	}
-	if originator := peekCodexOriginator(path); originator != "" {
-		state.originator = originator
-		state.toolName = codexToolNameFromOriginator(originator)
-	}
+	var repository *types.RepositoryIdentity
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -118,6 +115,9 @@ func processCodexFile(path string, buckets map[string]*types.DailyUsage) {
 		if originator := codexOriginatorFromRow(row); originator != "" {
 			state.originator = originator
 			state.toolName = codexToolNameFromOriginator(originator)
+		}
+		if repository == nil {
+			repository = repositoryFromCodexRow(row)
 		}
 		if model := codexModelFromRow(row); model != "" {
 			state.lastModel = model
@@ -170,6 +170,28 @@ func processCodexFile(path string, buckets map[string]*types.DailyUsage) {
 	emitCodexFlowDigest(buckets, state)
 }
 
+// repositoryFromCodexRow reads git.repository_url from session_meta — no second
+// file pass and no git -C into the workspace (avoids TCC prompts + timeouts).
+func repositoryFromCodexRow(row map[string]any) *types.RepositoryIdentity {
+	typ, _ := row["type"].(string)
+	if typ != "session_meta" {
+		return nil
+	}
+	payload, _ := row["payload"].(map[string]any)
+	if payload == nil {
+		return nil
+	}
+	git, _ := payload["git"].(map[string]any)
+	if git == nil {
+		return nil
+	}
+	raw, _ := git["repository_url"].(string)
+	if raw == "" {
+		raw, _ = git["repo_url"].(string)
+	}
+	return normalizeRemote(strings.TrimSpace(raw))
+}
+
 func recordCodexToolCall(
 	buckets map[string]*types.DailyUsage,
 	state *codexSessionState,
@@ -214,32 +236,6 @@ func emitCodexFlowDigest(buckets map[string]*types.DailyUsage, state *codexSessi
 		}
 	}
 	buckets[key].Requests++
-}
-
-func peekCodexOriginator(path string) string {
-	f, err := os.Open(path)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-	originator := ""
-	lines := 0
-	_ = forEachJSONLLine(f, defaultJSONLMaxKeep, func(line []byte) error {
-		if lines >= 50 || originator != "" {
-			return errStopJSONL
-		}
-		lines++
-		var row map[string]any
-		if json.Unmarshal(line, &row) != nil {
-			return nil
-		}
-		if o := codexOriginatorFromRow(row); o != "" {
-			originator = o
-			return errStopJSONL
-		}
-		return nil
-	})
-	return originator
 }
 
 func codexSurfaceMetadata(originator, kind string) map[string]any {

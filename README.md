@@ -165,7 +165,7 @@ Signals collection is documented in [docs/signals-collection.md](docs/signals-co
 | `usejunction setup` | Enable Claude OTEL and send initial report |
 | `usejunction doctor` | Detect installed tools |
 | `usejunction status` | Show enrollment state |
-| `usejunction cost --tool all` | Local JSONL usage scan |
+| `usejunction cost --tool all` | Local usage scan (JSONL / sqlite / extension task JSON) |
 | `usejunction update --check` | Check the active release without installing |
 | `usejunction update` | Download, verify, and install an available update |
 | `usejunction update --rollback` | Restore the retained previous binary |
@@ -212,7 +212,7 @@ scripts/        Full-stack E2E
 
 ## Privacy
 
-Metadata-only logging by default. Local scans read token counts from session JSONL files — never prompts or responses.
+Metadata-only logging by default. Local scans read token counts from tool-local storage (JSONL sessions, sqlite DBs, extension task JSON) — never prompts or responses.
 
 Signals collection adds a separate, opt-in activity layer for app/domain flows around AI usage. It does not collect screenshots, raw prompts, clipboard text, or full URLs, and the employee ledger shows exactly what was uploaded.
 

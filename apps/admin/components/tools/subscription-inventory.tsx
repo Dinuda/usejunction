@@ -5,20 +5,20 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronRight, Loader2, Plus, Users } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { MetricPeriodFilter } from "@/components/dashboard/metric-period-filter";
+import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
 import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
 import { cn } from "@/lib/utils";
 import { AddSubscriptionSheet } from "./add-subscription-sheet";
 import { ToolLogoTile } from "./tool-brand-icon";
 import { aggregateTeamQuotas, teamQuotaSummaryLabel } from "@/lib/quotas/display";
-import { canonicalToolKey, findCatalogTool } from "@/lib/tools/catalog";
+import { canonicalToolKey, findCatalogTool, subscriptionToolKeys } from "@/lib/tools/catalog";
 import type { DashboardToolsData } from "@/lib/queries/dashboard/tools";
 import type { CycleView } from "@/lib/dashboard/cycle-view";
 import { DEFAULT_ROLLING_PERIOD, type RollingPeriod } from "@/lib/dashboard/period-prefs";
 
 const toolsViews = [
   ["subscriptions", "Subscriptions"],
-  ["activity", "Detected activity"],
+  ["activity", "Activity"],
 ] as const;
 
 type ToolsView = (typeof toolsViews)[number][0];
@@ -65,12 +65,17 @@ const money = (micros: string | bigint, currency = "USD") =>
     maximumFractionDigits: 2,
   }).format(Number(BigInt(micros)) / 1_000_000);
 
+function matchesCatalogTool(subscriptionToolKey: string | null, catalogToolKey: string) {
+  if (!subscriptionToolKey) return false;
+  return (subscriptionToolKeys(catalogToolKey) as readonly string[]).includes(subscriptionToolKey);
+}
+
 export function SubscriptionInventory({
   detected,
   defaultTab = "subscriptions",
   hasLocalSync = false,
   title = "Tools, seats, spend.",
-  description = "Manage team subscriptions and compare purchased seats with detected activity and quotas.",
+  description = "Manage team subscriptions and compare purchased seats with usage and quotas.",
   cycleView = "current_cycles",
   period = DEFAULT_ROLLING_PERIOD,
   periodSuffix = "current",
@@ -123,7 +128,9 @@ export function SubscriptionInventory({
       catalog
         .map((tool) => ({
           tool,
-          subscriptions: subscriptions.filter((subscription) => subscription.toolKey === tool.key),
+          subscriptions: subscriptions.filter((subscription) =>
+            matchesCatalogTool(subscription.toolKey, tool.key),
+          ),
         }))
         .filter((group) => group.subscriptions.length > 0),
     [catalog, subscriptions],
@@ -186,7 +193,7 @@ export function SubscriptionInventory({
 
       {view === "subscriptions" ? (
         <div className="space-y-10">
-          <div className="grid gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid items-start gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
             <SignalsKpi
               label="Active tools"
               hero
@@ -316,7 +323,7 @@ export function SubscriptionInventory({
           </section>
         </div>
       ) : (
-        <DetectedActivity
+        <ActivityPanel
           data={detected}
           cycleView={cycleView}
           period={period}
@@ -354,7 +361,11 @@ function TeamQuotaCell({
   );
 }
 
-function DetectedActivity({
+function compact(value: number) {
+  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+function ActivityPanel({
   data,
   cycleView,
   period,
@@ -370,35 +381,38 @@ function DetectedActivity({
   const router = useRouter();
   const tools = data?.tools ?? [];
   const totals = {
-    tools: tools.length,
-    devices: tools.reduce((sum, tool) => sum + tool.installedOn, 0),
     requests: tools.reduce((sum, tool) => sum + tool.requests, 0),
+    inputTokens: tools.reduce((sum, tool) => sum + tool.inputTokens, 0),
+    outputTokens: tools.reduce((sum, tool) => sum + tool.outputTokens, 0),
     cost: tools.reduce((sum, tool) => sum + tool.cost, 0),
   };
   const periodLabel = periodSuffix.charAt(0).toUpperCase() + periodSuffix.slice(1);
 
   return (
     <div className="space-y-10">
-      <div className="grid gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
-        <SignalsKpi
-          label="Detected tools"
-          hero
-          className="pl-5"
-          value={totals.tools}
-          sub="From enrolled agents"
-        />
-        <SignalsKpi
-          label="Devices"
-          className="sm:border-l sm:border-border sm:pl-8"
-          value={totals.devices}
-          sub="Installs across tools"
-        />
+      <div className="flex justify-end">
+        <CycleViewPicker view={cycleView} period={period} basePath={periodBasePath} />
+      </div>
+
+      <div className="grid items-start gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
         <SignalsKpi
           label="Requests"
-          className="xl:border-l xl:border-border xl:pl-8"
+          hero
+          className="pl-5"
           value={totals.requests.toLocaleString()}
           sub={periodLabel}
-          action={<MetricPeriodFilter view={cycleView} period={period} basePath={periodBasePath} />}
+        />
+        <SignalsKpi
+          label="Input tokens"
+          className="sm:border-l sm:border-border sm:pl-8"
+          value={compact(totals.inputTokens)}
+          sub={periodLabel}
+        />
+        <SignalsKpi
+          label="Output tokens"
+          className="xl:border-l xl:border-border xl:pl-8"
+          value={compact(totals.outputTokens)}
+          sub={periodLabel}
         />
         <SignalsKpi
           label="Usage cost"
@@ -411,17 +425,17 @@ function DetectedActivity({
       {!tools.length ? (
         <section className="border bg-card p-5">
           <div className="py-10 text-center">
-            <h3 className="font-medium">No tool activity detected yet</h3>
+            <h3 className="font-medium">No activity yet</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Activity and quota windows appear here after developers enroll the command-line agent.
+              Requests, tokens, and usage cost appear here after developers enroll the command-line agent.
             </p>
           </div>
         </section>
       ) : (
         <section className="border bg-card p-5">
           <SignalsSectionHeader
-            title="Detected activity."
-            description="Observed installs and traffic. Plan use is averaged across people — open a tool for per-person windows."
+            title="Activity."
+            description="Requests, tokens, and cost by tool. Plan use is averaged across people — open a tool for per-person windows."
             bordered
           />
           <div className="overflow-x-auto">
@@ -429,9 +443,9 @@ function DetectedActivity({
               <thead className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
                 <tr>
                   <th className="pb-3 pr-4 pt-1 font-medium">Tool</th>
-                  <th className="pb-3 pr-4 pt-1 text-right font-medium">Devices</th>
                   <th className="pb-3 pr-4 pt-1 text-right font-medium">Requests ({periodSuffix})</th>
-                  <th className="pb-3 pr-4 pt-1 text-right font-medium">Tokens ({periodSuffix})</th>
+                  <th className="pb-3 pr-4 pt-1 text-right font-medium">Input ({periodSuffix})</th>
+                  <th className="pb-3 pr-4 pt-1 text-right font-medium">Output ({periodSuffix})</th>
                   <th className="pb-3 pr-4 pt-1 text-right font-medium">Cost ({periodSuffix})</th>
                   <th className="pb-3 pr-4 pt-1 text-right font-medium">Plan use</th>
                   <th className="pb-3 pt-1 text-right font-medium">
@@ -472,9 +486,9 @@ function DetectedActivity({
                           <span className="font-medium capitalize">{tool.toolName.replaceAll("-", " ")}</span>
                         </div>
                       </td>
-                      <td className="py-5 pr-4 text-right tabular-nums">{tool.installedOn}</td>
                       <td className="py-5 pr-4 text-right tabular-nums">{tool.requests.toLocaleString()}</td>
-                      <td className="py-5 pr-4 text-right tabular-nums">{tool.tokens.toLocaleString()}</td>
+                      <td className="py-5 pr-4 text-right tabular-nums">{compact(tool.inputTokens)}</td>
+                      <td className="py-5 pr-4 text-right tabular-nums">{compact(tool.outputTokens)}</td>
                       <td className="py-5 pr-4 text-right tabular-nums">${tool.cost.toFixed(2)}</td>
                       <td className="py-5 pr-4 text-right">
                         <TeamQuotaCell quotas={tool.quotas} />

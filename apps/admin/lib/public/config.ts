@@ -1,3 +1,9 @@
+import {
+  DEVICE_LIMIT_FREE,
+  TEAM_PRICE_PER_DEV_USD,
+  TRIAL_DAYS,
+} from "@/lib/saas-billing/entitlements";
+
 export const siteConfig = {
   name: "UseJunction",
   tagline: "Open-source observability for AI coding tools",
@@ -133,7 +139,7 @@ export const PRICING_PLANS = [
     featured: false,
     features: [
       "Self-hosted MIT license",
-      "Up to 10 enrolled devices",
+      `Up to ${DEVICE_LIMIT_FREE} enrolled devices`,
       "Usage & cost dashboard",
       "Tool & model visibility",
       "Community support on GitHub",
@@ -144,13 +150,13 @@ export const PRICING_PLANS = [
     id: "team",
     name: "Team",
     description: "For growing teams that need full coverage",
-    price: "$12",
+    price: `$${TEAM_PRICE_PER_DEV_USD}`,
     period: "per developer / month",
     cta: { label: "Start free trial", href: siteConfig.signupUrl },
     featured: true,
     badge: "Popular",
     features: [
-      "14-day free trial",
+      `${TRIAL_DAYS}-day free trial`,
       "Unlimited enrolled devices",
       "Per-developer cost attribution",
       "Latency & error rate metrics",

@@ -126,3 +126,109 @@ test("release cohort, escalation, ownership, idempotency, and confirmation", {
     await prisma.organization.delete({ where: { id: org.id } });
   }
 });
+
+test("accelerateOrgAgentRollout only bumps eligibility for the target org", {
+  skip: process.env.RUN_AGENT_UPDATE_DB_TESTS !== "1",
+}, async () => {
+  const { accelerateOrgAgentRollout } = await import("../lib/agent-updates/service");
+  const suffix = Date.now().toString(36);
+  const version = `99.1.0-${suffix}`;
+  const now = new Date("2026-07-17T12:00:00.000Z");
+  const future = new Date("2026-07-18T12:00:00.000Z");
+
+  const orgA = await prisma.organization.create({ data: { name: `Accel A ${suffix}`, slug: `accel-a-${suffix}` } });
+  const orgB = await prisma.organization.create({ data: { name: `Accel B ${suffix}`, slug: `accel-b-${suffix}` } });
+  const devA = await prisma.developer.create({
+    data: { orgId: orgA.id, name: "A", email: `a-${suffix}@example.com`, role: "owner" },
+  });
+  const devB = await prisma.developer.create({
+    data: { orgId: orgB.id, name: "B", email: `b-${suffix}@example.com`, role: "owner" },
+  });
+  const deviceA = await prisma.device.create({
+    data: {
+      orgId: orgA.id,
+      userId: devA.id,
+      hostname: "a-host",
+      os: "linux",
+      architecture: "amd64",
+      agentVersion: "0.1.0",
+      deviceToken: `uj_accel_a_${suffix}`,
+    },
+  });
+  const deviceB = await prisma.device.create({
+    data: {
+      orgId: orgB.id,
+      userId: devB.id,
+      hostname: "b-host",
+      os: "linux",
+      architecture: "amd64",
+      agentVersion: "0.1.0",
+      deviceToken: `uj_accel_b_${suffix}`,
+    },
+  });
+
+  try {
+    const release = await prisma.agentRelease.create({
+      data: {
+        version,
+        status: "active",
+        urgency: "normal",
+        rolloutHours: 24,
+        publishedAt: now,
+        rolloutStartedAt: now,
+        manifest: {
+          schemaVersion: 1,
+          version,
+          publishedAt: now.toISOString(),
+          urgency: "normal",
+          rolloutHours: 24,
+          artifacts: {
+            "darwin-arm64": { url: "https://example.com/a", sha256: "a".repeat(64), size: 1 },
+            "darwin-amd64": { url: "https://example.com/a", sha256: "a".repeat(64), size: 1 },
+            "linux-arm64": { url: "https://example.com/a", sha256: "a".repeat(64), size: 1 },
+            "linux-amd64": { url: "https://example.com/a", sha256: "a".repeat(64), size: 1 },
+          },
+        },
+      },
+    });
+    await prisma.agentUpdateDeployment.createMany({
+      data: [
+        {
+          releaseId: release.id,
+          orgId: orgA.id,
+          deviceId: deviceA.id,
+          sourceVersion: "0.1.0",
+          targetVersion: version,
+          eligibleAt: future,
+          state: "pending",
+        },
+        {
+          releaseId: release.id,
+          orgId: orgB.id,
+          deviceId: deviceB.id,
+          sourceVersion: "0.1.0",
+          targetVersion: version,
+          eligibleAt: future,
+          state: "pending",
+        },
+      ],
+    });
+
+    const result = await accelerateOrgAgentRollout(orgA.id, now);
+    assert.equal(result.reason, "ok");
+    assert.equal(result.accelerated, 1);
+    assert.equal(result.targetVersion, version);
+
+    const rowA = await prisma.agentUpdateDeployment.findFirstOrThrow({
+      where: { releaseId: release.id, deviceId: deviceA.id },
+    });
+    const rowB = await prisma.agentUpdateDeployment.findFirstOrThrow({
+      where: { releaseId: release.id, deviceId: deviceB.id },
+    });
+    assert.equal(rowA.eligibleAt.toISOString(), now.toISOString());
+    assert.equal(rowB.eligibleAt.toISOString(), future.toISOString());
+  } finally {
+    await prisma.agentRelease.deleteMany({ where: { version } });
+    await prisma.organization.deleteMany({ where: { id: { in: [orgA.id, orgB.id] } } });
+  }
+});

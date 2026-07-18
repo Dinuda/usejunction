@@ -1,0 +1,17 @@
+{
+  "sourceScreen": "repo public dashboard demo component recorded locally because no standalone supplied recordings were present",
+  "durationSeconds": 20,
+  "fps": 30,
+  "outputs": [
+    "/Users/dinudayaggahavita/Documents/work/usejunciton/video/renders/usejunction-launch-landscape-narration.mp4",
+    "/Users/dinudayaggahavita/Documents/work/usejunciton/video/renders/usejunction-launch-landscape-music.mp4",
+    "/Users/dinudayaggahavita/Documents/work/usejunciton/video/renders/usejunction-launch-vertical-narration.mp4",
+    "/Users/dinudayaggahavita/Documents/work/usejunciton/video/renders/usejunction-launch-vertical-music.mp4"
+  ],
+  "specs": {
+    "landscape": "1920x1080",
+    "vertical": "1080x1920",
+    "codec": "H.264 yuv420p",
+    "audio": "48 kHz AAC"
+  }
+}

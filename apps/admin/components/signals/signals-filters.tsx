@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const DEBOUNCE_MS = 400;
@@ -12,7 +12,6 @@ export type SignalsFilterOption = {
 };
 
 export type SignalsFiltersValue = {
-  range: 7 | 30 | 90;
   teamId?: string;
   tool?: string;
   developerId?: string;
@@ -35,10 +34,14 @@ const selectClassName =
 function buildHref(
   pathname: string,
   next: SignalsFiltersValue,
+  searchParams: URLSearchParams,
   fields: { showTeam: boolean; showTool: boolean; showPerson: boolean },
 ) {
   const params = new URLSearchParams();
-  params.set("range", String(next.range));
+  for (const key of ["view", "days", "from", "to"] as const) {
+    const value = searchParams.get(key);
+    if (value) params.set(key, value);
+  }
   if (fields.showTeam && next.teamId) params.set("teamId", next.teamId);
   if (fields.showTool && next.tool) params.set("tool", next.tool);
   if (fields.showPerson && next.developerId) params.set("developerId", next.developerId);
@@ -58,13 +61,14 @@ export function SignalsFilters({
 }: SignalsFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
   const [draft, setDraft] = useState(value);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setDraft(value);
-  }, [value.range, value.teamId, value.tool, value.developerId]);
+  }, [value.teamId, value.tool, value.developerId]);
 
   useEffect(() => {
     return () => {
@@ -77,7 +81,7 @@ export function SignalsFilters({
       const next = { ...prev, ...patch };
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
-        const href = buildHref(pathname, next, { showTeam, showTool, showPerson });
+        const href = buildHref(pathname, next, searchParams, { showTeam, showTool, showPerson });
         startTransition(() => {
           router.push(href);
         });
@@ -88,22 +92,6 @@ export function SignalsFilters({
 
   return (
     <div className={cn("mb-6 flex w-full flex-wrap items-end justify-end gap-3", className)}>
-      <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
-        Range
-        <select
-          value={String(draft.range)}
-          onChange={(event) =>
-            scheduleApply({
-              range: Number(event.target.value) as SignalsFiltersValue["range"],
-            })
-          }
-          className={selectClassName}
-        >
-          <option value="7">7 days</option>
-          <option value="30">30 days</option>
-          <option value="90">90 days</option>
-        </select>
-      </label>
       {showPerson ? (
         <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
           Person

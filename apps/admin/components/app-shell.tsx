@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { getOrgBillingStatus } from "@/lib/billing/status";
+import { getOrgBillingStatus } from "@/lib/saas-billing/status";
 import { getWorkspaceContext } from "@/lib/workspace-context";
 import { WorkspaceShell } from "@/components/workspace-shell";
 import { Badge } from "@/components/ui/badge";

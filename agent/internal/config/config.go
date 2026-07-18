@@ -12,7 +12,7 @@ import (
 
 // Version is replaced by release builds through -ldflags. The fallback keeps
 // local source builds and the first updater bootstrap identifiable.
-var Version = "0.1.0"
+var Version = "0.3.0"
 
 // LocalSyncProtocol identifies the background-job localhost sync contract.
 const LocalSyncProtocol = 2
@@ -30,8 +30,10 @@ type Config struct {
 	LocalSyncPort          int    `json:"localSyncPort,omitempty"`
 	LocalSyncToken         string `json:"localSyncToken,omitempty"`
 	SignalsEnabled         bool   `json:"signalsEnabled,omitempty"`
+	SignalsWorkExtraction  bool   `json:"signalsWorkExtraction,omitempty"`
 	SignalsPolicyUpdatedAt string `json:"signalsPolicyUpdatedAt,omitempty"`
 	SignalsLastUploadAt    string `json:"signalsLastUploadAt,omitempty"`
+	WorkExtractionLastAt   string `json:"workExtractionLastAt,omitempty"`
 	BlockedUpdateVersion   string `json:"blockedUpdateVersion,omitempty"`
 }
 
@@ -80,7 +82,8 @@ func BackupDir() string {
 	return filepath.Join(ConfigDir(), "backups")
 }
 
-// CacheDir returns the cost-cache directory.
+// CacheDir returns ~/.usejunction/cache/cost-usage — scan caches and
+// usage-upload.json fingerprints for incremental local-usage uploads.
 func CacheDir() string {
 	return filepath.Join(ConfigDir(), "cache", "cost-usage")
 }

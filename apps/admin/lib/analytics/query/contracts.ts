@@ -108,7 +108,7 @@ export type NormalizedUsageQueryV1 = {
 export type AnalyticsScope = {
   orgId: string;
   actorId: string;
-  role: "owner" | "admin" | "developer";
+  role: "owner" | "admin" | "manager" | "user";
   developerId?: string;
 };
 

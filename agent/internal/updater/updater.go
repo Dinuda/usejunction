@@ -162,6 +162,17 @@ func isNumeric(value string) bool {
 	return true
 }
 
+// Apply downloads and installs an agent update artifact.
+//
+// Current contract: the artifact is a single executable. Apply atomically
+// replaces opts.ExecutablePath (typically os.Executable()) and leaves a
+// .previous sibling for rollback. Linux and Darwin both use this path today.
+//
+// Future Darwin: when a release ships a menu-bar companion, Darwin artifacts
+// may become multi-file (.app.zip or Contents archive). Apply should then
+// unpack into the enclosing *.app next to os.Executable() when that path is
+// under *.app/Contents/MacOS/, with a bundle snapshot for rollback. Linux
+// remains single-binary. See docs/agent-releases.md ("Future macOS menu bar companion").
 func Apply(ctx context.Context, cfg *config.Config, opts ApplyOptions) (bool, error) {
 	directive := opts.Directive
 	comparison, valid := CompareVersions(directive.TargetVersion, opts.CurrentVersion)

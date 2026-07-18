@@ -4,7 +4,7 @@ import { prisma } from "@usejunction/db";
 import { sendTeamInviteEmail } from "@/lib/auth-actions";
 import { buildTeamInviteLinkUrl, getPublicAppUrl } from "@/lib/connect-command";
 import { normalizeEmail } from "@/lib/developer-identity";
-import { requireOrgRole, audit } from "@/lib/rbac";
+import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
 
 function serializeLink(link: {
@@ -75,7 +75,7 @@ async function orgName(orgId: string) {
 }
 
 export async function GET(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("org_overview"));
   if (auth instanceof NextResponse) return auth;
 
   const existing = await prisma.teamInviteLink.findUnique({
@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("org_overview"));
   if (auth instanceof NextResponse) return auth;
 
   const body = await req.json().catch(() => ({}));
@@ -107,7 +107,7 @@ const allowlistSchema = z.object({
 });
 
 export async function PUT(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("org_overview"));
   if (auth instanceof NextResponse) return auth;
 
   const parsed = allowlistSchema.safeParse(await req.json().catch(() => ({})));
@@ -145,7 +145,7 @@ export async function PUT(req: NextRequest) {
           data: {
             orgId: auth.orgId,
             email,
-            role: "developer",
+            role: "user",
             tokenHash: hashOpaqueToken(generateOpaqueToken("uj_invite", 32)),
             expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
             invitedByUserId: auth.userId,
@@ -163,10 +163,11 @@ export async function PUT(req: NextRequest) {
       await sendTeamInviteEmail({ to: email, organizationName, inviteUrl });
       emailResults.push({ email, status: "sent" });
     } catch (cause) {
+      console.error("[team/invite-link] email failed", cause);
       emailResults.push({
         email,
         status: "email_failed",
-        error: cause instanceof Error ? cause.message : "Unable to send email",
+        error: "Unable to send email",
       });
     }
   }
@@ -187,7 +188,7 @@ export async function PUT(req: NextRequest) {
 
 /** Resend invite email(s) for allowlisted addresses. */
 export async function PATCH(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("org_overview"));
   if (auth instanceof NextResponse) return auth;
 
   const body = await req.json().catch(() => ({}));
@@ -228,10 +229,11 @@ export async function PATCH(req: NextRequest) {
       await sendTeamInviteEmail({ to: email, organizationName, inviteUrl });
       emailResults.push({ email, status: "sent" });
     } catch (cause) {
+      console.error("[team/invite-link] email failed", cause);
       emailResults.push({
         email,
         status: "email_failed",
-        error: cause instanceof Error ? cause.message : "Unable to send email",
+        error: "Unable to send email",
       });
     }
   }
@@ -240,7 +242,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("org_overview"));
   if (auth instanceof NextResponse) return auth;
 
   const email = normalizeEmail(String(new URL(req.url).searchParams.get("email") ?? ""));

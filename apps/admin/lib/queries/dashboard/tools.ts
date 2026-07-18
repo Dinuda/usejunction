@@ -13,6 +13,8 @@ export interface DashboardToolsData {
     requests: number;
     cost: number;
     tokens: number;
+    inputTokens: number;
+    outputTokens: number;
     quotas: Array<{
       toolName: string;
       windowType: string;
@@ -65,17 +67,30 @@ export async function getDashboardTools(
   ]);
 
   const configuredMap = new Map(configured.map((c) => [c.toolName, c._count.id]));
-  const activityMap = new Map<string, { requests: number; cost: number; tokens: number }>();
+  const activityMap = new Map<
+    string,
+    { requests: number; cost: number; tokens: number; inputTokens: number; outputTokens: number }
+  >();
   for (const row of usageRows.data.rows) {
     const toolName = dimension(row, "tool") || "unknown";
-    const current = activityMap.get(toolName) ?? { requests: 0, cost: 0, tokens: 0 };
+    const current = activityMap.get(toolName) ?? {
+      requests: 0,
+      cost: 0,
+      tokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+    };
     const cost = summarizeCanonicalCosts([{
       costMicros: metricNumber(row, "costMicros"),
       costKind: dimension(row, "costKind"),
     }]);
+    const inputTokens = metricNumber(row, "inputTokens");
+    const outputTokens = metricNumber(row, "outputTokens");
     current.requests += metricNumber(row, "requests");
     current.cost += cost.totalUsageCost;
-    current.tokens += metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens");
+    current.inputTokens += inputTokens;
+    current.outputTokens += outputTokens;
+    current.tokens += inputTokens + outputTokens;
     activityMap.set(toolName, current);
   }
 
@@ -120,7 +135,13 @@ export async function getDashboardTools(
           evidence: claims
             .filter((claim) => claim.toolName === toolName)
             .map((claim) => ({ source: claim.source, developers: claim._count.id })),
-          ...(activityMap.get(toolName) ?? { requests: 0, cost: 0, tokens: 0 }),
+          ...(activityMap.get(toolName) ?? {
+            requests: 0,
+            cost: 0,
+            tokens: 0,
+            inputTokens: 0,
+            outputTokens: 0,
+          }),
           quotas: quotasByTool.get(toolName) ?? [],
         };
       })

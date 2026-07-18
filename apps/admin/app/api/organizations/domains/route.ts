@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { z } from "zod";
-import { requireOrgRole, audit } from "@/lib/rbac";
+import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
 
 const schema = z.object({ domain: z.string().trim().toLowerCase().regex(/^(?!-)[a-z0-9-]+(?:\.[a-z0-9-]+)+$/).max(253) });
 
 export async function GET(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
   const domains = await prisma.organizationDomain.findMany({
     where: { orgId: auth.orgId },
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "valid domain required" }, { status: 400 });

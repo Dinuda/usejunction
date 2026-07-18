@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { validateConnection } from "@/lib/integrations/sync";
-import { requireOrgRole } from "@/lib/rbac";
+import { requireOrgRole, rolesFor } from "@/lib/rbac";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   const connection = await prisma.providerConnection.findFirst({ where: { id, orgId: auth.orgId } });
@@ -13,6 +13,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const result = await validateConnection(connection);
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : String(error) }, { status: 422 });
+    console.error("[integrations/test]", error);
+    return NextResponse.json({ ok: false, error: "provider credential validation failed" }, { status: 422 });
   }
 }

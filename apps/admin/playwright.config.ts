@@ -14,7 +14,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
-    baseURL: process.env.E2E_BASE_URL ?? "http://127.0.0.1:3001",
+    baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3001",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",
@@ -23,7 +23,7 @@ export default defineConfig({
     ? undefined
     : {
         command: "pnpm dev",
-        url: "http://127.0.0.1:3001/login",
+        url: "http://localhost:3001/login",
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
       },
@@ -33,13 +33,21 @@ export default defineConfig({
       testMatch: /.*\.setup\.ts/,
     },
     {
+      name: "public",
+      testMatch: /public\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: { cookies: [], origins: [] },
+      },
+    },
+    {
       name: "chromium",
       dependencies: ["setup"],
       use: {
         ...devices["Desktop Chrome"],
         storageState: path.join(authDir, "owner.json"),
       },
-      testIgnore: [/.*\.setup\.ts/, /developer\.spec\.ts/],
+      testIgnore: [/.*\.setup\.ts/, /developer\.spec\.ts/, /public\.spec\.ts/],
     },
     {
       name: "developer",

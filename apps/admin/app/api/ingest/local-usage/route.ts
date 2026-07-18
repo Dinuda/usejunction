@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, type Prisma } from "@usejunction/db";
+import {
+  compactNumber,
+  recordDeviceActivityEvent,
+  uniqueStrings,
+} from "@/lib/activity/record-device-activity-event";
 import { bearerToken, requireIngestAuth } from "@/lib/auth";
 import { CALCULATION_VERSION } from "@/lib/metrics/source-priority";
 import { shouldPreserveProductivityRequests } from "@/lib/metrics/local-usage-inventory";
@@ -66,6 +71,7 @@ function inferCostKind(row: UsageRow, source: string, estimatedCost: number): st
 }
 
 export async function POST(req: NextRequest) {
+  const started = Date.now();
   try {
     const body = await req.json();
     const token = bearerToken(req);
@@ -105,6 +111,15 @@ export async function POST(req: NextRequest) {
     if (!contextDevice) return NextResponse.json({ error: "invalid device context" }, { status: 403 });
 
     let upserted = 0;
+    let totalTokens = 0;
+    let totalRequests = 0;
+    const sample: Array<{
+      date: string;
+      toolName: string;
+      model: string;
+      requests: number;
+      tokens: number;
+    }> = [];
     for (const row of rows) {
       if (!row.date || !row.toolName) continue;
 
@@ -273,6 +288,17 @@ export async function POST(req: NextRequest) {
           metadata,
         },
       });
+      if (sample.length < 8) {
+        sample.push({
+          date: date.toISOString().slice(0, 10),
+          toolName: row.toolName,
+          model: model || "unknown",
+          requests,
+          tokens: inputTokens + outputTokens,
+        });
+      }
+      totalTokens += inputTokens + outputTokens;
+      totalRequests += requests;
       upserted += 1;
     }
 
@@ -283,6 +309,30 @@ export async function POST(req: NextRequest) {
       });
       await invalidateAnalyticsCache(orgId);
     }
+
+    const tools = uniqueStrings(sample.map((row) => row.toolName).concat(rows.map((row) => row.toolName)));
+    const models = uniqueStrings(sample.map((row) => row.model).concat(rows.map((row) => row.model ?? "")));
+    await recordDeviceActivityEvent({
+      orgId,
+      developerId: userId,
+      deviceId,
+      kind: "usage",
+      status: "ok",
+      summary: `Usage sync · ${upserted} rows${tools.length ? ` · ${tools.join(", ")}` : ""}${
+        totalTokens > 0 ? ` · ${compactNumber(totalTokens)} tokens` : ""
+      }`,
+      requestSummary: {
+        aggregates: rows.length,
+        upserted,
+        tools,
+        models,
+        requests: totalRequests,
+        tokens: totalTokens,
+        sample,
+      },
+      responseSummary: { upserted },
+      durationMs: Date.now() - started,
+    });
 
     return NextResponse.json({ upserted });
   } catch (e) {

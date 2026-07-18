@@ -116,7 +116,7 @@ export default async function TeamPage({
         </div>
       ) : null}
 
-      <div className="mb-10 grid gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-10 grid items-start gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
         <SignalsKpi
           label="Members"
           hero

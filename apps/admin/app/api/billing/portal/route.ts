@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
-import { getCustomerPortalUrl } from "@/lib/billing/lemonsqueezy";
-import { audit } from "@/lib/rbac";
+import { getCustomerPortalUrl } from "@/lib/saas-billing/lemonsqueezy";
+import { publicErrorResponse } from "@/lib/errors/public";
+import { audit, rolesFor } from "@/lib/rbac";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
 
 export async function POST() {
-  const ctx = await requireWorkspaceRole(["owner", "admin"]);
+  const ctx = await requireWorkspaceRole(rolesFor("settings_billing"));
 
   const org = await prisma.organization.findUnique({
     where: { id: ctx.orgId },
@@ -30,8 +31,6 @@ export async function POST() {
 
     return NextResponse.json({ url });
   } catch (error) {
-    console.error("[billing/portal]", error);
-    const message = error instanceof Error ? error.message : "portal unavailable";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return publicErrorResponse("billing/portal", error, "Billing portal unavailable.", 500);
   }
 }

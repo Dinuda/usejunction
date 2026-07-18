@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { activitySettingsInputSchema } from "@/lib/activity/contracts";
 import { getOrgActivitySettings, upsertOrgActivitySettings } from "@/lib/activity/service";
-import { audit, requireOrgRole } from "@/lib/rbac";
+import { audit, requireOrgRole, rolesFor } from "@/lib/rbac";
 
 export async function GET(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
   const settings = await getOrgActivitySettings(auth.orgId);
   return NextResponse.json({ settings });
 }
 
 export async function PATCH(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
 
   const body = await req.json().catch(() => ({}));

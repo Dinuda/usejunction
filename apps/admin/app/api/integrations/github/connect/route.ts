@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createGitHubState } from "@/lib/integrations/github-app";
-import { requireOrgRole } from "@/lib/rbac";
+import { requireOrgRole, rolesFor } from "@/lib/rbac";
 
 const query = z.object({
   returnTo: z.enum(["/onboarding", "/team"]).default("/team"),
 });
 
 export async function GET(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
   const parsed = query.safeParse({ returnTo: req.nextUrl.searchParams.get("returnTo") ?? "/team" });
   if (!parsed.success) return NextResponse.json({ error: "invalid GitHub return path" }, { status: 400 });

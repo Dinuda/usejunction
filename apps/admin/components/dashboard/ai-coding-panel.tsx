@@ -3,9 +3,11 @@
 import { useMemo, useState } from "react";
 import { TokenBreakdownChart } from "@/components/dashboard/token-breakdown-chart";
 import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
+import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { toolDisplayName } from "@/lib/tools/catalog";
 import type { AiCodingMetrics, ModelUsageRow } from "@/lib/queries/me/overview";
 
 const PAGE_SIZE = 25;
@@ -97,7 +99,12 @@ function ModelTable({ title, description, rows }: { title: string; description: 
                     key={`${row.toolName}-${row.model}-${row.source}-${row.metricKind}`}
                     className="transition-colors hover:bg-muted/30"
                   >
-                    <td className="py-5 pr-4 font-medium">{row.toolName}</td>
+                    <td className="py-5 pr-4">
+                      <div className="flex items-center gap-2.5">
+                        <ToolLogoTile tool={row.toolName} size="sm" light />
+                        <span className="font-medium">{toolDisplayName(row.toolName)}</span>
+                      </div>
+                    </td>
                     <td className="max-w-[220px] truncate py-5 pr-4 font-mono text-xs">{row.model}</td>
                     <td className="py-5 pr-4 text-right tabular-nums">{compact(row.requests)}</td>
                     <td className="py-5 pr-4 text-right tabular-nums">{compact(row.inputTokens)}</td>
@@ -161,13 +168,15 @@ export function AiCodingPanel({
 
   return (
     <section className={cn(!embedded && "mt-10 border bg-card p-5")}>
-      <SignalsSectionHeader
-        title="AI coding."
-        description="Verified vendor charges and estimated API-equivalent values are shown separately. Prompt text is never collected."
-        bordered={false}
-      />
+      {!embedded ? (
+        <SignalsSectionHeader
+          title="AI coding."
+          description="Verified vendor charges and estimated API-equivalent values are shown separately. Prompt text is never collected."
+          bordered={false}
+        />
+      ) : null}
 
-      <div className="mb-8 grid gap-y-8 sm:grid-cols-2 xl:grid-cols-5">
+      <div className={cn("grid items-start gap-y-8 sm:grid-cols-2 xl:grid-cols-5", !embedded && "mb-8")}>
         <SignalsKpi
           label="AI lines accepted"
           className="pl-5"

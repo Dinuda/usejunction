@@ -23,6 +23,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { WorkspaceColorSwatches, WorkspaceIcon } from "@/components/workspace-icon";
+import { userFacingError } from "@/lib/errors/user-facing";
+import { canManageSettings } from "@/lib/rbac/permissions";
 import {
   WORKSPACE_COLORS,
   resolveWorkspaceColor,
@@ -53,7 +55,7 @@ export function WorkspaceSwitcher({
   const router = useRouter();
   const value = currentOrgId ?? organizations[0]?.id;
   const current = organizations.find((org) => org.id === value) ?? organizations[0];
-  const canEdit = role === "owner" || role === "admin";
+  const canEdit = canManageSettings(role as "owner" | "admin" | "manager" | "user" | null);
 
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<WorkspaceFormMode>("create");
@@ -116,7 +118,7 @@ export function WorkspaceSwitcher({
         });
         const payload = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) {
-          setError(payload.error ?? "Could not create workspace.");
+          setError(userFacingError(payload.error, "Could not create workspace."));
           return;
         }
         closeForm();
@@ -132,7 +134,7 @@ export function WorkspaceSwitcher({
       });
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        setError(payload.error ?? "Could not update workspace.");
+        setError(userFacingError(payload.error, "Could not update workspace."));
         return;
       }
       closeForm();
@@ -171,7 +173,7 @@ export function WorkspaceSwitcher({
         >
           <SelectValue placeholder="Select workspace" />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent position="popper">
           {organizations.map((org) => (
             <SelectItem key={org.id} value={org.id}>
               <WorkspaceIcon id={org.id} color={org.color} />

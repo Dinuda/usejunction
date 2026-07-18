@@ -6,6 +6,8 @@ import {
   type AgentUpdateDirective,
   type AgentUpdateEventType,
   compareAgentVersions,
+  summarizeWorkExtractionReadiness,
+  WORK_EXTRACTION_MIN_AGENT_VERSION,
 } from "./contracts";
 
 type DeviceIdentity = {
@@ -93,6 +95,7 @@ export async function promoteAgentRelease(input: unknown, now: Date = new Date()
     });
 
     const devices = await tx.device.findMany({
+      where: { decommissionedAt: null },
       select: { id: true, orgId: true, os: true, architecture: true, agentVersion: true },
     });
     const cohort = devices.flatMap((device) => {
@@ -458,4 +461,101 @@ export async function getPlatformAgentUpdateCoverage(version: string, now: Date 
     installedVersions: summarize(coverage.devices, (row) => row.device.agentVersion),
     lifecycleStates: summarize(coverage.devices, (row) => row.state),
   };
+}
+
+export type AccelerateOrgAgentRolloutResult = {
+  accelerated: number;
+  pendingCount: number;
+  reason: "ok" | "no_active_release" | "none_pending";
+  targetVersion: string | null;
+};
+
+const acceleratingStates = new Set(["pending", "offered", "downloading", "downloaded", "installing", "failed"]);
+
+/**
+ * Make this org's unfinished deployments on the active release immediately eligible
+ * so enrolled agents pick up the update on the next heartbeat.
+ */
+export async function accelerateOrgAgentRollout(
+  orgId: string,
+  now: Date = new Date(),
+): Promise<AccelerateOrgAgentRolloutResult> {
+  const release = await prisma.agentRelease.findFirst({
+    where: { status: "active" },
+    orderBy: { rolloutStartedAt: "desc" },
+  });
+  if (!release) {
+    return { accelerated: 0, pendingCount: 0, reason: "no_active_release", targetVersion: null };
+  }
+
+  const pending = await prisma.agentUpdateDeployment.findMany({
+    where: {
+      orgId,
+      releaseId: release.id,
+      confirmedAt: null,
+      state: { in: [...acceleratingStates] },
+    },
+    select: { id: true },
+  });
+  if (!pending.length) {
+    return {
+      accelerated: 0,
+      pendingCount: 0,
+      reason: "none_pending",
+      targetVersion: release.version,
+    };
+  }
+
+  const result = await prisma.agentUpdateDeployment.updateMany({
+    where: { id: { in: pending.map((row) => row.id) } },
+    data: { eligibleAt: now, lastEventAt: now },
+  });
+
+  return {
+    accelerated: result.count,
+    pendingCount: pending.length,
+    reason: "ok",
+    targetVersion: release.version,
+  };
+}
+
+export async function getWorkExtractionReadiness(orgId: string, now: Date = new Date()) {
+  const [devices, activeRelease] = await Promise.all([
+    prisma.device.findMany({
+      where: { orgId, decommissionedAt: null },
+      select: { id: true, agentVersion: true, lastSeenAt: true },
+    }),
+    prisma.agentRelease.findFirst({
+      where: { status: "active" },
+      orderBy: { rolloutStartedAt: "desc" },
+      select: { id: true, version: true },
+    }),
+  ]);
+
+  const updatingIds = new Set<string>();
+  if (activeRelease) {
+    const rows = await prisma.agentUpdateDeployment.findMany({
+      where: {
+        orgId,
+        releaseId: activeRelease.id,
+        confirmedAt: null,
+        state: { in: [...acceleratingStates] },
+      },
+      select: { deviceId: true },
+    });
+    for (const row of rows) updatingIds.add(row.deviceId);
+  }
+
+  return summarizeWorkExtractionReadiness(
+    devices.map((device) => ({
+      agentVersion: device.agentVersion,
+      lastSeenAt: device.lastSeenAt,
+      updating: updatingIds.has(device.id),
+    })),
+    {
+      minAgentVersion: WORK_EXTRACTION_MIN_AGENT_VERSION,
+      activeReleaseVersion: activeRelease?.version ?? null,
+      now,
+    },
+  );
 }

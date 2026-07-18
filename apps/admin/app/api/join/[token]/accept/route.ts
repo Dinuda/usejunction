@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
 import { hasVerifiedIdentity, linkDeveloperToUser, normalizeEmail } from "@/lib/developer-identity";
+import { assertCanAddDeveloperSeat } from "@/lib/saas-billing/quantity";
 import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 import { audit } from "@/lib/rbac";
 import { hashOpaqueToken } from "@/lib/security";
@@ -37,6 +38,15 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
   const invite = await prisma.organizationInvite.findUnique({ where: { tokenHash: hashOpaqueToken(token) } });
   if (!invite || invite.acceptedAt || invite.expiresAt <= new Date()) return NextResponse.json({ error: "invalid or expired invitation" }, { status: 410 });
   if (normalizeEmail(session.user.email) !== invite.email) return NextResponse.json({ error: "invitation email does not match signed-in identity" }, { status: 403 });
+
+  const seatGate = await assertCanAddDeveloperSeat({
+    orgId: invite.orgId,
+    userId: session.user.id,
+    email: invite.email,
+  });
+  if (!seatGate.allowed) {
+    return NextResponse.json({ error: seatGate.message }, { status: 403 });
+  }
 
   const developer = await prisma.$transaction(async (tx) => {
     await tx.organizationMembership.upsert({

@@ -122,7 +122,10 @@ func TestProcessCodexWorkFileAttributesSurfaceAndTools(t *testing.T) {
 	}
 	appendRow(map[string]any{
 		"type": "session_meta", "timestamp": "2026-07-17T10:00:00Z",
-		"payload": map[string]any{"originator": "codex_work_desktop"},
+		"payload": map[string]any{
+			"originator": "codex_work_desktop",
+			"git":        map[string]any{"repository_url": "https://github.com/acme/demo.git"},
+		},
 	})
 	appendRow(map[string]any{
 		"type": "event_msg", "timestamp": "2026-07-17T10:00:01Z",
@@ -173,6 +176,9 @@ func TestProcessCodexWorkFileAttributesSurfaceAndTools(t *testing.T) {
 	}
 	if usage == nil || usage.Requests != 2 || usage.InputTokens != 150 || usage.OutputTokens != 20 {
 		t.Fatalf("usage row: %#v", usage)
+	}
+	if usage.Repository == nil || usage.Repository.Owner != "acme" || usage.Repository.Name != "demo" {
+		t.Fatalf("repository from session_meta: %#v", usage.Repository)
 	}
 	if toolCounts["imagegen"] != 1 || toolCounts["_import_document"] != 1 {
 		t.Fatalf("tool counts: %#v", toolCounts)

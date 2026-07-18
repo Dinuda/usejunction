@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
-import { requireOrgRole, audit } from "@/lib/rbac";
+import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
 
 function settings(token: string) {
@@ -22,14 +22,14 @@ function settings(token: string) {
 }
 
 export async function GET(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
   const endpoint = await prisma.telemetryEndpoint.findUnique({ where: { orgId: auth.orgId }, select: { id: true, tokenHint: true, enabled: true, createdAt: true, rotatedAt: true } });
   return NextResponse.json({ endpoint });
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
   const token = generateOpaqueToken("uj_otel", 32);
   const now = new Date();

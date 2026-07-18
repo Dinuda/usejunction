@@ -1,6 +1,5 @@
 import { cookies } from "next/headers";
 import { prisma } from "@usejunction/db";
-import { requireWorkspaceContext } from "@/lib/workspace-context";
 
 export const ACTIVE_ORG_COOKIE = "uj_active_org";
 
@@ -39,14 +38,4 @@ export async function resolveOrgId(userId: string, sessionOrgId: string | null |
     orderBy: { createdAt: "desc" },
   });
   return membership?.orgId ?? null;
-}
-
-export async function requireOrganization() {
-  const ctx = await requireWorkspaceContext();
-  return {
-    userId: ctx.userId,
-    email: ctx.email,
-    orgId: ctx.orgId,
-    role: ctx.role,
-  };
 }

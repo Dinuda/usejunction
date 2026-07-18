@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
-import { requireOrgRole } from "@/lib/rbac";
+import { requireOrgRole, rolesFor } from "@/lib/rbac";
 
 export async function GET(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin", "developer"]);
+  const auth = await requireOrgRole(req, rolesFor("self_view"));
   if (auth instanceof NextResponse) return auth;
 
   const developer = await prisma.developer.findUnique({

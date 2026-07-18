@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma, type Prisma } from "@usejunction/db";
 import { z } from "zod";
 import { normalizeEmail } from "@/lib/developer-identity";
-import { requireOrgRole, audit } from "@/lib/rbac";
+import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { invalidateAnalyticsCache } from "@/lib/analytics/query";
 
 const rowSchema = z.object({
@@ -21,7 +21,7 @@ const rowSchema = z.object({
 const schema = z.object({ rows: z.array(rowSchema).min(1).max(10_000) });
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   const connection = await prisma.providerConnection.findFirst({ where: { id, orgId: auth.orgId, method: "invoice_import" } });

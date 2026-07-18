@@ -18,12 +18,13 @@ import {
 import { readSignalsSessionsWindow } from "@/lib/signals/readers/sessions";
 import { getOrgSignalsPolicy } from "@/lib/signals/service";
 import { resolveSignalsWindows } from "@/lib/signals/queries/windows";
+import { rolesFor } from "@/lib/rbac";
 
 export async function getSignalsOverview(
   context: InsightContext,
   input: SignalsOverviewInput = {},
 ): Promise<InsightEnvelope<SignalsOverviewV1>> {
-  assertInsightRoles(context, ["owner", "admin"]);
+  assertInsightRoles(context, rolesFor("org_overview"));
   const windows = resolveSignalsWindows(input, context.now);
   const [policy, currentSessions, priorSessions] = await Promise.all([
     getOrgSignalsPolicy(context.orgId),

@@ -11,6 +11,7 @@ import (
 	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/localsync"
 	ujsignals "github.com/usejunction/agent/internal/signals"
+	"github.com/usejunction/agent/internal/uninstall"
 	"github.com/usejunction/agent/internal/updater"
 )
 
@@ -62,9 +63,16 @@ var daemonCmd = &cobra.Command{
 
 		// Register endpoint on the control plane immediately and apply an eligible update.
 		if response, err := heartbeat(api); err != nil {
+			if errors.Is(err, client.ErrUnauthorized) {
+				fmt.Println("Device credentials revoked; uninstalling…")
+				return uninstall.Run(verbose)
+			}
 			if verbose {
 				fmt.Printf("[daemon] initial heartbeat: %v\n", err)
 			}
+		} else if response.Uninstall {
+			fmt.Println("Control plane requested uninstall; removing agent…")
+			return uninstall.Run(verbose)
 		} else if updated, updateErr := applyUpdate(cmd.Context(), cfg, api, response.Update); updateErr != nil {
 			if verbose {
 				fmt.Printf("[daemon] automatic update: %v\n", updateErr)
@@ -91,7 +99,15 @@ var daemonCmd = &cobra.Command{
 			case <-heartbeatTicker.C:
 				var response *client.HeartbeatResponse
 				response, loopErr = heartbeat(api)
+				if errors.Is(loopErr, client.ErrUnauthorized) {
+					fmt.Println("Device credentials revoked; uninstalling…")
+					return uninstall.Run(verbose)
+				}
 				if loopErr == nil {
+					if response.Uninstall {
+						fmt.Println("Control plane requested uninstall; removing agent…")
+						return uninstall.Run(verbose)
+					}
 					if _, confirmErr := updater.ConfirmPending(cfg, api, config.Version); confirmErr != nil && verbose {
 						fmt.Printf("[daemon] update confirmation: %v\n", confirmErr)
 					}
@@ -103,7 +119,8 @@ var daemonCmd = &cobra.Command{
 					}
 				}
 			case <-collectionTicker.C:
-				// Full collect every 30 minutes (refresh caches).
+				// Rescan every 30 minutes; usage/work uploads stay incremental
+				// (fingerprint deltas + ObservedAt watermark).
 				_, _, _, _, loopErr = collectAndReport(api, true)
 			case <-cmd.Context().Done():
 				return nil

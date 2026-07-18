@@ -1,4 +1,5 @@
 import { prisma } from "@usejunction/db";
+import { enforceDeviceActivityRetention } from "@/lib/activity/record-device-activity-event";
 import {
   SIGNALS_COLLECTION_MODE,
   SIGNALS_DEFAULT_RETENTION_DAYS,
@@ -14,6 +15,7 @@ export type EffectiveSignalsPolicy = {
   excludedApps: string[];
   excludedDomains: string[];
   storeEvents: boolean;
+  workExtractionEnabled: boolean;
   updatedAt: string | null;
 };
 
@@ -25,6 +27,7 @@ export function disabledSignalsPolicy(): EffectiveSignalsPolicy {
     excludedApps: normalizeList(undefined, defaultExcludedApps),
     excludedDomains: normalizeList(undefined, defaultExcludedDomains),
     storeEvents: false,
+    workExtractionEnabled: false,
     updatedAt: null,
   };
 }
@@ -38,12 +41,15 @@ export async function getEffectiveSignalsPolicy(orgId: string, teamId?: string |
   const policy = policies.find((item) => item.teamId === teamId) ?? policies.find((item) => item.teamId === null);
   if (!policy) return disabledSignalsPolicy();
   return {
-    enabled: policy.enabled,
+    // Classic app/domain journey sampling is off for this release.
+    enabled: false,
     retentionDays: policy.retentionDays,
     collectionMode: SIGNALS_COLLECTION_MODE,
     excludedApps: normalizeList(policy.excludedApps, defaultExcludedApps),
     excludedDomains: normalizeList(policy.excludedDomains, defaultExcludedDomains),
-    storeEvents: policy.storeEvents,
+    storeEvents: false,
+    // Work extraction is independent of classic app/domain collection.
+    workExtractionEnabled: policy.workExtractionEnabled,
     updatedAt: policy.updatedAt.toISOString(),
   };
 }
@@ -56,4 +62,6 @@ export async function enforceSignalsRetention(orgId: string, retentionDays: numb
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
   await prisma.signalsSession.deleteMany({ where: { orgId, startedAt: { lt: cutoff } } });
   await prisma.signalsActivityEvent.deleteMany({ where: { orgId, observedAt: { lt: cutoff } } });
+  await prisma.localWorkSession.deleteMany({ where: { orgId, observedAt: { lt: cutoff } } });
+  await enforceDeviceActivityRetention(orgId);
 }

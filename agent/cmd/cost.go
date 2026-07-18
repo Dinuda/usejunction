@@ -3,11 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/usejunction/agent/internal/client"
 	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/providers"
+	"github.com/usejunction/agent/internal/scan"
 	"github.com/usejunction/agent/internal/types"
 )
 
@@ -49,15 +51,51 @@ func usageToAggregate(u types.DailyUsage) client.UsageAggregate {
 	}
 }
 
+func aggregateToUsage(u client.UsageAggregate) types.DailyUsage {
+	var repository *types.RepositoryIdentity
+	if u.Repository != nil {
+		repository = &types.RepositoryIdentity{Host: u.Repository.Host, Owner: u.Repository.Owner, Name: u.Repository.Name}
+	}
+	return types.DailyUsage{
+		Date:               u.Date,
+		ToolName:           u.ToolName,
+		Model:              u.Model,
+		InputTokens:        u.InputTokens,
+		OutputTokens:       u.OutputTokens,
+		CacheReadTokens:    u.CacheReadTokens,
+		CacheWriteTokens:   u.CacheWriteTokens,
+		ReasoningTokens:    u.ReasoningTokens,
+		EstimatedCost:      u.EstimatedCost,
+		SuggestedLines:     u.SuggestedLines,
+		AcceptedLines:      u.AcceptedLines,
+		AddedLines:         u.AddedLines,
+		DeletedLines:       u.DeletedLines,
+		Commits:            u.Commits,
+		AiPercent:          u.AiPercent,
+		Requests:           u.Requests,
+		Source:             u.Source,
+		Verified:           u.Verified,
+		MetricKind:         types.MetricKind(u.MetricKind),
+		CostKind:           types.CostKind(u.CostKind),
+		TokenSemantics:     types.TokenSemantics(u.TokenSemantics),
+		CalculationVersion: u.CalculationVersion,
+		Repository:         repository,
+		Metadata:           u.Metadata,
+	}
+}
+
 var costCmd = &cobra.Command{
 	Use:   "cost",
-	Short: "Scan local session logs for token usage and estimated cost",
-	Long: `cost reads local session metadata written by AI coding tools
-(Codex, Claude Code, Cursor, Copilot, Continue, Cline, and more),
-aggregates token counts by date and model, and prints an estimated cost.
+	Short: "Scan local tool storage for token usage and estimated cost",
+	Long: `cost reads local usage metadata written by AI coding tools
+(Codex/Claude JSONL sessions, Cursor/Copilot sqlite DBs, Cline/Roo/OpenCode
+extension task JSON, Continue history), aggregates by date and model, and
+prints an estimated cost.
 
 Only numeric usage metadata is read — prompt text is never accessed.
-Results are cached in ~/.usejunction/cache/ unless --refresh is set.`,
+Scan results are cached under ~/.usejunction/cache/cost-usage/ unless
+--refresh is set. When enrolled, uploads use the same delta filter as the
+daemon (today UTC always, unchanged historical rows skipped).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		var all []types.DailyUsage
@@ -75,11 +113,11 @@ Results are cached in ~/.usejunction/cache/ unless --refresh is set.`,
 
 		if cfg, err := config.Load(); err == nil && len(all) > 0 {
 			api := client.New(cfg)
-			var aggs []client.UsageAggregate
+			aggs := make([]client.UsageAggregate, 0, len(all))
 			for _, u := range all {
 				aggs = append(aggs, usageToAggregate(u))
 			}
-			_ = api.ReportLocalUsage(aggs)
+			_, _ = reportLocalUsageDelta(api, aggs, nil)
 		}
 
 		if format == "json" {
@@ -88,7 +126,7 @@ Results are cached in ~/.usejunction/cache/ unless --refresh is set.`,
 		}
 
 		if len(all) == 0 {
-			fmt.Println("No local session logs found.")
+			fmt.Println("No local usage metadata found.")
 			return nil
 		}
 
@@ -110,6 +148,38 @@ Results are cached in ~/.usejunction/cache/ unless --refresh is set.`,
 	},
 }
 
+// reportLocalUsageDelta uploads only changed historical rows plus today's UTC
+// rows, then persists fingerprints under ~/.usejunction/cache/cost-usage/usage-upload.json.
+// beforeUpload runs after filtering and before the network call (nil-safe).
+// Fingerprint save failures are returned but do not roll back a successful upload.
+func reportLocalUsageDelta(api *client.APIClient, rows []client.UsageAggregate, beforeUpload func(uploaded, scanned int)) (uploaded int, err error) {
+	if len(rows) == 0 {
+		return 0, nil
+	}
+	usageRows := make([]types.DailyUsage, 0, len(rows))
+	for _, row := range rows {
+		usageRows = append(usageRows, aggregateToUsage(row))
+	}
+	delta := scan.FilterUsageUploadDelta(usageRows, time.Now().UTC())
+	if len(delta) == 0 {
+		return 0, nil
+	}
+	deltaReports := make([]client.UsageAggregate, 0, len(delta))
+	for _, row := range delta {
+		deltaReports = append(deltaReports, usageToAggregate(row))
+	}
+	if beforeUpload != nil {
+		beforeUpload(len(deltaReports), len(rows))
+	}
+	if err := api.ReportLocalUsage(deltaReports); err != nil {
+		return 0, err
+	}
+	if err := scan.RememberUsageUpload(delta); err != nil {
+		return len(deltaReports), err
+	}
+	return len(deltaReports), nil
+}
+
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -118,7 +188,7 @@ func truncate(s string, n int) string {
 }
 
 func init() {
-	costCmd.Flags().StringVar(&costTool, "tool", "all", "Tool to scan: codex|claude|cursor|copilot|continue|cline|all")
+	costCmd.Flags().StringVar(&costTool, "tool", "all", "Tool to scan: codex|claude|cursor|copilot|continue|cline|roo|opencode|all")
 	costCmd.Flags().BoolVar(&costRefresh, "refresh", false, "Re-scan even if cache is fresh")
 	rootCmd.AddCommand(costCmd)
 }

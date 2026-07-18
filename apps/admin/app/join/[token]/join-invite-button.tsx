@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { userFacingError } from "@/lib/errors/user-facing";
 
 export function JoinInviteButton({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null);
@@ -14,7 +15,7 @@ export function JoinInviteButton({ token }: { token: string }) {
       const response = await fetch(`/api/join/${encodeURIComponent(token)}/accept`, { method: "POST" });
       const data = await response.json().catch(() => ({}));
       if (!active) return;
-      if (!response.ok) { setError(data.error ?? "Unable to accept this invitation."); return; }
+      if (!response.ok) { setError(userFacingError(data.error, "Unable to accept this invitation.")); return; }
       window.location.href = "/onboarding";
     }
     void accept();

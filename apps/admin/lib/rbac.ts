@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, type Prisma } from "@usejunction/db";
-import { getWorkspaceContext, type OrganizationRole } from "@/lib/workspace-context";
+import { getWorkspaceContext } from "@/lib/workspace-context";
+import type { OrganizationRole } from "@/lib/rbac/permissions";
 
-export type { OrganizationRole };
+export type { OrganizationRole, Capability } from "@/lib/rbac/permissions";
+export {
+  ASSIGNABLE_ROLES,
+  CAPABILITIES,
+  ORGANIZATION_ROLES,
+  canManageSettings,
+  canSeeOrgOverview,
+  hasCapability,
+  isAssignableRole,
+  isSelfScopedRole,
+  rolesFor,
+} from "@/lib/rbac/permissions";
 
 export async function requireOrgRole(
   req: NextRequest,

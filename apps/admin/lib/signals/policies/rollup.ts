@@ -1,5 +1,11 @@
 import type { SignalsJourneyRow, SignalsToolRow, SignalsTrendPoint } from "@/lib/signals/contracts/shared";
-import { changePercent, median, sharePercent, startOfUtcWeek } from "@/lib/signals/policies/aggregates";
+import {
+  changePercent,
+  median,
+  sharePercent,
+  startOfUtcDay,
+  startOfUtcWeek,
+} from "@/lib/signals/policies/aggregates";
 import { displayFlow, flowKeyFromSession, flowPartsFromSession, signalsFlow } from "@/lib/signals/policies/flow";
 import type { SignalsSessionRow } from "@/lib/signals/readers/sessions";
 
@@ -109,38 +115,98 @@ export function buildWeeklyTrend(
   sessions: SignalsSessionRow[],
   window?: { from: Date; to: Date },
 ): SignalsTrendPoint[] {
-  const weeks = new Map<string, { sessions: number; people: Set<string>; durationSeconds: number }>();
-  for (const session of sessions) {
-    const weekStart = startOfUtcWeek(session.startedAt);
+  return buildWeeklyTrendPoints(
+    sessions.map((session) => ({
+      at: session.startedAt,
+      personId: session.developerId,
+      durationSeconds: session.durationSeconds,
+    })),
+    window,
+  );
+}
+
+export function buildDailyTrend(
+  sessions: SignalsSessionRow[],
+  window?: { from: Date; to: Date },
+): SignalsTrendPoint[] {
+  return buildDailyTrendPoints(
+    sessions.map((session) => ({
+      at: session.startedAt,
+      personId: session.developerId,
+      durationSeconds: session.durationSeconds,
+    })),
+    window,
+  );
+}
+
+/** Daily buckets for any dated events (e.g. work sessions). Fills empty days in the window. */
+export function buildDailyTrendPoints(
+  points: Array<{ at: Date; personId: string; durationSeconds?: number }>,
+  window?: { from: Date; to: Date },
+): SignalsTrendPoint[] {
+  return buildTrendPoints(points, window, startOfUtcDay, daysForWindow);
+}
+
+/** Weekly buckets for any dated events (e.g. work sessions). Fills empty weeks in the window. */
+export function buildWeeklyTrendPoints(
+  points: Array<{ at: Date; personId: string; durationSeconds?: number }>,
+  window?: { from: Date; to: Date },
+): SignalsTrendPoint[] {
+  return buildTrendPoints(points, window, startOfUtcWeek, weeksForWindow);
+}
+
+function buildTrendPoints(
+  points: Array<{ at: Date; personId: string; durationSeconds?: number }>,
+  window: { from: Date; to: Date } | undefined,
+  bucketKey: (at: Date) => string,
+  keysForWindow: (window?: { from: Date; to: Date }) => string[],
+): SignalsTrendPoint[] {
+  const buckets = new Map<string, { sessions: number; people: Set<string>; durationSeconds: number }>();
+  for (const point of points) {
+    const key = bucketKey(point.at);
     const row =
-      weeks.get(weekStart) ??
+      buckets.get(key) ??
       ({
         sessions: 0,
         people: new Set<string>(),
         durationSeconds: 0,
       } satisfies { sessions: number; people: Set<string>; durationSeconds: number });
     row.sessions += 1;
-    row.people.add(session.developerId);
-    row.durationSeconds += session.durationSeconds;
-    weeks.set(weekStart, row);
+    row.people.add(point.personId);
+    row.durationSeconds += point.durationSeconds ?? 0;
+    buckets.set(key, row);
   }
 
-  const weekKeys = weeksForWindow(window);
-  for (const key of weekKeys) {
-    if (!weeks.has(key)) {
-      weeks.set(key, { sessions: 0, people: new Set<string>(), durationSeconds: 0 });
+  const windowKeys = keysForWindow(window);
+  for (const key of windowKeys) {
+    if (!buckets.has(key)) {
+      buckets.set(key, { sessions: 0, people: new Set<string>(), durationSeconds: 0 });
     }
   }
 
-  return Array.from(weeks.entries())
-    .filter(([weekStart]) => weekKeys.length === 0 || weekKeys.includes(weekStart))
+  return Array.from(buckets.entries())
+    .filter(([date]) => windowKeys.length === 0 || windowKeys.includes(date))
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([weekStart, row]) => ({
-      weekStart,
+    .map(([date, row]) => ({
+      date,
       sessions: row.sessions,
       people: row.people.size,
       durationSeconds: row.durationSeconds,
     }));
+}
+
+function daysForWindow(window?: { from: Date; to: Date }): string[] {
+  if (!window) return [];
+  const keys: string[] = [];
+  const cursor = new Date(Date.UTC(window.from.getUTCFullYear(), window.from.getUTCMonth(), window.from.getUTCDate()));
+  const end = new Date(Date.UTC(window.to.getUTCFullYear(), window.to.getUTCMonth(), window.to.getUTCDate()));
+  let guard = 0;
+  while (cursor <= end && guard < 400) {
+    keys.push(startOfUtcDay(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+    guard += 1;
+  }
+  return keys;
 }
 
 function weeksForWindow(window?: { from: Date; to: Date }): string[] {

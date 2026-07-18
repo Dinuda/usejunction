@@ -8,12 +8,13 @@ import type { SignalsActivityInput, SignalsActivityV1 } from "@/lib/signals/cont
 import { flowKeyFromSession, signalsFlow } from "@/lib/signals/policies/flow";
 import { readSignalsSessionsWindow } from "@/lib/signals/readers/sessions";
 import { resolveSignalsWindows } from "@/lib/signals/queries/windows";
+import { rolesFor } from "@/lib/rbac";
 
 export async function getSignalsActivity(
   context: InsightContext,
   input: SignalsActivityInput = {},
 ): Promise<InsightEnvelope<SignalsActivityV1>> {
-  assertInsightRoles(context, ["owner", "admin"]);
+  assertInsightRoles(context, rolesFor("org_overview"));
   const windows = resolveSignalsWindows(input, context.now);
   const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
   const sessions = await readSignalsSessionsWindow(context.orgId, {

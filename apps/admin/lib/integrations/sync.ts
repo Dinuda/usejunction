@@ -21,7 +21,7 @@ async function upsertMember(connection: ProviderConnection, member: ProviderMemb
     : null;
   if (!developer && email) {
     developer = await prisma.developer.create({
-      data: { orgId: connection.orgId, email, name: member.name?.trim() || email.split("@")[0], role: "developer" },
+      data: { orgId: connection.orgId, email, name: member.name?.trim() || email.split("@")[0], role: "user" },
     });
   }
   return prisma.externalIdentity.upsert({

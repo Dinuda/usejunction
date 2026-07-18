@@ -13,6 +13,7 @@ import { changePercent, median } from "@/lib/signals/policies/aggregates";
 import { displayFlow, parseFlowKey } from "@/lib/signals/policies/flow";
 import { readSignalsSessionSteps } from "@/lib/signals/readers/sessions";
 import { resolveSignalsWindows } from "@/lib/signals/queries/windows";
+import { rolesFor } from "@/lib/rbac";
 
 type StepLike = {
   app?: string | null;
@@ -83,7 +84,7 @@ export async function getSignalsJourneyDetail(
   context: InsightContext,
   input: SignalsJourneyDetailInput,
 ): Promise<InsightEnvelope<SignalsJourneyDetailV1>> {
-  assertInsightRoles(context, ["owner", "admin"]);
+  assertInsightRoles(context, rolesFor("org_overview"));
   const parts = parseFlowKey(input.flowKey);
   if (!parts) {
     throw new Error("INVALID_FLOW_KEY");

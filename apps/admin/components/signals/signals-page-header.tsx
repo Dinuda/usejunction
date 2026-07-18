@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Suspense } from "react";
 import { SignalsHubNav } from "@/components/signals/signals-hub-nav";
 
 export function SignalsPageHeader({
@@ -9,9 +10,9 @@ export function SignalsPageHeader({
 }: {
   title: ReactNode;
   description?: string;
-  /** Optional line above the title (e.g. back link on journey detail). */
+  /** Optional line above the title (e.g. back link). */
   eyebrow?: ReactNode;
-  /** Extra content under the title row (e.g. journey FlowPath). */
+  /** Extra content under the title row. */
   children?: ReactNode;
 }) {
   return (
@@ -28,7 +29,7 @@ export function SignalsPageHeader({
           <SignalsHubNav />
         </div>
       </div>
-      {children ? <div>{children}</div> : null}
+      {children ? <Suspense fallback={null}>{children}</Suspense> : null}
     </header>
   );
 }

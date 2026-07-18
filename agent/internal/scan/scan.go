@@ -1,6 +1,14 @@
-// Package scan reads local JSONL session logs produced by AI coding tools and
-// aggregates token counts and estimated cost. It never reads prompt text —
-// only numeric usage metadata.
+// Package scan reads local AI coding tool storage and aggregates token counts
+// and estimated cost. Formats vary by tool:
+//
+//   - Codex / Claude Code: ~/.codex/sessions and ~/.claude/projects JSONL
+//   - Cursor: state.vscdb + ai-code-tracking.db (sqlite)
+//   - Copilot Chat: agent-traces.db (sqlite) and optional debug JSONL
+//   - Cline / Roo / OpenCode: VS Code/Cursor globalStorage extension task JSON
+//     (not standalone ~/.local/share/opencode history)
+//   - Continue: ~/.continue session JSON/JSONL
+//
+// It never reads prompt text — only numeric usage metadata.
 package scan
 
 import (
@@ -31,7 +39,8 @@ type lineParser func(row map[string]any) usageHit
 
 // ScanCodex is implemented in codex.go using cumulative deltas.
 
-// ScanClaude walks the Claude projects directories, falling back to stats-cache.
+// ScanClaude walks ~/.claude/projects JSONL (and equivalent roots), falling
+// back to stats-cache.json daily/model totals when session files are thin.
 func ScanClaude(roots []string, refresh bool) ([]types.DailyUsage, error) {
 	var dirs []string
 	for _, r := range roots {
@@ -291,7 +300,7 @@ func repositoryForSessionFile(path string) *types.RepositoryIdentity {
 		if payload, ok := row["payload"].(map[string]any); ok && cwd == "" {
 			cwd = stringField(payload, "cwd")
 		}
-		if cwd == "" || isPrivacyProtectedPath(cwd) {
+		if cwd == "" || IsPrivacyProtectedPath(cwd) {
 			return nil
 		}
 		command := exec.Command("git", "-C", cwd, "config", "--get", "remote.origin.url")
@@ -306,9 +315,12 @@ func repositoryForSessionFile(path string) *types.RepositoryIdentity {
 	return found
 }
 
-func isPrivacyProtectedPath(path string) bool {
+// IsPrivacyProtectedPath reports whether path sits under a macOS TCC-gated
+// folder (Documents, Desktop, Downloads, …). Probing these with Stat/git
+// triggers “allow access to this folder?” prompts — never touch them.
+func IsPrivacyProtectedPath(path string) bool {
 	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
+	if err != nil || home == "" || strings.TrimSpace(path) == "" {
 		return false
 	}
 	abs := path
@@ -326,6 +338,16 @@ func isPrivacyProtectedPath(path string) bool {
 	}
 	for _, root := range protected {
 		if abs == root || strings.HasPrefix(abs, root+string(os.PathSeparator)) {
+			return true
+		}
+	}
+	// iCloud Drive / CloudStorage mirrors also gate behind Files and Folders.
+	lower := strings.ToLower(abs)
+	for _, marker := range []string{
+		"/library/mobile documents/",
+		"/library/cloudstorage/",
+	} {
+		if strings.Contains(lower, marker) {
 			return true
 		}
 	}

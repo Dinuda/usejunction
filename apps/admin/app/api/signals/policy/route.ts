@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
-import { audit, requireOrgRole } from "@/lib/rbac";
+import { accelerateOrgAgentRollout, getWorkExtractionReadiness } from "@/lib/agent-updates";
+import { audit, requireOrgRole, rolesFor } from "@/lib/rbac";
 import {
   SIGNALS_COLLECTION_MODE,
   SIGNALS_DEFAULT_RETENTION_DAYS,
@@ -12,14 +13,14 @@ import {
 import { getOrgSignalsPolicy } from "@/lib/signals/service";
 
 export async function GET(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
   const policy = await getOrgSignalsPolicy(auth.orgId);
   return NextResponse.json({ policy });
 }
 
 export async function PATCH(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
 
   const body = await req.json().catch(() => ({}));
@@ -29,18 +30,32 @@ export async function PATCH(req: NextRequest) {
   }
 
   const existing = await prisma.signalsPolicy.findFirst({ where: { orgId: auth.orgId, teamId: null } });
+  const wasWorkExtractionEnabled = existing?.workExtractionEnabled ?? false;
+  const workExtractionEnabled =
+    parsed.data.workExtractionEnabled ?? existing?.workExtractionEnabled ?? false;
+
   const data = {
-    enabled: parsed.data.enabled ?? existing?.enabled ?? false,
+    // Classic app/domain journey sampling stays off for this release.
+    enabled: false,
     retentionDays: parsed.data.retentionDays ?? existing?.retentionDays ?? SIGNALS_DEFAULT_RETENTION_DAYS,
     collectionMode: SIGNALS_COLLECTION_MODE,
     excludedApps: normalizeList(parsed.data.excludedApps ?? existing?.excludedApps, defaultExcludedApps),
     excludedDomains: normalizeList(parsed.data.excludedDomains ?? existing?.excludedDomains, defaultExcludedDomains),
-    storeEvents: parsed.data.storeEvents ?? existing?.storeEvents ?? false,
+    storeEvents: false,
+    workExtractionEnabled,
     updatedByUserId: auth.userId,
   };
   const policy = existing
     ? await prisma.signalsPolicy.update({ where: { id: existing.id }, data })
     : await prisma.signalsPolicy.create({ data: { orgId: auth.orgId, teamId: null, ...data } });
+
+  const turningWorkExtractionOn = !wasWorkExtractionEnabled && policy.workExtractionEnabled;
+  const agentRollout = turningWorkExtractionOn
+    ? await accelerateOrgAgentRollout(auth.orgId)
+    : null;
+  const readiness = policy.workExtractionEnabled
+    ? await getWorkExtractionReadiness(auth.orgId)
+    : null;
 
   await audit({
     orgId: auth.orgId,
@@ -49,8 +64,18 @@ export async function PATCH(req: NextRequest) {
     action: "signals_policy.updated",
     targetType: "signals_policy",
     targetId: policy.id,
-    metadata: { enabled: policy.enabled, collectionMode: policy.collectionMode, retentionDays: policy.retentionDays },
+    metadata: {
+      enabled: policy.enabled,
+      collectionMode: policy.collectionMode,
+      retentionDays: policy.retentionDays,
+      workExtractionEnabled: policy.workExtractionEnabled,
+      agentRollout,
+    },
   });
 
-  return NextResponse.json({ policy: await getOrgSignalsPolicy(auth.orgId) });
+  return NextResponse.json({
+    policy: await getOrgSignalsPolicy(auth.orgId),
+    agentRollout,
+    readiness,
+  });
 }

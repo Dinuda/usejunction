@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
 import { buildInstallCommand, getPublicAppUrl } from "@/lib/connect-command";
 import { hasVerifiedIdentity, linkDeveloperToUser, normalizeEmail } from "@/lib/developer-identity";
+import { assertCanAddDeveloperSeat } from "@/lib/saas-billing/quantity";
 import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 import { audit } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
@@ -33,6 +34,16 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
 
   // Possession of the invite link is enough — admins only share it with people who should join.
   const sessionEmail = normalizeEmail(session.user.email);
+
+  const seatGate = await assertCanAddDeveloperSeat({
+    orgId: link.orgId,
+    userId: session.user.id,
+    email: sessionEmail,
+  });
+  if (!seatGate.allowed) {
+    return NextResponse.json({ error: seatGate.message }, { status: 403 });
+  }
+
   await prisma.teamInviteAllowlist.upsert({
     where: { linkId_email: { linkId: link.id, email: sessionEmail } },
     update: {},
@@ -74,7 +85,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
     await tx.organizationMembership.upsert({
       where: { userId_orgId: { userId: session.user!.id, orgId: link.orgId } },
       update: {},
-      create: { userId: session.user!.id, orgId: link.orgId, role: "developer" },
+      create: { userId: session.user!.id, orgId: link.orgId, role: "user" },
     });
     return linkDeveloperToUser({
       tx,
@@ -82,7 +93,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
       userId: session.user!.id,
       email: sessionEmail,
       name: session.user!.name,
-      role: "developer",
+      role: "user",
     });
   });
 

@@ -1,5 +1,6 @@
 import { prisma } from "@usejunction/db";
 import { defaultActivitySettings, type OrgActivitySettings } from "./contracts";
+import { enforceDeviceActivityRetention } from "./record-device-activity-event";
 
 export async function getOrgActivitySettings(orgId: string): Promise<OrgActivitySettings> {
   const settings = await prisma.activitySettings.findUnique({ where: { orgId } });
@@ -37,4 +38,8 @@ export async function upsertOrgActivitySettings(
     teamDeviceActivityEnabled: settings.teamDeviceActivityEnabled,
     updatedAt: settings.updatedAt.toISOString(),
   };
+}
+
+export async function pruneDeviceActivityEvents(orgId: string) {
+  return enforceDeviceActivityRetention(orgId);
 }

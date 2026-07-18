@@ -1,17 +1,22 @@
 import { ActivitySettingsCard } from "@/components/activity/activity-settings-card";
 import { SignalsSettingsCard } from "@/components/settings/signals-settings-card";
 import { WorkspaceSettingsCard } from "@/components/settings/workspace-settings-card";
+import { getWorkExtractionReadiness } from "@/lib/agent-updates";
 import { getOrgActivitySettings } from "@/lib/activity/service";
 import { getOrgSignalsPolicy } from "@/lib/signals/service";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
+import { rolesFor } from "@/lib/rbac";
 
 export default async function SettingsPage() {
-  const { orgId, orgName, organizations } = await requireWorkspaceRole(["owner", "admin"]);
+  const { orgId, orgName, organizations } = await requireWorkspaceRole(rolesFor("settings_billing"));
   const current = organizations.find((org) => org.id === orgId);
   const [settings, signalsPolicy] = await Promise.all([
     getOrgActivitySettings(orgId),
     getOrgSignalsPolicy(orgId),
   ]);
+  const readiness = signalsPolicy.workExtractionEnabled
+    ? await getWorkExtractionReadiness(orgId)
+    : null;
 
   return (
     <>
@@ -30,7 +35,7 @@ export default async function SettingsPage() {
           initialName={orgName ?? current?.name ?? "Workspace"}
           initialColor={current?.color ?? null}
         />
-        <SignalsSettingsCard initialPolicy={signalsPolicy} />
+        <SignalsSettingsCard initialPolicy={signalsPolicy} initialReadiness={readiness} />
         <ActivitySettingsCard initialSettings={settings} />
       </div>
     </>

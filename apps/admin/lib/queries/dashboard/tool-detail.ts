@@ -2,7 +2,7 @@ import { prisma } from "@usejunction/db";
 import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import { resolveReportWindow } from "@/lib/analytics/contracts/time-window";
-import { findCatalogTool } from "@/lib/tools/catalog";
+import { findCatalogTool, subscriptionToolKeys, toolUsageNames } from "@/lib/tools/catalog";
 import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
 import { mapVendorPlanToCatalog } from "@/lib/tools/sync-detected";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
@@ -51,7 +51,16 @@ export type ToolDetailData = {
     creditsRemaining: number | null;
     resetAt: Date | null;
     deviceHostname: string | null;
+    developerId: string | null;
     developerName: string | null;
+  }>;
+  modelsByDeveloper: Array<{
+    developerId: string;
+    developerName: string;
+    model: string;
+    requests: number;
+    tokens: number;
+    cost: number;
   }>;
   plans: Array<{
     id: string;
@@ -74,18 +83,7 @@ export type ToolDetailData = {
 };
 
 function toolNamesFor(toolKey: string) {
-  const tool = findCatalogTool(toolKey);
-  if (!tool) return [] as string[];
-  return Array.from(new Set([tool.toolName, ...tool.aliases]));
-}
-
-/** Shared OpenAI desktop runtime: Work usage is separate, but detect/quota stay on codex. */
-function inventoryNamesFor(toolKey: string) {
-  const names = toolNamesFor(toolKey);
-  if (toolKey === "codex-work") {
-    return Array.from(new Set([...names, "codex"]));
-  }
-  return names;
+  return toolUsageNames(toolKey);
 }
 
 export async function getToolDetail(
@@ -96,12 +94,13 @@ export async function getToolDetail(
   const tool = findCatalogTool(toolKey);
   if (!tool) return null;
 
-  const names = toolNamesFor(toolKey);
-  const inventoryNames = inventoryNamesFor(toolKey);
+  const names = toolNamesFor(tool.key);
+  const inventoryNames = names;
+  const templateKeys = [...subscriptionToolKeys(tool.key)];
   const windowStart = reportWindow.from;
   const windowEnd = reportWindow.to;
 
-  const [installations, accounts, quotas, usageRows, subscriptions, assignments, inventoryRows] =
+  const [installations, accounts, quotas, usageRows, subscriptions, assignments, inventoryRows, modelRows] =
     await Promise.all([
       prisma.toolInstallation.findMany({
         where: { orgId, detected: true, toolName: { in: inventoryNames } },
@@ -124,7 +123,7 @@ export async function getToolDetail(
           device: {
             select: {
               hostname: true,
-              user: { select: { name: true } },
+              user: { select: { id: true, name: true } },
             },
           },
         },
@@ -145,7 +144,7 @@ export async function getToolDetail(
           seatStatus: "active",
           OR: [
             { toolName: { in: inventoryNames } },
-            { template: { toolKey: { in: toolKey === "codex-work" ? [toolKey, "chatgpt-codex"] : [toolKey] } } },
+            { template: { toolKey: { in: templateKeys } } },
             { provider: tool.provider, product: tool.product },
           ],
         },
@@ -165,17 +164,23 @@ export async function getToolDetail(
         },
         select: { model: true, requests: true },
       }),
+      readUsageMetrics({
+        orgId,
+        window: reportWindow,
+        measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
+        dimensions: ["developer", "model"],
+        filters: { toolNames: names },
+      }),
     ]);
 
   const plans = subscriptions
     .filter(
       (subscription) =>
-        subscription.toolKey === toolKey ||
-        (toolKey === "codex-work" && subscription.toolKey === "chatgpt-codex"),
+        subscription.toolKey != null && (templateKeys as readonly string[]).includes(subscription.toolKey),
     )
     .map((subscription) => ({
       id: subscription.id,
-      toolKey: subscription.toolKey,
+      toolKey: tool.key,
       catalogPlanKey: subscription.catalogPlanKey,
       name: subscription.name,
       tier: subscription.tier,
@@ -236,7 +241,7 @@ export async function getToolDetail(
 
   for (const account of accounts) {
     const existing = peopleMap.get(account.user.id);
-    const mapped = account.plan ? mapVendorPlanToCatalog(toolKey, account.plan) : null;
+    const mapped = account.plan ? mapVendorPlanToCatalog(tool.key, account.plan) : null;
     peopleMap.set(account.user.id, {
       developerId: account.user.id,
       name: account.user.name,
@@ -298,6 +303,7 @@ export async function getToolDetail(
       creditsRemaining: quota.creditsRemaining,
       resetAt: quota.resetAt,
       deviceHostname: quota.device?.hostname ?? null,
+      developerId: quota.device?.user?.id ?? null,
       developerName: quota.device?.user?.name ?? null,
     });
   }
@@ -328,6 +334,33 @@ export async function getToolDetail(
     .sort((a, b) => b.sessions - a.sessions || a.digest.localeCompare(b.digest))
     .slice(0, 8);
 
+  const modelsByDeveloper: ToolDetailData["modelsByDeveloper"] = [];
+  for (const row of modelRows.data.rows) {
+    const developerId = dimension(row, "developer");
+    const model = dimension(row, "model") || "unknown";
+    if (!developerId) continue;
+    const requests = metricNumber(row, "requests");
+    const inputTokens = metricNumber(row, "inputTokens");
+    const outputTokens = metricNumber(row, "outputTokens");
+    const costMicros = metricNumber(row, "costMicros");
+    if (!requests && !inputTokens && !outputTokens && !costMicros) continue;
+    modelsByDeveloper.push({
+      developerId,
+      developerName: peopleMap.get(developerId)?.name ?? "Unknown developer",
+      model,
+      requests,
+      tokens: inputTokens + outputTokens,
+      cost: costMicros / 1_000_000,
+    });
+  }
+  modelsByDeveloper.sort(
+    (a, b) =>
+      b.cost - a.cost ||
+      b.requests - a.requests ||
+      a.developerName.localeCompare(b.developerName) ||
+      a.model.localeCompare(b.model),
+  );
+
   return {
     toolKey: tool.key,
     name: tool.name,
@@ -352,5 +385,6 @@ export async function getToolDetail(
     plans,
     toolsUsed,
     toolSequences,
+    modelsByDeveloper,
   };
 }

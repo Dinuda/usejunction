@@ -9,12 +9,14 @@ import (
 	"time"
 
 	"github.com/usejunction/agent/internal/client"
+	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/probe"
 	"github.com/usejunction/agent/internal/providers"
 	"github.com/usejunction/agent/internal/types"
+	"github.com/usejunction/agent/internal/workextract"
 )
 
-const providerCollectTimeout = 20 * time.Second
+const providerCollectTimeout = 45 * time.Second
 
 type collectProgress = func(step, message string)
 
@@ -47,22 +49,6 @@ func mergeToolAccounts(base, richer *types.ToolAccount) *types.ToolAccount {
 		out.AuthPresent = true
 	}
 	return &out
-}
-
-func accountFromProbe(ctx context.Context, p providers.Provider) *types.ToolAccount {
-	switch p.ID() {
-	case "cursor":
-		_, probeAcc, err := probe.ProbeCursorQuota(ctx)
-		if err == nil {
-			return probeAcc
-		}
-	case "codex":
-		_, probeAcc, err := probe.ProbeCodexQuota(ctx, codexHomeForProbe())
-		if err == nil {
-			return probeAcc
-		}
-	}
-	return nil
 }
 
 func codexHomeForProbe() string {
@@ -139,14 +125,92 @@ func collectAndReportWithProgress(
 		}
 	}
 	if len(usageReports) > 0 {
-		progress("upload-usage", fmt.Sprintf("Uploading %d usage rows", len(usageReports)))
-		if err := api.ReportLocalUsage(usageReports); err != nil {
-			return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, fmt.Errorf("usage: %w", err)
+		uploaded, uploadErr := reportLocalUsageDelta(api, usageReports, func(n, scanned int) {
+			progress("upload-usage", fmt.Sprintf("Uploading %d changed usage rows (of %d scanned)", n, scanned))
+		})
+		if uploadErr != nil && uploaded == 0 {
+			return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, fmt.Errorf("usage: %w", uploadErr)
 		}
+		if uploaded == 0 {
+			progress("upload-usage", "No usage changes since last upload")
+		} else if uploadErr != nil && verbose {
+			fmt.Printf("[report] usage fingerprint save: %v\n", uploadErr)
+		}
+	}
+
+	progress("work-extract", "Checking work extraction policy")
+	if workErr := maybeReportWorkSessions(api, progress); workErr != nil && verbose {
+		fmt.Printf("[report] work extraction: %v\n", workErr)
 	}
 
 	progress("complete", "Sync complete")
 	return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, nil
+}
+
+func maybeReportWorkSessions(api *client.APIClient, progress collectProgress) error {
+	policy, err := api.SignalsPolicy()
+	if err != nil {
+		return err
+	}
+	if !policy.WorkExtractionEnabled {
+		return nil
+	}
+
+	cfg, cfgErr := config.Load()
+	opts := workextract.Options{Backfill: true}
+	if cfgErr == nil {
+		opts.Backfill = strings.TrimSpace(cfg.WorkExtractionLastAt) == ""
+		if !opts.Backfill {
+			if since, parseErr := time.Parse(time.RFC3339, cfg.WorkExtractionLastAt); parseErr == nil {
+				opts.Since = since
+			} else {
+				opts.Backfill = true
+			}
+		}
+	}
+
+	if opts.Backfill {
+		progress("work-extract", "Backfilling structured work history")
+	} else {
+		progress("work-extract", "Extracting recent work sessions")
+	}
+	sessions := workextract.Collect(opts)
+	if len(sessions) == 0 {
+		if opts.Backfill && cfgErr == nil {
+			cfg.WorkExtractionLastAt = time.Now().UTC().Format(time.RFC3339)
+			_ = config.Save(cfg)
+		}
+		return nil
+	}
+
+	const batchSize = 200
+	for start := 0; start < len(sessions); start += batchSize {
+		end := start + batchSize
+		if end > len(sessions) {
+			end = len(sessions)
+		}
+		batch := sessions[start:end]
+		progress("work-extract", fmt.Sprintf("Uploading work sessions %d–%d of %d", start+1, end, len(sessions)))
+		if err := api.ReportWorkSessions(batch); err != nil {
+			return err
+		}
+	}
+
+	if cfgErr == nil {
+		newest := sessions[0].ObservedAt
+		for _, session := range sessions[1:] {
+			if session.ObservedAt > newest {
+				newest = session.ObservedAt
+			}
+		}
+		if newest == "" {
+			newest = time.Now().UTC().Format(time.RFC3339)
+		}
+		cfg.WorkExtractionLastAt = newest
+		cfg.SignalsWorkExtraction = true
+		_ = config.Save(cfg)
+	}
+	return nil
 }
 
 func collectProviderWithTimeout(ctx context.Context, p providers.Provider, refresh bool) (providerCollectResult, bool) {
@@ -180,7 +244,24 @@ func collectProvider(ctx context.Context, p providers.Provider, refresh bool) pr
 	})
 
 	acc, _ := p.AccountIdentity(ctx)
-	acc = mergeToolAccounts(acc, accountFromProbe(ctx, p))
+	var quotaSnaps []types.QuotaSnapshot
+	switch p.ID() {
+	case "cursor":
+		// Single probe — CursorProvider.ProbeQuota would call this again.
+		if snaps, probeAcc, err := probe.ProbeCursorQuota(ctx); err == nil {
+			quotaSnaps = snaps
+			acc = mergeToolAccounts(acc, probeAcc)
+		}
+	case "codex":
+		// Single probe — formerly accountFromProbe + ProbeQuota each called
+		// ProbeCodexQuota and burned most of the collect timeout before scan.
+		if snaps, probeAcc, err := probe.ProbeCodexQuota(ctx, codexHomeForProbe()); err == nil {
+			quotaSnaps = snaps
+			acc = mergeToolAccounts(acc, probeAcc)
+		}
+	default:
+		quotaSnaps, _ = p.ProbeQuota(ctx)
+	}
 	if acc != nil && acc.AuthPresent {
 		result.accountReports = append(result.accountReports, client.AccountReport{
 			ToolName:    acc.ToolName,
@@ -191,17 +272,15 @@ func collectProvider(ctx context.Context, p providers.Provider, refresh bool) pr
 		})
 	}
 
-	if snaps, _ := p.ProbeQuota(ctx); len(snaps) > 0 {
-		for _, snap := range snaps {
-			result.quotaReports = append(result.quotaReports, client.QuotaReport{
-				ToolName:         snap.ToolName,
-				WindowType:       snap.WindowType,
-				UsedPercent:      snap.UsedPercent,
-				ResetAt:          snap.ResetAt,
-				CreditsRemaining: snap.CreditsRemaining,
-				Source:           snap.Source,
-			})
-		}
+	for _, snap := range quotaSnaps {
+		result.quotaReports = append(result.quotaReports, client.QuotaReport{
+			ToolName:         snap.ToolName,
+			WindowType:       snap.WindowType,
+			UsedPercent:      snap.UsedPercent,
+			ResetAt:          snap.ResetAt,
+			CreditsRemaining: snap.CreditsRemaining,
+			Source:           snap.Source,
+		})
 	}
 
 	if daily, scanErr := p.ScanLocalUsage(ctx, refresh); scanErr == nil {

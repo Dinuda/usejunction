@@ -6,6 +6,7 @@ import { AuthShell } from "@/components/auth/auth-shell";
 import { OAuthProviderButtons, getEnabledOAuthProviders } from "@/components/auth/oauth-provider-buttons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { userFacingError } from "@/lib/errors/user-facing";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -21,9 +22,22 @@ type RedeemState =
   | { kind: "ready"; installCommand: string; email: string }
   | { kind: "error"; message: string };
 
+type Device = {
+  id: string;
+  hostname: string;
+  toolInstallations?: Array<{ toolName: string; version?: string | null }>;
+};
+
+/** Device is ready once enrolled and the agent has reported at least one tool. */
+function isReadyDevice(device: Device | null | undefined): device is Device {
+  return Boolean(device && (device.toolInstallations?.length ?? 0) > 0);
+}
+
 export function TeamInviteClient({ token, organizationName, signedIn, sessionEmail }: Props) {
   const [state, setState] = useState<RedeemState>(signedIn ? { kind: "redeeming" } : { kind: "idle" });
   const [copied, setCopied] = useState(false);
+  const [device, setDevice] = useState<Device | null>(null);
+  const [waitingForTools, setWaitingForTools] = useState(false);
   const callbackUrl = `/i/${token}`;
 
   useEffect(() => {
@@ -35,7 +49,7 @@ export function TeamInviteClient({ token, organizationName, signedIn, sessionEma
       const data = await response.json().catch(() => ({}));
       if (cancelled) return;
       if (!response.ok) {
-        setState({ kind: "error", message: data.error ?? "Could not redeem invite." });
+        setState({ kind: "error", message: userFacingError(data.error, "Could not redeem invite.") });
         return;
       }
       setState({
@@ -49,6 +63,43 @@ export function TeamInviteClient({ token, organizationName, signedIn, sessionEma
     };
   }, [signedIn, token, sessionEmail]);
 
+  useEffect(() => {
+    if (state.kind !== "ready") return;
+
+    let cancelled = false;
+    let intervalId: number | undefined;
+
+    async function refreshStatus() {
+      const response = await fetch("/api/onboarding", { cache: "no-store" });
+      if (!response.ok || cancelled) return;
+      const data = await response.json();
+      const devices = (data.developer?.devices as Device[] | undefined) ?? [];
+      const candidate = devices[0] ?? null;
+
+      if (candidate && !isReadyDevice(candidate)) {
+        setWaitingForTools(true);
+        setDevice(candidate);
+        return;
+      }
+
+      if (isReadyDevice(candidate)) {
+        setWaitingForTools(false);
+        setDevice(candidate);
+        if (intervalId !== undefined) window.clearInterval(intervalId);
+      }
+    }
+
+    void refreshStatus();
+    intervalId = window.setInterval(() => {
+      void refreshStatus();
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      if (intervalId !== undefined) window.clearInterval(intervalId);
+    };
+  }, [state.kind]);
+
   async function copyCommand(command: string) {
     await navigator.clipboard.writeText(command);
     setCopied(true);
@@ -56,42 +107,68 @@ export function TeamInviteClient({ token, organizationName, signedIn, sessionEma
   }
 
   if (state.kind === "ready") {
+    const connected = isReadyDevice(device);
+
     return (
       <AuthShell
         size="md"
         accent="cyan"
         contentAlign="top"
         eyebrow="Connect"
-        title="Run this in Terminal."
-        description={`Copy the command to finish joining ${organizationName}.`}
+        title={connected ? "Device connected." : "Run this in Terminal."}
+        description={
+          connected
+            ? `${device.hostname} is ready. Continue to finish joining ${organizationName}.`
+            : `Copy the command to finish joining ${organizationName}.`
+        }
         statement="One command. Real data."
       >
         <div className="space-y-5">
-          <div className="relative overflow-hidden border border-brand-olive bg-brand-olive p-4 pr-14 font-mono text-xs leading-6 text-primary-foreground">
-            <code className="break-all">{state.installCommand}</code>
-            <button
-              type="button"
-              className={cn(
-                "absolute right-3 top-3 border border-brand-olive-border p-2 text-primary-foreground/80 transition hover:bg-brand-olive-secondary",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              )}
-              onClick={() => void copyCommand(state.installCommand)}
-              aria-label="Copy install command"
-            >
-              {copied ? <Check className="size-4" /> : <Clipboard className="size-4" />}
-            </button>
-          </div>
-          <p className="font-mono text-[0.65rem] text-muted-foreground">
-            {copied ? "Copied — paste in Terminal" : "Metadata only · paste in Terminal"}
-          </p>
-          <div className="flex justify-center pt-1">
-            <a
-              href="/onboarding"
-              className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-            >
-              Continue to workspace
-            </a>
-          </div>
+          {!connected ? (
+            <>
+              <div className="relative overflow-hidden border border-brand-olive bg-brand-olive p-4 pr-14 font-mono text-xs leading-6 text-primary-foreground">
+                <code className="break-all">{state.installCommand}</code>
+                <button
+                  type="button"
+                  className={cn(
+                    "absolute right-3 top-3 border border-brand-olive-border p-2 text-primary-foreground/80 transition hover:bg-brand-olive-secondary",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  )}
+                  onClick={() => void copyCommand(state.installCommand)}
+                  aria-label="Copy install command"
+                >
+                  {copied ? <Check className="size-4" /> : <Clipboard className="size-4" />}
+                </button>
+              </div>
+              <p className="font-mono text-[0.65rem] text-muted-foreground">
+                {copied ? "Copied — paste in Terminal" : "Metadata only · paste in Terminal"}
+              </p>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin text-primary" />
+                {waitingForTools
+                  ? "Device enrolled — waiting for tool detection…"
+                  : "Waiting for enroll…"}
+              </div>
+              <div className="flex justify-center pt-1">
+                <a
+                  href="/onboarding"
+                  className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                >
+                  Continue without connecting
+                </a>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-4">
+              <div className="border border-border bg-card p-4">
+                <p className="font-mono text-[0.65rem] uppercase tracking-[0.14em] text-primary">Connected</p>
+                <p className="mt-2 text-sm font-medium">{device.hostname}</p>
+              </div>
+              <Button asChild className="w-full">
+                <a href="/onboarding">Continue to workspace</a>
+              </Button>
+            </div>
+          )}
         </div>
       </AuthShell>
     );

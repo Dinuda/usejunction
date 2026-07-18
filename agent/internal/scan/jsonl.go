@@ -13,6 +13,12 @@ const defaultJSONLMaxKeep = 8 << 20 // 8 MiB
 // errStopJSONL ends forEachJSONLLine early without treating it as a failure.
 var errStopJSONL = errors.New("stop jsonl iteration")
 
+// ForEachJSONLLine reads r line-by-line and calls fn for each kept line.
+// Oversized lines are skipped. Returning errStopJSONL ends iteration cleanly.
+func ForEachJSONLLine(r io.Reader, fn func(line []byte) error) error {
+	return forEachJSONLLine(r, defaultJSONLMaxKeep, fn)
+}
+
 // forEachJSONLLine reads r line-by-line and calls fn for each line at or under
 // maxKeep bytes (trailing newline stripped). Lines larger than maxKeep are
 // discarded until '\n' without invoking fn, so oversized payloads never stop

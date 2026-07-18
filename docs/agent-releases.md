@@ -379,10 +379,54 @@ If you are changing the release control plane, the most important files are:
 - [.github/workflows/agent-release-build.yml](../.github/workflows/agent-release-build.yml)
 - [.github/workflows/agent-release-control.yml](../.github/workflows/agent-release-control.yml)
 
+## Feature-gated agent updates (work extraction)
+
+Some user-facing features require a minimum agent version. Work extraction is the first:
+
+- Minimum version: `0.3.0` (`WORK_EXTRACTION_MIN_AGENT_VERSION` / agent `workextract.MinAgentVersion`) — includes clipped `changeNarrative` summaries
+- When an admin turns **Work extraction** on under Settings → Signals, the control plane calls `accelerateOrgAgentRollout(orgId)` for that workspace only
+- Pending deployments on the **active** release for that org become immediately eligible (`eligibleAt = now`)
+- Other orgs keep their staggered rollout schedule
+- Updated agents perform a one-shot **history backfill** of local AI tool sessions on first collect, then watermark with `workExtractionLastAt` (exclusive: only `ObservedAt` strictly newer than the watermark is uploaded)
+- Work extraction does **not** require classic app/domain collection (`enabled`) to be on
+- Background collect also delta-uploads local usage: always include **today (UTC)**, skip unchanged historical aggregates using fingerprints in `~/.usejunction/cache/cost-usage/usage-upload.json`
+
+Ops still must promote an agent release that includes workextract (`agent-v0.3.0` or later) before devices can download a compatible binary. Enabling the setting cannot invent artifacts.
+
+Settings shows a readiness strip (compatible vs needs update) and links to Team → Agent update coverage.
+
+## Phase 2 reserve: classic Signals + browser extension
+
+Classic app/domain journeys and browser-extension domain enrichment are reserved for a later OTA:
+
+- Placeholder min version: `0.4.0` (`CLASSIC_SIGNALS_MIN_AGENT_VERSION` on the control plane)
+- Policy flag remains `SignalsPolicy.enabled` (independent of work extraction)
+- When that release ships: gate effective classic collection on `enabled && agentVersion >= min`, call `accelerateOrgAgentRollout` on enable, and show a readiness strip mirroring work extraction
+- Browser extension: keep the session model stable; implement `BrowserContextProvider` via native messaging (today: `NoopBrowserContextProvider`). Extension install is separate from agent OTA; if a native-messaging host must live in the agent, ship it as a normal agent release (same promote/heartbeat updater)
+- Product UI until then: Overview / Journeys / Tools are demoted or marked “later update” when classic is off
+
+## Future macOS menu bar companion
+
+A tiny macOS menu bar UI may ship in a later agent release. It is **not** required for agent function today.
+
+Contract when that release ships:
+
+- **macOS-only companion.** Linux stays headless. No Windows agent path.
+- **Daemon remains launchd-owned.** `~/Library/LaunchAgents/com.usejunction.agent.plist` continues to run `…/UseJunction Agent.app/Contents/MacOS/usejunction daemon`. The menu bar does not own KeepAlive or collection.
+- **Tray talks to existing local APIs.** Status and “Sync now” use loopback localsync HTTP (`127.0.0.1`, default port from config) plus `~/.usejunction/config.json` (token/port). No new IPC channel.
+- **Bundle layout.** Optional second binary at `Contents/MacOS/UseJunctionMenu` beside `usejunction`. Packaging already accepts `USEJUNCTION_MENU_BINARY` or a 4th arg to `scripts/package-macos-app.sh` when that binary exists.
+- **Delivery via auto-update, not reinstall.** Existing enrolled Macs should get the tray from a normal agent release. The first menu-bar-bearing release must:
+  1. Change Darwin update artifacts from a bare Mach-O to a multi-file bundle (`.app.zip` or Contents archive) that includes `usejunction`, `UseJunctionMenu`, and updated `Info.plist`.
+  2. Enhance Darwin `updater.Apply` for multi-file replace + rollback snapshot (Linux stays single-binary).
+  3. After `launchctl kickstart`, one-shot open/register the tray (`SMAppService` or `open`) so users see it without re-running `install.sh`.
+- **Minimum OS for that release:** macOS 14+.
+
+Until then, update artifacts remain bare Darwin binaries and `Apply` continues to replace a single executable.
+
 ## Operational notes
 
 - The 15-minute heartbeat remains the normal delivery path.
-- The 30-minute full collection cadence remains separate and unchanged.
+- The 30-minute collect tick rescans local tools; usage and work uploads stay incremental (fingerprints + watermark).
 - Automatic update support is enabled by default.
 - macOS and Linux are the supported platforms for the first rollout.
 - The control-plane operations token must never be shipped to agents.

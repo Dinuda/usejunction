@@ -2,6 +2,10 @@ export type SignalsRange = 7 | 30 | 90;
 
 export type SignalsFiltersInput = {
   range?: SignalsRange;
+  /** Dashboard-style rolling presets (3 / 30 / 60 / 90). */
+  days?: number;
+  from?: string;
+  to?: string;
   developerId?: string;
   teamId?: string;
   tool?: string;
@@ -33,7 +37,8 @@ export type SignalsToolRow = {
 };
 
 export type SignalsTrendPoint = {
-  weekStart: string;
+  /** UTC calendar date (YYYY-MM-DD) for the bucket — day start, or Monday for weekly rollups. */
+  date: string;
   sessions: number;
   people: number;
   durationSeconds: number;

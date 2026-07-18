@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
+import {
+  recordDeviceActivityEvent,
+  uniqueStrings,
+} from "@/lib/activity/record-device-activity-event";
 import { bearerToken } from "@/lib/auth";
 import { syncDetectedPlansForDevice } from "@/lib/tools/sync-detected";
 
 export async function POST(req: NextRequest) {
+  const started = Date.now();
   try {
     const token = bearerToken(req);
     if (!token) {
@@ -79,6 +84,27 @@ export async function POST(req: NextRequest) {
         console.error("[devices/accounts] plan sync failed", syncError);
       }
     }
+
+    const toolNames = uniqueStrings(reported.map((row) => row.toolName));
+    await recordDeviceActivityEvent({
+      orgId: device.orgId,
+      developerId: device.userId,
+      deviceId: device.id,
+      kind: "accounts",
+      status: "ok",
+      summary: `Account sync · ${upserted} accounts${toolNames.length ? ` · ${toolNames.join(", ")}` : ""}`,
+      requestSummary: {
+        accounts: upserted,
+        tools: toolNames,
+        sample: reported.slice(0, 8).map((row) => ({
+          toolName: row.toolName,
+          plan: row.plan,
+          email: row.email,
+        })),
+      },
+      responseSummary: { upserted },
+      durationMs: Date.now() - started,
+    });
 
     return NextResponse.json({ upserted });
   } catch (e) {

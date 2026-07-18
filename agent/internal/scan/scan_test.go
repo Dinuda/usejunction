@@ -103,10 +103,13 @@ func TestIsPrivacyProtectedPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !isPrivacyProtectedPath(filepath.Join(home, "Documents", "work")) {
+	if !IsPrivacyProtectedPath(filepath.Join(home, "Documents", "work")) {
 		t.Fatal("Documents should be protected")
 	}
-	if isPrivacyProtectedPath(filepath.Join(home, "code", "app")) {
+	if !IsPrivacyProtectedPath(filepath.Join(home, "Documents", "work", "usejunciton")) {
+		t.Fatal("Documents/work projects should be protected")
+	}
+	if IsPrivacyProtectedPath(filepath.Join(home, "code", "app")) {
 		t.Fatal("non-TCC path should not be protected")
 	}
 }

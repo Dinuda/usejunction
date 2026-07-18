@@ -1,14 +1,24 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { SignalsSectionHeader } from "@/components/signals/signals-ui";
 import type {
   DeviceActivityFeed as DeviceActivityFeedData,
   DeviceActivityItem,
 } from "@/lib/queries/activity/device-activity-types";
 import { cn } from "@/lib/utils";
+import { ScrollFadeList } from "./scroll-fade-list";
 
 function formatWhen(iso: string) {
   return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
@@ -20,14 +30,6 @@ function formatRelative(iso: string) {
   if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
   if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
   return `${Math.floor(ms / 86_400_000)}d ago`;
-}
-
-function money(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: value < 1 ? 3 : 2,
-  }).format(value);
 }
 
 function StatusBadge({
@@ -50,146 +52,156 @@ function StatusBadge({
   );
 }
 
-function itemTitle(item: DeviceActivityItem) {
-  if (item.kind === "heartbeat") return "Heartbeat";
-  if (item.kind === "sync") {
-    return item.syncKind === "usage" ? "Usage sync" : "Account sync";
-  }
-  return item.eventType.replaceAll("_", " ");
-}
-
-function itemSummary(item: DeviceActivityItem) {
-  if (item.kind === "heartbeat") {
-    return `${item.device.hostname} · agent ${item.device.agentVersion} · ${item.device.os}`;
-  }
-  if (item.kind === "sync") {
-    const { tools, accounts, quotas, usage } = item.extraction;
-    return `${item.device.hostname} · ${tools.length} tools · ${accounts.length} accounts · ${quotas.length} quotas · ${usage.length} usage rows`;
-  }
-  const version =
-    item.currentVersion && item.currentVersion !== item.targetVersion
-      ? `${item.currentVersion} → ${item.targetVersion}`
-      : item.targetVersion;
-  return `${item.device.hostname} · ${version}${item.stage ? ` · ${item.stage}` : ""}`;
-}
-
-function itemBadge(item: DeviceActivityItem): { label: string; variant: "success" | "warning" | "error" | "default" } {
+function itemBadge(item: DeviceActivityItem): {
+  label: string;
+  variant: "success" | "warning" | "error" | "default";
+} {
   if (item.kind === "heartbeat") {
     return item.device.online
       ? { label: "online", variant: "success" }
       : { label: "offline", variant: "warning" };
   }
-  if (item.kind === "sync") {
-    return { label: item.syncKind, variant: "default" };
+  if (item.status === "error" || item.errorCode) {
+    return { label: item.errorCode ?? "error", variant: "error" };
   }
-  if (item.eventType.includes("failed") || item.errorCode) {
-    return { label: item.errorCode ?? "failed", variant: "error" };
+  if (item.source === "observed") {
+    return { label: item.kind.split("_")[0] ?? "observed", variant: "default" };
   }
-  if (item.eventType.includes("confirmed")) {
-    return { label: "confirmed", variant: "success" };
-  }
-  return { label: item.eventType.split("_")[0] ?? "update", variant: "default" };
+  return { label: item.kind.replaceAll("_", " "), variant: "default" };
 }
 
-function ExtractionLog({ item }: { item: Extract<DeviceActivityItem, { kind: "sync" }> }) {
-  const { tools, accounts, quotas, usage } = item.extraction;
+function detailLines(item: DeviceActivityItem): string[] {
+  const lines: string[] = [];
+  const details = item.details;
+
+  const pushList = (label: string, value: unknown) => {
+    if (Array.isArray(value) && value.length) {
+      const rendered = value
+        .slice(0, 8)
+        .map((entry) => {
+          if (typeof entry === "string") return entry;
+          if (entry && typeof entry === "object") {
+            const row = entry as Record<string, unknown>;
+            return [
+              row.toolName ?? row.modelName ?? row.model ?? row.provider ?? row.date,
+              row.email,
+              row.plan,
+              row.version,
+              row.windowType,
+              row.title,
+              typeof row.requests === "number" ? `${row.requests} req` : null,
+              typeof row.tokens === "number" ? `${row.tokens} tok` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+          }
+          return String(entry);
+        })
+        .filter(Boolean);
+      if (rendered.length) lines.push(`${label}: ${rendered.join("; ")}`);
+    }
+  };
+
+  if (typeof details.hostname === "string") {
+    lines.push(`Host: ${details.hostname}`);
+  }
+  pushList("Tools", details.names ?? details.tools);
+  pushList("Models", details.models ?? details.sample);
+  pushList("Accounts", details.sample);
+  pushList("Quotas", details.sample);
+  if (typeof details.toolName === "string") {
+    lines.push(
+      [
+        details.toolName,
+        typeof details.model === "string" ? details.model : null,
+        typeof details.title === "string" ? details.title : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    );
+  }
+  if (typeof details.aiTool === "string") {
+    lines.push(
+      [
+        details.domainBefore ?? details.appBefore ?? "unknown",
+        details.aiTool,
+        details.domainAfter ?? details.appAfter ?? "unknown",
+      ]
+        .map(String)
+        .join(" → "),
+    );
+  }
+  if (typeof details.eventType === "string") {
+    lines.push(`Event: ${details.eventType.replaceAll("_", " ")}`);
+  }
+  if (item.durationMs != null) {
+    lines.push(`Duration: ${item.durationMs < 1000 ? `${item.durationMs}ms` : `${Math.round(item.durationMs / 1000)}s`}`);
+  }
+  if (typeof details.href === "string") {
+    lines.push(`Open: ${details.href}`);
+  }
+
+  return lines.slice(0, 12);
+}
+
+function InspectPayload({ item }: { item: DeviceActivityItem }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="mt-4 space-y-4 border-t border-border/70 pt-4 text-xs">
-      <div>
-        <p className="mb-2 font-medium uppercase tracking-[0.06em] text-muted-foreground">Tools extracted</p>
-        {tools.length ? (
-          <ul className="space-y-1.5 font-mono text-[11px] leading-5 text-foreground/90">
-            {tools.map((tool) => (
-              <li key={`${tool.toolName}-${tool.lastCheckedAt}`}>
-                {tool.toolName}
-                {tool.version ? `@${tool.version}` : ""}
-                {" · "}
-                {tool.detected ? "detected" : "not detected"}
-                {tool.configured ? " · configured" : ""}
-                {" · checked "}
-                {formatWhen(tool.lastCheckedAt)}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-muted-foreground">No tools recorded.</p>
-        )}
-      </div>
+    <div className="mt-3 border-t border-border/70 pt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground hover:text-foreground"
+      >
+        Inspect payload
+        <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
+      </button>
+      {open ? (
+        <div className="mt-2 space-y-3">
+          <div>
+            <p className="mb-1 text-[11px] uppercase tracking-[0.06em] text-muted-foreground">Requested</p>
+            <pre className="overflow-x-auto bg-muted/40 p-3 font-mono text-[11px] leading-5 text-foreground/90">
+              {JSON.stringify(item.inspect.requestSummary, null, 2)}
+            </pre>
+          </div>
+          <div>
+            <p className="mb-1 text-[11px] uppercase tracking-[0.06em] text-muted-foreground">Returned</p>
+            <pre className="overflow-x-auto bg-muted/40 p-3 font-mono text-[11px] leading-5 text-foreground/90">
+              {JSON.stringify(item.inspect.responseSummary, null, 2)}
+            </pre>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
-      <div>
-        <p className="mb-2 font-medium uppercase tracking-[0.06em] text-muted-foreground">Accounts extracted</p>
-        {accounts.length ? (
-          <ul className="space-y-1.5 font-mono text-[11px] leading-5 text-foreground/90">
-            {accounts.map((account) => (
-              <li key={`${account.toolName}-${account.updatedAt}`}>
-                {account.toolName}
-                {" · "}
-                {account.email ?? "no email"}
-                {" · "}
-                {account.plan ?? "unknown plan"}
-                {" · "}
-                {account.loginMethod}
-                {account.authPresent ? " · auth present" : " · no auth"}
-                {" · "}
-                {formatWhen(account.updatedAt)}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-muted-foreground">No accounts recorded.</p>
-        )}
-      </div>
+function EventDetails({ item }: { item: DeviceActivityItem }) {
+  const lines = detailLines(item);
+  const href = typeof item.details.href === "string" ? item.details.href : null;
 
+  return (
+    <div className="mt-4 space-y-3 border-t border-border/70 pt-4 text-xs">
       <div>
-        <p className="mb-2 font-medium uppercase tracking-[0.06em] text-muted-foreground">Quotas extracted</p>
-        {quotas.length ? (
+        <p className="mb-2 font-medium uppercase tracking-[0.06em] text-muted-foreground">What happened</p>
+        {lines.length ? (
           <ul className="space-y-1.5 font-mono text-[11px] leading-5 text-foreground/90">
-            {quotas.map((quota) => (
-              <li key={`${quota.toolName}-${quota.windowType}-${quota.updatedAt}`}>
-                {quota.toolName}
-                {" · "}
-                {quota.windowType}
-                {" · "}
-                {quota.usedPercent != null ? `${Math.round(quota.usedPercent)}% used` : "usage n/a"}
-                {quota.creditsRemaining != null ? ` · ${quota.creditsRemaining} credits` : ""}
-                {" · "}
-                {quota.source}
-                {" · "}
-                {formatWhen(quota.updatedAt)}
-              </li>
+            {lines.map((line) => (
+              <li key={line}>{line}</li>
             ))}
           </ul>
         ) : (
-          <p className="text-muted-foreground">No quotas recorded.</p>
+          <p className="text-muted-foreground">{item.summary}</p>
         )}
+        {href ? (
+          <p className="mt-2">
+            <Link href={href} className="text-xs underline underline-offset-2">
+              Open work session
+            </Link>
+          </p>
+        ) : null}
       </div>
-
-      <div>
-        <p className="mb-2 font-medium uppercase tracking-[0.06em] text-muted-foreground">Usage rows extracted</p>
-        {usage.length ? (
-          <ul className="space-y-1.5 font-mono text-[11px] leading-5 text-foreground/90">
-            {usage.map((row) => (
-              <li key={`${row.date}-${row.toolName}-${row.model}-${row.metricKind}`}>
-                {row.date}
-                {" · "}
-                {row.toolName}
-                {" · "}
-                {row.model || "unknown model"}
-                {" · "}
-                {row.requests} req
-                {" · "}
-                {row.inputTokens + row.outputTokens} tokens
-                {" · "}
-                {money(row.estimatedCost)}
-                {" · "}
-                {row.metricKind}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-muted-foreground">No usage aggregates recorded.</p>
-        )}
-      </div>
+      <InspectPayload item={item} />
     </div>
   );
 }
@@ -202,37 +214,30 @@ function FeedRow({
   showDeveloper: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const expandable = item.kind === "sync";
   const badge = itemBadge(item);
 
   return (
     <li className="border-b border-border/60 last:border-b-0">
       <button
         type="button"
-        disabled={!expandable}
-        onClick={() => expandable && setOpen((value) => !value)}
-        className={cn(
-          "flex w-full items-start justify-between gap-3 py-5 text-left transition-colors",
-          expandable ? "hover:bg-muted/30" : "cursor-default",
-        )}
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-start justify-between gap-3 px-3 py-4 text-left transition-colors hover:bg-muted/30"
       >
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-medium capitalize">{itemTitle(item)}</p>
+            <p className="text-sm font-medium capitalize">{item.title}</p>
             <StatusBadge variant={badge.variant}>{badge.label}</StatusBadge>
-            {expandable ? (
-              <ChevronDown
-                className={cn("size-3.5 text-muted-foreground transition-transform", open && "rotate-180")}
-              />
-            ) : null}
+            <ChevronDown
+              className={cn("size-3.5 text-muted-foreground transition-transform", open && "rotate-180")}
+            />
           </div>
-          <p className="mt-1 truncate text-xs text-muted-foreground">{itemSummary(item)}</p>
+          <p className="mt-1 truncate text-xs text-muted-foreground">{item.summary}</p>
           {showDeveloper && item.developer ? (
             <p className="mt-1 truncate text-xs text-muted-foreground">
               {item.developer.name} · {item.developer.email}
             </p>
           ) : null}
-          {item.kind === "agent_update" && item.errorCode ? (
+          {item.errorCode ? (
             <p className="mt-1 font-mono text-[11px] text-destructive">{item.errorCode}</p>
           ) : null}
         </div>
@@ -241,13 +246,43 @@ function FeedRow({
           <p className="mt-1 text-[11px] text-muted-foreground/80">{formatWhen(item.at)}</p>
         </div>
       </button>
-      {expandable && open ? (
-        <div className="pb-5">
-          <ExtractionLog item={item} />
+      {open ? (
+        <div className="px-3 pb-4">
+          <EventDetails item={item} />
         </div>
       ) : null}
     </li>
   );
+}
+
+function feedStatusSummary(items: DeviceActivityItem[]) {
+  if (!items.length) {
+    return { line: "No device exchanges or observed activity yet.", online: null as boolean | null, count: 0 };
+  }
+
+  const latestHeartbeat = items.find((item) => item.kind === "heartbeat");
+  const latestExchange = items.find((item) => item.source === "exchange" && item.kind !== "heartbeat");
+  const parts: string[] = [];
+
+  if (latestHeartbeat) {
+    parts.push(
+      latestHeartbeat.device.online
+        ? `${latestHeartbeat.device.hostname} online · ${formatRelative(latestHeartbeat.at)}`
+        : `${latestHeartbeat.device.hostname} offline · ${formatRelative(latestHeartbeat.at)}`,
+    );
+  }
+  if (latestExchange) {
+    parts.push(`Last ${latestExchange.title.toLowerCase()} ${formatRelative(latestExchange.at)}`);
+  }
+  if (!parts.length) {
+    parts.push(`Latest event ${formatRelative(items[0]!.at)}`);
+  }
+
+  return {
+    line: parts.join(" · "),
+    online: latestHeartbeat?.device.online ?? null,
+    count: items.length,
+  };
 }
 
 export function DeviceActivityFeed({
@@ -257,26 +292,82 @@ export function DeviceActivityFeed({
   feed: DeviceActivityFeedData;
   showDeveloper?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
+  const status = useMemo(() => feedStatusSummary(feed.items), [feed.items]);
+
   return (
-    <section className="mt-10 border bg-card p-5">
-      <SignalsSectionHeader
-        title="Device activity."
-        description="Heartbeats from last-seen presence, sync updates with extracted inventory, and agent update events. Sync details reflect the latest extracted data tied to each sync timestamp."
-        bordered={false}
-      />
-      {feed.items.length ? (
-        <ul className="max-h-[32rem] overflow-y-auto">
-          {feed.items.map((item) => (
-            <FeedRow key={item.id} item={item} showDeveloper={showDeveloper} />
-          ))}
-        </ul>
-      ) : (
-        <p className="py-6 text-sm text-muted-foreground">No device heartbeats or sync updates yet.</p>
-      )}
-    </section>
+    <>
+      <section className="mt-10 border bg-card p-5">
+        <SignalsSectionHeader
+          title="Device activity."
+          description="Requests Junction made to connected machines, what came back, and observed activity on those machines."
+          bordered={false}
+          action={
+            feed.items.length ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-none"
+                onClick={() => setOpen(true)}
+              >
+                View device activity
+              </Button>
+            ) : undefined
+          }
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          {status.online === true ? <StatusBadge variant="success">online</StatusBadge> : null}
+          {status.online === false ? <StatusBadge variant="warning">offline</StatusBadge> : null}
+          <p className="text-sm text-muted-foreground">{status.line}</p>
+        </div>
+        {status.count > 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {status.count} {status.count === 1 ? "event" : "events"} in the recent feed
+            {feed.presenceFallback ? " (presence fallback until the next collect)." : "."}
+          </p>
+        ) : null}
+      </section>
+
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent
+          side="right"
+          className="flex w-full flex-col gap-0 overflow-hidden rounded-none p-0 sm:max-w-xl"
+        >
+          <SheetHeader className="border-b border-border/70 p-5 text-left">
+            <SheetTitle className="text-lg font-semibold tracking-tight">Device activity</SheetTitle>
+            <SheetDescription>
+              Machine exchanges Junction requested and what was returned, plus gateway requests, work
+              sessions, and Signals journeys when available. Open a row for details and Inspect for the
+              sanitized payload.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="min-h-0 flex-1 overflow-hidden p-5">
+            {feed.items.length ? (
+              <ScrollFadeList
+                maxHeightClassName="max-h-[calc(100vh-10rem)]"
+                countLabel={
+                  feed.items.length === 1
+                    ? "Showing 1 recent event"
+                    : `Showing ${feed.items.length} recent events`
+                }
+              >
+                <ul>
+                  {feed.items.map((item) => (
+                    <FeedRow key={item.id} item={item} showDeveloper={showDeveloper} />
+                  ))}
+                </ul>
+              </ScrollFadeList>
+            ) : (
+              <p className="py-6 text-sm text-muted-foreground">
+                No device exchanges or observed activity yet.
+              </p>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
 
-export function ScrollableMetricList({ children }: { children: ReactNode }) {
-  return <div className="max-h-80 overflow-y-auto">{children}</div>;
-}
+export { ScrollableMetricList } from "./scroll-fade-list";

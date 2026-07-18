@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { hashToken, generateEnrollmentToken } from "@/lib/auth";
-import { requireOrgRole } from "@/lib/rbac";
+import { requireOrgRole, rolesFor } from "@/lib/rbac";
+import { assertCanEnrollDevice } from "@/lib/saas-billing/status";
 
 export async function POST(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
 
   try {
@@ -13,8 +14,13 @@ export async function POST(req: NextRequest) {
     if (!orgId) return NextResponse.json({ error: "organization setup required" }, { status: 409 });
     const developerId = String(body.developerId ?? "");
     if (!developerId) return NextResponse.json({ error: "developerId required" }, { status: 400 });
-    const developer = await prisma.developer.findFirst({ where: { id: developerId, orgId } });
+    const developer = await prisma.developer.findFirst({ where: { id: developerId, orgId, removedAt: null } });
     if (!developer) return NextResponse.json({ error: "developer not found" }, { status: 404 });
+
+    const enrollGate = await assertCanEnrollDevice(orgId);
+    if (!enrollGate.allowed) {
+      return NextResponse.json({ error: enrollGate.message }, { status: 403 });
+    }
 
     const rawToken = generateEnrollmentToken();
     const tokenHash = hashToken(rawToken);
@@ -35,7 +41,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
 
   try {

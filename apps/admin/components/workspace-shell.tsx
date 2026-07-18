@@ -2,12 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import {
+  Activity,
+  Home,
+  Settings,
+  Users,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
-import { PlanStatusCard } from "@/components/billing/plan-status-card";
+import { PlanStatusCard } from "@/components/saas-billing/plan-status-card";
+import { SignalsMark } from "@/components/signals/signals-mark";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { WorkspaceUserMenu } from "@/components/workspace-user-menu";
-import type { OrgBillingStatus } from "@/lib/billing/status";
-import type { OrganizationRole } from "@/lib/workspace-context";
+import type { OrgBillingStatus } from "@/lib/saas-billing/status";
+import { canManageSettings, canSeeOrgOverview } from "@/lib/rbac/permissions";
+import type { OrganizationRole } from "@/lib/rbac/permissions";
 import {
   Sidebar,
   SidebarContent,
@@ -22,20 +32,37 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar";
 
-const adminNav = [
-  ["/dashboard", "Home"],
-  ["/team", "Team"],
-  ["/signals", "Signals"],
-  ["/tools", "Tools"],
-  ["/activity", "Activity"],
-  ["/settings", "Settings"],
-] as const;
+type NavIcon = LucideIcon | typeof SignalsMark;
+type NavItem = readonly [href: string, label: string, icon: NavIcon];
 
-const developerNav = [
-  ["/dashboard", "Home"],
-  ["/tools", "My tools"],
-  ["/activity", "My activity"],
-] as const;
+const adminNav: NavItem[] = [
+  ["/dashboard", "Home", Home],
+  ["/team", "Team", Users],
+  ["/signals", "Signals", SignalsMark],
+  ["/tools", "Tools", Wrench],
+  ["/activity", "Activity", Activity],
+  ["/settings", "Settings", Settings],
+];
+
+const managerNav: NavItem[] = [
+  ["/dashboard", "Home", Home],
+  ["/team", "Team", Users],
+  ["/signals", "Signals", SignalsMark],
+  ["/tools", "Tools", Wrench],
+  ["/activity", "Activity", Activity],
+];
+
+const userNav: NavItem[] = [
+  ["/dashboard", "Home", Home],
+  ["/tools", "My tools", Wrench],
+  ["/activity", "My activity", Activity],
+];
+
+function navForRole(role: OrganizationRole | null) {
+  if (canManageSettings(role)) return adminNav;
+  if (canSeeOrgOverview(role)) return managerNav;
+  return userNav;
+}
 
 type WorkspaceShellProps = {
   organizations: Array<{ id: string; name: string; color: string | null; role: OrganizationRole }>;
@@ -57,7 +84,7 @@ function AppSidebar({
   role: OrganizationRole | null;
   billing: OrgBillingStatus | null;
 }) {
-  const nav = role === "owner" || role === "admin" ? adminNav : developerNav;
+  const nav = navForRole(role);
 
   return (
     <Sidebar collapsible="none" variant="sidebar" className="h-full border-r md:h-svh">
@@ -70,7 +97,7 @@ function AppSidebar({
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {nav.map(([href, label]) => {
+              {nav.map(([href, label, Icon]) => {
                 const isActive =
                   href === "/dashboard"
                     ? active === href || active.startsWith(`${href}?`)
@@ -79,6 +106,7 @@ function AppSidebar({
                 <SidebarMenuItem key={href}>
                   <SidebarMenuButton asChild isActive={isActive} tooltip={label}>
                     <Link href={href} aria-current={isActive ? "page" : undefined}>
+                      <Icon aria-hidden="true" />
                       <span>{label}</span>
                     </Link>
                   </SidebarMenuButton>
@@ -117,10 +145,8 @@ export function WorkspaceShell({
     >
       <AppSidebar active={pathname} role={role} billing={billing} />
       <SidebarInset className="min-h-0 overflow-y-auto">
-        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
-          <div className="min-w-0 flex-1">
-            <WorkspaceSwitcher organizations={organizations} currentOrgId={currentOrgId} role={role} />
-          </div>
+        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-end gap-4 border-b bg-background/95 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
+          <WorkspaceSwitcher organizations={organizations} currentOrgId={currentOrgId} role={role} />
           <WorkspaceUserMenu name={name} email={email} image={image} role={role} />
         </header>
         <div className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">

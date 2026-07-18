@@ -1,0 +1,18 @@
+export {
+  PLAN_UTILIZATION_POLICY_VERSION,
+  STALE_QUOTA_MS,
+  selectPrimaryQuota,
+  mapQuotaSnapshots,
+  dedupeQuotaUtilizations,
+  includedAllowanceUtilization,
+  primaryUtilizationRatio,
+  evaluatePlanUtilization,
+  verdictLabel,
+  verdictHint,
+  verdictToneClass,
+  type QuotaSnapshotInput,
+  type QuotaUtilization,
+  type PlanVerdictCode,
+  type PlanVerdict,
+  type IncludedAllowanceUtilization,
+} from "@/lib/billing/plan-utilization-policy";

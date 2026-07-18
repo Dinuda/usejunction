@@ -1,5 +1,5 @@
 import type { PlanUsageDeveloperPlanRow, PlanUsageV1 } from "@/lib/insights/contracts/plan-usage.v1";
-import { verdictLabel, type PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
+import { verdictHint, verdictLabel, verdictToneClass, type PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { canonicalToolKey } from "@/lib/tools/catalog";
 import { quotaSignalLabel, quotaWindowLabel } from "@/lib/quotas/display";
@@ -28,21 +28,6 @@ function toolLabel(tool: string) {
         : "Tool";
 }
 
-function toneForVerdict(code: PlanVerdictCode) {
-  switch (code) {
-    case "LIGHT_USE":
-      return "text-muted-foreground";
-    case "HEALTHY":
-      return "text-primary";
-    case "NEAR_LIMIT":
-      return "text-brand-yellow-dark";
-    case "LIMIT_EXCEEDED":
-      return "text-destructive";
-    default:
-      return "text-muted-foreground";
-  }
-}
-
 function barTone(ratio: number | null, code: PlanVerdictCode) {
   if (ratio == null) return "bg-muted";
   if (code === "LIMIT_EXCEEDED") return "bg-destructive";
@@ -59,6 +44,7 @@ function PlanRow({ plan }: { plan: PlanUsageDeveloperPlanRow }) {
         ? plan.included.displayRatio * 100
         : null;
   const rawPercent = plan.primaryRatio != null ? plan.primaryRatio * 100 : null;
+  const hint = verdictHint(plan.verdict.code);
 
   return (
     <li className="py-5">
@@ -78,10 +64,13 @@ function PlanRow({ plan }: { plan: PlanUsageDeveloperPlanRow }) {
           </div>
         </div>
         <div className="text-right">
-          <p className={cn("text-sm font-semibold tabular-nums", toneForVerdict(plan.verdict.code))}>
+          <p className={cn("text-sm font-semibold tabular-nums", verdictToneClass(plan.verdict.code))}>
             {rawPercent != null ? `${rawPercent.toFixed(0)}%` : "—"}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">{verdictLabel(plan.verdict.code)}</p>
+          <p className={cn("mt-1 text-xs font-medium", verdictToneClass(plan.verdict.code))}>
+            {verdictLabel(plan.verdict.code)}
+          </p>
+          {hint ? <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p> : null}
         </div>
       </div>
 
@@ -192,7 +181,7 @@ export function MemberPlanUsage({
           <p
             className={cn(
               "shrink-0 text-sm font-medium tabular-nums",
-              toneForVerdict(developer?.verdict.code ?? "UNKNOWN"),
+              verdictToneClass(developer?.verdict.code ?? "UNKNOWN"),
             )}
           >
             {avg.toFixed(0)}% · {verdictLabel(developer?.verdict.code ?? "UNKNOWN")}

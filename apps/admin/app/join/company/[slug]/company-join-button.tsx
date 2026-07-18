@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { userFacingError } from "@/lib/errors/user-facing";
 
 export function CompanyJoinButton({ slug }: { slug: string }) {
   const [error, setError] = useState<string | null>(null);
@@ -12,7 +13,7 @@ export function CompanyJoinButton({ slug }: { slug: string }) {
     let active = true;
     void fetch(`/api/organizations/${encodeURIComponent(slug)}/join`, { method: "POST" }).then(async (response) => ({ response, data: await response.json().catch(() => ({})) })).then(({ response, data }) => {
       if (!active) return;
-      if (!response.ok) { setError(data.error ?? "Unable to join this workspace."); return; }
+      if (!response.ok) { setError(userFacingError(data.error, "Unable to join this workspace.")); return; }
       window.location.href = "/onboarding";
     });
     return () => { active = false; };

@@ -8,12 +8,13 @@ import type { SignalsJourneysInput, SignalsJourneysV1 } from "@/lib/signals/cont
 import { aggregateJourneys, toJourneyRows } from "@/lib/signals/policies/rollup";
 import { readSignalsSessionsWindow } from "@/lib/signals/readers/sessions";
 import { resolveSignalsWindows } from "@/lib/signals/queries/windows";
+import { rolesFor } from "@/lib/rbac";
 
 export async function getSignalsJourneys(
   context: InsightContext,
   input: SignalsJourneysInput = {},
 ): Promise<InsightEnvelope<SignalsJourneysV1>> {
-  assertInsightRoles(context, ["owner", "admin"]);
+  assertInsightRoles(context, rolesFor("org_overview"));
   const windows = resolveSignalsWindows(input, context.now);
   const [currentSessions, priorSessions] = await Promise.all([
     readSignalsSessionsWindow(context.orgId, {

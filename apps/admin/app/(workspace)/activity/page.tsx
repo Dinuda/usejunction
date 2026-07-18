@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
-import { prisma } from "@usejunction/db";
 import { ActivityPageHeader } from "@/components/activity/activity-page-header";
-import { DeviceActivityFeed, ScrollableMetricList } from "@/components/activity/device-activity-feed";
+import { DeviceActivityFeed } from "@/components/activity/device-activity-feed";
+import { UsageBreakdownList } from "@/components/activity/usage-breakdown-list";
 import { StatusBadge } from "@/components/app-shell";
 import { AiCodingPanel } from "@/components/dashboard/ai-coding-panel";
-import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
+import { MetricPeriodFilter } from "@/components/dashboard/metric-period-filter";
 import { FlowPath, SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
+import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import type { OrgActivitySettings } from "@/lib/activity/contracts";
 import { getOrgActivitySettings } from "@/lib/activity/service";
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
@@ -26,16 +27,10 @@ import { getDashboardRequests } from "@/lib/queries/dashboard/requests";
 import { getDashboardUsage } from "@/lib/queries/dashboard/usage";
 import { getMeOverview } from "@/lib/queries/me/overview";
 import { getPersonalSignalsLedger } from "@/lib/signals/read";
+import { toolDisplayName } from "@/lib/tools/catalog";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
-
-function money(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: value < 1 ? 3 : 2,
-  }).format(value);
-}
+import { rolesFor } from "@/lib/rbac";
 
 function compact(value: number) {
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
@@ -113,7 +108,7 @@ async function DeveloperActivityView({
 }: {
   orgId: string;
   userId: string;
-  role: "developer";
+  role: "user";
   settings: OrgActivitySettings;
 } & Pick<PeriodProps, "reportWindow" | "periodLabel">) {
   const personal = await getMeOverview(orgId, userId, role, { reportWindow });
@@ -121,10 +116,9 @@ async function DeveloperActivityView({
     getPersonalSignalsLedger(orgId, userId),
     settings.teamDeviceActivityEnabled
       ? getDeviceActivityFeed(orgId, { developerId: personal.developer.id, limit: 50 })
-      : Promise.resolve({ items: [] }),
+      : Promise.resolve({ items: [], presenceFallback: false }),
   ]);
   const tokens = Number(BigInt(personal.usage30d.inputTokens) + BigInt(personal.usage30d.outputTokens));
-  const spend = Number(BigInt(personal.usage30d.costMicros)) / 1_000_000;
 
   return (
     <>
@@ -157,10 +151,10 @@ async function DeveloperActivityView({
           sub="input + output"
         />
         <SignalsKpi
-          label="Usage cost"
+          label="Tools"
           className="sm:border-l sm:border-border sm:pl-8"
-          value={money(spend)}
-          sub={`verified + estimated · ${periodLabel}`}
+          value={compact(personal.toolsUsage30d.length)}
+          sub="detected on your machines"
         />
       </div>
 
@@ -168,29 +162,21 @@ async function DeveloperActivityView({
 
       <section className="mt-10 border bg-card p-5">
         <SignalsSectionHeader title="By tool." description="Tools detected on your machines." bordered={false} />
-        {personal.toolsUsage30d.length ? (
-          <ScrollableMetricList>
-            <ul>
-              {personal.toolsUsage30d.map((tool) => (
-                <li
-                  key={tool.toolName}
-                  className="flex items-center justify-between gap-3 py-5 transition-colors hover:bg-muted/30"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{tool.toolName}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {tool.tokens > 0 ? `${compact(tool.tokens)} tokens` : "Detected"}
-                      {tool.cost > 0 ? ` · ${money(tool.cost)}` : ""}
-                    </p>
-                  </div>
-                  <p className="text-sm font-medium tabular-nums">{compact(tool.requests)}</p>
-                </li>
-              ))}
-            </ul>
-          </ScrollableMetricList>
-        ) : (
-          <p className="py-6 text-sm text-muted-foreground">No tools detected yet.</p>
-        )}
+        <UsageBreakdownList
+          valueMode="requests"
+          countNoun="tools"
+          empty="No tools detected yet."
+          rows={personal.toolsUsage30d.map((tool) => {
+            const metaParts = [tool.tokens > 0 ? `${compact(tool.tokens)} tokens` : null].filter(Boolean);
+            return {
+              key: tool.toolName,
+              toolName: tool.toolName,
+              requests: tool.requests,
+              cost: tool.cost,
+              metaExtra: metaParts.length ? metaParts.join(" · ") : null,
+            };
+          })}
+        />
       </section>
 
       {settings.teamDeviceActivityEnabled ? <DeviceActivityFeed feed={deviceFeed} /> : null}
@@ -223,7 +209,7 @@ async function DeveloperActivityView({
   );
 }
 
-async function AdminUsageView({
+async function AdminActivityView({
   orgId,
   reportWindow,
   periodLabel,
@@ -231,7 +217,7 @@ async function AdminUsageView({
   const [usage, requests, feed] = await Promise.all([
     getDashboardUsage(orgId, reportWindow),
     getDashboardRequests(orgId, {
-      limit: 20,
+      limit: 50,
       from: reportWindow.from,
       to: reportWindow.to,
     }),
@@ -239,127 +225,140 @@ async function AdminUsageView({
   ]);
   const totalTokens = usage.kpis.inputTokens + usage.kpis.outputTokens;
   const totalRequests = usage.kpis.modelCalls;
-  const models = usage.byModel;
-  const tools = usage.byTool;
-  const recent = requests.requests.slice(0, 8);
+  const models = [...usage.byModel].sort(
+    (a, b) => b.requests - a.requests || b.tokens - a.tokens || (a.model ?? "").localeCompare(b.model ?? ""),
+  );
+  const tools = [...usage.byTool].sort((a, b) => b.requests - a.requests || b.tokens - a.tokens);
+  const recent = requests.requests;
 
   return (
     <>
       <div className="mb-10 grid gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
         <SignalsKpi
-          label="Model calls"
+          label="Requests"
           hero
           className="pl-5"
           value={compact(totalRequests)}
           sub={periodLabel}
         />
         <SignalsKpi
-          label="Tokens"
+          label="Sessions"
           className="sm:border-l sm:border-border sm:pl-8"
+          value={compact(usage.kpis.sessions)}
+          sub={periodLabel}
+        />
+        <SignalsKpi
+          label="Tokens"
+          className="xl:border-l xl:border-border xl:pl-8"
           value={compact(totalTokens)}
           sub="input + output"
         />
         <SignalsKpi
-          label="Verified usage"
-          className="xl:border-l xl:border-border xl:pl-8"
-          value={money(usage.kpis.verifiedUsageCost)}
-          sub="vendor charges"
-        />
-        <SignalsKpi
-          label="Estimated API value"
+          label="Tools"
           className="sm:border-l sm:border-border sm:pl-8"
-          value={money(usage.kpis.estimatedApiCost)}
-          sub="rate-card estimate"
+          value={compact(tools.length)}
+          sub="with traffic this period"
         />
       </div>
 
+      <section className="mt-10 border bg-card p-5">
+        <SignalsSectionHeader
+          title="Recent requests."
+          description={`Gateway and observed request metadata for ${periodLabel}. Prompts are never stored.`}
+          bordered={false}
+        />
+        {recent.length ? (
+          <ul>
+            {recent.map((request) => {
+              const toolKey = request.toolName ?? "unknown";
+              return (
+                <li
+                  key={request.id}
+                  className="flex items-center justify-between gap-3 border-b border-border/60 py-4 last:border-b-0 transition-colors hover:bg-muted/30"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <ToolLogoTile tool={toolKey} size="sm" light className="shrink-0" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {toolDisplayName(toolKey)}
+                        <span className="font-normal text-muted-foreground"> · </span>
+                        <span className="font-mono text-xs">{request.model ?? "Unknown"}</span>
+                      </p>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
+                        {request.user?.name ?? request.user?.email ?? "Unknown user"}
+                        {request.device?.hostname ? ` · ${request.device.hostname}` : ""}
+                        {request.totalTokens > 0 ? ` · ${compact(request.totalTokens)} tokens` : ""}
+                        {request.latencyMs > 0 ? ` · ${request.latencyMs}ms` : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <StatusBadge variant={statusVariant(request.status)}>{request.status}</StatusBadge>
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      {new Date(request.createdAt).toLocaleString([], {
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="py-6 text-sm text-muted-foreground">
+            No gateway requests in this period. Device-observed tool usage still appears in the breakdowns
+            below.
+          </p>
+        )}
+      </section>
+
+      <DeviceActivityFeed feed={feed} showDeveloper />
+
       <div className="mt-10 grid gap-6 lg:grid-cols-2">
         <section className="border bg-card p-5">
-          <SignalsSectionHeader title="By tool." description="Detected and observed tools." bordered={false} />
-          {tools.length ? (
-            <ScrollableMetricList>
-              <ul>
-                {tools.map((row) => (
-                  <li
-                    key={row.toolName ?? "unknown"}
-                    className="flex items-center justify-between gap-3 py-5 transition-colors hover:bg-muted/30"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{row.toolName ?? "Unknown"}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{row.requests.toLocaleString()} requests</p>
-                    </div>
-                    <p className="text-sm font-medium tabular-nums">{money(row.cost)}</p>
-                  </li>
-                ))}
-              </ul>
-            </ScrollableMetricList>
-          ) : (
-            <p className="py-6 text-sm text-muted-foreground">No tool traffic yet.</p>
-          )}
+          <SignalsSectionHeader
+            title="By tool."
+            description="Request volume by detected tool."
+            bordered={false}
+          />
+          <UsageBreakdownList
+            valueMode="requests"
+            countNoun="tools"
+            empty="No tool traffic yet."
+            rows={tools.map((row) => ({
+              key: row.toolName ?? "unknown",
+              toolName: row.toolName,
+              requests: row.requests,
+              cost: row.cost,
+              metaExtra: row.tokens > 0 ? `${compact(row.tokens)} tokens` : null,
+            }))}
+          />
         </section>
 
         <section className="border bg-card p-5">
           <SignalsSectionHeader
             title="By model."
-            description={`Every recorded model · ${models.length} total.`}
+            description={`Request volume by model · ${models.length} total.`}
             bordered={false}
           />
-          {models.length ? (
-            <ScrollableMetricList>
-              <ul>
-                {models.map((row) => (
-                  <li
-                    key={`${row.toolName}-${row.model}-${row.source}`}
-                    className="flex items-center justify-between gap-3 py-5 transition-colors hover:bg-muted/30"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate font-mono text-sm font-medium">{row.model ?? "Unknown"}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{row.requests.toLocaleString()} requests</p>
-                    </div>
-                    <p className="text-sm font-medium tabular-nums">{money(row.cost)}</p>
-                  </li>
-                ))}
-              </ul>
-            </ScrollableMetricList>
-          ) : (
-            <p className="py-6 text-sm text-muted-foreground">No model traffic yet.</p>
-          )}
+          <UsageBreakdownList
+            valueMode="requests"
+            countNoun="models"
+            empty="No model traffic yet."
+            rows={models.map((row) => ({
+              key: `${row.toolName}-${row.model}-${row.source}`,
+              toolName: row.toolName,
+              model: row.model,
+              requests: row.requests,
+              cost: row.cost,
+              metaExtra: row.tokens > 0 ? `${compact(row.tokens)} tokens` : null,
+            }))}
+          />
         </section>
       </div>
-
-      <DeviceActivityFeed feed={feed} showDeveloper />
-
-      <section className="mt-10 border bg-card p-5">
-        <SignalsSectionHeader
-          title="Recent requests."
-          description={`Gateway metadata in ${periodLabel} — prompts are never stored.`}
-          bordered={false}
-        />
-        {recent.length ? (
-          <ul>
-            {recent.map((request) => (
-              <li
-                key={request.id}
-                className="flex items-center justify-between gap-3 py-5 transition-colors hover:bg-muted/30"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">
-                    {request.toolName ?? "Unknown"} · {request.model ?? "Unknown"}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {new Date(request.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                  </p>
-                </div>
-                <StatusBadge variant={statusVariant(request.status)}>{request.status}</StatusBadge>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="py-6 text-sm text-muted-foreground">
-            No gateway requests in this period. Local tool usage still appears above.
-          </p>
-        )}
-      </section>
     </>
   );
 }
@@ -369,8 +368,8 @@ export default async function ActivityPage({
 }: {
   searchParams: Promise<{ view?: string; days?: string; from?: string; to?: string }>;
 }) {
-  const { orgId, role, userId } = await requireWorkspaceRole(["owner", "admin", "developer"]);
-  const isDeveloper = role === "developer";
+  const { orgId, role, userId } = await requireWorkspaceRole(rolesFor("self_view"));
+  const isDeveloper = role === "user";
   const params = await searchParams;
   const settings = await getOrgActivitySettings(orgId);
   const allowDeveloperPeriodControls = !isDeveloper || settings.teamPeriodControlsEnabled;
@@ -385,36 +384,15 @@ export default async function ActivityPage({
     : DEFAULT_ROLLING_PERIOD;
   const now = new Date();
   const subscriptions = await listSubscriptions(orgId);
-  let cyclePlans: Array<{
+  const cyclePlans: Array<{
     billingCadence: string;
     billingCycleAnchorDate: Date | null;
     billingCycleDays?: number | null;
     createdAt?: Date | null;
   }> = subscriptions;
 
-  if (isDeveloper) {
-    const developer = await prisma.developer.findFirst({
-      where: { orgId, authUserId: userId },
-      select: {
-        planAssignments: {
-          where: { active: true },
-          select: {
-            billingCadence: true,
-            billingCycleAnchorDate: true,
-            billingCycleDays: true,
-            createdAt: true,
-          },
-        },
-      },
-    });
-    if (developer?.planAssignments.length) {
-      cyclePlans = developer.planAssignments;
-    }
-  }
-
   const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, cyclePlans, now);
   const periodLabel = cycleViewPeriodLabel(cycleView, rollingPeriod);
-  const periodProps: PeriodProps = { cycleView, rollingPeriod, reportWindow, periodLabel };
 
   return (
     <>
@@ -422,15 +400,17 @@ export default async function ActivityPage({
         title={isDeveloper ? "Your activity." : "Activity."}
         description={
           isDeveloper
-            ? `Personal traffic for ${periodLabel}, device sync updates, and your Signals ledger. Metadata only — prompts are never stored.`
-            : `Traffic from gateway and device-observed usage for ${periodLabel}. Journey insights live under Signals.`
+            ? `Personal request volume, device sync updates, and your Signals ledger for ${periodLabel}. Metadata only — prompts are never stored.`
+            : `Request logs, device events, and tool activity for ${periodLabel}. Journey insights live under Signals.`
         }
-        showNav={!isDeveloper}
         actions={
-          !isDeveloper ? (
-            <CycleViewPicker view={cycleView} period={rollingPeriod} basePath="/activity" />
-          ) : settings.teamPeriodControlsEnabled ? (
-            <CycleViewPicker view={cycleView} period={rollingPeriod} basePath="/activity" />
+          allowDeveloperPeriodControls ? (
+            <MetricPeriodFilter
+              view={cycleView}
+              period={rollingPeriod}
+              basePath="/activity"
+              label={periodLabel}
+            />
           ) : undefined
         }
       />
@@ -439,15 +419,15 @@ export default async function ActivityPage({
         ? await DeveloperActivityView({
             orgId,
             userId,
-            role: "developer",
+            role: "user",
             settings,
-            reportWindow: periodProps.reportWindow,
-            periodLabel: periodProps.periodLabel,
+            reportWindow,
+            periodLabel,
           })
-        : await AdminUsageView({
+        : await AdminActivityView({
             orgId,
-            reportWindow: periodProps.reportWindow,
-            periodLabel: periodProps.periodLabel,
+            reportWindow,
+            periodLabel,
           })}
     </>
   );

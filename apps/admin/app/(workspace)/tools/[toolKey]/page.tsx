@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
 import { ToolProviderDetail } from "@/components/tools/tool-provider-detail";
 import {
@@ -11,6 +11,7 @@ import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
 import { getToolDetail } from "@/lib/queries/dashboard/tool-detail";
 import { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
+import { canonicalToolKey, findCatalogTool, subscriptionToolKeys } from "@/lib/tools/catalog";
 import { serializeBigInts } from "@/lib/billing/validation";
 import { requireWorkspaceRole } from "@/lib/workspace-context";
 
@@ -22,8 +23,16 @@ export default async function ToolProviderPage({
   searchParams: Promise<{ view?: string; days?: string; from?: string; to?: string }>;
 }) {
   const { orgId, userId } = await requireWorkspaceRole(["owner", "admin"]);
-  const { toolKey } = await params;
-  const query = await searchParams;
+  const [{ toolKey: rawToolKey }, query] = await Promise.all([params, searchParams]);
+  const toolKey = canonicalToolKey(rawToolKey);
+  if (toolKey !== rawToolKey && findCatalogTool(toolKey)) {
+    const retained = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value) retained.set(key, value);
+    }
+    const suffix = retained.size ? `?${retained.toString()}` : "";
+    redirect(`/tools/${toolKey}${suffix}`);
+  }
   const cycleView = parseCycleView(query.view);
   const rollingPeriod = parseRollingPeriodFromSearch({
     days: query.days,
@@ -32,7 +41,10 @@ export default async function ToolProviderPage({
   });
   const now = new Date();
   const subscriptions = await listSubscriptions(orgId);
-  const toolPlans = subscriptions.filter((plan) => plan.toolKey === toolKey);
+  const templateKeys = subscriptionToolKeys(toolKey);
+  const toolPlans = subscriptions.filter(
+    (plan) => plan.toolKey != null && (templateKeys as readonly string[]).includes(plan.toolKey),
+  );
   const reportWindow = reportWindowForCycleView(
     cycleView,
     rollingPeriod,

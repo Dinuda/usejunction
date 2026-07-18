@@ -187,7 +187,9 @@ var clineExtensionDirs = map[string][]string{
 	"opencode": {"sst.opencode", "opencode.opencode"},
 }
 
-// ScanClineFamily walks Cline/Roo/OpenCode task history for token/cost metadata.
+// ScanClineFamily walks Cline/Roo/OpenCode task history for token/cost metadata
+// under VS Code/Cursor globalStorage extension dirs. For OpenCode this covers
+// the IDE extension task JSON only — not standalone ~/.local/share/opencode.
 func ScanClineFamily(tool string, refresh bool) ([]types.DailyUsage, error) {
 	cacheFile := filepath.Join(config.CacheDir(), tool+".json")
 	if !refresh {

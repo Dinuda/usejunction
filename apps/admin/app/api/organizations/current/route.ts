@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@usejunction/db";
-import { requireOrgRole, audit } from "@/lib/rbac";
+import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { WORKSPACE_COLORS } from "@/lib/workspace-colors";
 
 const updateSchema = z
@@ -15,7 +15,7 @@ const updateSchema = z
 
 /** Update the active workspace name/color (owner/admin). */
 export async function PATCH(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
 
   const parsed = updateSchema.safeParse(await req.json().catch(() => ({})));

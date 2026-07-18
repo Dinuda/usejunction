@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
 import { hasVerifiedIdentity, linkDeveloperToUser, normalizeEmail } from "@/lib/developer-identity";
+import { assertCanAddDeveloperSeat } from "@/lib/saas-billing/quantity";
 import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 import { audit } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
@@ -44,6 +45,15 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
     );
   }
 
+  const seatGate = await assertCanAddDeveloperSeat({
+    orgId: connectInvite.orgId,
+    userId: session.user.id,
+    email: connectInvite.email,
+  });
+  if (!seatGate.allowed) {
+    return NextResponse.json({ error: seatGate.message }, { status: 403 });
+  }
+
   const developer = await prisma.$transaction(async (tx) => {
     if (connectInvite.inviteId) {
       const invite = await tx.organizationInvite.findUnique({ where: { id: connectInvite.inviteId } });
@@ -69,7 +79,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
     await tx.organizationMembership.upsert({
       where: { userId_orgId: { userId: session.user!.id, orgId: connectInvite.orgId } },
       update: {},
-      create: { userId: session.user!.id, orgId: connectInvite.orgId, role: "developer" },
+      create: { userId: session.user!.id, orgId: connectInvite.orgId, role: "user" },
     });
     return linkDeveloperToUser({
       tx,
@@ -77,7 +87,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
       userId: session.user!.id,
       email: connectInvite.email,
       name: session.user!.name,
-      role: "developer",
+      role: "user",
     });
   });
 

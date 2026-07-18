@@ -28,7 +28,7 @@ export const subscriptionUpdateSchema = subscriptionInputSchema.partial().omit({
 
 export function deriveSubscription(input: z.infer<typeof subscriptionInputSchema>) {
   const tool = findCatalogTool(input.toolKey);
-  const plan = findCatalogPlan(input.toolKey, input.planKey);
+  const plan = findCatalogPlan(tool?.key ?? input.toolKey, input.planKey);
   if (!tool || !plan) throw new Error("CATALOG_PLAN_NOT_FOUND");
   const cadence = input.billingCadence as BillingCadence;
   const catalogMicros = catalogPrice(plan, cadence);

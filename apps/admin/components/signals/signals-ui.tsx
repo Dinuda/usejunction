@@ -56,6 +56,7 @@ export function SignalsKpi({
   label,
   value,
   sub,
+  footer,
   hero,
   accent,
   action,
@@ -64,17 +65,27 @@ export function SignalsKpi({
   label: string;
   value: ReactNode;
   sub?: ReactNode;
+  footer?: ReactNode;
   hero?: boolean;
+  /** Pale yellow left-rail highlight — use for the primary cost / focus metric. */
   accent?: boolean;
   action?: ReactNode;
   className?: string;
 }) {
   return (
-    <div className={cn("relative", className)}>
+    <div
+      className={cn(
+        "relative flex h-full flex-col justify-start",
+        accent
+          ? "border-l-2 border-brand-yellow-dark bg-brand-yellow-pale py-3 pl-4 pr-4"
+          : null,
+        className,
+      )}
+    >
       {action ? <div className="absolute right-3 top-0 z-10 sm:right-4">{action}</div> : null}
       <p
         className={cn(
-          "text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground",
+          "text-xs font-medium leading-4 uppercase tracking-[0.08em] text-muted-foreground",
           action && "pr-12",
         )}
       >
@@ -82,14 +93,15 @@ export function SignalsKpi({
       </p>
       <div
         className={cn(
-          "mt-2 font-semibold tracking-tight tabular-nums",
+          // Shared value box so hero (text-4xl) and default (text-3xl) share one baseline.
+          "mt-2 flex min-h-10 items-end font-semibold tracking-tight tabular-nums leading-none",
           hero ? "text-4xl" : "text-3xl",
-          accent && "text-primary",
         )}
       >
         {value}
       </div>
-      {sub ? <div className="mt-1 text-xs text-muted-foreground">{sub}</div> : null}
+      {sub ? <div className="mt-2 text-xs leading-4 text-muted-foreground">{sub}</div> : null}
+      {footer ? <div className="mt-2">{footer}</div> : null}
     </div>
   );
 }

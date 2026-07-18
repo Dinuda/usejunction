@@ -45,7 +45,7 @@ test("analytics cache keys isolate organization and developer scopes", () => {
   const developer = analyticsCacheKey({
     orgId: "org-a",
     actorId: "developer-a",
-    role: "developer",
+    role: "user",
     developerId: "developer-a",
   }, query);
   const otherOrg = analyticsCacheKey({ orgId: "org-b", actorId: "owner-a", role: "owner" }, query);

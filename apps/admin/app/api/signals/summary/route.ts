@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
-import { requireOrgRole } from "@/lib/rbac";
+import { requireOrgRole, rolesFor } from "@/lib/rbac";
 import { getSignalsOverview, normalizeSignalsRange } from "@/lib/signals";
 
 export async function GET(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("org_overview"));
   if (auth instanceof NextResponse) return auth;
 
   const range = normalizeSignalsRange(req.nextUrl.searchParams.get("range") ?? req.nextUrl.searchParams.get("days"));

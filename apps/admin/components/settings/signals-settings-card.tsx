@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { ArrowUpRight, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -14,33 +14,80 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import type { WorkExtractionDeviceReadiness } from "@/lib/agent-updates/contracts";
+import type { AccelerateOrgAgentRolloutResult } from "@/lib/agent-updates/service";
 import type { EffectiveSignalsPolicy } from "@/lib/signals/service";
 import { cn } from "@/lib/utils";
+import { userFacingError } from "@/lib/errors/user-facing";
 
-export function SignalsSettingsCard({ initialPolicy }: { initialPolicy: EffectiveSignalsPolicy }) {
-  const [enabled, setEnabled] = useState(initialPolicy.enabled);
+export function SignalsSettingsCard({
+  initialPolicy,
+  initialReadiness = null,
+}: {
+  initialPolicy: EffectiveSignalsPolicy;
+  initialReadiness?: WorkExtractionDeviceReadiness | null;
+}) {
+  const [policy, setPolicy] = useState(initialPolicy);
+  const [readiness, setReadiness] = useState<WorkExtractionDeviceReadiness | null>(initialReadiness);
+  const [rolloutNote, setRolloutNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [workConfirmOpen, setWorkConfirmOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  function save(nextEnabled: boolean) {
+  useEffect(() => {
+    if (!policy.workExtractionEnabled) return;
+    let cancelled = false;
+    void fetch("/api/signals/work-extraction-readiness")
+      .then(async (response) => {
+        const body = (await response.json().catch(() => ({}))) as {
+          readiness?: WorkExtractionDeviceReadiness;
+        };
+        if (!cancelled && response.ok && body.readiness) setReadiness(body.readiness);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [policy.workExtractionEnabled]);
+
+  function rolloutMessage(result: AccelerateOrgAgentRolloutResult | null | undefined) {
+    if (!result) return null;
+    if (result.reason === "no_active_release") {
+      return "No active agent release yet. Promote an agent release that includes work extraction, then enrolled devices can update.";
+    }
+    if (result.reason === "none_pending") {
+      return result.targetVersion
+        ? `No pending agent updates for this workspace (target ${result.targetVersion}). Compatible devices will start extracting on their next sync.`
+        : "No pending agent updates for this workspace.";
+    }
+    return `Accelerated ${result.accelerated} enrolled device${result.accelerated === 1 ? "" : "s"} onto agent ${result.targetVersion}. They will update on the next heartbeat and backfill local work history.`;
+  }
+
+  function save(patch: { workExtractionEnabled?: boolean }) {
     setError(null);
+    setRolloutNote(null);
     startTransition(async () => {
       const response = await fetch("/api/signals/policy", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: nextEnabled }),
+        body: JSON.stringify(patch),
       });
       const body = (await response.json().catch(() => ({}))) as {
         error?: string;
         policy?: EffectiveSignalsPolicy;
+        agentRollout?: AccelerateOrgAgentRolloutResult | null;
+        readiness?: WorkExtractionDeviceReadiness | null;
       };
       if (!response.ok || !body.policy) {
-        setError(body.error ?? "Could not update Signals");
+        setError(userFacingError(body.error, "Could not update Signals"));
         return;
       }
-      setEnabled(body.policy.enabled);
-      setConfirmOpen(false);
+      setPolicy(body.policy);
+      if (body.readiness) setReadiness(body.readiness);
+      else if (!body.policy.workExtractionEnabled) setReadiness(null);
+      const note = rolloutMessage(body.agentRollout);
+      if (note) setRolloutNote(note);
+      setWorkConfirmOpen(false);
     });
   }
 
@@ -50,8 +97,8 @@ export function SignalsSettingsCard({ initialPolicy }: { initialPolicy: Effectiv
         <div className="mb-2">
           <h2 className="text-lg font-semibold tracking-tight">Signals</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Observe AI-adjacent app/domain flows. Content is never collected. Fine-tune retention and
-            exclusions under{" "}
+            Structured work from local AI coding tools (Cursor, Claude, Codex). Fine-tune retention
+            and exclusions under{" "}
             <Link href="/signals/settings" className="underline underline-offset-2 hover:text-foreground">
               Signals boundaries
               <ArrowUpRight className="ml-0.5 inline size-3.5 align-text-top" />
@@ -66,36 +113,43 @@ export function SignalsSettingsCard({ initialPolicy }: { initialPolicy: Effectiv
           </Alert>
         ) : null}
 
+        {rolloutNote ? (
+          <Alert className="mb-4 rounded-none">
+            <AlertDescription>{rolloutNote}</AlertDescription>
+          </Alert>
+        ) : null}
+
         <div className="flex flex-col gap-4 border-t border-border/70 py-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-3">
-              <h3 className="text-base font-semibold tracking-tight">Collection</h3>
+              <h3 className="text-base font-semibold tracking-tight">Work extraction</h3>
               <Badge
                 variant="outline"
                 className={cn(
                   "rounded-none text-[0.65rem] uppercase tracking-[0.08em]",
-                  enabled
+                  policy.workExtractionEnabled
                     ? "border-success/30 bg-success/10 text-success"
                     : "border-border bg-muted text-muted-foreground",
                 )}
               >
-                {enabled ? "On" : "Off"}
+                {policy.workExtractionEnabled ? "On" : "Off"}
               </Badge>
             </div>
             <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-              {enabled
-                ? "Enrolled agents upload app/domain flow metadata."
-                : "Agents won’t send Signals until you turn this on."}
+              Agents upload structured work from local AI tools: asks, clipped change summaries when
+              available, models, modes, tools, and file touches. Raw prompts, full chat transcripts,
+              and file contents stay on the device. Turning this on accelerates agent updates for
+              your workspace so enrolled machines can collect, including local history.
             </p>
           </div>
           <div className="shrink-0">
-            {enabled ? (
+            {policy.workExtractionEnabled ? (
               <Button
                 type="button"
                 variant="outline"
                 className="rounded-none gap-2"
                 disabled={pending}
-                onClick={() => save(false)}
+                onClick={() => save({ workExtractionEnabled: false })}
               >
                 {pending ? <Loader2 className="size-4 animate-spin" /> : null}
                 Turn off
@@ -105,21 +159,53 @@ export function SignalsSettingsCard({ initialPolicy }: { initialPolicy: Effectiv
                 type="button"
                 className="rounded-none"
                 disabled={pending}
-                onClick={() => setConfirmOpen(true)}
+                onClick={() => setWorkConfirmOpen(true)}
               >
                 Turn on
               </Button>
             )}
           </div>
         </div>
+
+        {policy.workExtractionEnabled && readiness ? (
+          <div className="border-t border-border/70 pt-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 space-y-1">
+                <h4 className="text-sm font-semibold tracking-tight">Team agent status</h4>
+                <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                  {readiness.compatible} of {readiness.total} devices on agent{" "}
+                  {readiness.minAgentVersion}+
+                  {readiness.needsUpdate
+                    ? ` · ${readiness.needsUpdate} still need an update`
+                    : " · all compatible"}
+                  {readiness.updating ? ` · ${readiness.updating} updating` : ""}
+                  {readiness.activeReleaseVersion
+                    ? ` · active release ${readiness.activeReleaseVersion}`
+                    : " · no active release"}
+                  .
+                </p>
+              </div>
+              <Link
+                href="/team"
+                className="inline-flex items-center text-sm underline underline-offset-2 hover:text-foreground"
+              >
+                Agent update coverage
+                <ArrowUpRight className="ml-0.5 size-3.5" />
+              </Link>
+            </div>
+          </div>
+        ) : null}
       </section>
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <Dialog open={workConfirmOpen} onOpenChange={setWorkConfirmOpen}>
         <DialogContent className="rounded-none">
           <DialogHeader>
-            <DialogTitle>Turn on Signals?</DialogTitle>
+            <DialogTitle>Turn on Signals work extraction?</DialogTitle>
             <DialogDescription>
-              Agents will start uploading app/domain flow metadata. Content is never collected.
+              Enrolled UseJunction agents will be accelerated onto the latest agent release so they
+              can collect structured coding-tool work (asks, change summaries, models, modes, tools,
+              file touches) and backfill local history. Prompts, full chat transcripts, and file
+              contents stay on the device.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -128,7 +214,7 @@ export function SignalsSettingsCard({ initialPolicy }: { initialPolicy: Effectiv
               variant="ghost"
               className="rounded-none"
               disabled={pending}
-              onClick={() => setConfirmOpen(false)}
+              onClick={() => setWorkConfirmOpen(false)}
             >
               Cancel
             </Button>
@@ -136,10 +222,10 @@ export function SignalsSettingsCard({ initialPolicy }: { initialPolicy: Effectiv
               type="button"
               className="rounded-none gap-2"
               disabled={pending}
-              onClick={() => save(true)}
+              onClick={() => save({ workExtractionEnabled: true })}
             >
               {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-              Turn on
+              Turn on and update agents
             </Button>
           </DialogFooter>
         </DialogContent>

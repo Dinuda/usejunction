@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { z } from "zod";
-import { requireOrgRole } from "@/lib/rbac";
+import { requireOrgRole, rolesFor } from "@/lib/rbac";
 
 const schema = z.object({ tools: z.array(z.string().trim().toLowerCase().regex(/^[a-z0-9_-]+$/).max(48)).max(50) });
 
 export async function PUT(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin", "developer"]);
+  const auth = await requireOrgRole(req, rolesFor("self_view"));
   if (auth instanceof NextResponse) return auth;
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "tools array required" }, { status: 400 });

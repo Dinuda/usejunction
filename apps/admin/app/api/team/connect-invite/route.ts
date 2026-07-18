@@ -7,7 +7,7 @@ import {
   getPublicAppUrl,
 } from "@/lib/connect-command";
 import { normalizeEmail } from "@/lib/developer-identity";
-import { requireOrgRole, audit } from "@/lib/rbac";
+import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
 
 const schema = z
@@ -45,7 +45,7 @@ async function createConnectInviteForEmail(input: {
         data: {
           orgId: input.orgId,
           email,
-          role: "developer",
+          role: "user",
           tokenHash: hashOpaqueToken(inviteToken),
           expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
           invitedByUserId: input.userId,
@@ -90,7 +90,7 @@ async function createConnectInviteForEmail(input: {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("org_overview"));
   if (auth instanceof NextResponse) return auth;
 
   const body = await req.json().catch(() => ({}));
@@ -116,10 +116,11 @@ export async function POST(req: NextRequest) {
     try {
       results.push({ status: "ok" as const, ...(await createConnectInviteForEmail({ orgId: auth.orgId, userId: auth.userId, email })) });
     } catch (cause) {
+      console.error("[team/connect-invite]", cause);
       results.push({
         status: "error" as const,
         email,
-        error: cause instanceof Error ? cause.message : "failed to create connect invite",
+        error: "Unable to create connect invite",
       });
     }
   }

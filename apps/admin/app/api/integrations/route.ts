@@ -3,7 +3,7 @@ import { prisma, type Prisma } from "@usejunction/db";
 import { z } from "zod";
 import { getAdapter, supportedIntegrations } from "@/lib/integrations/adapters";
 import type { IntegrationConfig } from "@/lib/integrations/types";
-import { requireOrgRole, audit } from "@/lib/rbac";
+import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { credentialFingerprint, encryptSecret } from "@/lib/security";
 
 const methods = ["oauth", "admin_api_key", "service_account", "otel", "gateway", "invoice_import", "admin_confirmed", "device_observed"] as const;
@@ -17,7 +17,7 @@ const schema = z.object({
 });
 
 export async function GET(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
   const connections = await prisma.providerConnection.findMany({
     where: { orgId: auth.orgId },
@@ -25,7 +25,10 @@ export async function GET(req: NextRequest) {
     orderBy: { createdAt: "asc" },
   });
   return NextResponse.json({
-    connections,
+    connections: connections.map(({ lastError, ...connection }) => ({
+      ...connection,
+      lastError: lastError ? "Connection error — see server logs." : null,
+    })),
     capabilities: [
       ...supportedIntegrations().map((item) => ({ ...item, status: "supported" })),
       { provider: "openai", product: "chatgpt_codex_workspace", status: "manual_import" },
@@ -35,7 +38,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin"]);
+  const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "invalid integration configuration", details: parsed.error.flatten() }, { status: 400 });
@@ -52,12 +55,14 @@ export async function POST(req: NextRequest) {
     try {
       adapter = getAdapter(provider, product);
     } catch (error) {
-      return NextResponse.json({ error: String(error) }, { status: 422 });
+      console.error("[integrations] unsupported adapter", error);
+      return NextResponse.json({ error: "unsupported integration" }, { status: 422 });
     }
     try {
       validation = await adapter.validate({ credential: credential!, config: { ...config, product } as IntegrationConfig, initialSync: true, now: new Date() });
     } catch (error) {
-      return NextResponse.json({ error: "provider credential validation failed", detail: error instanceof Error ? error.message : String(error) }, { status: 422 });
+      console.error("[integrations] credential validation failed", error);
+      return NextResponse.json({ error: "provider credential validation failed" }, { status: 422 });
     }
   }
   const connection = await prisma.providerConnection.upsert({

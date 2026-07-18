@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, type Prisma } from "@usejunction/db";
+import {
+  recordDeviceActivityEvent,
+  uniqueStrings,
+} from "@/lib/activity/record-device-activity-event";
 import { bearerToken } from "@/lib/auth";
 import {
   containsForbiddenSignalsField,
@@ -71,6 +75,7 @@ function sessionTouchesExcluded(
 }
 
 export async function POST(req: NextRequest) {
+  const started = Date.now();
   try {
     const token = bearerToken(req);
     if (!token) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -96,6 +101,11 @@ export async function POST(req: NextRequest) {
 
     let upserted = 0;
     let skipped = 0;
+    const sample: Array<{
+      aiTool: string;
+      domainBefore: string | null;
+      domainAfter: string | null;
+    }> = [];
     for (const input of parsed.data.sessions) {
       const session = cleanSession(input);
       if (!session || sessionTouchesExcluded(session, policy.excludedApps, policy.excludedDomains)) {
@@ -157,6 +167,13 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      if (sample.length < 8) {
+        sample.push({
+          aiTool: session.aiTool,
+          domainBefore: session.domainBefore,
+          domainAfter: session.domainAfter,
+        });
+      }
       upserted += 1;
     }
 
@@ -164,6 +181,25 @@ export async function POST(req: NextRequest) {
       await prisma.device.update({ where: { id: device.id }, data: { lastSeenAt: new Date(), status: "online" } });
       await enforceSignalsRetention(device.orgId, policy.retentionDays);
     }
+
+    const tools = uniqueStrings(sample.map((row) => row.aiTool));
+    await recordDeviceActivityEvent({
+      orgId: device.orgId,
+      developerId: device.userId,
+      deviceId: device.id,
+      kind: "signals_sessions",
+      status: "ok",
+      summary: `Signals sessions · ${upserted} upserted${tools.length ? ` · ${tools.join(", ")}` : ""}${
+        skipped ? ` · ${skipped} skipped` : ""
+      }`,
+      requestSummary: {
+        sessions: parsed.data.sessions.length,
+        tools,
+        sample,
+      },
+      responseSummary: { upserted, skipped },
+      durationMs: Date.now() - started,
+    });
 
     return NextResponse.json({ upserted, skipped });
   } catch (e) {

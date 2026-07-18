@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { userFacingError } from "@/lib/errors/user-facing";
 
 export function SignupForm() {
   const params = useSearchParams();
@@ -37,7 +38,7 @@ export function SignupForm() {
     const data = await response.json().catch(() => ({}));
     setLoading(false);
     if (!response.ok) {
-      setError(data.error ?? "Unable to create your account.");
+      setError(userFacingError(data.error, "Unable to create your account."));
       return;
     }
     setSubmitted(true);

@@ -11,7 +11,7 @@ export function internalAnalyticsScope(orgId: string, developerId?: string): Ana
   return {
     orgId,
     actorId: "system:read-model",
-    role: developerId ? "developer" : "admin",
+    role: developerId ? "user" : "admin",
     ...(developerId ? { developerId } : {}),
   };
 }

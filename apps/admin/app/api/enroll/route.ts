@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
-import { assertCanEnrollDevice } from "@/lib/billing/status";
+import { assertCanEnrollDevice } from "@/lib/saas-billing/status";
 import { generateDeviceToken } from "@/lib/auth";
 import { getPublicAppUrl } from "@/lib/public-url";
 import { hashOpaqueToken } from "@/lib/security";

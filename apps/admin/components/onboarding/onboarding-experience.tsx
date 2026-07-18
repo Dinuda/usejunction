@@ -9,6 +9,7 @@ import { hasToolBrandIcon, ToolLogoTile } from "@/components/tools/tool-brand-ic
 import { Button } from "@/components/ui/button";
 import { canonicalToolKey } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
+import { canManageSettings } from "@/lib/rbac/permissions";
 
 type OnboardingStatus = {
   configured: boolean;
@@ -150,7 +151,7 @@ export function OnboardingExperience() {
     );
   }
 
-  const isFounder = status.role === "owner" || status.role === "admin";
+  const isFounder = canManageSettings(status.role as "owner" | "admin" | "manager" | "user" | null);
   const workspaceName = status.organization?.name ?? "your workspace";
   // Only treat as connected once the agent has reported detected tools —
   // enroll alone is too early (install still detecting/configuring).

@@ -1,5 +1,5 @@
-import type { PlanVerdict } from "@/lib/billing/plan-utilization-policy";
-import { verdictLabel } from "@/lib/billing/plan-utilization-policy";
+import type { PlanVerdict } from "@/lib/quotas/plan-utilization-policy";
+import { verdictLabel } from "@/lib/quotas/plan-utilization-policy";
 import { formatUserDeviceContext } from "@/lib/queries/dashboard/config-health";
 
 export type AttentionItem = {

@@ -19,6 +19,12 @@ export function sharePercent(part: number, whole: number): number {
   return Math.round((part / whole) * 100);
 }
 
+export function startOfUtcDay(date: Date): string {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+    .toISOString()
+    .slice(0, 10);
+}
+
 export function startOfUtcWeek(date: Date): string {
   const day = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const weekday = day.getUTCDay(); // 0 Sun

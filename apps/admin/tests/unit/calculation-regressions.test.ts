@@ -39,6 +39,7 @@ import { quotaResetLabel, quotaWindowLabel } from "../../lib/quotas/display";
 import {
   aggregateJourneys,
   aggregateTools,
+  buildDailyTrend,
   buildWeeklyTrend,
   compatibilitySummaryFromSessions,
   summarizeWindow,
@@ -204,7 +205,12 @@ test("Signals rollups deduplicate people, retain empty weeks, and compare prior 
   assert.deepEqual(summarizeWindow([]), { sessions: 0, activePeople: 0, durationSeconds: 0, averageDurationSeconds: 0 });
 
   const trend = buildWeeklyTrend(current, { from: day("2026-07-13"), to: day("2026-07-31") });
-  assert.ok(trend.some((point) => point.weekStart === "2026-07-27" && point.sessions === 0));
+  assert.ok(trend.some((point) => point.date === "2026-07-27" && point.sessions === 0));
+  const daily = buildDailyTrend(current, { from: day("2026-07-13"), to: day("2026-07-16") });
+  assert.equal(daily.find((point) => point.date === "2026-07-13")?.sessions, 1);
+  assert.equal(daily.find((point) => point.date === "2026-07-14")?.sessions, 1);
+  assert.equal(daily.find((point) => point.date === "2026-07-15")?.sessions, 0);
+  assert.equal(daily.find((point) => point.date === "2026-07-16")?.sessions, 0);
   const summary = compatibilitySummaryFromSessions(30, current, prior);
   assert.equal(summary.sessions, 3);
   assert.equal(summary.activeDevelopers, 2);

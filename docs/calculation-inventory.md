@@ -74,9 +74,9 @@ Filters/views:
 Calculations:
 
 - KPI “Subscription commitment”: sum of subscription cycle seat micros × purchased seat count. Current/previous cycle views use the full cycle cost. Last-30/custom uses `overlapDays / cycle.totalDays` and rounds prorated micros.
-- KPI “Verified usage”: sum of usage rows classified `costKind=verified_usage`, converted to dollars.
-- KPI “Estimated API value”: sum of selected `costKind=estimated_api` rows, including source `estimated`, converted to dollars.
-- KPI “Model calls”: canonical request sum allocated to subscription cycles.
+- KPI “Verified usage”: report-window org total of usage rows classified `costKind=verified_usage`, converted to dollars (same scope as chart/tools; not gated on subscriptions).
+- KPI “Estimated API value”: report-window org total of selected `costKind=estimated_api` rows, including source `estimated`, converted to dollars (same scope as chart/tools).
+- KPI “Model calls”: report-window org total of canonical requests (same scope as the model-calls chart and tools list). Cycle rows still show cycle-allocated calls.
 - Subscription-cycle slices use the intersection of cycle and report window. Cycle windows are half-open internally; the displayed end is the last inclusive day.
 - For current/previous cycles, usage for identical tool/window groups is allocated across slices by `max(1, seatCount) / max(1, totalSeats)`.
 - For last-30/custom, usage is grouped by tool and allocated day by day across active slices using the same seat-weighted share. This prevents overlapping plans from double-counting the same usage.

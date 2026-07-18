@@ -3,8 +3,10 @@ package localsync
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,5 +156,54 @@ func TestSyncStatusUnauthorized(t *testing.T) {
 	s.handleSyncStatus(res, req)
 	if res.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", res.Code)
+	}
+}
+
+func TestFailedSyncKeepsErrorGeneric(t *testing.T) {
+	done := make(chan struct{})
+	s := New(&config.Config{LocalSyncToken: "uj_local_secret"}, func(ctx context.Context, refresh bool, progress ProgressFunc) (int, int, int, int, []string, error) {
+		<-done
+		return 0, 0, 0, 0, nil, fmt.Errorf(`usage: POST /api/ingest/local-usage returned 413: {"error":"maximum 1000 aggregates per request"}`)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/sync?refresh=1", nil)
+	req.Header.Set("Authorization", "Bearer uj_local_secret")
+	res := httptest.NewRecorder()
+	s.handleSync(res, req)
+	var started map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	jobID, _ := started["jobId"].(string)
+	if jobID == "" {
+		t.Fatalf("expected jobId, got %#v", started)
+	}
+	close(done)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		statusReq := httptest.NewRequest(http.MethodGet, "/v1/sync/status?jobId="+jobID, nil)
+		statusReq.Header.Set("Authorization", "Bearer uj_local_secret")
+		statusRes := httptest.NewRecorder()
+		s.handleSyncStatus(statusRes, statusReq)
+		var body map[string]any
+		_ = json.Unmarshal(statusRes.Body.Bytes(), &body)
+		if body["status"] == "failed" {
+			if body["error"] != "Sync failed" {
+				t.Fatalf("expected generic error, got %#v", body["error"])
+			}
+			if body["message"] != "Sync failed" {
+				t.Fatalf("expected generic message, got %#v", body["message"])
+			}
+			detail, _ := body["error"].(string)
+			if strings.Contains(detail, "413") || strings.Contains(detail, "local-usage") {
+				t.Fatalf("leaked technical detail: %#v", detail)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for failed job, last=%#v", body)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

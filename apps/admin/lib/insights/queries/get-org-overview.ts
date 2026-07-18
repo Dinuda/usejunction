@@ -425,6 +425,7 @@ export async function getOrgOverview(
   ]);
 
   const previousKpis = previousUsage.kpis;
+  const usageKpis = currentUsage.kpis;
   const currentTrend = currentUsage.trend;
   const previousTrend = previousUsage.trend;
   const toolRows = currentUsage.tools;
@@ -451,17 +452,9 @@ export async function getOrgOverview(
     last30: { from: dates.from, toExclusive: dates.toExclusive },
   });
   const allocatedUsage = await readAllocatedCycleUsage(orgId, subscriptionSlices, cycleView);
-  const cycleKpis = subscriptionSlices.reduce(
-    (sum, slice) => {
-      const usage = allocatedUsage.get(slice.id);
-      return {
-        actualSpend: sum.actualSpend + microsToDollars(slice.spendMicros),
-        modelCalls: sum.modelCalls + (usage?.modelCalls ?? 0),
-        verifiedUsageCost: sum.verifiedUsageCost + (usage?.verifiedUsageCost ?? 0),
-        estimatedApiCost: sum.estimatedApiCost + (usage?.estimatedApiCost ?? 0),
-      };
-    },
-    { actualSpend: 0, modelCalls: 0, verifiedUsageCost: 0, estimatedApiCost: 0 },
+  const cycleCommitment = subscriptionSlices.reduce(
+    (sum, slice) => sum + microsToDollars(slice.spendMicros),
+    0,
   );
 
   const daysWithActivity = currentTrend.filter((row) => row.modelCalls > 0).length;
@@ -504,30 +497,32 @@ export async function getOrgOverview(
       previousTo: dates.previousTo.toISOString(),
     },
     hasActivity:
-      cycleKpis.modelCalls > 0 ||
+      usageKpis.modelCalls > 0 ||
       mergedTools.some((tool) => tool.requests > 0) ||
       detectedInstallations.length > 0,
     partialData: previousKpis.partialData,
     observation,
     kpis: {
       actualSpend: {
-        value: cycleKpis.actualSpend,
+        value: cycleCommitment,
         previousValue: 0,
         deltaPercent: null,
         basis: subscriptionSlices.length ? "subscriptions" : "none",
       },
+      // Usage KPIs use the same report-window org totals as the chart/tools list,
+      // not subscription-cycle allocation (which is $0 when no plans are configured).
       verifiedUsageCost: {
-        value: cycleKpis.verifiedUsageCost,
+        value: usageKpis.verifiedUsageCost,
         previousValue: previousKpis.verifiedUsageCost,
         deltaPercent: null,
       },
       estimatedApiCost: {
-        value: cycleKpis.estimatedApiCost,
+        value: usageKpis.estimatedApiCost,
         previousValue: previousKpis.estimatedApiCost,
         deltaPercent: null,
       },
       modelCalls: {
-        value: cycleKpis.modelCalls,
+        value: usageKpis.modelCalls,
         previousValue: previousKpis.modelCalls,
         deltaPercent: null,
       },

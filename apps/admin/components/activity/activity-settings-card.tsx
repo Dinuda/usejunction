@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { OrgActivitySettings } from "@/lib/activity/contracts";
 import { cn } from "@/lib/utils";
+import { userFacingError } from "@/lib/errors/user-facing";
 
 type ToggleRowProps = {
   title: string;
@@ -70,7 +71,7 @@ export function ActivitySettingsCard({ initialSettings }: { initialSettings: Org
         settings?: OrgActivitySettings;
       };
       if (!response.ok || !body.settings) {
-        setError(body.error ?? "Could not update Activity settings");
+        setError(userFacingError(body.error, "Could not update Activity settings"));
         return;
       }
       setSettings(body.settings);
@@ -83,7 +84,7 @@ export function ActivitySettingsCard({ initialSettings }: { initialSettings: Org
         <h2 className="text-lg font-semibold tracking-tight">Activity visibility</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Choose what developers see on My activity. Admins always get period filters, device
-          heartbeats, sync extraction logs, and usage breakdowns.
+          activity exchanges, and usage breakdowns.
         </p>
       </div>
 
@@ -102,7 +103,7 @@ export function ActivitySettingsCard({ initialSettings }: { initialSettings: Org
       />
       <ToggleRow
         title="Device activity feed"
-        description="Lets teammates see heartbeats, sync updates, and expandable extraction logs for their own machines."
+        description="Lets teammates see machine exchanges, returned data, and observed activity for their own devices."
         enabled={settings.teamDeviceActivityEnabled}
         pending={pending}
         onToggle={(teamDeviceActivityEnabled) => save({ teamDeviceActivityEnabled })}

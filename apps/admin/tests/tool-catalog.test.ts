@@ -1,27 +1,56 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { TOOL_CATALOG, canonicalToolKey, findCatalogPlan, serializeCatalog, toolUsageNames } from "../lib/tools/catalog";
+import {
+  TOOL_CATALOG,
+  canonicalToolKey,
+  findCatalogPlan,
+  findCatalogTool,
+  serializeCatalog,
+  subscriptionToolKeys,
+  toolUsageNames,
+} from "../lib/tools/catalog";
 import { deriveSubscription } from "../lib/tools/subscriptions";
 import { mapVendorPlanToCatalog, hasReportedVendorPlan } from "../lib/tools/sync-detected";
 
-test("catalog contains the four supported branded tools and stable aliases", () => {
-  assert.deepEqual(TOOL_CATALOG.map((tool) => tool.key), ["chatgpt-codex", "claude", "cursor", "github-copilot"]);
+test("catalog contains the supported branded tools and stable aliases", () => {
+  assert.deepEqual(TOOL_CATALOG.map((tool) => tool.key), [
+    "chatgpt-codex",
+    "claude",
+    "cursor",
+    "github-copilot",
+  ]);
   assert.equal(canonicalToolKey("chatgpt"), "chatgpt-codex");
   assert.equal(canonicalToolKey("codex"), "chatgpt-codex");
+  assert.equal(canonicalToolKey("codex-work"), "chatgpt-codex");
+  assert.equal(canonicalToolKey("codex_work"), "chatgpt-codex");
   assert.equal(canonicalToolKey("claude-code"), "claude");
   assert.equal(canonicalToolKey("github-copilot"), "github-copilot");
   for (const tool of TOOL_CATALOG) {
     assert.equal(tool.lastVerifiedAt, "2026-07-10");
     assert.match(tool.sourceUrl, /^https:\/\//);
-    assert.ok(tool.plans.length >= 6);
+    assert.ok(tool.plans.length >= 4);
   }
 });
 
 test("usage queries include all catalog aliases for a subscription tool", () => {
-  assert.deepEqual(toolUsageNames("chatgpt-codex").sort(), ["chatgpt-codex", "chatgpt", "codex"].sort());
-  assert.deepEqual(toolUsageNames("codex").sort(), ["chatgpt-codex", "chatgpt", "codex"].sort());
+  assert.deepEqual(
+    toolUsageNames("chatgpt-codex").sort(),
+    ["chatgpt-codex", "chatgpt", "codex", "codex-work", "codex_work"].sort(),
+  );
+  assert.deepEqual(
+    toolUsageNames("codex-work").sort(),
+    ["chatgpt-codex", "chatgpt", "codex", "codex-work", "codex_work"].sort(),
+  );
+  assert.deepEqual(toolUsageNames("codex").sort(), ["chatgpt-codex", "chatgpt", "codex", "codex-work", "codex_work"].sort());
   assert.deepEqual(toolUsageNames("github-copilot").sort(), ["copilot", "github-copilot"].sort());
   assert.deepEqual(toolUsageNames("unknown-tool"), ["unknown-tool"]);
+});
+
+test("codex and work share one catalog subscription surface", () => {
+  assert.deepEqual([...subscriptionToolKeys("chatgpt-codex")], ["chatgpt-codex", "codex-work"]);
+  assert.deepEqual([...subscriptionToolKeys("codex-work")], ["chatgpt-codex", "codex-work"]);
+  assert.equal(findCatalogTool("codex-work")?.key, "chatgpt-codex");
+  assert.equal(TOOL_CATALOG.some((tool) => tool.key === "codex-work"), false);
 });
 
 test("catalog prices and annual monthly-equivalent prices remain versioned", () => {

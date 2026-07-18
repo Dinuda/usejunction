@@ -1,6 +1,7 @@
 import { hash } from "bcryptjs";
 import { loadEnvConfig } from "@next/env";
 import path from "node:path";
+import { hashOpaqueToken } from "../lib/security";
 import { flowKeyFromSession } from "../lib/signals/policies/flow";
 
 const loadedEnv = loadEnvConfig(path.join(__dirname, "../.."));
@@ -12,7 +13,12 @@ const orgSlug = process.env.E2E_ORG_SLUG ?? "e2e-calculation-fixture";
 const ownerEmail = process.env.E2E_OWNER_EMAIL ?? "owner@example.com";
 const developerEmail = process.env.E2E_DEVELOPER_EMAIL ?? "developer@example.com";
 const password = process.env.E2E_OWNER_PASSWORD ?? "e2e-password";
+const teamInviteToken = process.env.E2E_TEAM_INVITE_TOKEN ?? "uj_team_e2e_calculation_invite";
+const orgInviteToken = process.env.E2E_ORG_INVITE_TOKEN ?? "uj_invite_e2e_calculation_member";
+const connectInviteToken = process.env.E2E_CONNECT_INVITE_TOKEN ?? "uj_connect_e2e_calculation_machine";
+const inviteeEmail = process.env.E2E_INVITEE_EMAIL ?? "invitee@example.com";
 const now = new Date("2026-07-16T12:00:00.000Z");
+const inviteExpiresAt = new Date("2026-08-16T12:00:00.000Z");
 const journey = flowKeyFromSession({
   appBefore: "Google Chrome",
   domainBefore: "github.com",
@@ -29,18 +35,29 @@ async function main() {
   if (existing) await prisma.organization.delete({ where: { id: existing.id } });
   await prisma.user.deleteMany({ where: { email: { in: [ownerEmail, developerEmail] } } });
 
-  const org = await prisma.organization.create({ data: { name: "Calculation E2E", slug: orgSlug, plan: "pro" } });
+  const org = await prisma.organization.create({
+    data: {
+      name: "Calculation E2E",
+      slug: orgSlug,
+      plan: "team",
+      subscriptionStatus: "active",
+      lemonSqueezyCustomerId: "e2e-lemon-customer",
+      lemonSqueezySubscriptionId: "e2e-lemon-subscription",
+      lemonSqueezyQuantity: 5,
+    },
+  });
   const passwordHash = await hash(password, 10);
   const ownerUser = await prisma.user.create({ data: { name: "E2E Owner", email: ownerEmail, passwordHash, emailVerified: now } });
   const developerUser = await prisma.user.create({ data: { name: "E2E Developer", email: developerEmail, passwordHash, emailVerified: now } });
   await prisma.organizationMembership.createMany({
     data: [
       { orgId: org.id, userId: ownerUser.id, role: "owner", onboardingCompletedAt: now },
-      { orgId: org.id, userId: developerUser.id, role: "developer", onboardingCompletedAt: now },
+      { orgId: org.id, userId: developerUser.id, role: "user", onboardingCompletedAt: now },
     ],
   });
   await prisma.developer.create({ data: { id: "e2e-owner", orgId: org.id, name: "E2E Owner", email: ownerEmail, role: "owner", authUserId: ownerUser.id } });
-  const developer = await prisma.developer.create({ data: { id: "e2e-developer", orgId: org.id, name: "E2E Developer", email: developerEmail, role: "developer", authUserId: developerUser.id } });
+  const developer = await prisma.developer.create({ data: { id: "e2e-developer", orgId: org.id, name: "E2E Developer", email: developerEmail, role: "user", authUserId: developerUser.id } });
+  const deviceSeenAt = new Date();
   const device = await prisma.device.create({
     data: {
       orgId: org.id,
@@ -50,7 +67,8 @@ async function main() {
       architecture: "arm64",
       agentVersion: "0.1.0",
       deviceToken: "uj_e2e_calculation_device",
-      lastSeenAt: now,
+      lastSeenAt: deviceSeenAt,
+      lastUsageSyncAt: deviceSeenAt,
       status: "online",
     },
   });
@@ -117,6 +135,7 @@ async function main() {
       createdByUserId: ownerUser.id,
     },
   });
+
   await prisma.usageDaily.createMany({
     data: [
       {
@@ -152,7 +171,48 @@ async function main() {
     },
   });
 
-  console.log(JSON.stringify({ orgId: org.id, ownerEmail, developerEmail, password, journey }));
+  await prisma.teamInviteLink.create({
+    data: {
+      orgId: org.id,
+      tokenHash: hashOpaqueToken(teamInviteToken),
+      tokenReveal: teamInviteToken,
+      enabled: true,
+      rotatedAt: now,
+    },
+  });
+  await prisma.organizationInvite.create({
+    data: {
+      orgId: org.id,
+      email: inviteeEmail,
+      role: "user",
+      tokenHash: hashOpaqueToken(orgInviteToken),
+      expiresAt: inviteExpiresAt,
+      invitedByUserId: ownerUser.id,
+    },
+  });
+  await prisma.connectInvite.create({
+    data: {
+      orgId: org.id,
+      email: inviteeEmail,
+      tokenHash: hashOpaqueToken(connectInviteToken),
+      status: "pending",
+      expiresAt: inviteExpiresAt,
+    },
+  });
+
+  console.log(
+    JSON.stringify({
+      orgId: org.id,
+      ownerEmail,
+      developerEmail,
+      password,
+      journey,
+      teamInviteToken,
+      orgInviteToken,
+      connectInviteToken,
+      inviteeEmail,
+    }),
+  );
 }
 
 main().catch((error) => {

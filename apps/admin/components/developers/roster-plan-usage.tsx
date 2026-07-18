@@ -1,4 +1,4 @@
-import { verdictLabel, type PlanVerdict, type PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
+import { verdictLabel, verdictToneClass, type PlanVerdict, type PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { canonicalToolKey } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
@@ -20,21 +20,6 @@ function toolLabel(tool: string) {
       : key
         ? key.charAt(0).toUpperCase() + key.slice(1)
         : "Tool";
-}
-
-function toneForVerdict(code: PlanVerdictCode) {
-  switch (code) {
-    case "LIGHT_USE":
-      return "text-muted-foreground";
-    case "HEALTHY":
-      return "text-primary";
-    case "NEAR_LIMIT":
-      return "text-brand-yellow-dark";
-    case "LIMIT_EXCEEDED":
-      return "text-destructive";
-    default:
-      return "text-muted-foreground";
-  }
 }
 
 function barTone(ratio: number | null, code: PlanVerdictCode) {
@@ -103,7 +88,7 @@ export function RosterPlanUsage({ plans }: { plans: RosterPlanUsagePlan[] }) {
           />
         </div>
         {avgPercent != null ? (
-          <p className={cn("shrink-0 text-xs font-semibold tabular-nums", toneForVerdict(verdict?.code ?? "UNKNOWN"))}>
+          <p className={cn("shrink-0 text-xs font-semibold tabular-nums", verdictToneClass(verdict?.code ?? "UNKNOWN"))}>
             {avgPercent.toFixed(0)}%
           </p>
         ) : null}

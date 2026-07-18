@@ -79,6 +79,7 @@ func (r *Runner) refreshPolicy() error {
 		return err
 	}
 	r.cfg.SignalsEnabled = policy.Enabled
+	r.cfg.SignalsWorkExtraction = policy.WorkExtractionEnabled
 	r.cfg.SignalsPolicyUpdatedAt = policy.UpdatedAt
 	r.sessioner.SetPolicy(Policy{
 		Enabled:         policy.Enabled,

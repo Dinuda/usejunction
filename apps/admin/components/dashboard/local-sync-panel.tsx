@@ -194,7 +194,7 @@ export function LocalSyncPanel({
       const healthRes = await fetchWithTimeout(healthUrl.toString(), { method: "GET" }, 3_000);
       if (!healthRes.ok) {
         setStatus("unreachable");
-        setDetail(`Local agent health check failed (${healthRes.status}). Confirm the daemon is running.`);
+        setDetail("Local agent health check failed. Confirm the daemon is running.");
         return;
       }
       const health = (await healthRes.json().catch(() => ({}))) as LocalAgentHealth;
@@ -218,7 +218,7 @@ export function LocalSyncPanel({
         setDetail(
           res.status === 401
             ? "Local sync token mismatch. Restart the agent daemon, then try Sync now again."
-            : `Agent returned ${res.status}`,
+            : "Could not start local sync. Confirm the daemon is running, then try again.",
         );
         return;
       }
@@ -229,7 +229,7 @@ export function LocalSyncPanel({
       }
       if (body.status === "failed") {
         setStatus("error");
-        setDetail(body.error ?? body.message ?? "Local sync failed.");
+        setDetail("Local sync failed. Check the agent logs for details.");
         return;
       }
       setStatus("ok");
@@ -268,7 +268,11 @@ export function LocalSyncPanel({
       }
       if (!res.ok) {
         setStatus("error");
-        setDetail(res.status === 401 ? "Local sync token mismatch. Restart the agent daemon." : `Could not read sync status (${res.status}).`);
+        setDetail(
+          res.status === 401
+            ? "Local sync token mismatch. Restart the agent daemon."
+            : "Could not read sync status. Confirm the daemon is running.",
+        );
         return;
       }
       const body = (await res.json().catch(() => ({}))) as LocalSyncJob;
@@ -280,7 +284,7 @@ export function LocalSyncPanel({
       }
       if (body.status === "failed") {
         setStatus("error");
-        setDetail(body.error ?? body.message ?? "Local sync failed.");
+        setDetail("Local sync failed. Check the agent logs for details.");
         return;
       }
       setStatus("ok");

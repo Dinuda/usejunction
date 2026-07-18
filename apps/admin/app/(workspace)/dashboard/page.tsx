@@ -9,17 +9,23 @@ import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
 import { OverviewChart } from "@/components/dashboard/overview-chart";
 import { DashboardSetupPanel } from "@/components/dashboard/setup-panel";
+import { SignalsKpi } from "@/components/signals/signals-ui";
 import { ToolBrandIcon, ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { verdictLabel, type PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
+import {
+  verdictHint,
+  verdictLabel,
+  verdictToneClass,
+  type PlanVerdictCode,
+} from "@/lib/billing/plan-utilization-policy";
 import {
   parseRollingPeriodFromSearch,
   rollingPeriodLabel,
   type RollingPeriod,
 } from "@/lib/dashboard/period-prefs";
 import { cycleViewShortSuffix, parseCycleView, type CycleView } from "@/lib/dashboard/cycle-view";
-import { toolDisplayName } from "@/lib/tools/catalog";
+import { canonicalToolKey, findCatalogTool, toolDisplayName } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 import {
@@ -78,16 +84,15 @@ function Kpi({
   className?: string;
 }) {
   return (
-    <div className={cn(className, accent && "bg-brand-yellow-pale/70 px-4 py-3")}>
-      <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
-      <p className={cn("mt-2 font-semibold tracking-tight tabular-nums", hero ? "text-4xl" : "text-3xl")}>{value}</p>
-      {sub ? <p className="mt-1 text-xs text-muted-foreground">{sub}</p> : null}
-      {delta != null && (
-        <div className="mt-2">
-          <Delta value={delta} inverse={inverse} />
-        </div>
-      )}
-    </div>
+    <SignalsKpi
+      label={label}
+      value={value}
+      sub={sub}
+      hero={hero}
+      accent={accent}
+      className={className}
+      footer={delta != null ? <Delta value={delta} inverse={inverse} /> : undefined}
+    />
   );
 }
 
@@ -125,20 +130,52 @@ function sectionTitleForView(view: CycleView, period: RollingPeriod) {
 }
 
 
-function cycleUsageMeta(row: OrgOverviewV1["subscriptionCycles"][number]) {
-  return `${compactNumber(row.modelCalls)} ${row.modelCalls === 1 ? "call" : "calls"}`;
-}
-
 function orgCycleSummary(cycles: OrgOverviewV1["subscriptionCycles"]) {
   const withSignal = cycles.filter((row) => row.utilizationPercent != null);
   const avgUtilization =
     withSignal.length > 0
       ? withSignal.reduce((sum, row) => sum + (row.utilizationPercent ?? 0), 0) / withSignal.length
       : null;
-  const nearLimit = cycles.filter(
-    (row) => row.verdictCode === "NEAR_LIMIT" || row.verdictCode === "LIMIT_EXCEEDED",
+  const runningOut = cycles.filter((row) => row.verdictCode === "NEAR_LIMIT").length;
+  const overLimit = cycles.filter((row) => row.verdictCode === "LIMIT_EXCEEDED").length;
+  const onPlan = cycles.filter(
+    (row) => row.verdictCode === "LIGHT_USE" || row.verdictCode === "HEALTHY",
   ).length;
-  return { avgUtilization, nearLimit };
+  return { avgUtilization, runningOut, overLimit, onPlan, withSignal: withSignal.length };
+}
+
+function fleetStatusBadge(cycles: OrgOverviewV1["subscriptionCycles"]) {
+  const { runningOut, overLimit, onPlan, withSignal } = orgCycleSummary(cycles);
+  if (withSignal === 0) return null;
+  if (overLimit > 0) {
+    return (
+      <Badge variant="outline" className="border-destructive/30 bg-destructive/10 font-normal text-destructive">
+        {overLimit === withSignal ? "Over limit" : `${overLimit} over limit`}
+      </Badge>
+    );
+  }
+  if (runningOut > 0) {
+    return (
+      <Badge
+        variant="outline"
+        className="border-brand-yellow-dark/40 bg-brand-yellow-pale font-normal text-brand-yellow-dark"
+      >
+        {runningOut === 1 ? "1 running out" : `${runningOut} running out`}
+      </Badge>
+    );
+  }
+  if (onPlan === withSignal) {
+    return (
+      <Badge variant="outline" className="border-primary/30 bg-primary/10 font-normal text-primary">
+        On plan
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="border-primary/30 bg-primary/10 font-normal text-primary">
+      Steady
+    </Badge>
+  );
 }
 
 function CycleSectionHeader({
@@ -152,7 +189,7 @@ function CycleSectionHeader({
   cycles: OrgOverviewV1["subscriptionCycles"];
   bordered?: boolean;
 }) {
-  const { avgUtilization, nearLimit } = orgCycleSummary(cycles);
+  const { avgUtilization } = orgCycleSummary(cycles);
   return (
     <div className={cn("mb-6 flex flex-wrap items-center gap-2", bordered && "border-b pb-4")}>
       <h2 className="text-lg font-semibold tracking-tight">{sectionTitleForView(view, period)}.</h2>
@@ -162,15 +199,18 @@ function CycleSectionHeader({
             {avgUtilization.toFixed(0)}% utilized
           </Badge>
         ) : null}
-        {nearLimit > 0 ? (
-          <Badge
-            variant="outline"
-            className="border-brand-yellow-dark/40 bg-brand-yellow-pale font-normal text-brand-yellow-dark"
-          >
-            {nearLimit} near limit
-          </Badge>
-        ) : null}
+        {fleetStatusBadge(cycles)}
       </div>
+    </div>
+  );
+}
+
+function CycleStatus({ code }: { code: PlanVerdictCode }) {
+  const hint = verdictHint(code);
+  return (
+    <div className="mt-1.5">
+      <p className={cn("text-xs font-medium", verdictToneClass(code))}>{verdictLabel(code)}</p>
+      {hint ? <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }
@@ -223,10 +263,24 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
               stale={data.sync.stale}
             />
           </div>
-          <div className="grid gap-y-8 sm:grid-cols-3">
-            <Kpi label="Model calls" value={compactNumber(usage.requests)} hero className="pl-1" />
-            <Kpi label="Sessions" value={compactNumber(usage.sessions)} className="sm:border-l sm:border-border sm:pl-8" />
-            <Kpi label="Devices" value={`${online}/${data.developer.devices.length}`} accent className="sm:border-l sm:border-border sm:pl-8" />
+          <div className="grid items-start gap-8 sm:grid-cols-3">
+            <Kpi
+              label="Model calls"
+              value={compactNumber(usage.requests)}
+              hero
+              className="border-l-2 border-border-strong py-3 pl-4 pr-3"
+            />
+            <Kpi
+              label="Sessions"
+              value={compactNumber(usage.sessions)}
+              className="border-l-2 border-border-strong py-3 pl-4 pr-3"
+            />
+            <Kpi
+              label="Devices"
+              value={`${online}/${data.developer.devices.length}`}
+              accent
+              sub="Online / connected"
+            />
           </div>
 
           <div className={cn("mt-10", dashboardCard)}>
@@ -314,8 +368,8 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ view?: string; days?: string; from?: string; to?: string }>;
 }) {
-  const { orgId, role, userId } = await requireWorkspaceRole(["owner", "admin", "developer"]);
-  if (role === "developer") {
+  const { orgId, role, userId } = await requireWorkspaceRole(["owner", "admin", "user"]);
+  if (role === "user") {
     const personal = await getMeOverview(orgId, userId, role);
     return <PersonalHome data={personal} />;
   }
@@ -402,15 +456,14 @@ export default async function DashboardPage({
         </div>
       ) : data ? (
         <>
-          <div className="grid gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid items-start gap-8 sm:grid-cols-2 xl:grid-cols-4">
             <Kpi
               label="Subscription commitment"
               value={currency(data.kpis.actualSpend.value)}
               delta={data.kpis.actualSpend.deltaPercent}
               inverse
-              accent
               hero
-              className="pl-1"
+              className="border-l-2 border-border-strong py-3 pl-4 pr-3"
               sub={
                 data.cycleView === "last_30_days"
                   ? "prorated for selected window"
@@ -424,20 +477,27 @@ export default async function DashboardPage({
               value={currency(data.kpis.verifiedUsageCost.value)}
               delta={data.kpis.verifiedUsageCost.deltaPercent}
               inverse
-              className="sm:border-l sm:border-border sm:pl-8"
+              className="border-l-2 border-border-strong py-3 pl-4 pr-3"
             />
             <Kpi
               label="Estimated API value"
               value={currency(data.kpis.estimatedApiCost.value)}
               delta={data.kpis.estimatedApiCost.deltaPercent}
               inverse
-              className="xl:border-l xl:border-border xl:pl-8"
+              className="border-l-2 border-border-strong py-3 pl-4 pr-3"
             />
             <Kpi
               label="Model calls"
               value={compactNumber(data.kpis.modelCalls.value)}
               delta={data.kpis.modelCalls.deltaPercent}
-              className="sm:border-l sm:border-border sm:pl-8 xl:pl-8"
+              accent
+              sub={
+                data.cycleView === "last_30_days"
+                  ? "Selected window"
+                  : data.cycleView === "previous_cycles"
+                    ? "Previous billing cycles"
+                    : "Current billing cycles"
+              }
             />
           </div>
 
@@ -450,40 +510,57 @@ export default async function DashboardPage({
             />
             {data.subscriptionCycles.length ? (
               <ul>
-                {data.subscriptionCycles.map((row) => (
-                  <li key={row.id} className="py-5">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <ToolLogoTile tool={row.toolKey ?? row.toolName} size="md" />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">
-                            {toolDisplayName(row.toolKey ?? row.toolName)}
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {cycleWindowLabel(row, data.cycleView)}
-                          </p>
+                {data.subscriptionCycles.map((row) => {
+                  const toolKey = canonicalToolKey(row.toolKey ?? row.toolName);
+                  const href = findCatalogTool(toolKey) ? `/tools/${toolKey}` : null;
+                  const body = (
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <ToolLogoTile tool={row.toolKey ?? row.toolName} size="md" />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">
+                              {toolDisplayName(row.toolKey ?? row.toolName)}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {cycleWindowLabel(row, data.cycleView)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <p className="text-sm font-semibold tabular-nums">{currency(row.cycleSpend)}</p>
+                          {href ? (
+                            <ArrowUpRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                          ) : null}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold tabular-nums">{currency(row.cycleSpend)}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{cycleUsageMeta(row)}</p>
+                      <div className="mt-3">
+                        <CycleUtilizationBar
+                          percent={row.utilizationPercent}
+                          displayPercent={row.utilizationDisplayPercent}
+                          verdictCode={row.verdictCode}
+                          label={toolDisplayName(row.toolKey ?? row.toolName)}
+                        />
                       </div>
-                    </div>
-                    <div className="mt-3">
-                      <CycleUtilizationBar
-                        percent={row.utilizationPercent}
-                        displayPercent={row.utilizationDisplayPercent}
-                        verdictCode={row.verdictCode}
-                        label={toolDisplayName(row.toolKey ?? row.toolName)}
-                      />
-                    </div>
-                    {row.verdictCode ? (
-                      <p className="mt-1.5 text-xs text-muted-foreground">
-                        {verdictLabel(row.verdictCode)}
-                      </p>
-                    ) : null}
-                  </li>
-                ))}
+                      {row.verdictCode ? <CycleStatus code={row.verdictCode} /> : null}
+                    </>
+                  );
+
+                  return (
+                    <li key={row.id}>
+                      {href ? (
+                        <Link
+                          href={href}
+                          className="block py-5 transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+                        >
+                          {body}
+                        </Link>
+                      ) : (
+                        <div className="py-5">{body}</div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
               <p className="py-6 text-sm text-muted-foreground">Add subscriptions to see cycle utilization.</p>

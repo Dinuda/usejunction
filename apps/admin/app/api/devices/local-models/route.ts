@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
+import {
+  recordDeviceActivityEvent,
+  uniqueStrings,
+} from "@/lib/activity/record-device-activity-event";
 import { bearerToken } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
+  const started = Date.now();
   try {
     const token = bearerToken(req);
     if (!token) {
@@ -21,6 +26,7 @@ export async function POST(req: NextRequest) {
     }
 
     let upserted = 0;
+    const sample: Array<{ provider: string; modelName: string; running: boolean }> = [];
     for (const m of models) {
       if (!m.provider || !m.modelName) continue;
 
@@ -47,8 +53,28 @@ export async function POST(req: NextRequest) {
           running: m.running ?? false,
         },
       });
+      if (sample.length < 8) {
+        sample.push({
+          provider: m.provider,
+          modelName: m.modelName,
+          running: Boolean(m.running),
+        });
+      }
       upserted += 1;
     }
+
+    const providers = uniqueStrings(sample.map((row) => row.provider));
+    await recordDeviceActivityEvent({
+      orgId: device.orgId,
+      developerId: device.userId,
+      deviceId: device.id,
+      kind: "local_models",
+      status: "ok",
+      summary: `Local models sync · ${upserted} models${providers.length ? ` · ${providers.join(", ")}` : ""}`,
+      requestSummary: { models: upserted, providers, sample },
+      responseSummary: { upserted },
+      durationMs: Date.now() - started,
+    });
 
     return NextResponse.json({ upserted });
   } catch (e) {

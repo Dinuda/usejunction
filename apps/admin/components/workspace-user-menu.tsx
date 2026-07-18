@@ -22,6 +22,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { roleDisplayLabel } from "@/components/developers/member-role-select";
 
 function initials(name?: string | null, email?: string | null) {
   if (name?.trim()) {
@@ -44,7 +45,7 @@ export function WorkspaceUserMenu({
   role?: string | null;
 }) {
   const displayName = name ?? "User";
-  const displayRole = role ?? "member";
+  const displayRole = role ? roleDisplayLabel(role) : "member";
 
   return (
     <div className="flex items-center">

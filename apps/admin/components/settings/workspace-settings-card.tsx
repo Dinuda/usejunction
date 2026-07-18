@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { WorkspaceColorSwatches, WorkspaceIcon } from "@/components/workspace-icon";
+import { userFacingError } from "@/lib/errors/user-facing";
 import {
   resolveWorkspaceColor,
   type WorkspaceColor,
@@ -53,7 +54,7 @@ export function WorkspaceSettingsCard({
         organization?: { name: string; color: string | null };
       };
       if (!response.ok || !body.organization) {
-        setError(body.error ?? "Could not update workspace.");
+        setError(userFacingError(body.error, "Could not update workspace."));
         return;
       }
       setName(body.organization.name);

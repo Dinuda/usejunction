@@ -5,6 +5,7 @@ import { Check, Loader2 } from "lucide-react";
 import { OAuthProviderButtons, getEnabledOAuthProviders } from "@/components/auth/oauth-provider-buttons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { userFacingError } from "@/lib/errors/user-facing";
 
 type Props = {
   token: string;
@@ -32,7 +33,7 @@ export function ConnectInviteClient({ token, email, signedIn, sessionEmail }: Pr
       const data = await response.json().catch(() => ({}));
       if (cancelled) return;
       if (!response.ok) {
-        setError(data.error ?? "Could not complete connect invite.");
+        setError(userFacingError(data.error, "Could not complete connect invite."));
         setStatus("error");
         return;
       }

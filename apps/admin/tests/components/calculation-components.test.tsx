@@ -16,6 +16,7 @@ const router = { push: vi.fn() };
 vi.mock("next/navigation", () => ({
   usePathname: () => "/signals/activity",
   useRouter: () => router,
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/components/tools/tool-brand-icon", () => ({
@@ -134,7 +135,7 @@ describe("calculation-bearing components", () => {
     try {
       render(
         <SignalsFilters
-          value={{ range: 30, teamId: "team-1", tool: "cursor", developerId: "dev-1" }}
+          value={{ teamId: "team-1", tool: "cursor", developerId: "dev-1" }}
           teams={[{ id: "team-1", name: "Platform" }]}
           tools={["cursor", "claude"]}
           developers={[{ id: "dev-1", name: "Alice" }]}
@@ -142,17 +143,16 @@ describe("calculation-bearing components", () => {
         />,
       );
 
-      const range = screen.getByLabelText("Range");
-      fireEvent.change(range, { target: { value: "90" } });
+      fireEvent.change(screen.getByLabelText("AI tool"), { target: { value: "claude" } });
       expect(router.push).not.toHaveBeenCalled();
       vi.advanceTimersByTime(399);
       expect(router.push).not.toHaveBeenCalled();
       vi.advanceTimersByTime(1);
-      expect(router.push).toHaveBeenCalledWith("/signals/activity?range=90&teamId=team-1&tool=cursor&developerId=dev-1");
+      expect(router.push).toHaveBeenCalledWith("/signals/activity?teamId=team-1&tool=claude&developerId=dev-1");
 
       fireEvent.change(screen.getByLabelText("Team"), { target: { value: "" } });
       vi.advanceTimersByTime(400);
-      expect(router.push).toHaveBeenLastCalledWith("/signals/activity?range=90&tool=cursor&developerId=dev-1");
+      expect(router.push).toHaveBeenLastCalledWith("/signals/activity?tool=claude&developerId=dev-1");
     } finally {
       vi.useRealTimers();
     }
@@ -192,6 +192,7 @@ describe("calculation-bearing components", () => {
           plans: [],
           toolsUsed: [],
           toolSequences: [],
+          modelsByDeveloper: [],
         }}
       />,
     );
@@ -199,6 +200,6 @@ describe("calculation-bearing components", () => {
     expect(screen.getByText("Usage cost (current)")).toBeInTheDocument();
     expect(screen.getByText("$6.00")).toBeInTheDocument();
     expect(screen.getByText(/10 requests · verified \+ estimated/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Adjust period" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Subscription view")).toBeInTheDocument();
   });
 });

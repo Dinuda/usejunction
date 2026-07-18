@@ -26,17 +26,32 @@ export async function linkDeveloperToUser(input: {
   const existingByUser = await input.tx.developer.findFirst({
     where: { orgId: input.orgId, authUserId: input.userId },
   });
-  if (existingByUser) return existingByUser;
+  if (existingByUser) {
+    if (!existingByUser.removedAt) return existingByUser;
+    return input.tx.developer.update({
+      where: { id: existingByUser.id },
+      data: {
+        removedAt: null,
+        name: input.name?.trim() || undefined,
+        ...(input.role ? { role: input.role } : {}),
+      },
+    });
+  }
 
   return input.tx.developer.upsert({
     where: { orgId_email: { orgId: input.orgId, email } },
-    update: { authUserId: input.userId, name: input.name?.trim() || undefined },
+    update: {
+      authUserId: input.userId,
+      removedAt: null,
+      name: input.name?.trim() || undefined,
+      ...(input.role ? { role: input.role } : {}),
+    },
     create: {
       orgId: input.orgId,
       authUserId: input.userId,
       email,
       name: input.name?.trim() || email.split("@")[0],
-      role: input.role ?? "developer",
+      role: input.role ?? "user",
     },
   });
 }

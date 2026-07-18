@@ -8,7 +8,9 @@ import {
   primaryUtilizationRatio,
   selectPrimaryQuota,
   STALE_QUOTA_MS,
-} from "../lib/billing/plan-utilization-policy";
+  verdictHint,
+  verdictLabel,
+} from "../lib/quotas/plan-utilization-policy";
 import { resolveReportWindow } from "../lib/analytics/contracts/time-window";
 
 test("mapQuotaSnapshots keeps null absolutes and converts percent to ratio", () => {
@@ -258,6 +260,15 @@ test("evaluatePlanUtilization thresholds and stale", () => {
   assert.equal(evaluatePlanUtilization({ primaryQuota: stale, included: null }).code, "DATA_STALE");
 
   assert.equal(evaluatePlanUtilization({ primaryQuota: null, included: null }).code, "UNKNOWN");
+});
+
+test("verdictLabel and verdictHint describe on-plan vs running-out states", () => {
+  assert.equal(verdictLabel("LIGHT_USE"), "On plan");
+  assert.equal(verdictLabel("HEALTHY"), "Steady");
+  assert.equal(verdictLabel("NEAR_LIMIT"), "Running out");
+  assert.equal(verdictLabel("LIMIT_EXCEEDED"), "Over limit");
+  assert.match(verdictHint("NEAR_LIMIT") ?? "", /cap before renewal/i);
+  assert.match(verdictHint("LIGHT_USE") ?? "", /headroom/i);
 });
 
 test("resolveReportWindow uses range and rejects non-UTC", () => {

@@ -19,6 +19,7 @@ model Organization {
   lemonSqueezyCustomerId     String?   @map("lemon_squeezy_customer_id")
   lemonSqueezySubscriptionId String?   @map("lemon_squeezy_subscription_id")
   lemonSqueezyVariantId      String?   @map("lemon_squeezy_variant_id")
+  lemonSqueezyQuantity       Int?      @map("lemon_squeezy_quantity")
   billingEmail               String?   @map("billing_email")
   currentPeriodEnd           DateTime? @map("current_period_end")
   createdAt                  DateTime  @default(now()) @map("created_at")
@@ -47,16 +48,18 @@ model Organization {
   usageDaily             UsageDaily[]
   analyticsQueryCaches   AnalyticsQueryCache[]
   toolClaims             DeveloperToolClaim[]
-  telemetryEndpoint      TelemetryEndpoint?
   billingPlanTemplates   BillingPlanTemplate[]
   planAssignments        DeveloperPlanAssignment[]
+  telemetryEndpoint      TelemetryEndpoint?
   signalsPolicies        SignalsPolicy[]
   signalsActivityEvents  SignalsActivityEvent[]
   signalsSessions        SignalsSession[]
+  localWorkSessions      LocalWorkSession[]
   auditLogs              AuditLog[]
   agentUpdateDeployments AgentUpdateDeployment[]
   agentUpdateEvents      AgentUpdateEvent[]
   activitySettings       ActivitySettings?
+  deviceActivityEvents   DeviceActivityEvent[]
 
   @@map("organizations")
 }
@@ -76,14 +79,15 @@ model Team {
 }
 
 model Developer {
-  id         String   @id @default(cuid())
-  orgId      String   @map("org_id")
+  id         String    @id @default(cuid())
+  orgId      String    @map("org_id")
   name       String
   email      String
-  teamId     String?  @map("team_id")
-  authUserId String?  @map("auth_user_id")
-  role       String   @default("developer")
-  createdAt  DateTime @default(now()) @map("created_at")
+  teamId     String?   @map("team_id")
+  authUserId String?   @map("auth_user_id")
+  role       String    @default("user")
+  removedAt  DateTime? @map("removed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
 
   organization          Organization              @relation(fields: [orgId], references: [id], onDelete: Cascade)
   team                  Team?                     @relation(fields: [teamId], references: [id])
@@ -98,13 +102,16 @@ model Developer {
   externalIdentities    ExternalIdentity[]
   seatAssignments       SeatAssignment[]
   toolClaims            DeveloperToolClaim[]
-  usageDaily            UsageDaily[]
   planAssignments       DeveloperPlanAssignment[]
+  usageDaily            UsageDaily[]
   signalsActivityEvents SignalsActivityEvent[]
   signalsSessions       SignalsSession[]
+  localWorkSessions     LocalWorkSession[]
+  deviceActivityEvents  DeviceActivityEvent[]
 
   @@unique([orgId, email])
   @@unique([orgId, authUserId])
+  @@index([orgId, removedAt])
   @@map("users")
 }
 
@@ -124,6 +131,7 @@ model Device {
   localSyncTokenEnc  String?   @map("local_sync_token_enc")
   lastUsageSyncAt    DateTime? @map("last_usage_sync_at")
   lastAccountSyncAt  DateTime? @map("last_account_sync_at")
+  decommissionedAt   DateTime? @map("decommissioned_at")
   createdAt          DateTime  @default(now()) @map("created_at")
 
   organization           Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -137,8 +145,10 @@ model Device {
   usageDaily             UsageDaily[]
   signalsActivityEvents  SignalsActivityEvent[]
   signalsSessions        SignalsSession[]
+  localWorkSessions      LocalWorkSession[]
   agentUpdateDeployments AgentUpdateDeployment[]
   agentUpdateEvents      AgentUpdateEvent[]
+  deviceActivityEvents   DeviceActivityEvent[]
 
   @@map("devices")
 }
@@ -443,7 +453,7 @@ model OrganizationMembership {
   id                        String    @id @default(cuid())
   userId                    String    @map("user_id")
   orgId                     String    @map("org_id")
-  role                      String    @default("developer")
+  role                      String    @default("user")
   onboardingCompletedAt     DateTime? @map("onboarding_completed_at")
   setupChecklistDismissedAt DateTime? @map("setup_checklist_dismissed_at")
   createdAt                 DateTime  @default(now()) @map("created_at")
@@ -508,7 +518,7 @@ model OrganizationInvite {
   id              String    @id @default(cuid())
   orgId           String    @map("org_id")
   email           String
-  role            String    @default("developer")
+  role            String    @default("user")
   tokenHash       String    @unique @map("token_hash")
   expiresAt       DateTime  @map("expires_at")
   acceptedAt      DateTime? @map("accepted_at")
@@ -770,87 +780,6 @@ model DeveloperToolClaim {
   @@map("developer_tool_claims")
 }
 
-model BillingPlanTemplate {
-  id                         String    @id @default(cuid())
-  orgId                      String    @map("org_id")
-  provider                   String
-  product                    String
-  toolName                   String    @map("tool_name")
-  name                       String
-  tier                       String?
-  toolKey                    String?   @map("tool_key")
-  catalogPlanKey             String?   @map("catalog_plan_key")
-  billingCadence             String    @default("monthly") @map("billing_cadence")
-  billingCycleAnchorDate     DateTime? @map("billing_cycle_anchor_date") @db.Date
-  billingCycleDays           Int?      @map("billing_cycle_days")
-  seatCapacity               Int       @default(1) @map("seat_capacity")
-  priceSource                String    @default("manual") @map("price_source")
-  priceVerifiedAt            DateTime? @map("price_verified_at") @db.Date
-  customPrice                Boolean   @default(true) @map("custom_price")
-  providerSourceUrl          String?   @map("provider_source_url")
-  currency                   String    @default("USD")
-  cycleSeatMicros            BigInt    @default(0) @map("cycle_seat_micros")
-  includedCycleMicros        BigInt    @default(0) @map("included_cycle_micros")
-  inputRateMicrosPerMillion  BigInt    @default(0) @map("input_rate_micros_per_million")
-  outputRateMicrosPerMillion BigInt    @default(0) @map("output_rate_micros_per_million")
-  cacheRateMicrosPerMillion  BigInt    @default(0) @map("cache_rate_micros_per_million")
-  billingOwner               String?   @map("billing_owner")
-  externalReference          String?   @map("external_reference")
-  notes                      String?   @db.Text
-  active                     Boolean   @default(true)
-  createdByUserId            String    @map("created_by_user_id")
-  createdAt                  DateTime  @default(now()) @map("created_at")
-  updatedAt                  DateTime  @updatedAt @map("updated_at")
-
-  organization Organization              @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  assignments  DeveloperPlanAssignment[]
-
-  @@index([orgId, active])
-  @@index([orgId, toolKey, active])
-  @@map("billing_plan_templates")
-}
-
-model DeveloperPlanAssignment {
-  id                         String    @id @default(cuid())
-  orgId                      String    @map("org_id")
-  developerId                String    @map("developer_id")
-  planTemplateId             String    @map("plan_template_id")
-  provider                   String
-  product                    String
-  toolName                   String    @map("tool_name")
-  planName                   String    @map("plan_name")
-  planTier                   String?   @map("plan_tier")
-  currency                   String    @default("USD")
-  billingCadence             String    @default("monthly") @map("billing_cadence")
-  billingCycleAnchorDate     DateTime? @map("billing_cycle_anchor_date") @db.Date
-  billingCycleDays           Int?      @map("billing_cycle_days")
-  cycleSeatMicros            BigInt    @default(0) @map("cycle_seat_micros")
-  includedCycleMicros        BigInt    @default(0) @map("included_cycle_micros")
-  inputRateMicrosPerMillion  BigInt    @default(0) @map("input_rate_micros_per_million")
-  outputRateMicrosPerMillion BigInt    @default(0) @map("output_rate_micros_per_million")
-  cacheRateMicrosPerMillion  BigInt    @default(0) @map("cache_rate_micros_per_million")
-  billingOwner               String?   @map("billing_owner")
-  externalReference          String?   @map("external_reference")
-  seatCount                  Int       @default(1) @map("seat_count")
-  seatStatus                 String    @default("active") @map("seat_status")
-  startDate                  DateTime  @map("start_date") @db.Date
-  endDate                    DateTime? @map("end_date") @db.Date
-  active                     Boolean   @default(true)
-  source                     String    @default("admin_confirmed")
-  vendorAccountEmail         String?   @map("vendor_account_email")
-  notes                      String?   @db.Text
-  createdByUserId            String    @map("created_by_user_id")
-  createdAt                  DateTime  @default(now()) @map("created_at")
-  updatedAt                  DateTime  @updatedAt @map("updated_at")
-
-  organization Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  developer    Developer           @relation(fields: [developerId], references: [id], onDelete: Cascade)
-  template     BillingPlanTemplate @relation(fields: [planTemplateId], references: [id], onDelete: Restrict)
-
-  @@index([orgId, developerId, toolName, startDate, endDate])
-  @@index([orgId, startDate, endDate])
-  @@map("developer_plan_assignments")
-}
 
 model TelemetryEndpoint {
   id        String   @id @default(cuid())
@@ -867,18 +796,19 @@ model TelemetryEndpoint {
 }
 
 model SignalsPolicy {
-  id              String   @id @default(cuid())
-  orgId           String   @map("org_id")
-  teamId          String?  @map("team_id")
-  enabled         Boolean  @default(false)
-  retentionDays   Int      @default(90) @map("retention_days")
-  collectionMode  String   @default("app_domain") @map("collection_mode")
-  excludedApps    String[] @default([]) @map("excluded_apps")
-  excludedDomains String[] @default([]) @map("excluded_domains")
-  storeEvents     Boolean  @default(false) @map("store_events")
-  updatedByUserId String?  @map("updated_by_user_id")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id                    String   @id @default(cuid())
+  orgId                 String   @map("org_id")
+  teamId                String?  @map("team_id")
+  enabled               Boolean  @default(false)
+  retentionDays         Int      @default(90) @map("retention_days")
+  collectionMode        String   @default("app_domain") @map("collection_mode")
+  excludedApps          String[] @default([]) @map("excluded_apps")
+  excludedDomains       String[] @default([]) @map("excluded_domains")
+  storeEvents           Boolean  @default(false) @map("store_events")
+  workExtractionEnabled Boolean  @default(false) @map("work_extraction_enabled")
+  updatedByUserId       String?  @map("updated_by_user_id")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   team         Team?        @relation(fields: [teamId], references: [id], onDelete: Cascade)
@@ -899,6 +829,31 @@ model ActivitySettings {
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@map("activity_settings")
+}
+
+model DeviceActivityEvent {
+  id              String   @id @default(cuid())
+  orgId           String   @map("org_id")
+  developerId     String   @map("developer_id")
+  deviceId        String   @map("device_id")
+  kind            String
+  direction       String   @default("ingest")
+  status          String
+  summary         String
+  requestSummary  Json     @map("request_summary")
+  responseSummary Json     @map("response_summary")
+  errorCode       String?  @map("error_code")
+  durationMs      Int?     @map("duration_ms")
+  occurredAt      DateTime @default(now()) @map("occurred_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  developer    Developer    @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, occurredAt])
+  @@index([deviceId, occurredAt])
+  @@index([developerId, occurredAt])
+  @@map("device_activity_events")
 }
 
 model SignalsActivityEvent {
@@ -954,6 +909,123 @@ model SignalsSession {
   @@index([orgId, developerId, startedAt])
   @@index([orgId, flowSignature, startedAt])
   @@map("signals_sessions")
+}
+
+model LocalWorkSession {
+  id             String    @id @default(cuid())
+  orgId          String    @map("org_id")
+  developerId    String    @map("developer_id")
+  deviceId       String    @map("device_id")
+  localId        String    @map("local_id")
+  toolName       String    @map("tool_name")
+  model          String?
+  mode           String?
+  title          String?
+  tldr           String?
+  overview       String?
+  startedAt      DateTime? @map("started_at")
+  endedAt        DateTime? @map("ended_at")
+  observedAt     DateTime  @map("observed_at")
+  toolCallCounts Json?     @map("tool_call_counts")
+  trace          Json?
+  repository     Json?
+  source         String
+  metadata       Json?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  developer    Developer    @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, localId])
+  @@index([orgId, developerId, observedAt])
+  @@index([orgId, toolName, observedAt])
+  @@map("local_work_sessions")
+}
+
+model BillingPlanTemplate {
+  id                         String    @id @default(cuid())
+  orgId                      String    @map("org_id")
+  provider                   String
+  product                    String
+  toolName                   String    @map("tool_name")
+  name                       String
+  tier                       String?
+  toolKey                    String?   @map("tool_key")
+  catalogPlanKey             String?   @map("catalog_plan_key")
+  billingCadence             String    @default("monthly") @map("billing_cadence")
+  billingCycleAnchorDate     DateTime? @map("billing_cycle_anchor_date") @db.Date
+  billingCycleDays           Int?      @map("billing_cycle_days")
+  billingProfile             String    @default("business") @map("billing_profile")
+  seatCapacity               Int       @default(1) @map("seat_capacity")
+  priceSource                String    @default("manual") @map("price_source")
+  priceVerifiedAt            DateTime? @map("price_verified_at") @db.Date
+  customPrice                Boolean   @default(true) @map("custom_price")
+  providerSourceUrl          String?   @map("provider_source_url")
+  currency                   String    @default("USD")
+  cycleSeatMicros            BigInt    @default(0) @map("cycle_seat_micros")
+  includedCycleMicros        BigInt    @default(0) @map("included_cycle_micros")
+  inputRateMicrosPerMillion  BigInt    @default(0) @map("input_rate_micros_per_million")
+  outputRateMicrosPerMillion BigInt    @default(0) @map("output_rate_micros_per_million")
+  cacheRateMicrosPerMillion  BigInt    @default(0) @map("cache_rate_micros_per_million")
+  billingOwner               String?   @map("billing_owner")
+  externalReference          String?   @map("external_reference")
+  notes                      String?   @db.Text
+  active                     Boolean   @default(true)
+  createdByUserId            String    @map("created_by_user_id")
+  createdAt                  DateTime  @default(now()) @map("created_at")
+  updatedAt                  DateTime  @updatedAt @map("updated_at")
+
+  organization Organization              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  assignments  DeveloperPlanAssignment[]
+
+  @@index([orgId, active])
+  @@index([orgId, toolKey, active])
+  @@index([orgId, billingProfile])
+  @@map("billing_plan_templates")
+}
+
+model DeveloperPlanAssignment {
+  id                         String    @id @default(cuid())
+  orgId                      String    @map("org_id")
+  developerId                String    @map("developer_id")
+  planTemplateId             String    @map("plan_template_id")
+  provider                   String
+  product                    String
+  toolName                   String    @map("tool_name")
+  planName                   String    @map("plan_name")
+  planTier                   String?   @map("plan_tier")
+  currency                   String    @default("USD")
+  billingCadence             String    @default("monthly") @map("billing_cadence")
+  billingCycleAnchorDate     DateTime? @map("billing_cycle_anchor_date") @db.Date
+  billingCycleDays           Int?      @map("billing_cycle_days")
+  cycleSeatMicros            BigInt    @default(0) @map("cycle_seat_micros")
+  includedCycleMicros        BigInt    @default(0) @map("included_cycle_micros")
+  inputRateMicrosPerMillion  BigInt    @default(0) @map("input_rate_micros_per_million")
+  outputRateMicrosPerMillion BigInt    @default(0) @map("output_rate_micros_per_million")
+  cacheRateMicrosPerMillion  BigInt    @default(0) @map("cache_rate_micros_per_million")
+  billingOwner               String?   @map("billing_owner")
+  externalReference          String?   @map("external_reference")
+  seatCount                  Int       @default(1) @map("seat_count")
+  seatStatus                 String    @default("active") @map("seat_status")
+  startDate                  DateTime  @map("start_date") @db.Date
+  endDate                    DateTime? @map("end_date") @db.Date
+  active                     Boolean   @default(true)
+  source                     String    @default("admin_confirmed")
+  vendorAccountEmail         String?   @map("vendor_account_email")
+  notes                      String?   @db.Text
+  createdByUserId            String    @map("created_by_user_id")
+  createdAt                  DateTime  @default(now()) @map("created_at")
+  updatedAt                  DateTime  @updatedAt @map("updated_at")
+
+  organization Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  developer    Developer           @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  template     BillingPlanTemplate @relation(fields: [planTemplateId], references: [id], onDelete: Restrict)
+
+  @@index([orgId, developerId, toolName, startDate, endDate])
+  @@index([orgId, startDate, endDate])
+  @@map("developer_plan_assignments")
 }
 
 model AuditLog {

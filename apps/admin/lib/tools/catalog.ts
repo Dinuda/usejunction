@@ -36,33 +36,17 @@ export const TOOL_CATALOG: readonly CatalogTool[] = [
     provider: "openai",
     product: "codex",
     toolName: "codex",
-    aliases: ["chatgpt", "codex"],
+    // Work (desktop agent) shares the same OpenAI subscription as ChatGPT / Codex.
+    aliases: ["chatgpt", "codex", "codex-work", "codex_work"],
     sourceUrl: "https://chatgpt.com/pricing/",
     lastVerifiedAt: verified,
     plans: [
-      { key: "free", name: "Free", tier: "Free", description: "For occasional personal use", prices: { monthly: zero }, includedCycleMicros: zero },
+      { key: "free", name: "Free", tier: "Free", description: "Chat, Work, and Codex for occasional personal use", prices: { monthly: zero }, includedCycleMicros: zero },
       { key: "go", name: "Go", tier: "Go", description: "Regional plan with local pricing", prices: {}, includedCycleMicros: zero, customPrice: true },
-      { key: "plus", name: "Plus", tier: "Plus", description: "Expanded ChatGPT and Codex access", prices: { monthly: usd(20) }, includedCycleMicros: zero },
+      { key: "plus", name: "Plus", tier: "Plus", description: "Expanded ChatGPT, Work, and Codex access", prices: { monthly: usd(20) }, includedCycleMicros: zero },
       { key: "pro", name: "Pro", tier: "Pro", description: "Highest individual access limits", prices: { monthly: usd(200) }, includedCycleMicros: zero },
       { key: "business", name: "Business", tier: "Business", description: "Secure workspace for growing teams", prices: { monthly: usd(25), annual: usd(20) }, includedCycleMicros: zero, minimumSeats: 2 },
       { key: "enterprise", name: "Enterprise", tier: "Enterprise", description: "Enterprise controls and negotiated pricing", prices: {}, includedCycleMicros: zero, customPrice: true },
-    ],
-  },
-  {
-    key: "codex-work",
-    name: "Codex Work",
-    shortName: "Codex Work",
-    provider: "openai",
-    product: "codex_work",
-    toolName: "codex-work",
-    aliases: ["codex-work", "codex_work"],
-    sourceUrl: "https://help.openai.com/en/articles/20001275-chatgpt-work-and-codex",
-    lastVerifiedAt: verified,
-    plans: [
-      { key: "plus", name: "Plus", tier: "Plus", description: "Shared with ChatGPT / Codex quota", prices: { monthly: usd(20) }, includedCycleMicros: zero },
-      { key: "pro", name: "Pro", tier: "Pro", description: "Shared with ChatGPT / Codex quota", prices: { monthly: usd(200) }, includedCycleMicros: zero },
-      { key: "business", name: "Business", tier: "Business", description: "Shared with ChatGPT / Codex quota", prices: { monthly: usd(25), annual: usd(20) }, includedCycleMicros: zero, minimumSeats: 2 },
-      { key: "enterprise", name: "Enterprise", tier: "Enterprise", description: "Shared with ChatGPT / Codex quota", prices: {}, includedCycleMicros: zero, customPrice: true },
     ],
   },
   {
@@ -127,7 +111,11 @@ export const TOOL_CATALOG: readonly CatalogTool[] = [
 ];
 
 export function findCatalogTool(key: string) {
-  return TOOL_CATALOG.find((tool) => tool.key === key);
+  const normalized = key.trim().toLowerCase();
+  return (
+    TOOL_CATALOG.find((tool) => tool.key === normalized) ??
+    TOOL_CATALOG.find((tool) => tool.aliases.includes(normalized))
+  );
 }
 
 export function findCatalogPlan(toolKey: string, planKey: string) {
@@ -136,7 +124,15 @@ export function findCatalogPlan(toolKey: string, planKey: string) {
 
 export function canonicalToolKey(toolName: string) {
   const normalized = toolName.trim().toLowerCase();
-  return TOOL_CATALOG.find((tool) => tool.aliases.includes(normalized))?.key ?? normalized;
+  const tool = findCatalogTool(normalized);
+  return tool?.key ?? normalized;
+}
+
+/** Catalog + legacy keys that share one subscription surface (e.g. pre-merge codex-work rows). */
+export function subscriptionToolKeys(toolKey: string) {
+  const key = canonicalToolKey(toolKey);
+  if (key === "chatgpt-codex") return ["chatgpt-codex", "codex-work"] as const;
+  return [key] as const;
 }
 
 /** Human-readable tool label for UI (catalog short name or capitalized key). */

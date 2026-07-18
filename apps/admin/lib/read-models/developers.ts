@@ -8,12 +8,17 @@ export async function getDeveloperRoster(
   options: { developerId?: string; reportWindow?: MetricWindow } = {},
 ) {
   const reportWindow = options.reportWindow ?? resolveReportWindow({ range: 30 });
-  const [developers, activity] = await Promise.all([
+  const [developers, activity, toolActivity] = await Promise.all([
     prisma.developer.findMany({
-      where: { orgId, ...(options.developerId ? { id: options.developerId } : {}) },
+      where: {
+        orgId,
+        removedAt: null,
+        ...(options.developerId ? { id: options.developerId } : {}),
+      },
       orderBy: { createdAt: "desc" },
       include: {
         devices: {
+          where: { decommissionedAt: null },
           select: {
             id: true,
             hostname: true,
@@ -41,37 +46,6 @@ export async function getDeveloperRoster(
           where: { enabled: true },
           select: { toolName: true, source: true, observedAt: true },
         },
-        planAssignments: {
-          where: { active: true },
-          select: {
-            id: true,
-            developerId: true,
-            planTemplateId: true,
-            provider: true,
-            product: true,
-            toolName: true,
-            planName: true,
-            planTier: true,
-            currency: true,
-            billingCadence: true,
-            billingCycleAnchorDate: true,
-            billingCycleDays: true,
-            cycleSeatMicros: true,
-            includedCycleMicros: true,
-            inputRateMicrosPerMillion: true,
-            outputRateMicrosPerMillion: true,
-            cacheRateMicrosPerMillion: true,
-            seatCount: true,
-            seatStatus: true,
-            startDate: true,
-            endDate: true,
-            source: true,
-            active: true,
-            vendorAccountEmail: true,
-            template: { select: { toolKey: true, catalogPlanKey: true } },
-          },
-          orderBy: { startDate: "desc" },
-        },
         _count: { select: { requestMetadata: true } },
       },
     }),
@@ -80,6 +54,13 @@ export async function getDeveloperRoster(
       window: reportWindow,
       measures: ["requests", "costMicros"],
       dimensions: ["developer"],
+      ...(options.developerId ? { filters: { developerIds: [options.developerId] } } : {}),
+    }),
+    readUsageMetrics({
+      orgId,
+      window: reportWindow,
+      measures: ["requests"],
+      dimensions: ["developer", "tool"],
       ...(options.developerId ? { filters: { developerIds: [options.developerId] } } : {}),
     }),
   ]);
@@ -94,6 +75,16 @@ export async function getDeveloperRoster(
     ]),
   );
 
+  const usedToolsMap = new Map<string, string[]>();
+  for (const row of toolActivity.data.rows) {
+    const developerId = dimension(row, "developer");
+    const toolName = dimension(row, "tool");
+    if (!developerId || !toolName || metricNumber(row, "requests") <= 0) continue;
+    const existing = usedToolsMap.get(developerId) ?? [];
+    existing.push(toolName);
+    usedToolsMap.set(developerId, existing);
+  }
+
   return {
     developers: developers.map((developer) => ({
       id: developer.id,
@@ -105,8 +96,9 @@ export async function getDeveloperRoster(
       totalRequests: developer._count.requestMetadata,
       devices: developer.devices,
       assignedPlans: developer.seatAssignments,
-      manualPlans: developer.planAssignments,
+      manualPlans: [] as Array<never>,
       toolEvidence: developer.toolClaims,
+      usedTools: [...new Set(usedToolsMap.get(developer.id) ?? [])],
       ...(activityMap.get(developer.id) ?? { requests: 0, cost: 0 }),
     })),
   };

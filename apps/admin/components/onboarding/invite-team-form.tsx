@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { userFacingError } from "@/lib/errors/user-facing";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -58,7 +59,7 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
     const getData = await get.json().catch(() => ({}));
     if (!get.ok) {
       setLoadingLink(false);
-      setError(getData.error ?? "Unable to load invite link.");
+      setError(userFacingError(getData.error, "Unable to load invite link."));
       return;
     }
     if (getData.url) {
@@ -81,7 +82,7 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
     const createData = await create.json().catch(() => ({}));
     setLoadingLink(false);
     if (!create.ok) {
-      setError(createData.error ?? "Unable to create invite link.");
+      setError(userFacingError(createData.error, "Unable to create invite link."));
       return;
     }
     setInviteUrl(createData.url ?? null);
@@ -130,7 +131,7 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
     const data = await response.json().catch(() => ({}));
     setRotating(false);
     if (!response.ok) {
-      setError(data.error ?? "Unable to rotate invite link.");
+      setError(userFacingError(data.error, "Unable to rotate invite link."));
       return;
     }
     setInviteUrl(data.url ?? null);
@@ -157,7 +158,7 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
     const data = await response.json().catch(() => ({}));
     setAdding(false);
     if (!response.ok) {
-      setError(data.error ?? "Unable to add people.");
+      setError(userFacingError(data.error, "Unable to add people."));
       return;
     }
     setAllowlist(data.allowlist ?? []);
@@ -192,7 +193,7 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setError(data.error ?? "Unable to remove email.");
+      setError(userFacingError(data.error, "Unable to remove email."));
       return;
     }
     setAllowlist(data.allowlist ?? []);
@@ -209,7 +210,7 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
     const data = await response.json().catch(() => ({}));
     setResending(null);
     if (!response.ok) {
-      setError(data.error ?? "Unable to send email.");
+      setError(userFacingError(data.error, "Unable to send email."));
       return;
     }
     const result = (data.emailResults ?? [])[0] as { status?: string } | undefined;
@@ -236,7 +237,7 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
     const data = await response.json().catch(() => ({}));
     setAdvancedLoading(false);
     if (!response.ok) {
-      setError(data.error ?? "Unable to create CLI commands.");
+      setError(userFacingError(data.error, "Unable to create CLI commands."));
       return;
     }
     const results = (data.results ?? []) as Array<{

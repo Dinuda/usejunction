@@ -62,7 +62,7 @@ export async function sendAuthEmail({
 
   if (error) {
     console.error("[auth email] Resend error:", error);
-    throw new Error(error.message);
+    throw new Error("Unable to send email");
   }
 
   console.info(`[auth email] sent id=${data?.id} to=${to} from=${from}`);

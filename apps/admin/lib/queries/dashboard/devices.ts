@@ -1,4 +1,5 @@
 import { prisma } from "@usejunction/db";
+import { activeDevicesForOrg } from "@/lib/devices/decommission";
 import { isDeviceOnline } from "@/lib/devices/presence";
 
 export interface DashboardDeviceRow {
@@ -30,7 +31,7 @@ export interface DashboardDevicesData {
 export async function getDashboardDevices(orgId: string): Promise<DashboardDevicesData> {
   const [devices, requestCounts] = await Promise.all([
     prisma.device.findMany({
-      where: { orgId },
+      where: activeDevicesForOrg(orgId),
       orderBy: { lastSeenAt: "desc" },
       include: {
         user: { select: { name: true, email: true } },

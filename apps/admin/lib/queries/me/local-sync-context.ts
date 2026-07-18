@@ -59,6 +59,7 @@ export async function getLocalSyncContext(orgId: string, authUserId: string): Pr
     where: { orgId, authUserId },
     select: {
       devices: {
+        where: { decommissionedAt: null },
         orderBy: { lastSeenAt: "desc" },
         select: {
           lastSeenAt: true,

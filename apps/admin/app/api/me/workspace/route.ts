@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@usejunction/db";
-import { requireOrgRole } from "@/lib/rbac";
+import { requireOrgRole, rolesFor } from "@/lib/rbac";
 import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 
 const schema = z.object({
@@ -9,7 +9,7 @@ const schema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const auth = await requireOrgRole(req, ["owner", "admin", "developer"]);
+  const auth = await requireOrgRole(req, rolesFor("self_view"));
   if (auth instanceof NextResponse) return auth;
 
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
