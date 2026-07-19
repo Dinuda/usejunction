@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToolBrandIcon, hasToolBrandIcon } from "@/components/tools/tool-brand-icon";
+import { formatRelativeTime } from "@/lib/format";
 import { toolDisplayName } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
 
@@ -14,7 +15,6 @@ type LocalSyncInfo =
       url: string;
       token: string;
       hostname: string;
-      online: boolean;
       lastSeenAt: string;
       lastUsageSyncAt: string | null;
       lastAccountSyncAt: string | null;
@@ -62,15 +62,6 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, tim
 
 function isAbortError(cause: unknown) {
   return cause instanceof DOMException && cause.name === "AbortError";
-}
-
-function formatRelative(iso: string | null | undefined) {
-  if (!iso) return "never";
-  const ms = Date.now() - new Date(iso).getTime();
-  if (ms < 60_000) return "just now";
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
-  return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
 function latestTimestamp(...values: Array<string | null | undefined>) {
@@ -148,12 +139,10 @@ export function LocalSyncPanel({
   lastSeenAt,
   lastUsageSyncAt,
   lastAccountSyncAt,
-  stale,
 }: {
   lastSeenAt?: string | null;
   lastUsageSyncAt?: string | null;
   lastAccountSyncAt?: string | null;
-  stale?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -295,11 +284,10 @@ export function LocalSyncPanel({
   }
 
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex items-center justify-between gap-2 sm:gap-4">
       <div className="min-w-0">
-        <p className="text-sm text-muted-foreground">
-          Last synced {formatRelative(lastSuccessfulSyncAt)}
-          {stale ? " · Agent may be offline" : ""}
+        <p className="text-xs leading-5 text-muted-foreground sm:text-sm">
+          Last synced {formatRelativeTime(lastSuccessfulSyncAt)}
         </p>
         {detail ? (
           <SyncDetailLine detail={detail} status={status} />
@@ -309,6 +297,7 @@ export function LocalSyncPanel({
         type="button"
         size="sm"
         variant="ghost"
+        className="min-h-11 shrink-0 px-2 sm:min-h-0 sm:px-3"
         disabled={pending || status === "syncing"}
         onClick={syncNow}
       >

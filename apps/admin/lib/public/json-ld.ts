@@ -1,7 +1,47 @@
-import { siteConfig } from "@/lib/public/config";
+import type { ContentFaq, ContentPage, HowToStep } from "@/content/types";
+import { HOME_FAQS } from "@/lib/public/home-faqs";
+import { OBSERVABILITY_FEATURES, siteConfig, twitterUrl } from "@/lib/public/config";
+import { absoluteUrl, getSiteUrl } from "@/lib/public/site-url";
+import {
+  USER_LIMIT_FREE,
+  TEAM_PRICE_PER_DEV_USD,
+  TRIAL_DAYS,
+} from "@/lib/saas-billing/entitlements";
 
-export function buildJsonLd() {
-  const baseUrl = siteConfig.url;
+function faqEntities(faqs: ContentFaq[]) {
+  return faqs.map((faq) => ({
+    "@type": "Question",
+    name: faq.question,
+    acceptedAnswer: {
+      "@type": "Answer",
+      text: faq.answer,
+    },
+  }));
+}
+
+function buildBreadcrumbs(page: ContentPage) {
+  const baseUrl = getSiteUrl();
+  const url = absoluteUrl(page.path);
+  const hubByKind: Record<ContentPage["kind"], { name: string; path: string } | null> = {
+    guide: { name: "Guides", path: "/guides" },
+    compare: { name: "Compare", path: "/compare" },
+    for: { name: "For tools", path: "/for" },
+    blog: { name: "Blog", path: "/blog" },
+    legal: null,
+  };
+  const hub = hubByKind[page.kind];
+  const items = [{ "@type": "ListItem", position: 1, name: "Home", item: baseUrl }];
+  if (hub) {
+    items.push({ "@type": "ListItem", position: 2, name: hub.name, item: absoluteUrl(hub.path) });
+    items.push({ "@type": "ListItem", position: 3, name: page.title, item: url });
+  } else {
+    items.push({ "@type": "ListItem", position: 2, name: page.title, item: url });
+  }
+  return items;
+}
+
+export function buildHomeJsonLd() {
+  const baseUrl = getSiteUrl();
 
   return [
     {
@@ -10,28 +50,140 @@ export function buildJsonLd() {
       name: siteConfig.name,
       url: baseUrl,
       description: siteConfig.description,
+      publisher: { "@id": `${baseUrl}/#organization` },
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "@id": `${baseUrl}/#organization`,
+      name: siteConfig.name,
+      url: baseUrl,
+      description: siteConfig.tagline,
+      logo: absoluteUrl("/favicon.svg"),
+      email: "hello@usejunction.dev",
+      sameAs: [siteConfig.githubUrl, twitterUrl],
     },
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       name: siteConfig.name,
       applicationCategory: "DeveloperApplication",
+      applicationSubCategory: "AI coding observability",
       operatingSystem: "Web, macOS, Linux",
       description: siteConfig.description,
-      offers: {
-        "@type": "Offer",
-        price: "0",
-        priceCurrency: "USD",
-        description: "Open source, self-hostable",
-      },
-      license: siteConfig.license,
+      url: baseUrl,
+      license: "https://opensource.org/licenses/MIT",
+      featureList: OBSERVABILITY_FEATURES.map((feature) => feature.title),
+      offers: [
+        {
+          "@type": "Offer",
+          name: "Community",
+          price: "0",
+          priceCurrency: "USD",
+          description: `Open source / free tier up to ${USER_LIMIT_FREE} users`,
+        },
+        {
+          "@type": "Offer",
+          name: "Team",
+          price: String(TEAM_PRICE_PER_DEV_USD),
+          priceCurrency: "USD",
+          description: `Per active developer / month after ${TRIAL_DAYS}-day trial`,
+        },
+      ],
+      publisher: { "@id": `${baseUrl}/#organization` },
     },
     {
       "@context": "https://schema.org",
-      "@type": "Organization",
-      name: siteConfig.name,
-      url: baseUrl,
-      description: siteConfig.tagline,
+      "@type": "FAQPage",
+      mainEntity: faqEntities(HOME_FAQS),
+    },
+  ];
+}
+
+/** @deprecated use buildHomeJsonLd */
+export function buildJsonLd() {
+  return buildHomeJsonLd();
+}
+
+export function buildContentJsonLd(page: ContentPage) {
+  const url = absoluteUrl(page.path);
+  const baseUrl = getSiteUrl();
+  const graph: Record<string, unknown>[] = [
+    {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      name: page.title,
+      description: page.description,
+      url,
+      isPartOf: { "@type": "WebSite", name: siteConfig.name, url: baseUrl },
+      dateModified: page.updatedAt,
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: buildBreadcrumbs(page),
+    },
+  ];
+
+  if (page.faq.length) {
+    graph.push({
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: faqEntities(page.faq),
+    });
+  }
+
+  if (page.howTo) {
+    graph.push({
+      "@context": "https://schema.org",
+      "@type": "HowTo",
+      name: page.howTo.name,
+      description: page.howTo.description,
+      step: page.howTo.steps.map((step: HowToStep, index: number) => ({
+        "@type": "HowToStep",
+        position: index + 1,
+        name: step.name,
+        text: step.text,
+      })),
+    });
+  }
+
+  if (page.kind === "blog") {
+    graph.push({
+      "@context": "https://schema.org",
+      "@type": "Article",
+      headline: page.title,
+      description: page.description,
+      dateModified: page.updatedAt,
+      datePublished: page.updatedAt,
+      author: { "@type": "Organization", name: siteConfig.name },
+      publisher: { "@type": "Organization", name: siteConfig.name, url: baseUrl },
+      mainEntityOfPage: url,
+    });
+  }
+
+  return graph;
+}
+
+export function buildHubJsonLd(opts: { name: string; description: string; path: string; items: { name: string; path: string }[] }) {
+  const url = absoluteUrl(opts.path);
+  return [
+    {
+      "@context": "https://schema.org",
+      "@type": "CollectionPage",
+      name: opts.name,
+      description: opts.description,
+      url,
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      itemListElement: opts.items.map((item, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        name: item.name,
+        url: absoluteUrl(item.path),
+      })),
     },
   ];
 }

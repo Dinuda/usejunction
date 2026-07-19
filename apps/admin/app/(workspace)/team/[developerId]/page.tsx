@@ -2,16 +2,14 @@ import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { MemberPlanBoard } from "@/components/developers/member-plan-board";
 import { MemberWorkSessionList } from "@/components/developers/member-work-session-list";
-import { PlanPaceGraph } from "@/components/developers/plan-pace-graph";
 import { SignalsKpi } from "@/components/signals/signals-ui";
 import {
-  compact,
   loadMemberMetrics,
   loadMemberWork,
   memberPeriodQuery,
-  money,
   workFiltersFromWindow,
 } from "@/lib/developers/member-page-context";
+import { formatCompactNumber, formatUsd } from "@/lib/format";
 import { buildMemberPlanBoard, planBoardLeadLabel } from "@/lib/quotas/plan-board";
 import type { WorkActivitySession } from "@/lib/signals/queries/get-work-activity";
 import { canonicalToolKey } from "@/lib/tools/catalog";
@@ -70,32 +68,31 @@ export default async function MemberOverviewPage({
 
   return (
     <>
-      <div className="grid items-start gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid items-stretch gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <SignalsKpi
           label="Verified usage"
-          value={money(verified)}
+          value={formatUsd(verified)}
           sub={selectedPeriodLabel}
           className="pl-4"
         />
         <SignalsKpi
           label="Estimated API value"
-          value={money(estimated)}
+          value={formatUsd(estimated)}
           sub="when vendor cost is missing"
-          className="pl-4"
+          className="border-l border-border pl-8"
         />
         <SignalsKpi
           label="Tokens"
-          value={compact(tokens)}
-          sub={`in ${compact(Number(BigInt(personal.usage30d.inputTokens)))} · out ${compact(Number(BigInt(personal.usage30d.outputTokens)))}`}
+          value={formatCompactNumber(tokens)}
+          sub={`in ${formatCompactNumber(Number(BigInt(personal.usage30d.inputTokens)))} · out ${formatCompactNumber(Number(BigInt(personal.usage30d.outputTokens)))}`}
           accent
-          className="pl-4"
+          className="pl-8"
         />
         <SignalsKpi
           label="Plan pace"
           value={planKpi.value}
           sub={planKpi.sub}
-          className="pl-4"
-          footer={<PlanPaceGraph cards={planCards} />}
+          className="border-l border-border pl-8"
         />
       </div>
 

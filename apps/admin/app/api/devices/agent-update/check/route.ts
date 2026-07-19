@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@usejunction/db";
 import { updateDirectiveForDevice } from "@/lib/agent-updates";
-import { bearerToken } from "@/lib/auth";
+import { findDeviceByBearerToken } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
-  const token = bearerToken(req);
-  if (!token) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const device = await prisma.device.findUnique({
-    where: { deviceToken: token },
+  const device = await findDeviceByBearerToken(req, {
     select: { id: true, orgId: true, os: true, architecture: true, agentVersion: true },
   });
   if (!device) return NextResponse.json({ error: "unauthorized" }, { status: 401 });

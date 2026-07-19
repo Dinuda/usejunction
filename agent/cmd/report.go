@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -81,7 +82,12 @@ var daemonCmd = &cobra.Command{
 			fmt.Printf("Updated UseJunction agent; restarting service…\n")
 			return nil
 		}
-		go ujsignals.NewRunner(api, cfg, verbose).Run(context.Background())
+		// Windows v1 intentionally collects coding telemetry/work sessions only.
+		// Do not start the foreground-window sampler even when the org enables
+		// classic Signals.
+		if runtime.GOOS != "windows" {
+			go ujsignals.NewRunner(api, cfg, verbose).Run(context.Background())
+		}
 
 		fmt.Println("Starting UseJunction daemon (Ctrl-C to stop)…")
 		if _, _, _, _, err := collectAndReport(api, true); err != nil && verbose {

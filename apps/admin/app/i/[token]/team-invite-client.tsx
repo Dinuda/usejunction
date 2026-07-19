@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Clipboard, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { PlatformCommand } from "@/components/onboarding/platform-command";
 import { OAuthProviderButtons, getEnabledOAuthProviders } from "@/components/auth/oauth-provider-buttons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { userFacingError } from "@/lib/errors/user-facing";
-import { cn } from "@/lib/utils";
+import type { PlatformCommands } from "@/lib/connect-command";
 
 type Props = {
   token: string;
@@ -19,7 +20,7 @@ type Props = {
 type RedeemState =
   | { kind: "idle" }
   | { kind: "redeeming" }
-  | { kind: "ready"; installCommand: string; email: string }
+  | { kind: "ready"; installCommands: PlatformCommands; email: string }
   | { kind: "error"; message: string };
 
 type Device = {
@@ -35,7 +36,6 @@ function isReadyDevice(device: Device | null | undefined): device is Device {
 
 export function TeamInviteClient({ token, organizationName, signedIn, sessionEmail }: Props) {
   const [state, setState] = useState<RedeemState>(signedIn ? { kind: "redeeming" } : { kind: "idle" });
-  const [copied, setCopied] = useState(false);
   const [device, setDevice] = useState<Device | null>(null);
   const [waitingForTools, setWaitingForTools] = useState(false);
   const callbackUrl = `/i/${token}`;
@@ -54,7 +54,10 @@ export function TeamInviteClient({ token, organizationName, signedIn, sessionEma
       }
       setState({
         kind: "ready",
-        installCommand: data.installCommand as string,
+        installCommands: (data.installCommands ?? {
+          macosLinux: data.installCommand,
+          windows: data.installCommand,
+        }) as PlatformCommands,
         email: (data.email as string) ?? sessionEmail ?? "",
       });
     })();
@@ -100,12 +103,6 @@ export function TeamInviteClient({ token, organizationName, signedIn, sessionEma
     };
   }, [state.kind]);
 
-  async function copyCommand(command: string) {
-    await navigator.clipboard.writeText(command);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
-  }
-
   if (state.kind === "ready") {
     const connected = isReadyDevice(device);
 
@@ -115,7 +112,7 @@ export function TeamInviteClient({ token, organizationName, signedIn, sessionEma
         accent="cyan"
         contentAlign="top"
         eyebrow="Connect"
-        title={connected ? "Device connected." : "Run this in Terminal."}
+        title={connected ? "Device connected." : "Connect this device."}
         description={
           connected
             ? `${device.hostname} is ready. Continue to finish joining ${organizationName}.`
@@ -126,23 +123,7 @@ export function TeamInviteClient({ token, organizationName, signedIn, sessionEma
         <div className="space-y-5">
           {!connected ? (
             <>
-              <div className="relative overflow-hidden border border-brand-olive bg-brand-olive p-4 pr-14 font-mono text-xs leading-6 text-primary-foreground">
-                <code className="break-all">{state.installCommand}</code>
-                <button
-                  type="button"
-                  className={cn(
-                    "absolute right-3 top-3 border border-brand-olive-border p-2 text-primary-foreground/80 transition hover:bg-brand-olive-secondary",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  )}
-                  onClick={() => void copyCommand(state.installCommand)}
-                  aria-label="Copy install command"
-                >
-                  {copied ? <Check className="size-4" /> : <Clipboard className="size-4" />}
-                </button>
-              </div>
-              <p className="font-mono text-[0.65rem] text-muted-foreground">
-                {copied ? "Copied — paste in Terminal" : "Metadata only · paste in Terminal"}
-              </p>
+              <PlatformCommand commands={state.installCommands} />
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin text-primary" />
                 {waitingForTools

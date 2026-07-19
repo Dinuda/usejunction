@@ -1,7 +1,9 @@
 "use client";
 
 import { Bar, BarChart, XAxis, YAxis } from "recharts";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { ChartContainer, type ChartConfig } from "@/components/ui/chart";
+import { formatCompactNumber } from "@/lib/format";
 
 const chartConfig = {
   input: { label: "In", color: "color-mix(in srgb, var(--foreground) 80%, transparent)" },
@@ -9,10 +11,6 @@ const chartConfig = {
   cacheRead: { label: "Cache read", color: "var(--brand-yellow-dark)" },
   cacheWrite: { label: "Cache write", color: "var(--border-strong)" },
 } satisfies ChartConfig;
-
-function compact(value: number) {
-  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
-}
 
 export function TokenBreakdownChart({
   input,
@@ -27,7 +25,11 @@ export function TokenBreakdownChart({
 }) {
   const total = input + output + cacheRead + cacheWrite;
   if (total <= 0) {
-    return <p className="text-sm text-muted-foreground">No token breakdown yet.</p>;
+    return (
+      <Empty className="min-h-0 gap-1 border-0 p-0 md:p-0">
+        <EmptyDescription>No token breakdown yet.</EmptyDescription>
+      </Empty>
+    );
   }
 
   const parts = [
@@ -64,7 +66,7 @@ export function TokenBreakdownChart({
         {parts.map((part) => (
           <div key={part.key}>
             <dt className="text-muted-foreground">{part.label}</dt>
-            <dd className="font-medium tabular-nums">{compact(part.value)}</dd>
+            <dd className="font-medium tabular-nums">{formatCompactNumber(part.value)}</dd>
           </div>
         ))}
       </dl>

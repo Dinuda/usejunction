@@ -155,9 +155,14 @@
 
 html {
   scroll-behavior: smooth;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 body {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
@@ -250,6 +255,23 @@ a {
   padding-inline: 1.5rem;
 }
 
+@media (max-width: 767px) {
+  .public-container {
+    padding-inline: 1rem;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 1rem;
+  }
+
+  [data-slot="button"],
+  [data-slot="select-trigger"] {
+    min-height: 2.75rem;
+  }
+}
+
 .public-headline-emphasis {
   color: var(--primary);
   text-decoration: underline;
@@ -261,21 +283,73 @@ a {
 .hero-atmosphere {
   background:
     radial-gradient(
-      ellipse 80% 70% at 72% 18%,
-      color-mix(in srgb, var(--public-accent) 8%, transparent),
-      transparent 62%
+      ellipse 70% 55% at 78% 22%,
+      color-mix(in srgb, var(--public-accent) 11%, transparent),
+      transparent 68%
     ),
     radial-gradient(
-      circle at 18% 82%,
-      color-mix(in srgb, var(--public-border) 35%, transparent),
-      transparent 48%
+      circle at 12% 78%,
+      color-mix(in srgb, var(--public-accent) 6%, transparent),
+      transparent 52%
     );
 }
 
+.hero-atmosphere-dots {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.45;
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--public-fg) 14%, transparent) 1px,
+    transparent 1.5px
+  );
+  background-size: 18px 18px;
+  mask-image: radial-gradient(ellipse 70% 60% at 70% 40%, black 10%, transparent 72%);
+}
+
 .hero-mock-frame {
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid var(--public-border);
+  background: var(--public-surface);
   box-shadow:
-    0 12px 32px -16px color-mix(in srgb, var(--public-fg) 14%, transparent),
-    0 2px 8px -6px color-mix(in srgb, var(--public-fg) 8%, transparent) !important;
+    0 28px 64px -32px color-mix(in srgb, var(--public-fg) 22%, transparent),
+    0 8px 24px -12px color-mix(in srgb, var(--public-fg) 12%, transparent) !important;
+}
+
+.public-btn-yellow {
+  background: var(--brand-yellow);
+  color: var(--foreground);
+  border-color: color-mix(in srgb, var(--brand-yellow-dark) 35%, var(--brand-yellow));
+}
+
+.public-btn-yellow:hover {
+  background: var(--brand-yellow-hover);
+  opacity: 1;
+}
+
+.home-soft-panel {
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid var(--public-border);
+  background: var(--public-surface);
+  box-shadow:
+    0 18px 40px -28px color-mix(in srgb, var(--public-fg) 18%, transparent),
+    0 4px 12px -8px color-mix(in srgb, var(--public-fg) 10%, transparent);
+}
+
+.hero-product-frame {
+  box-shadow:
+    0 34px 90px -44px color-mix(in srgb, var(--public-fg) 30%, transparent),
+    0 14px 30px -22px color-mix(in srgb, var(--public-fg) 22%, transparent),
+    0 2px 6px -3px color-mix(in srgb, var(--public-fg) 12%, transparent);
+}
+
+.hero-data-chip {
+  box-shadow:
+    0 18px 38px -24px color-mix(in srgb, var(--public-fg) 30%, transparent),
+    0 3px 10px -6px color-mix(in srgb, var(--public-fg) 20%, transparent);
 }
 
 .public-btn {

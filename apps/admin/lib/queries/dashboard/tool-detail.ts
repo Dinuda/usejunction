@@ -78,8 +78,6 @@ export type ToolDetailData = {
     priceSource: string;
     active: boolean;
   }>;
-  toolsUsed: Array<{ name: string; calls: number }>;
-  toolSequences: Array<{ digest: string; sessions: number }>;
 };
 
 function toolNamesFor(toolKey: string) {
@@ -97,10 +95,8 @@ export async function getToolDetail(
   const names = toolNamesFor(tool.key);
   const inventoryNames = names;
   const templateKeys = [...subscriptionToolKeys(tool.key)];
-  const windowStart = reportWindow.from;
-  const windowEnd = reportWindow.to;
 
-  const [installations, accounts, quotas, usageRows, subscriptions, assignments, inventoryRows, modelRows] =
+  const [installations, accounts, quotas, usageRows, subscriptions, assignments, modelRows] =
     await Promise.all([
       prisma.toolInstallation.findMany({
         where: { orgId, detected: true, toolName: { in: inventoryNames } },
@@ -153,16 +149,6 @@ export async function getToolDetail(
           template: { select: { id: true, catalogPlanKey: true, toolKey: true, name: true } },
         },
         orderBy: { createdAt: "desc" },
-      }),
-      prisma.localUsageAggregate.findMany({
-        where: {
-          orgId,
-          toolName: { in: names },
-          metricKind: "productivity",
-          date: { gte: windowStart, lte: windowEnd },
-          OR: [{ model: { startsWith: "tool:" } }, { model: { startsWith: "flow:" } }],
-        },
-        select: { model: true, requests: true },
       }),
       readUsageMetrics({
         orgId,
@@ -312,28 +298,6 @@ export async function getToolDetail(
   const seatsAssigned = plans.reduce((sum, plan) => sum + plan.assignedSeats, 0);
   const deviceIds = new Set(installations.map((item) => item.deviceId));
 
-  const toolCallCounts = new Map<string, number>();
-  const flowCounts = new Map<string, number>();
-  for (const row of inventoryRows) {
-    if (row.model.startsWith("tool:")) {
-      const name = row.model.slice("tool:".length);
-      if (!name) continue;
-      toolCallCounts.set(name, (toolCallCounts.get(name) ?? 0) + row.requests);
-    } else if (row.model.startsWith("flow:")) {
-      const digest = row.model.slice("flow:".length);
-      if (!digest) continue;
-      flowCounts.set(digest, (flowCounts.get(digest) ?? 0) + row.requests);
-    }
-  }
-  const toolsUsed = Array.from(toolCallCounts.entries())
-    .map(([name, calls]) => ({ name, calls }))
-    .sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name))
-    .slice(0, 24);
-  const toolSequences = Array.from(flowCounts.entries())
-    .map(([digest, sessions]) => ({ digest, sessions }))
-    .sort((a, b) => b.sessions - a.sessions || a.digest.localeCompare(b.digest))
-    .slice(0, 8);
-
   const modelsByDeveloper: ToolDetailData["modelsByDeveloper"] = [];
   for (const row of modelRows.data.rows) {
     const developerId = dimension(row, "developer");
@@ -383,8 +347,6 @@ export async function getToolDetail(
     people,
     quotas: quotaRows,
     plans,
-    toolsUsed,
-    toolSequences,
     modelsByDeveloper,
   };
 }

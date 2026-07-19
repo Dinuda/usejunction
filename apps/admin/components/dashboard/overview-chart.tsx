@@ -1,37 +1,101 @@
 "use client";
 
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import type { TooltipContentProps } from "recharts";
 import {
   ChartContainer,
   ChartLegend,
   ChartLegendContent,
   ChartTooltip,
-  ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { useIsMobile } from "@/hooks/use-mobile";
 
-type Point = { date: string; requests: number; cost: number; previousRequests: number; previousCost: number };
+type Point = {
+  date: string;
+  previousDate: string;
+  requests: number;
+  cost: number;
+  previousRequests: number;
+  previousCost: number;
+};
 
 const chartConfig = {
-  requests: { label: "Requests", color: "var(--primary)" },
+  requests: { label: "Current period", color: "var(--primary)" },
   previousRequests: { label: "Previous period", color: "var(--text-muted)" },
 } satisfies ChartConfig;
 
-export function OverviewChart({ data }: { data: Point[] }) {
+function formatShortDate(date: string) {
+  return date.slice(5);
+}
+
+function OverviewTooltip({ active, payload }: TooltipContentProps) {
+  const point = payload?.[0]?.payload as Point | undefined;
+
+  if (!active || !point) {
+    return null;
+  }
+
   return (
-    <ChartContainer config={chartConfig} className="h-[260px] w-full">
-      <AreaChart data={data} margin={{ left: 0, right: 8, top: 12, bottom: 0 }} accessibilityLayer>
+    <div className="grid min-w-[12rem] items-start gap-2 rounded-lg border border-border/50 bg-background px-2.5 py-2 text-xs shadow-xl">
+      <TooltipRow
+        color="var(--color-requests)"
+        label="Current period"
+        date={formatShortDate(point.date)}
+        value={point.requests}
+      />
+      <TooltipRow
+        color="var(--color-previousRequests)"
+        label="Previous period"
+        date={formatShortDate(point.previousDate)}
+        value={point.previousRequests}
+      />
+    </div>
+  );
+}
+
+function TooltipRow({
+  color,
+  label,
+  date,
+  value,
+}: {
+  color: string;
+  label: string;
+  date: string;
+  value: number;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span
+        className="size-2.5 shrink-0 rounded-[2px]"
+        style={{ backgroundColor: color }}
+      />
+      <div className="min-w-0 flex-1 text-muted-foreground">
+        {label} · {date}
+      </div>
+      <span className="font-mono font-medium tabular-nums text-foreground">{value.toLocaleString()}</span>
+    </div>
+  );
+}
+
+export function OverviewChart({ data }: { data: Point[] }) {
+  const isMobile = useIsMobile();
+
+  return (
+    <ChartContainer config={chartConfig} className="h-[220px] w-full sm:h-[260px]">
+      <AreaChart data={data} margin={{ left: 0, right: isMobile ? 0 : 8, top: 12, bottom: 0 }} accessibilityLayer>
         <CartesianGrid vertical={false} strokeDasharray="3 3" />
         <XAxis
           dataKey="date"
           tickLine={false}
           axisLine={false}
           tickMargin={8}
-          minTickGap={24}
+          minTickGap={isMobile ? 42 : 24}
           tickFormatter={(value) => value.slice(5)}
         />
-        <YAxis tickLine={false} axisLine={false} width={34} allowDecimals={false} />
-        <ChartTooltip content={<ChartTooltipContent labelFormatter={(value) => `Date · ${value}`} />} />
+        <YAxis tickLine={false} axisLine={false} width={isMobile ? 28 : 34} allowDecimals={false} />
+        <ChartTooltip content={OverviewTooltip} />
         <ChartLegend content={<ChartLegendContent />} />
         <Area
           type="monotone"

@@ -1,4 +1,7 @@
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { SubscriptionInventory } from "@/components/tools/subscription-inventory";
+import { PageHeader } from "@/components/page-header";
+import { Panel } from "@/components/panel";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
 import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
@@ -16,18 +19,14 @@ import { requireWorkspaceRole } from "@/lib/workspace-context";
 
 function ToolsHeader({ personal = false }: { personal?: boolean }) {
   return (
-    <header className="mb-10 space-y-5">
-      <div className="min-w-0">
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">
-          {personal ? "Your tools, in one place." : "Tools, seats, spend."}
-        </h1>
-        <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
-          {personal
-            ? "Tools detected on your connected computers, with live quota windows when available."
-            : "Manage team subscriptions and compare purchased seats with usage and quotas."}
-        </p>
-      </div>
-    </header>
+    <PageHeader
+      title={personal ? "Your tools, in one place." : "Tools, seats, spend."}
+      description={
+        personal
+          ? "Tools detected on your connected computers, with live quota windows when available."
+          : "Manage team subscriptions and compare purchased seats with usage and quotas."
+      }
+    />
   );
 }
 
@@ -73,7 +72,6 @@ function PersonalTools({
             lastSeenAt={sync.lastSeenAt}
             lastUsageSyncAt={sync.lastUsageSyncAt}
             lastAccountSyncAt={sync.lastAccountSyncAt}
-            stale={sync.stale}
           />
         </div>
       ) : null}
@@ -83,7 +81,7 @@ function PersonalTools({
           hero
           className="pl-5"
           value={rows.length}
-          sub="From your connected machines"
+          sub="From your connected device"
         />
         <SignalsKpi
           label="Assigned plans"
@@ -92,7 +90,7 @@ function PersonalTools({
           sub="Available to you"
         />
       </div>
-      <section className="border bg-card p-5">
+      <Panel as="section">
         <SignalsSectionHeader title="Your tools." bordered={false} />
         {rows.length ? (
           <ul>
@@ -104,7 +102,7 @@ function PersonalTools({
                     <div>
                       <p className="text-sm font-medium capitalize">{tool.toolName.replaceAll("-", " ")}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        On {tool.devices} machine{tool.devices === 1 ? "" : "s"}
+                        Detected on your device
                       </p>
                     </div>
                   </div>
@@ -129,7 +127,7 @@ function PersonalTools({
         ) : (
           <p className="py-6 text-sm text-muted-foreground">Connect a computer to detect your tools.</p>
         )}
-      </section>
+      </Panel>
     </>
   );
 }
@@ -151,7 +149,6 @@ export default async function ToolsPage({
             lastSeenAt: personal.sync.lastSeenAt,
             lastUsageSyncAt: personal.sync.lastUsageSyncAt,
             lastAccountSyncAt: personal.sync.lastAccountSyncAt,
-            stale: personal.sync.stale,
             hasLocalEndpoint: personal.sync.hasLocalEndpoint,
             needsPlanSync: personal.sync.needsPlanSync,
           }}
@@ -192,7 +189,9 @@ export default async function ToolsPage({
   return (
     <>
       {err ? (
-        <div className="mb-6 bg-destructive/10 px-4 py-3 text-sm text-destructive">{err}</div>
+        <Alert variant="destructive" className="mb-6 rounded-none">
+          <AlertDescription>{err}</AlertDescription>
+        </Alert>
       ) : null}
 
       <SubscriptionInventory
@@ -209,7 +208,6 @@ export default async function ToolsPage({
             lastSeenAt={syncContext.lastSeenAt}
             lastUsageSyncAt={syncContext.lastUsageSyncAt}
             lastAccountSyncAt={syncContext.lastAccountSyncAt}
-            stale={syncContext.stale}
           />
         ) : null}
       </SubscriptionInventory>

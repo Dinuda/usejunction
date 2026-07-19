@@ -7,6 +7,12 @@ import { normalizeEmail } from "@/lib/developer-identity";
 import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
 
+const TEAM_INVITE_TTL_DAYS = 7;
+
+function defaultInviteExpiry(now: Date) {
+  return new Date(now.getTime() + TEAM_INVITE_TTL_DAYS * 24 * 60 * 60_000);
+}
+
 function serializeLink(link: {
   id: string;
   enabled: boolean;
@@ -37,20 +43,20 @@ async function ensureLink(orgId: string, userId: string, rotate: boolean) {
     include: { allowlist: { select: { email: true, createdAt: true }, orderBy: { createdAt: "asc" } } },
   });
 
-  if (existing && !rotate) return { link: existing, created: false };
-
   const rawToken = generateOpaqueToken("uj_team", 24);
   const tokenHash = hashOpaqueToken(rawToken);
   const now = new Date();
+  const expiresAt = defaultInviteExpiry(now);
+  if (existing && !rotate && (!existing.expiresAt || existing.expiresAt > now)) return { link: existing, created: false };
 
   const link = existing
     ? await prisma.teamInviteLink.update({
         where: { orgId },
-        data: { tokenHash, tokenReveal: rawToken, enabled: true, rotatedAt: now },
+        data: { tokenHash, tokenReveal: rawToken, enabled: true, expiresAt, rotatedAt: now },
         include: { allowlist: { select: { email: true, createdAt: true }, orderBy: { createdAt: "asc" } } },
       })
     : await prisma.teamInviteLink.create({
-        data: { orgId, tokenHash, tokenReveal: rawToken, enabled: true, rotatedAt: now },
+        data: { orgId, tokenHash, tokenReveal: rawToken, enabled: true, expiresAt, rotatedAt: now },
         include: { allowlist: { select: { email: true, createdAt: true }, orderBy: { createdAt: "asc" } } },
       });
 

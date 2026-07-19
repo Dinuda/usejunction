@@ -1,4 +1,4 @@
-import type { SignalsFiltersInput, SignalsRange } from "./shared";
+import type { SignalsFiltersInput } from "./shared";
 
 export type SignalsJourneyDetailInput = SignalsFiltersInput & {
   flowKey: string;
@@ -10,7 +10,7 @@ export type SignalsJourneyStep = {
 };
 
 export type SignalsJourneyDetailV1 = {
-  range: SignalsRange;
+  windowDays: number;
   flowKey: string;
   flow: string;
   people: number;

@@ -1,7 +1,6 @@
 import type {
   SignalsFiltersInput,
   SignalsJourneyRow,
-  SignalsRange,
   SignalsRecommendedAction,
   SignalsToolRow,
   SignalsTrendPoint,
@@ -10,7 +9,7 @@ import type {
 export type SignalsOverviewInput = SignalsFiltersInput;
 
 export type SignalsOverviewV1 = {
-  range: SignalsRange;
+  windowDays: number;
   policyEnabled: boolean;
   insight: string;
   recommendedAction: SignalsRecommendedAction | null;

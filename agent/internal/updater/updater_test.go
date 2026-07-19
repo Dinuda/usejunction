@@ -2,7 +2,10 @@ package updater
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +16,12 @@ import (
 	"github.com/usejunction/agent/internal/client"
 	"github.com/usejunction/agent/internal/config"
 )
+
+var testSigningPublic, testSigningPrivate, _ = ed25519.GenerateKey(rand.Reader)
+
+func init() {
+	TrustedUpdateSigningKeys = "test:" + base64.RawURLEncoding.EncodeToString(testSigningPublic)
+}
 
 type recordingReporter struct {
 	events []client.AgentUpdateEvent
@@ -25,10 +34,24 @@ func (r *recordingReporter) ReportAgentUpdate(event client.AgentUpdateEvent) err
 
 func directiveFor(serverURL string, payload []byte) client.AgentUpdateDirective {
 	digest := sha256.Sum256(payload)
-	return client.AgentUpdateDirective{
+	directive := client.AgentUpdateDirective{
 		ReleaseID: "release-1", AttemptID: "attempt-1", TargetVersion: "0.2.0",
-		Urgency: "normal", ArtifactURL: serverURL, SHA256: hex.EncodeToString(digest[:]), Size: int64(len(payload)),
+		Urgency: "normal", ArtifactURL: serverURL, ArtifactKey: "darwin-arm64", SHA256: hex.EncodeToString(digest[:]), Size: int64(len(payload)),
 	}
+	directive.Manifest = client.AgentReleaseManifest{
+		SchemaVersion: 1,
+		Version:       directive.TargetVersion,
+		PublishedAt:   "2026-07-19T00:00:00.000Z",
+		Urgency:       directive.Urgency,
+		RolloutHours:  24,
+		SigningKeyID:  "test",
+		Artifacts: map[string]client.AgentReleaseArtifact{
+			directive.ArtifactKey: {URL: directive.ArtifactURL, SHA256: directive.SHA256, Size: directive.Size},
+		},
+	}
+	payloadBytes, _ := signedManifestBytes(directive.Manifest)
+	directive.Manifest.Signature = base64.RawURLEncoding.EncodeToString(ed25519.Sign(testSigningPrivate, payloadBytes))
+	return directive
 }
 
 func TestCompareVersions(t *testing.T) {
@@ -142,6 +165,26 @@ func TestApplyRejectsOversizedAndBlockedVersions(t *testing.T) {
 	directive.Size = 1
 	if updated, err := Apply(context.Background(), &config.Config{BlockedUpdateVersion: "0.2.0"}, ApplyOptions{Directive: directive, CurrentVersion: "0.1.0"}); err != ErrBlockedVersion || updated {
 		t.Fatalf("blocked Apply() = (%v, %v)", updated, err)
+	}
+}
+
+func TestApplyRejectsBadAndUnknownSignatures(t *testing.T) {
+	payload := []byte("new-binary")
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+	directive := directiveFor(server.URL, payload)
+	directive.Manifest.Signature = base64.RawURLEncoding.EncodeToString([]byte("bad"))
+	if updated, err := Apply(context.Background(), &config.Config{}, ApplyOptions{Directive: directive, CurrentVersion: "0.1.0"}); err == nil || updated {
+		t.Fatalf("bad signature Apply() = (%v, %v)", updated, err)
+	}
+	directive = directiveFor(server.URL, payload)
+	directive.Manifest.SigningKeyID = "unknown"
+	payloadBytes, _ := signedManifestBytes(directive.Manifest)
+	directive.Manifest.Signature = base64.RawURLEncoding.EncodeToString(ed25519.Sign(testSigningPrivate, payloadBytes))
+	if updated, err := Apply(context.Background(), &config.Config{}, ApplyOptions{Directive: directive, CurrentVersion: "0.1.0"}); err == nil || updated {
+		t.Fatalf("unknown key Apply() = (%v, %v)", updated, err)
 	}
 }
 

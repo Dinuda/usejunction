@@ -1,6 +1,5 @@
 import { prisma } from "@usejunction/db";
 import { activeDevicesForOrg } from "@/lib/devices/decommission";
-import { isDeviceOnline } from "@/lib/devices/presence";
 
 export interface DashboardDeviceRow {
   id: string;
@@ -8,7 +7,6 @@ export interface DashboardDeviceRow {
   os: string;
   architecture: string;
   agentVersion: string;
-  status: string;
   lastSeenAt: Date;
   createdAt: Date;
   user: { name: string; email: string } | null;
@@ -66,7 +64,6 @@ export async function getDashboardDevices(orgId: string): Promise<DashboardDevic
       os: d.os,
       architecture: d.architecture,
       agentVersion: d.agentVersion,
-      status: isDeviceOnline(d.lastSeenAt) ? "online" : "offline",
       lastSeenAt: d.lastSeenAt,
       createdAt: d.createdAt,
       user: d.user,

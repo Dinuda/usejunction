@@ -4,7 +4,7 @@ const workspaceRoutes = [
   "/dashboard",
   "/dashboard?view=current_cycles",
   "/dashboard?view=previous_cycles",
-  "/dashboard?view=last_30_days&days=90",
+  "/dashboard?view=last_30_days&days=14",
   "/dashboard?view=last_30_days&from=2026-07-01&to=2026-07-16",
   "/activity",
   "/settings",
@@ -16,10 +16,10 @@ const workspaceRoutes = [
   "/tools",
   "/tools/cursor",
   "/signals",
-  "/signals/activity?range=30",
-  "/signals/journeys?range=30",
-  "/signals/journeys/github.com__cursor__slack.com?range=30",
-  "/signals/tools?range=30",
+  "/signals/activity?days=30",
+  "/signals/journeys?days=30",
+  "/signals/journeys/github.com__cursor__slack.com?days=30",
+  "/signals/tools?days=30",
   "/signals/settings",
   "/onboarding?resume=1",
 ];
@@ -36,7 +36,7 @@ for (const route of workspaceRoutes) {
   });
 }
 
-test("owner chrome exposes nav, plan status, and workspace switcher", async ({ page }) => {
+test("owner chrome exposes nav, active-plan badge, and workspace switcher", async ({ page }) => {
   await page.goto("/dashboard");
   await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Team" })).toBeVisible();
@@ -44,29 +44,38 @@ test("owner chrome exposes nav, plan status, and workspace switcher", async ({ p
   await expect(page.getByRole("link", { name: "Tools", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Activity" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Settings" })).toBeVisible();
-  await expect(page.getByText("Plan", { exact: true })).toBeVisible();
-  await expect(page.getByText(/\/\s*\d+ seats|devices enrolled|\/\s*10 devices/i).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: /Manage billing|Add seats|Upgrade to Team/i }).first()).toBeVisible();
+  await expect(page.getByText("Plan", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Team plan", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Manage billing|Upgrade to Team/i })).toHaveCount(0);
   await expect(page.getByRole("combobox", { name: "Workspace" })).toBeVisible();
 });
 
 test("dashboard exposes seeded calculation output and all period controls", async ({ page }) => {
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "Spend, traffic, coverage." })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Model calls." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Requests." })).toBeVisible();
   await expect(page.getByText("Subscription commitment")).toBeVisible();
   await expect(page.getByText("purchased seats · current cycle")).toBeVisible();
   await expect(page.getByText("$40.00").first()).toBeVisible();
   await expect(page.getByText("$5.00").first()).toBeVisible();
   await expect(page.getByText("$1.00").first()).toBeVisible();
-  await expect(page.getByText("10").first()).toBeVisible();
-  await expect(page.getByText("10 calls").first()).toBeVisible();
+  await expect(page.getByText("Price per 1M tokens").first()).toBeVisible();
+  await expect(page.getByText("$4.00").first()).toBeVisible();
+  await expect(page.getByText("1.5M")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Current cycles." })).toBeVisible();
   await page.getByRole("link", { name: "Previous cycles" }).click();
   await expect(page).toHaveURL(/view=previous_cycles/);
+  await expect(page.getByRole("heading", { name: "Previous cycles." })).toBeVisible();
+  await expect(page.getByText("purchased seats · previous cycle")).toBeVisible();
+  await expect(page.getByText("verified + estimated · previous cycles")).toBeVisible();
+  await page.getByRole("link", { name: "Current cycles" }).click();
+  await expect(page).toHaveURL(/view=current_cycles/);
+  await expect(page.getByRole("heading", { name: "Current cycles." })).toBeVisible();
+  await expect(page.getByText("purchased seats · current cycle")).toBeVisible();
   await page.goto("/dashboard?view=last_30_days");
   await page.getByRole("button", { name: "Adjust rolling period" }).click();
-  await page.getByText("Last 90 days").click();
-  await expect(page).toHaveURL(/days=90/);
+  await page.getByText("Last 14 days").click();
+  await expect(page).toHaveURL(/days=14/);
 });
 
 test("Signals filters update the URL and preserve selected calculation scope", async ({ page }) => {
@@ -75,21 +84,28 @@ test("Signals filters update the URL and preserve selected calculation scope", a
   await expect(page).toHaveURL(/view=previous_cycles/);
   await page.goto("/signals/activity?view=last_30_days");
   await page.getByRole("button", { name: "Adjust rolling period" }).click();
-  await page.getByRole("menuitem", { name: /Last 90 days/i }).click();
-  await expect(page).toHaveURL(/days=90/);
+  await page.getByRole("menuitem", { name: /Last 14 days/i }).click();
+  await expect(page).toHaveURL(/days=14/);
   await page.getByLabel("AI tool").selectOption("cursor");
-  await expect(page).toHaveURL(/days=90.*tool=cursor/);
+  await expect(page).toHaveURL(/days=14.*tool=cursor/);
   await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
 });
 
 test("Signals overview shows work-off empty state and Settings CTA", async ({ page }) => {
   await page.goto("/signals");
   await expect(page.getByRole("heading", { name: "Signals" })).toBeVisible();
-  await expect(page.getByText(/Turn on work extraction under Settings/i)).toBeVisible();
+  await expect(page.getByText(/Signals shows what works, what can be automated/i)).toBeVisible();
   await expect(page.getByText(/^Insight$/i)).toHaveCount(0);
   await page.getByRole("link", { name: "Open Settings" }).click();
   await expect(page).toHaveURL(/\/settings/);
   await expect(page.getByRole("heading", { name: "Signals", level: 2 })).toBeVisible();
+});
+
+test("Team Signals CTA opens workspace Settings", async ({ page }) => {
+  await page.goto("/team");
+  await page.getByRole("link", { name: "Manage policy" }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByRole("heading", { name: "Settings.", level: 1 })).toBeVisible();
 });
 
 test("Signals activity is work-only and classic journey routes redirect", async ({ page }) => {
@@ -102,10 +118,10 @@ test("Signals activity is work-only and classic journey routes redirect", async 
   await expect(page.getByRole("link", { name: "Previous cycles" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Adjust rolling period" })).toBeVisible();
 
-  await page.goto("/signals/journeys?range=30");
+  await page.goto("/signals/journeys?days=30");
   await expect(page).toHaveURL(/\/signals\/activity/);
 
-  await page.goto("/signals/tools?range=30");
+  await page.goto("/signals/tools?days=30");
   await expect(page).toHaveURL(/\/signals\/activity/);
 });
 
@@ -117,10 +133,22 @@ test("Signals settings shows work-first retention controls", async ({ page }) =>
   await expect(page.locator("#signals-retention")).toContainText("90 days");
 });
 
-test("Settings shows workspace, Signals, and activity visibility controls", async ({ page }) => {
+test("Settings shows workspace, billing, Signals, and activity visibility controls", async ({ page }) => {
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings.", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Workspace", level: 2 })).toBeVisible();
+  const billing = page.getByRole("region", { name: "Billing" });
+  await expect(billing).toBeVisible();
+  await expect(billing.getByText("Team", { exact: true }).first()).toBeVisible();
+  await expect(billing.getByText("2 active users billed at $8 per user per month.", { exact: true })).toBeVisible();
+  await expect(billing.getByText("$16 / month", { exact: true })).toBeVisible();
+  await expect(billing.getByRole("heading", { name: /Billed users/ })).toBeVisible();
+  await expect(billing.getByText("$8 / month", { exact: true })).toHaveCount(2);
+  await expect(billing.getByText("E2E Owner", { exact: true })).toBeVisible();
+  await expect(billing.getByText("owner@example.com", { exact: true })).toBeVisible();
+  await expect(billing.getByText("E2E Developer", { exact: true })).toBeVisible();
+  await expect(billing.getByText("developer@example.com", { exact: true })).toBeVisible();
+  await expect(billing.getByRole("button", { name: "Manage billing" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Signals", level: 2 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Activity visibility", level: 2 })).toBeVisible();
   await expect(page.getByLabel("Workspace name")).toBeVisible();
@@ -162,10 +190,10 @@ test("seeded usage totals stay consistent across owner calculation views", async
   await expect(page.getByText(/Usage cost \(/)).toBeVisible();
   await expect(page.getByText("verified + estimated")).toBeVisible();
   await expect(page.getByText("$6.00").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Adjust period" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Adjust rolling period" })).toBeVisible();
 
-  await page.goto("/tools/cursor?view=last_30_days&days=3");
-  await expect(page.getByText("Usage cost (3d)")).toBeVisible();
+  await page.goto("/tools/cursor?view=last_30_days&days=7");
+  await expect(page.getByText("Usage cost (7d)")).toBeVisible();
 
   await page.goto("/team/e2e-developer");
   await expect(page.getByText("Verified usage").first()).toBeVisible();
@@ -175,8 +203,8 @@ test("seeded usage totals stay consistent across owner calculation views", async
 });
 
 test("team member mirrors dashboard rolling and cycle filters", async ({ page }) => {
-  await page.goto("/team/e2e-developer?view=last_30_days&days=3");
-  await expect(page.getByText("Last 3 days").first()).toBeVisible();
+  await page.goto("/team/e2e-developer?view=last_30_days&days=7");
+  await expect(page.getByText("Last 7 days").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Adjust period" })).toBeVisible();
 
   await page.goto("/team/e2e-developer?view=current_cycles");
@@ -184,13 +212,15 @@ test("team member mirrors dashboard rolling and cycle filters", async ({ page })
   await expect(page.getByText("$5.00").first()).toBeVisible();
 
   await page.goto("/team/e2e-developer?view=previous_cycles");
-  await expect(page.getByText("$0.00").first()).toBeVisible();
+  await expect(page.getByText("previous billing cycles").first()).toBeVisible();
+  await expect(page.getByText("Verified usage").first()).toBeVisible();
 });
 
 test("team roster lists seeded members and opens invite dialog", async ({ page }) => {
   await page.goto("/team");
   await expect(page.getByRole("heading", { name: "Team", exact: true, level: 1 })).toBeVisible();
   await expect(page.getByText("E2E Developer").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Remove E2E Developer from team" })).toBeVisible();
   await expect(page.getByText("Off", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "Invite teammates" }).click();
   await expect(page.getByRole("heading", { name: "Invite teammates." })).toBeVisible();
@@ -216,12 +246,12 @@ test("member hub tabs expose work, coding, and fleet", async ({ page }) => {
   await expect(page).toHaveURL(/\/team\/e2e-developer\/fleet/);
   await expect(page.getByRole("heading", { name: "Fleet." })).toBeVisible();
   await expect(page.getByText("e2e-laptop")).toBeVisible();
-  await expect(page.getByText("online", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Agent 0\.1\.0/i)).toBeVisible();
   await expect(page.getByText("darwin").first()).toBeVisible();
 });
 
 test("classic Signals journey routes redirect to Activity", async ({ page }) => {
-  await page.goto("/signals/journeys/github.com__cursor__slack.com?range=30");
+  await page.goto("/signals/journeys/github.com__cursor__slack.com?days=30");
   await expect(page).toHaveURL(/\/signals\/activity/);
   await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
 });

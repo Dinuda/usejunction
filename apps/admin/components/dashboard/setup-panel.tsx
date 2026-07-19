@@ -37,7 +37,7 @@ export function DashboardSetupPanel({ canInvite = true }: { canInvite?: boolean 
         <section>
           <h2 className="text-xl font-semibold tracking-tight">Invite teammates.</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Share one invite link — or email it with instructions — and they connect their machines.
+            Share one invite link — or email it with instructions — and each teammate connects one device.
           </p>
           <div className="mt-5">
             <Button type="button" onClick={() => setInviteOpen(true)}>

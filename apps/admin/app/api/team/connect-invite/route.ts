@@ -4,6 +4,7 @@ import { prisma } from "@usejunction/db";
 import {
   buildConnectInviteCommand,
   buildConnectInviteUrl,
+  buildPlatformConnectInviteCommands,
   getPublicAppUrl,
 } from "@/lib/connect-command";
 import { normalizeEmail } from "@/lib/developer-identity";
@@ -81,9 +82,11 @@ async function createConnectInviteForEmail(input: {
   });
 
   const base = getPublicAppUrl();
+  const connectCommands = buildPlatformConnectInviteCommands(connectToken, base);
   return {
     email,
     command: buildConnectInviteCommand(connectToken, base),
+    connectCommands,
     joinUrl: buildConnectInviteUrl(connectToken, base),
     expiresAt: expiresAt.toISOString(),
   };

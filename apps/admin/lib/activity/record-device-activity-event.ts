@@ -104,10 +104,6 @@ export function uniqueStrings(values: Array<string | null | undefined>, limit = 
   return out;
 }
 
-export function compactNumber(value: number): string {
-  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
-}
-
 /** Best-effort append-only activity log. Never throws to callers. */
 export async function recordDeviceActivityEvent(input: RecordDeviceActivityEventInput): Promise<void> {
   try {

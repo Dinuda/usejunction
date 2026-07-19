@@ -3,13 +3,17 @@ import type { PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
 import type { AttentionItem } from "@/lib/insights/policies/attention";
 import type { BillingCycleInfo } from "@/lib/insights/contracts/plan-usage.v1";
 
-export type OverviewInput = {
-  reportWindow: MetricWindow;
-  /** Inclusive calendar-day count for the report window. */
-  range: number;
-  previousWindow: MetricWindow;
-  cycleView?: "current_cycles" | "previous_cycles" | "last_30_days";
+type CycleOverviewInput = {
+  cycleView: "current_cycles" | "previous_cycles";
 };
+
+type RollingOverviewInput = {
+  cycleView: "last_30_days";
+  reportWindow: MetricWindow;
+  previousWindow: MetricWindow;
+};
+
+export type OverviewInput = CycleOverviewInput | RollingOverviewInput;
 
 export type OrgOverviewV1 = {
   range: number;
@@ -32,7 +36,7 @@ export type OrgOverviewV1 = {
     };
     verifiedUsageCost: { value: number; previousValue: number; deltaPercent: number | null };
     estimatedApiCost: { value: number; previousValue: number; deltaPercent: number | null };
-    modelCalls: { value: number; previousValue: number; deltaPercent: number | null };
+    tokens: { value: number; previousValue: number; deltaPercent: number | null };
   };
   /** One row per tool line (plans/cycles rolled up). */
   subscriptionCycles: Array<{
@@ -69,6 +73,7 @@ export type OrgOverviewV1 = {
   }>;
   trend: Array<{
     date: string;
+    previousDate: string;
     requests: number;
     cost: number;
     previousRequests: number;
@@ -80,7 +85,6 @@ export type OrgOverviewV1 = {
     developers: number;
     activeDevelopers: number;
     devices: number;
-    onlineDevices: number;
     configuredTools: number;
     trackedTools: number;
   };

@@ -2,11 +2,10 @@ package providers
 
 import (
 	"context"
-	"os"
 	"os/exec"
-	"path/filepath"
 
 	"github.com/usejunction/agent/internal/probe"
+	"github.com/usejunction/agent/internal/platformdirs"
 	"github.com/usejunction/agent/internal/scan"
 	"github.com/usejunction/agent/internal/types"
 )
@@ -16,12 +15,7 @@ type OpenCodeProvider struct{}
 func (p *OpenCodeProvider) ID() string { return "opencode" }
 
 func (p *OpenCodeProvider) Detect(ctx context.Context) (*types.ToolStatus, error) {
-	home, _ := os.UserHomeDir()
-	candidates := []string{
-		filepath.Join(home, ".local", "share", "opencode"),
-		filepath.Join(home, ".config", "opencode"),
-		"/Applications/OpenCode.app",
-	}
+	candidates := append(platformdirs.OpenCodeCandidates(), "/Applications/OpenCode.app")
 	detected := false
 	configPath := ""
 	for _, candidate := range candidates {

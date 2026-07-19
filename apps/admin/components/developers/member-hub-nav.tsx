@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { useSearchParams } from "next/navigation";
+import { HubNav } from "@/components/hub-nav";
 
-const items = [
+const tabs = [
   { suffix: "", label: "Overview" },
   { suffix: "/work", label: "Work" },
   { suffix: "/coding", label: "Coding" },
@@ -18,39 +17,27 @@ export function MemberHubNav({
   developerId: string;
   className?: string;
 }) {
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const query = searchParams.toString();
   const querySuffix = query ? `?${query}` : "";
   const base = `/team/${developerId}`;
 
+  const items = tabs.map(({ suffix, label }) => {
+    const matchHref = `${base}${suffix}`;
+    return {
+      href: `${matchHref}${querySuffix}`,
+      matchHref,
+      label,
+      exact: suffix === "",
+    };
+  });
+
   return (
-    <nav
-      className={cn("flex flex-wrap items-stretch justify-end gap-0", className)}
+    <HubNav
+      items={items}
+      className={className}
       aria-label="Member sections"
-    >
-      {items.map(({ suffix, label }) => {
-        const href = `${base}${suffix}`;
-        const active =
-          suffix === ""
-            ? pathname === base || pathname === `${base}/`
-            : pathname === href || pathname.startsWith(`${href}/`);
-        return (
-          <Link
-            key={suffix || "overview"}
-            href={`${href}${querySuffix}`}
-            aria-current={active ? "page" : undefined}
-            className={cn(
-              "relative -mb-px px-3.5 py-2.5 text-sm transition-colors",
-              active
-                ? "bg-muted font-semibold text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-[3px] after:bg-foreground"
-                : "font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-            )}
-          >
-            {label}
-          </Link>
-        );
-      })}
-    </nav>
+      justify="start"
+    />
   );
 }

@@ -3,8 +3,17 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,12 +24,29 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
+import { SignalsKpi } from "@/components/signals/signals-ui";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
+import { MobileDataCard, MobileDataField, MobileDataList } from "@/components/ui/mobile-data";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { AddSubscriptionSheet } from "./add-subscription-sheet";
 import { ToolLogoTile } from "./tool-brand-icon";
 import type { ToolDetailData } from "@/lib/queries/dashboard/tool-detail";
 import type { CycleView } from "@/lib/dashboard/cycle-view";
 import { DEFAULT_ROLLING_PERIOD, type RollingPeriod } from "@/lib/dashboard/period-prefs";
-import { quotaRemainingLabel, quotaResetLabel, quotaWindowLabel } from "@/lib/quotas/display";
+import { formatMicrosAsCurrency, formatUsd } from "@/lib/format";
+import {
+  isSecondaryQuotaWindow,
+  quotaRemainingLabel,
+  quotaResetLabel,
+  quotaWindowLabel,
+} from "@/lib/quotas/display";
 
 type PlanRow = ToolDetailData["plans"][number] & {
   cycleSeatMicros: string | bigint;
@@ -31,19 +57,33 @@ type DetailProps = Omit<ToolDetailData, "plans"> & {
   plans: PlanRow[];
 };
 
-const money = (micros: string | bigint, currency = "USD") =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 2,
-  }).format(Number(BigInt(micros)) / 1_000_000);
-
-function currency(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: value < 1 ? 3 : 2,
-  }).format(value);
+function quotaStatus(percent: number | null) {
+  if (percent == null) {
+    return {
+      label: "Reported",
+      badge: "border-border bg-muted text-muted-foreground",
+      bar: "bg-primary",
+    };
+  }
+  if (percent >= 90) {
+    return {
+      label: "Near limit",
+      badge: "border-destructive/30 bg-destructive/10 text-destructive",
+      bar: "bg-destructive",
+    };
+  }
+  if (percent >= 75) {
+    return {
+      label: "Watch",
+      badge: "border-warning/30 bg-warning/10 text-[#9a5f0d]",
+      bar: "bg-warning",
+    };
+  }
+  return {
+    label: "Available",
+    badge: "border-success/30 bg-success/10 text-success",
+    bar: "bg-success",
+  };
 }
 
 export function ToolProviderDetail({
@@ -160,6 +200,7 @@ export function ToolProviderDetail({
   const quotaGroups = Array.from(quotaGroupMap.values()).sort((a, b) =>
     a.developerName.localeCompare(b.developerName),
   );
+  const peopleReporting = quotaGroups.filter((group) => group.windows.length > 0).length;
 
   const modelTotals = data.modelsByDeveloper.reduce(
     (acc, row) => {
@@ -173,13 +214,19 @@ export function ToolProviderDetail({
 
   return (
     <>
-      <Link
-        href="/tools"
-        className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-      >
-        <ArrowLeft className="size-3.5" />
-        Tools
-      </Link>
+      <Breadcrumb className="mb-6">
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link href="/tools">Tools</Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>{data.name}</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
 
       <div className="mb-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex items-start gap-4">
@@ -193,137 +240,117 @@ export function ToolProviderDetail({
         </div>
         <CycleViewPicker view={cycleView} period={period} basePath={basePath} />
       </div>
-
-      <div className="grid items-start gap-8 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="flex h-full flex-col justify-start border-l-2 border-border-strong py-3 pl-4 pr-3">
-          <p className="text-xs font-medium leading-4 uppercase tracking-[0.08em] text-muted-foreground">Devices</p>
-          <p className="mt-2 flex min-h-10 items-end text-3xl font-semibold leading-none tracking-tight tabular-nums">{data.kpis.devices}</p>
-          <p className="mt-2 text-xs leading-4 text-muted-foreground">With this tool installed</p>
-        </div>
-        <div className="flex h-full flex-col justify-start border-l-2 border-border-strong py-3 pl-4 pr-3">
-          <p className="text-xs font-medium leading-4 uppercase tracking-[0.08em] text-muted-foreground">People</p>
-          <p className="mt-2 flex min-h-10 items-end text-3xl font-semibold leading-none tracking-tight tabular-nums">{data.kpis.people}</p>
-          <p className="mt-2 text-xs leading-4 text-muted-foreground">Detected or assigned</p>
-        </div>
-        <div className="flex h-full flex-col justify-start border-l-2 border-border-strong py-3 pl-4 pr-3">
-          <p className="text-xs font-medium leading-4 uppercase tracking-[0.08em] text-muted-foreground">Seats free</p>
-          <p className="mt-2 flex min-h-10 items-end text-3xl font-semibold leading-none tracking-tight tabular-nums">{data.kpis.seatsFree}</p>
-          <p className="mt-2 text-xs leading-4 text-muted-foreground">
-            {data.kpis.seatsAssigned}/{data.kpis.seatsPurchased} assigned
-          </p>
-        </div>
-        <div className="flex h-full flex-col justify-start border-l-2 border-brand-yellow-dark bg-brand-yellow-pale py-3 pl-4 pr-4">
-          <p className="text-xs font-medium leading-4 uppercase tracking-[0.08em] text-muted-foreground">
-            Usage cost ({periodSuffix})
-          </p>
-          <p className="mt-2 flex min-h-10 items-end text-3xl font-semibold leading-none tracking-tight tabular-nums">
-            {currency(data.kpis.usageCost)}
-          </p>
-          <p className="mt-2 text-xs leading-4 text-muted-foreground">
-            {data.kpis.requests.toLocaleString()} requests · verified + estimated · {periodLabel}
-          </p>
-        </div>
+      <div className="grid items-start gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
+        <SignalsKpi
+          label="Devices"
+          hero
+          className="pl-5"
+          value={data.kpis.devices}
+          sub="With this tool installed"
+        />
+        <SignalsKpi
+          label="People"
+          className="sm:border-l sm:border-border sm:pl-8"
+          value={data.kpis.people}
+          sub="Detected or assigned"
+        />
+        <SignalsKpi
+          label="Seats free"
+          className="xl:border-l xl:border-border xl:pl-8"
+          value={data.kpis.seatsFree}
+          sub={`${data.kpis.seatsAssigned}/${data.kpis.seatsPurchased} assigned`}
+        />
+        <SignalsKpi
+          label={`Usage cost (${periodSuffix})`}
+          accent
+          className="sm:border-l sm:border-border sm:pl-8"
+          value={formatUsd(data.kpis.usageCost)}
+          sub={`${data.kpis.requests.toLocaleString()} requests · verified + estimated · ${periodLabel}`}
+        />
       </div>
 
-      {error && (
-        <div role="alert" className="mt-8 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          {error}
-        </div>
-      )}
-
-      {(data.toolsUsed?.length > 0 || data.toolSequences?.length > 0) &&
-      (data.toolKey === "chatgpt-codex" || data.toolKey === "codex-work" || data.toolName === "codex" || data.toolName === "codex-work") ? (
-        <section className="mt-12">
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold tracking-tight">Tools used.</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Agent tool names from local sessions — counts only, no prompts or arguments.
-            </p>
-          </div>
-          {data.toolsUsed.length ? (
-            <div className="mb-8">
-              {data.toolsUsed.map((tool) => (
-                <div
-                  key={tool.name}
-                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-3 text-sm"
-                >
-                  <p className="truncate font-medium tabular-nums">{tool.name}</p>
-                  <p className="tabular-nums text-muted-foreground">{tool.calls.toLocaleString()} calls</p>
-                </div>
-              ))}
-            </div>
-          ) : null}
-          {data.toolSequences.length ? (
-            <div>
-              <p className="mb-3 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
-                Common tool sequences
-              </p>
-              {data.toolSequences.map((seq) => (
-                <div
-                  key={seq.digest}
-                  className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 py-3 text-sm"
-                >
-                  <p className="break-all font-medium leading-snug">{seq.digest.replaceAll(">", " → ")}</p>
-                  <p className="tabular-nums text-muted-foreground">{seq.sessions.toLocaleString()} sessions</p>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </section>
+      {error ? (
+        <Alert variant="destructive" className="mt-8 rounded-none">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       ) : null}
 
       <section className="mt-12">
-        <div className="mb-6">
-          <h2 className="text-lg font-semibold tracking-tight">Live quotas.</h2>
-          <p className="mt-1 text-xs text-muted-foreground">Windows reported from connected machines</p>
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Live quotas.</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Current allowance pressure reported by connected machines.
+            </p>
+          </div>
+          {quotaGroups.length ? (
+            <Badge variant="outline" className="w-fit bg-card text-muted-foreground">
+              {peopleReporting} {peopleReporting === 1 ? "person" : "people"} reporting
+            </Badge>
+          ) : null}
         </div>
         {quotaGroups.length ? (
-          <div>
+          <div className="divide-y border bg-card">
             {quotaGroups.map((group) => {
               const person = group.developerId ? peopleByDeveloperId.get(group.developerId) ?? null : null;
               return (
-                <div key={group.key} className="py-5">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">{group.developerName}</p>
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {group.deviceHostname ?? ""}
-                        {person?.vendorPlan ? ` · vendor ${person.vendorPlan}` : ""}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                <div
+                  key={group.key}
+                  className="grid gap-5 p-4 md:grid-cols-[minmax(12rem,0.7fr)_minmax(0,2fr)] lg:p-5"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">{group.developerName}</p>
+                    {group.deviceHostname ? (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{group.deviceHostname}</p>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       {person?.assignment ? (
-                        <span className="bg-brand-yellow-pale px-2 py-1 text-xs font-medium text-brand-yellow-dark">
-                          Assigned · {person.assignment.planName}
-                          {person.assignment.source === "detected" ? " (detected)" : ""}
-                        </span>
+                        <>
+                          <Badge className="border-brand-yellow-dark/20 bg-brand-yellow-pale px-2.5 py-1 text-brand-yellow-dark">
+                            {person.assignment.planName}
+                          </Badge>
+                          <Badge variant="outline" className="bg-background text-muted-foreground">
+                            {person.assignment.source === "detected" ? "Detected plan" : "Assigned plan"}
+                          </Badge>
+                        </>
+                      ) : person?.vendorPlan ? (
+                        <>
+                          <Badge className="border-brand-yellow-dark/20 bg-brand-yellow-pale px-2.5 py-1 text-brand-yellow-dark">
+                            {person.vendorPlan}
+                          </Badge>
+                          <Badge variant="outline" className="bg-background text-muted-foreground">
+                            Reported plan
+                          </Badge>
+                        </>
                       ) : person?.detected ? (
-                        <span className="border px-2 py-1 text-xs text-muted-foreground">Detected · plan unknown</span>
-                      ) : null}
-                      {person?.planMismatch && person?.mappedCatalogPlanKey ? (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-xs text-muted-foreground">
-                            Vendor maps to {person.mappedCatalogPlanKey}, company still has{" "}
-                            {person.assignment?.catalogPlanKey ?? "another plan"}
-                          </p>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={applyingId === person.developerId}
-                            onClick={() => void applyDetected(person.developerId)}
-                          >
-                            {applyingId === person.developerId ? (
-                              <Loader2 className="size-3.5 animate-spin" />
-                            ) : (
-                              "Use detected plan"
-                            )}
-                          </Button>
-                        </div>
+                        <Badge variant="outline" className="border-warning/30 bg-warning/10 text-[#9a5f0d]">
+                          Plan unknown
+                        </Badge>
                       ) : null}
                     </div>
+                    {person?.planMismatch && person?.mappedCatalogPlanKey ? (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs leading-5 text-muted-foreground">
+                          Reported plan maps to {person.mappedCatalogPlanKey}; the company assignment is{" "}
+                          {person.assignment?.catalogPlanKey ?? "different"}.
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={applyingId === person.developerId}
+                          onClick={() => void applyDetected(person.developerId)}
+                        >
+                          {applyingId === person.developerId ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            "Use detected plan"
+                          )}
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                   {group.windows.length ? (
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                       {group.windows.map((quota) => {
                         const hasPercent =
                           quota.usedPercent != null && !Number.isNaN(quota.usedPercent);
@@ -335,22 +362,38 @@ export function ToolProviderDetail({
                           quota.windowType,
                         );
                         const reset = quotaResetLabel(quota.resetAt);
+                        const resetCopy =
+                          reset && isSecondaryQuotaWindow(quota.windowType)
+                            ? reset.replace(/^resets /, "expires ")
+                            : reset;
+                        const status = quotaStatus(percent);
                         return (
                           <div
                             key={`${quota.windowType}-${quota.deviceHostname ?? "org"}`}
-                            className="border px-3 py-2 text-xs"
+                            className="border bg-background p-3"
                           >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-medium text-muted-foreground">
-                                {quotaWindowLabel(quota.windowType)}
-                              </span>
-                              <span className="tabular-nums font-semibold">
-                                {percent != null ? `${percent.toFixed(0)}%` : (remaining ?? "—")}
-                              </span>
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground">
+                                  {quotaWindowLabel(quota.windowType)}
+                                </p>
+                                <p className="mt-1 text-xl font-semibold tracking-tight tabular-nums">
+                                  {percent != null ? `${percent.toFixed(0)}%` : (remaining ?? "—")}
+                                </p>
+                                {percent != null ? (
+                                  <p className="text-[0.65rem] text-muted-foreground">used</p>
+                                ) : null}
+                              </div>
+                              <Badge
+                                variant="outline"
+                                className={`text-[0.65rem] uppercase tracking-[0.06em] ${status.badge}`}
+                              >
+                                {status.label}
+                              </Badge>
                             </div>
                             {percent != null ? (
                               <div
-                                className="relative mt-1.5 h-1.5 w-full bg-muted"
+                                className="relative mt-3 h-1.5 w-full overflow-hidden bg-muted"
                                 role="meter"
                                 aria-label={`${quotaWindowLabel(quota.windowType)} usage`}
                                 aria-valuenow={Math.round(percent)}
@@ -358,34 +401,36 @@ export function ToolProviderDetail({
                                 aria-valuemax={100}
                               >
                                 <span
-                                  className="absolute inset-y-0 left-0 bg-foreground"
+                                  className={`absolute inset-y-0 left-0 ${status.bar}`}
                                   style={{ width: `${percent}%` }}
                                 />
                               </div>
                             ) : null}
-                            {reset ? (
-                              <p className="mt-1.5 text-[0.65rem] text-muted-foreground">{reset}</p>
+                            {resetCopy ? (
+                              <p className="mt-2 text-[0.65rem] text-muted-foreground">{resetCopy}</p>
                             ) : null}
                           </div>
                         );
                       })}
                     </div>
                   ) : (
-                    <p className="mt-3 text-xs text-muted-foreground">No quota windows reported yet.</p>
+                    <Empty className="min-h-24 gap-1 border bg-background p-4 md:p-4">
+                      <EmptyDescription className="text-xs">No quota windows reported yet.</EmptyDescription>
+                    </Empty>
                   )}
                 </div>
               );
             })}
           </div>
         ) : (
-          <p className="py-8 text-sm text-muted-foreground">
-            No quota windows yet — they appear after the agent reports.
-          </p>
+          <Empty className="min-h-0 gap-1 border-0 p-6 md:p-6">
+            <EmptyDescription>No quota windows yet — they appear after the agent reports.</EmptyDescription>
+          </Empty>
         )}
       </section>
 
       <section className="mt-12">
-        <div className="mb-6 flex items-end justify-between gap-4">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
           <div>
             <h2 className="text-lg font-semibold tracking-tight">Models.</h2>
             <p className="mt-1 text-xs text-muted-foreground">Model usage by person · {periodLabel}</p>
@@ -393,39 +438,63 @@ export function ToolProviderDetail({
           {data.modelsByDeveloper.length ? (
             <p className="text-xs text-muted-foreground">
               {data.modelsByDeveloper.length} row{data.modelsByDeveloper.length === 1 ? "" : "s"} ·{" "}
-              {modelTotals.requests.toLocaleString()} requests · {currency(modelTotals.cost)}
+              {modelTotals.requests.toLocaleString()} requests · {formatUsd(modelTotals.cost)}
             </p>
           ) : null}
         </div>
         {data.modelsByDeveloper.length ? (
-          <div className="max-h-[28rem] overflow-auto border">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-card">
-                <tr className="border-b">
-                  <th className="h-9 px-3 text-left align-middle font-medium text-muted-foreground">Person</th>
-                  <th className="h-9 px-3 text-left align-middle font-medium text-muted-foreground">Model</th>
-                  <th className="h-9 px-3 text-right align-middle font-medium text-muted-foreground">Requests</th>
-                  <th className="h-9 px-3 text-right align-middle font-medium text-muted-foreground">Tokens</th>
-                  <th className="h-9 px-3 text-right align-middle font-medium text-muted-foreground">Cost</th>
-                </tr>
-              </thead>
-              <tbody>
+          <>
+            <MobileDataList>
+              {data.modelsByDeveloper.map((m) => (
+                <MobileDataCard key={`${m.developerId}-${m.model}`}>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{m.model}</p>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">{m.developerName}</p>
+                  </div>
+                  <dl className="mt-4 grid grid-cols-3 gap-3">
+                    <MobileDataField label="Requests" value={m.requests.toLocaleString()} />
+                    <MobileDataField label="Tokens" value={m.tokens.toLocaleString()} />
+                    <MobileDataField label="Cost" value={formatUsd(m.cost)} />
+                  </dl>
+                </MobileDataCard>
+              ))}
+            </MobileDataList>
+            <div className="hidden max-h-[28rem] overflow-auto border md:block">
+            <Table className="w-full text-sm">
+              <TableHeader className="sticky top-0 z-10 bg-card">
+                <TableRow className="border-b hover:bg-transparent">
+                  <TableHead className="h-9 px-3 font-medium">Person</TableHead>
+                  <TableHead className="h-9 px-3 font-medium">Model</TableHead>
+                  <TableHead className="h-9 px-3 text-right font-medium">Requests</TableHead>
+                  <TableHead className="h-9 px-3 text-right font-medium">Tokens</TableHead>
+                  <TableHead className="h-9 px-3 text-right font-medium">Cost</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {data.modelsByDeveloper.map((m) => (
-                  <tr key={`${m.developerId}-${m.model}`} className="border-b last:border-0 hover:bg-muted/40">
-                    <td className="px-3 py-2 align-middle text-muted-foreground">{m.developerName}</td>
-                    <td className="px-3 py-2 align-middle font-medium">{m.model}</td>
-                    <td className="px-3 py-2 text-right align-middle tabular-nums">{m.requests.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right align-middle tabular-nums">{m.tokens.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right align-middle tabular-nums">{currency(m.cost)}</td>
-                  </tr>
+                  <TableRow
+                    key={`${m.developerId}-${m.model}`}
+                    className="border-b last:border-0 hover:bg-muted/40"
+                  >
+                    <TableCell className="px-3 py-2 text-muted-foreground">{m.developerName}</TableCell>
+                    <TableCell className="px-3 py-2 font-medium">{m.model}</TableCell>
+                    <TableCell className="px-3 py-2 text-right tabular-nums">
+                      {m.requests.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="px-3 py-2 text-right tabular-nums">
+                      {m.tokens.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="px-3 py-2 text-right tabular-nums">{formatUsd(m.cost)}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+            </div>
+          </>
         ) : (
-          <p className="py-8 text-sm text-muted-foreground">
-            No model usage reported for this period yet.
-          </p>
+          <Empty className="min-h-0 gap-1 border-0 p-6 md:p-6">
+            <EmptyDescription>No model usage reported for this period yet.</EmptyDescription>
+          </Empty>
         )}
       </section>
 
@@ -452,7 +521,7 @@ export function ToolProviderDetail({
                       {plan.customPrice && <Badge variant="outline">Custom price</Badge>}
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {money(plan.cycleSeatMicros)} per seat / cycle ·{" "}
+                      {formatMicrosAsCurrency(plan.cycleSeatMicros)} per seat / cycle ·{" "}
                       <span className="capitalize">{plan.billingCadence}</span> billing
                     </p>
                     {plan.priceSource === "detected" && (
@@ -504,9 +573,11 @@ export function ToolProviderDetail({
             ))}
           </div>
         ) : (
-          <p className="py-8 text-sm text-muted-foreground">
-            No company plans for this tool yet. Add one, or connect a machine to auto-sync.
-          </p>
+          <Empty className="min-h-0 gap-1 border-0 p-6 md:p-6">
+            <EmptyDescription>
+              No company plans for this tool yet. Add one, or connect a machine to auto-sync.
+            </EmptyDescription>
+          </Empty>
         )}
       </section>
 

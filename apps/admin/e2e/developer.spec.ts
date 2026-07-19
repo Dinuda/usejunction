@@ -33,7 +33,7 @@ test("developer is redirected away from owner-only calculation routes", async ({
     "/team/e2e-developer",
     "/tools/cursor",
     "/signals",
-    "/signals/activity?range=30",
+    "/signals/activity?days=30",
     "/signals/settings",
     "/settings",
   ]) {

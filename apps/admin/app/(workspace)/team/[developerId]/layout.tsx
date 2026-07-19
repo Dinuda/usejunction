@@ -1,10 +1,18 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { type ReactNode, Suspense } from "react";
 import { MemberHubNav } from "@/components/developers/member-hub-nav";
 import { MemberHubPeriodFilter } from "@/components/developers/member-hub-period";
 import { MemberRemoveButton } from "@/components/developers/member-remove-button";
 import { MemberRoleSelect } from "@/components/developers/member-role-select";
+import { PageHeader } from "@/components/page-header";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { loadMemberIdentity } from "@/lib/developers/member-page-context";
 import { canManageSettings } from "@/lib/rbac";
 
@@ -20,47 +28,49 @@ export default async function MemberLayout({
 
   return (
     <>
-      <div className="mb-8">
-        <Link
-          href="/team"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground underline hover:text-foreground"
-        >
-          <ArrowLeft className="size-3.5" />
-          Back to roster
-        </Link>
-      </div>
-      <header className="mb-8 space-y-5">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">
-              {developer.name}.
-            </h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {developer.email} · work, tools, and plan pace.
-            </p>
-            {canManageSettings(role) ? (
-              <div className="mt-4 flex items-center gap-4">
-                <MemberRoleSelect developerId={developer.id} role={developer.role} />
-                <MemberRemoveButton
-                  developerId={developer.id}
-                  memberName={developer.name}
-                  locked={developer.role === "owner"}
-                />
-              </div>
-            ) : (
-              <p className="mt-3 text-xs uppercase tracking-[0.08em] text-muted-foreground">
-                Role: {developer.role}
-              </p>
-            )}
-          </div>
+      <PageHeader
+        className="mb-8"
+        eyebrow={
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild>
+                  <Link href="/team">Team</Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>{developer.name}</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        }
+        title={`${developer.name}.`}
+        description={`${developer.email} · work, tools, and plan pace.`}
+        actions={
           <Suspense fallback={null}>
-            <MemberHubPeriodFilter className="shrink-0 self-start lg:self-end" />
+            <MemberHubPeriodFilter className="shrink-0 self-start sm:self-end" />
           </Suspense>
-        </div>
+        }
+      >
+        {canManageSettings(role) ? (
+          <div className="flex items-center gap-4">
+            <MemberRoleSelect developerId={developer.id} role={developer.role} />
+            <MemberRemoveButton
+              developerId={developer.id}
+              memberName={developer.name}
+              locked={developer.role === "owner"}
+            />
+          </div>
+        ) : (
+          <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">
+            Role: {developer.role}
+          </p>
+        )}
         <Suspense fallback={null}>
           <MemberHubNav developerId={developerId} />
         </Suspense>
-      </header>
+      </PageHeader>
       {children}
     </>
   );

@@ -24,22 +24,57 @@ export const releaseArtifactSchema = z.object({
   size: z.number().int().positive().max(100 * 1024 * 1024),
 });
 
-const supportedArtifactKeys = ["darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64"] as const;
+const legacyArtifactKeys = ["darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64"] as const;
+const currentArtifactKeys = [...legacyArtifactKeys, "windows-amd64", "windows-arm64"] as const;
 
-export const agentReleaseManifestSchema = z.object({
-  schemaVersion: z.literal(1),
+const manifestFields = {
   version: semanticVersionSchema,
   publishedAt: z.string().datetime(),
   urgency: z.enum(["normal", "critical"]),
   rolloutHours: z.number().int().min(0).max(168),
   artifacts: z.record(z.string(), releaseArtifactSchema),
-}).superRefine((manifest, context) => {
-  for (const key of supportedArtifactKeys) {
+  signingKeyId: z.string().trim().min(1).max(128),
+  signature: z.string().regex(/^[A-Za-z0-9_-]{64,256}$/),
+};
+
+function validateManifest(
+  requiredKeys: readonly string[],
+  manifest: { artifacts: Record<string, z.infer<typeof releaseArtifactSchema>> },
+  context: z.RefinementCtx,
+) {
+  for (const key of requiredKeys) {
     if (!manifest.artifacts[key]) {
       context.addIssue({ code: "custom", path: ["artifacts", key], message: `Missing required artifact ${key}` });
     }
   }
-});
+  for (const [key, artifact] of Object.entries(manifest.artifacts)) {
+    try {
+      const parsed = new URL(artifact.url);
+      const loopback = parsed.protocol === "http:" && ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
+      if (parsed.protocol !== "https:" && !loopback) {
+        context.addIssue({ code: "custom", path: ["artifacts", key, "url"], message: "Artifact URL must use HTTPS outside loopback" });
+      }
+    } catch {
+      context.addIssue({ code: "custom", path: ["artifacts", key, "url"], message: "Artifact URL must be absolute" });
+    }
+  }
+}
+
+const legacyAgentReleaseManifestSchema = z.object({
+  schemaVersion: z.literal(1),
+  ...manifestFields,
+}).superRefine((manifest, context) => validateManifest(legacyArtifactKeys, manifest, context));
+
+const currentAgentReleaseManifestSchema = z.object({
+  schemaVersion: z.literal(2),
+  ...manifestFields,
+}).superRefine((manifest, context) => validateManifest(currentArtifactKeys, manifest, context));
+
+/** v1 remains readable for active legacy releases; every new release is v2. */
+export const agentReleaseManifestSchema = z.union([
+  currentAgentReleaseManifestSchema,
+  legacyAgentReleaseManifestSchema,
+]);
 
 export type AgentReleaseManifest = z.infer<typeof agentReleaseManifestSchema>;
 
@@ -60,17 +95,18 @@ export type AgentUpdateDirective = {
   targetVersion: string;
   urgency: "normal" | "critical";
   artifactUrl: string;
+  artifactKey: string;
   sha256: string;
   size: number;
   eligibleAt: string;
+  manifest: AgentReleaseManifest;
 };
 
 /**
- * Minimum agent version that includes Signals work extraction + changeNarrative.
- * Devices below this must update before they can collect/upload work sessions.
- * Bump when shipping the release that first includes that capability.
+ * Minimum agent version that enforces the forward-only Signals collection
+ * epoch. Devices below this must update before they can collect/upload work.
  */
-export const WORK_EXTRACTION_MIN_AGENT_VERSION = "0.3.0";
+export const WORK_EXTRACTION_MIN_AGENT_VERSION = "0.3.1";
 
 /**
  * Minimum agent version for classic app/domain journey collection quality.
@@ -83,8 +119,6 @@ export type WorkExtractionDeviceReadiness = {
   total: number;
   compatible: number;
   needsUpdate: number;
-  online: number;
-  offline: number;
   updating: number;
   minAgentVersion: string;
   activeReleaseVersion: string | null;
@@ -102,26 +136,17 @@ export function isAgentCompatibleForClassicSignals(agentVersion: string, minVers
 }
 
 export function summarizeWorkExtractionReadiness(
-  devices: Array<{ agentVersion: string; lastSeenAt: Date | string; updating?: boolean }>,
+  devices: Array<{ agentVersion: string; updating?: boolean }>,
   opts: {
     minAgentVersion?: string;
     activeReleaseVersion?: string | null;
-    now?: Date;
   } = {},
 ): WorkExtractionDeviceReadiness {
   const minAgentVersion = opts.minAgentVersion ?? WORK_EXTRACTION_MIN_AGENT_VERSION;
-  const now = opts.now ?? new Date();
-  const onlineCutoff = now.getTime() - 30 * 60_000;
   let compatible = 0;
   let needsUpdate = 0;
-  let online = 0;
-  let offline = 0;
   let updating = 0;
   for (const device of devices) {
-    const lastSeen = typeof device.lastSeenAt === "string" ? new Date(device.lastSeenAt) : device.lastSeenAt;
-    const isOnline = lastSeen.getTime() >= onlineCutoff;
-    if (isOnline) online += 1;
-    else offline += 1;
     if (device.updating) updating += 1;
     if (isAgentCompatibleForWorkExtraction(device.agentVersion, minAgentVersion)) compatible += 1;
     else needsUpdate += 1;
@@ -130,8 +155,6 @@ export function summarizeWorkExtractionReadiness(
     total: devices.length,
     compatible,
     needsUpdate,
-    online,
-    offline,
     updating,
     minAgentVersion,
     activeReleaseVersion: opts.activeReleaseVersion ?? null,

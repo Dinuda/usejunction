@@ -34,7 +34,7 @@ test("release cohort, escalation, ownership, idempotency, and confirmation", {
     },
   });
 
-  const pendingDevice = await createDevice("offline-linux", "linux", "amd64", "0.1.0");
+  const pendingDevice = await createDevice("pending-linux", "linux", "amd64", "0.1.0");
   const currentDevice = await createDevice("current-mac", "darwin", "arm64", version);
   await createDevice("unsupported", "windows", "amd64", "0.1.0");
   const artifacts = Object.fromEntries(
@@ -51,11 +51,13 @@ test("release cohort, escalation, ownership, idempotency, and confirmation", {
     urgency: "normal" as const,
     rolloutHours: 24,
     artifacts,
+    signingKeyId: "test",
+    signature: "a".repeat(86),
   };
 
   try {
     const promoted = await promoteAgentRelease(manifest, started);
-    assert.equal(promoted.cohortSize, 2, "compatible offline devices belong to the fixed cohort");
+    assert.equal(promoted.cohortSize, 2, "all compatible enrolled devices belong to the fixed cohort");
     const initial = await prisma.agentUpdateDeployment.findMany({ where: { releaseId: promoted.release.id } });
     assert.equal(initial.length, 2);
     assert.equal(initial.find((row) => row.deviceId === currentDevice.id)?.state, "confirmed");
@@ -182,6 +184,8 @@ test("accelerateOrgAgentRollout only bumps eligibility for the target org", {
           publishedAt: now.toISOString(),
           urgency: "normal",
           rolloutHours: 24,
+          signingKeyId: "test",
+          signature: "a".repeat(86),
           artifacts: {
             "darwin-arm64": { url: "https://example.com/a", sha256: "a".repeat(64), size: 1 },
             "darwin-amd64": { url: "https://example.com/a", sha256: "a".repeat(64), size: 1 },

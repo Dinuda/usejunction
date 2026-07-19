@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     const developer = await prisma.developer.findFirst({ where: { id: developerId, orgId, removedAt: null } });
     if (!developer) return NextResponse.json({ error: "developer not found" }, { status: 404 });
 
-    const enrollGate = await assertCanEnrollDevice(orgId);
+    const enrollGate = await assertCanEnrollDevice(orgId, developer.id);
     if (!enrollGate.allowed) {
       return NextResponse.json({ error: enrollGate.message }, { status: 403 });
     }

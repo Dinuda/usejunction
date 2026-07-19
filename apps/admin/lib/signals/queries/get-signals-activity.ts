@@ -30,7 +30,7 @@ export async function getSignalsActivity(
     window: windows.current,
     dataThrough: sessions[0]?.startedAt ?? null,
     data: {
-      range: windows.range,
+      windowDays: windows.windowDays,
       filters: {
         developerId: windows.filters.developerId ?? null,
         teamId: windows.filters.teamId ?? null,

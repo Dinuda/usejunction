@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "crypto";
 import { Resend } from "resend";
 import { prisma } from "@usejunction/db";
 import { getPublicAppUrl } from "@/lib/public-url";
+import { credentialFingerprint } from "@/lib/security";
 
 export function hashActionToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -46,7 +47,7 @@ export async function sendAuthEmail({
   const bodyHtml = html ?? `<p>Use this link to continue:</p><p><a href="${url}">${url}</a></p>`;
 
   if (!key) {
-    console.info(`[auth email] RESEND_API_KEY not set — ${subject} for ${to}: ${url}`);
+    console.info(`[auth email] RESEND_API_KEY not set; subject=${subject} to=${to} tokenFingerprint=${credentialFingerprint(url)}`);
     return;
   }
 

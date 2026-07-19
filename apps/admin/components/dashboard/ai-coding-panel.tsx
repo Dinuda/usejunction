@@ -2,27 +2,27 @@
 
 import { useMemo, useState } from "react";
 import { TokenBreakdownChart } from "@/components/dashboard/token-breakdown-chart";
+import { Panel } from "@/components/panel";
 import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { Badge } from "@/components/ui/badge";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
+import { MobileDataCard, MobileDataField, MobileDataList } from "@/components/ui/mobile-data";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { formatCompactNumber, formatUsd } from "@/lib/format";
 import { toolDisplayName } from "@/lib/tools/catalog";
 import type { AiCodingMetrics, ModelUsageRow } from "@/lib/queries/me/overview";
 
 const PAGE_SIZE = 25;
-
-function money(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: value < 1 ? 3 : 2,
-  }).format(value);
-}
-
-function compact(value: number) {
-  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
-}
 
 function pct(value: number | null) {
   if (value == null || Number.isNaN(value)) return "—";
@@ -79,48 +79,72 @@ function ModelTable({ title, description, rows }: { title: string; description: 
       </div>
       {filtered.length ? (
         <>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
-              <thead className="border-b border-border/70 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
-                <tr>
-                  <th className="pb-3 pr-4 pt-1 font-medium">Tool</th>
-                  <th className="pb-3 pr-4 pt-1 font-medium">Model</th>
-                  <th className="pb-3 pr-4 pt-1 text-right font-medium">Calls</th>
-                  <th className="pb-3 pr-4 pt-1 text-right font-medium">In</th>
-                  <th className="pb-3 pr-4 pt-1 text-right font-medium">Out</th>
-                  <th className="pb-3 pr-4 pt-1 text-right font-medium">Cache</th>
-                  <th className="pb-3 pr-4 pt-1 text-right font-medium">Cost</th>
-                  <th className="pb-3 pt-1 font-medium">Kind</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageRows.map((row) => (
-                  <tr
-                    key={`${row.toolName}-${row.model}-${row.source}-${row.metricKind}`}
-                    className="transition-colors hover:bg-muted/30"
-                  >
-                    <td className="py-5 pr-4">
-                      <div className="flex items-center gap-2.5">
-                        <ToolLogoTile tool={row.toolName} size="sm" light />
-                        <span className="font-medium">{toolDisplayName(row.toolName)}</span>
-                      </div>
-                    </td>
-                    <td className="max-w-[220px] truncate py-5 pr-4 font-mono text-xs">{row.model}</td>
-                    <td className="py-5 pr-4 text-right tabular-nums">{compact(row.requests)}</td>
-                    <td className="py-5 pr-4 text-right tabular-nums">{compact(row.inputTokens)}</td>
-                    <td className="py-5 pr-4 text-right tabular-nums">{compact(row.outputTokens)}</td>
-                    <td className="py-5 pr-4 text-right tabular-nums">
-                      {compact(row.cacheReadTokens + row.cacheWriteTokens)}
-                    </td>
-                    <td className="py-5 pr-4 text-right tabular-nums">{money(row.cost)}</td>
-                    <td className="py-5">
-                      <CostBadge row={row} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <MobileDataList>
+            {pageRows.map((row) => (
+              <MobileDataCard key={`${row.toolName}-${row.model}-${row.source}-${row.metricKind}`}>
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <ToolLogoTile tool={row.toolName} size="sm" light />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{toolDisplayName(row.toolName)}</p>
+                      <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{row.model}</p>
+                    </div>
+                  </div>
+                  <CostBadge row={row} />
+                </div>
+                <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
+                  <MobileDataField label="Calls" value={formatCompactNumber(row.requests)} />
+                  <MobileDataField label="Cost" value={formatUsd(row.cost)} />
+                  <MobileDataField label="Input" value={formatCompactNumber(row.inputTokens)} />
+                  <MobileDataField label="Output" value={formatCompactNumber(row.outputTokens)} />
+                  <MobileDataField
+                    label="Cache"
+                    value={formatCompactNumber(row.cacheReadTokens + row.cacheWriteTokens)}
+                  />
+                </dl>
+              </MobileDataCard>
+            ))}
+          </MobileDataList>
+          <Table containerClassName="hidden md:block" className="min-w-[760px] text-left text-sm">
+            <TableHeader className="border-b border-border/70 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
+              <TableRow>
+                <TableHead className="pb-3 pr-4 pt-1 font-medium">Tool</TableHead>
+                <TableHead className="pb-3 pr-4 pt-1 font-medium">Model</TableHead>
+                <TableHead className="pb-3 pr-4 pt-1 text-right font-medium">Calls</TableHead>
+                <TableHead className="pb-3 pr-4 pt-1 text-right font-medium">In</TableHead>
+                <TableHead className="pb-3 pr-4 pt-1 text-right font-medium">Out</TableHead>
+                <TableHead className="pb-3 pr-4 pt-1 text-right font-medium">Cache</TableHead>
+                <TableHead className="pb-3 pr-4 pt-1 text-right font-medium">Cost</TableHead>
+                <TableHead className="pb-3 pt-1 font-medium">Kind</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pageRows.map((row) => (
+                <TableRow
+                  key={`${row.toolName}-${row.model}-${row.source}-${row.metricKind}`}
+                  className="transition-colors hover:bg-muted/30"
+                >
+                  <TableCell className="py-5 pr-4">
+                    <div className="flex items-center gap-2.5">
+                      <ToolLogoTile tool={row.toolName} size="sm" light />
+                      <span className="font-medium">{toolDisplayName(row.toolName)}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="max-w-[220px] truncate py-5 pr-4 font-mono text-xs">{row.model}</TableCell>
+                  <TableCell className="py-5 pr-4 text-right tabular-nums">{formatCompactNumber(row.requests)}</TableCell>
+                  <TableCell className="py-5 pr-4 text-right tabular-nums">{formatCompactNumber(row.inputTokens)}</TableCell>
+                  <TableCell className="py-5 pr-4 text-right tabular-nums">{formatCompactNumber(row.outputTokens)}</TableCell>
+                  <TableCell className="py-5 pr-4 text-right tabular-nums">
+                    {formatCompactNumber(row.cacheReadTokens + row.cacheWriteTokens)}
+                  </TableCell>
+                  <TableCell className="py-5 pr-4 text-right tabular-nums">{formatUsd(row.cost)}</TableCell>
+                  <TableCell className="py-5">
+                    <CostBadge row={row} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
           <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
             <span>
               Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
@@ -146,7 +170,9 @@ function ModelTable({ title, description, rows }: { title: string; description: 
           </div>
         </>
       ) : (
-        <p className="py-4 text-sm text-muted-foreground">No models match your search.</p>
+        <Empty className="min-h-0 gap-1 border-0 p-6 md:p-6">
+          <EmptyDescription>No models match your search.</EmptyDescription>
+        </Empty>
       )}
     </div>
   );
@@ -166,8 +192,8 @@ export function AiCodingPanel({
   const usageModels = models.filter((row) => row.metricKind !== "productivity");
   const productivityModels = models.filter((row) => row.metricKind === "productivity");
 
-  return (
-    <section className={cn(!embedded && "mt-10 border bg-card p-5")}>
+  const content = (
+    <>
       {!embedded ? (
         <SignalsSectionHeader
           title="AI coding."
@@ -180,35 +206,35 @@ export function AiCodingPanel({
         <SignalsKpi
           label="AI lines accepted"
           className="pl-5"
-          value={compact(metrics.acceptedLines)}
+          value={formatCompactNumber(metrics.acceptedLines)}
           sub={
             metrics.suggestedLines > 0
-              ? `${compact(metrics.suggestedLines)} suggested · ${pct(acceptance)} accept`
+              ? `${formatCompactNumber(metrics.suggestedLines)} suggested · ${pct(acceptance)} accept`
               : undefined
           }
         />
         <SignalsKpi
           label="AI-driven commits"
           className="sm:border-l sm:border-border sm:pl-8"
-          value={metrics.aiPercent != null ? pct(metrics.aiPercent) : compact(metrics.commits)}
+          value={metrics.aiPercent != null ? pct(metrics.aiPercent) : formatCompactNumber(metrics.commits)}
           sub={metrics.commits > 0 ? `${metrics.commits} scored commits` : "from Cursor tracking"}
         />
         <SignalsKpi
           label="Tokens"
           className="xl:border-l xl:border-border xl:pl-8"
-          value={compact(metrics.inputTokens + metrics.outputTokens)}
-          sub={`${compact(metrics.cacheReadTokens)} cache read · ${compact(metrics.cacheWriteTokens)} write`}
+          value={formatCompactNumber(metrics.inputTokens + metrics.outputTokens)}
+          sub={`${formatCompactNumber(metrics.cacheReadTokens)} cache read · ${formatCompactNumber(metrics.cacheWriteTokens)} write`}
         />
         <SignalsKpi
           label="Verified usage"
           className="sm:border-l sm:border-border sm:pl-8"
-          value={money(metrics.verifiedCost)}
+          value={formatUsd(metrics.verifiedCost)}
           sub="vendor-reported charges"
         />
         <SignalsKpi
           label="Estimated API value"
           className="xl:border-l xl:border-border xl:pl-8"
-          value={money(Math.max(0, metrics.cost - metrics.verifiedCost))}
+          value={formatUsd(Math.max(0, metrics.cost - metrics.verifiedCost))}
           sub="rate-card reconstruction"
         />
       </div>
@@ -236,6 +262,14 @@ export function AiCodingPanel({
           rows={productivityModels}
         />
       ) : null}
-    </section>
+    </>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <Panel as="section" className="mt-10">
+      {content}
+    </Panel>
   );
 }

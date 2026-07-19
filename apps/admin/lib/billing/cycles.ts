@@ -52,6 +52,19 @@ export function addCycles(anchor: Date, cadence: string, count: number, customDa
   return new Date(utcDateOnly(anchor).getTime() + count * days * DAY_MS);
 }
 
+function buildBillingCycle(cycleStart: Date, cycleEnd: Date, today: Date): BillingCycle {
+  const totalDays = Math.max(1, Math.round((cycleEnd.getTime() - cycleStart.getTime()) / DAY_MS));
+  const elapsedDays = Math.min(totalDays, Math.max(0, Math.floor((today.getTime() - cycleStart.getTime()) / DAY_MS) + 1));
+  return {
+    cycleStart,
+    cycleEnd,
+    nextRenewalDate: cycleEnd,
+    elapsedPercent: elapsedDays / totalDays,
+    remainingDays: Math.max(0, Math.ceil((cycleEnd.getTime() - today.getTime()) / DAY_MS)),
+    totalDays,
+  };
+}
+
 export function resolveBillingCycle(input: BillingCycleInput, now = new Date()): BillingCycle {
   const anchor = cycleAnchor(input, now);
   const today = utcDateOnly(now);
@@ -70,16 +83,7 @@ export function resolveBillingCycle(input: BillingCycleInput, now = new Date()):
     }
   }
 
-  const totalDays = Math.max(1, Math.round((cycleEnd.getTime() - cycleStart.getTime()) / DAY_MS));
-  const elapsedDays = Math.min(totalDays, Math.max(0, Math.floor((today.getTime() - cycleStart.getTime()) / DAY_MS) + 1));
-  return {
-    cycleStart,
-    cycleEnd,
-    nextRenewalDate: cycleEnd,
-    elapsedPercent: elapsedDays / totalDays,
-    remainingDays: Math.max(0, Math.ceil((cycleEnd.getTime() - today.getTime()) / DAY_MS)),
-    totalDays,
-  };
+  return buildBillingCycle(cycleStart, cycleEnd, today);
 }
 
 export function resolveBillingCycleOffset(input: BillingCycleInput, now = new Date(), offset = 0): BillingCycle {
@@ -88,16 +92,7 @@ export function resolveBillingCycleOffset(input: BillingCycleInput, now = new Da
   const cycleStart = addCycles(current.cycleStart, input.billingCadence, offset, input.billingCycleDays);
   const cycleEnd = addCycles(current.cycleEnd, input.billingCadence, offset, input.billingCycleDays);
   const today = utcDateOnly(now);
-  const totalDays = Math.max(1, Math.round((cycleEnd.getTime() - cycleStart.getTime()) / DAY_MS));
-  const elapsedDays = Math.min(totalDays, Math.max(0, Math.floor((today.getTime() - cycleStart.getTime()) / DAY_MS) + 1));
-  return {
-    cycleStart,
-    cycleEnd,
-    nextRenewalDate: cycleEnd,
-    elapsedPercent: elapsedDays / totalDays,
-    remainingDays: Math.max(0, Math.ceil((cycleEnd.getTime() - today.getTime()) / DAY_MS)),
-    totalDays,
-  };
+  return buildBillingCycle(cycleStart, cycleEnd, today);
 }
 
 export function cycleFromNextRenewal(input: {

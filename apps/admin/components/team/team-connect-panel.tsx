@@ -75,7 +75,6 @@ export function EnrollMachineDialog() {
         </DialogHeader>
         <DeviceConnectCard
           compact
-          forceEnroll
           title="Connect command"
           description="Installs the agent and starts reporting."
           onConnected={() => {

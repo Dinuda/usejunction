@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
+import { SignalsKpi } from "@/components/signals/signals-ui";
 import { MemberWorkSessionList } from "@/components/developers/member-work-session-list";
 import { WorkCsvExportButton } from "@/components/signals/work-csv-export-button";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
@@ -77,48 +78,34 @@ export default async function MemberWorkPage({
         </p>
       ) : work.sessions.length ? (
         <>
-          <div className="mb-5 grid gap-4 border border-border/50 bg-[#fafafa] px-4 py-4 sm:grid-cols-3">
-            <div className="pl-1">
-              <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                Sessions
-              </p>
-              <p className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight">
-                {work.sessions.length}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">{selectedPeriodLabel}</p>
-            </div>
-            <div className="pl-1">
-              <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                Top tool
-              </p>
-              {topTool ? (
-                <div className="mt-1.5 flex items-center gap-2.5">
-                  <ToolLogoTile tool={topTool[0]} size="md" light />
-                  <div className="min-w-0">
-                    <p className="truncate text-2xl font-semibold tracking-tight">
-                      {toolDisplayName(topTool[0])}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{topTool[1]} sessions</p>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <p className="mt-1.5 text-2xl font-semibold tracking-tight">—</p>
-                  <p className="mt-1 text-xs text-muted-foreground">No tool mix yet</p>
-                </>
-              )}
-            </div>
-            <div className="pl-1">
-              <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                Top project
-              </p>
-              <p className="mt-1.5 truncate text-2xl font-semibold tracking-tight">
-                {topLocation?.[0] ?? "—"}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {topLocation ? `${topLocation[1]} sessions` : "No location yet"}
-              </p>
-            </div>
+          <div className="mb-5 grid items-start gap-4 border border-border/50 bg-[#fafafa] px-4 py-4 sm:grid-cols-3">
+            <SignalsKpi
+              label="Sessions"
+              className="pl-1"
+              value={work.sessions.length}
+              sub={selectedPeriodLabel}
+            />
+            <SignalsKpi
+              label="Top tool"
+              className="pl-1"
+              value={
+                topTool ? (
+                  <span className="flex items-center gap-2.5">
+                    <ToolLogoTile tool={topTool[0]} size="md" light />
+                    <span className="min-w-0 truncate">{toolDisplayName(topTool[0])}</span>
+                  </span>
+                ) : (
+                  "—"
+                )
+              }
+              sub={topTool ? `${topTool[1]} sessions` : "No tool mix yet"}
+            />
+            <SignalsKpi
+              label="Top project"
+              className="pl-1"
+              value={topLocation?.[0] ?? "—"}
+              sub={topLocation ? `${topLocation[1]} sessions` : "No location yet"}
+            />
           </div>
 
           <MemberWorkSessionList sessions={work.sessions} density="table" fromTeam />

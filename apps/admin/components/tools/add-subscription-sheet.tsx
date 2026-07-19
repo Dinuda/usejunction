@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { ToolLogoTile } from "./tool-brand-icon";
+import { formatMicrosAsCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type Cadence = "weekly" | "monthly" | "annual" | "custom";
@@ -37,13 +38,6 @@ type CatalogTool = {
   lastVerifiedAt: string;
   plans: CatalogPlan[];
 };
-
-const money = (micros: string | bigint, currency = "USD") =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 2,
-  }).format(Number(BigInt(micros)) / 1_000_000);
 
 const dollarsToMicros = (value: string) => String(Math.round(Number(value || 0) * 1_000_000));
 
@@ -136,7 +130,7 @@ export function AddSubscriptionSheet({
     setSeats(Math.max(1, plan.minimumSeats ?? 1));
     setCustomPrice(
       plan.customPrice && plan.prices.monthly
-        ? money(plan.prices.monthly).replace(/[^0-9.]/g, "")
+        ? formatMicrosAsCurrency(plan.prices.monthly).replace(/[^0-9.]/g, "")
         : "",
     );
   }
@@ -218,7 +212,7 @@ export function AddSubscriptionSheet({
               <Loader2 className="mr-2 size-4 animate-spin" /> Loading catalog
             </div>
           ) : !selectedTool ? (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 min-[380px]:grid-cols-2">
               {catalog.map((tool) => (
                 <button
                   key={tool.key}
@@ -244,7 +238,7 @@ export function AddSubscriptionSheet({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <p className="font-medium">{plan.name}</p>
-                    <p className="text-sm font-semibold">{plan.prices.monthly ? `${money(plan.prices.monthly)}/cycle` : "Custom"}</p>
+                    <p className="text-sm font-semibold">{plan.prices.monthly ? `${formatMicrosAsCurrency(plan.prices.monthly)}/cycle` : "Custom"}</p>
                   </div>
                   <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{plan.description}</p>
                   {Object.keys(plan.prices).length > 1 && (
@@ -325,7 +319,7 @@ export function AddSubscriptionSheet({
                     +
                   </Button>
                   <span className="ml-2 text-sm text-muted-foreground">
-                    {money(
+                    {formatMicrosAsCurrency(
                       needsCustomPrice
                         ? dollarsToMicros(customPrice || "0")
                         : priceForCadence(selectedPlan, cadence),

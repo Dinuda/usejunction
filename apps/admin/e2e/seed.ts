@@ -69,7 +69,6 @@ async function main() {
       deviceToken: "uj_e2e_calculation_device",
       lastSeenAt: deviceSeenAt,
       lastUsageSyncAt: deviceSeenAt,
-      status: "online",
     },
   });
   await prisma.toolInstallation.create({

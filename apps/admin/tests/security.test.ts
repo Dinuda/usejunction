@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 import { constantTimeHashMatch, decryptSecret, encryptSecret, hashOpaqueToken } from "../lib/security";
+import { assertSecureProductionEnv, validateHttpsUnlessLoopback } from "../lib/security/env-guard";
 
 test("integration credentials round-trip through authenticated encryption", () => {
   process.env.INTEGRATION_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
@@ -13,4 +14,21 @@ test("opaque token comparisons operate on fixed length hashes", () => {
   const hash = hashOpaqueToken("uj_token_value");
   assert.equal(constantTimeHashMatch("uj_token_value", hash), true);
   assert.equal(constantTimeHashMatch("wrong", hash), false);
+});
+
+test("production env guard rejects insecure defaults", () => {
+  assert.throws(() => assertSecureProductionEnv({
+    NODE_ENV: "production",
+    AUTH_SECRET: "change-me-in-production",
+    INGEST_SECRET: "change-me-ingest-secret",
+    CRON_SECRET: "development-cron",
+    AGENT_RELEASE_OPERATIONS_TOKEN: "short",
+    USEJUNCTION_ALLOW_INSECURE_DEVELOPMENT: "true",
+  } as NodeJS.ProcessEnv), /Insecure production configuration/);
+});
+
+test("remote HTTP URLs are rejected while loopback HTTP is allowed", () => {
+  assert.equal(validateHttpsUnlessLoopback("APP", "http://127.0.0.1:3001"), null);
+  assert.equal(validateHttpsUnlessLoopback("APP", "https://app.example.com"), null);
+  assert.match(validateHttpsUnlessLoopback("APP", "http://192.168.1.10:3001") ?? "", /HTTPS/);
 });

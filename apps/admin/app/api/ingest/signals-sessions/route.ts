@@ -4,7 +4,8 @@ import {
   recordDeviceActivityEvent,
   uniqueStrings,
 } from "@/lib/activity/record-device-activity-event";
-import { bearerToken } from "@/lib/auth";
+import { findDeviceByBearerToken } from "@/lib/auth";
+import { limitedJson } from "@/lib/security/http";
 import {
   containsForbiddenSignalsField,
   normalizeDomain,
@@ -77,11 +78,7 @@ function sessionTouchesExcluded(
 export async function POST(req: NextRequest) {
   const started = Date.now();
   try {
-    const token = bearerToken(req);
-    if (!token) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-    const device = await prisma.device.findUnique({
-      where: { deviceToken: token },
+    const device = await findDeviceByBearerToken(req, {
       include: { user: { select: { teamId: true } } },
     });
     if (!device) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -89,7 +86,9 @@ export async function POST(req: NextRequest) {
     const policy = await getEffectiveSignalsPolicy(device.orgId, device.user.teamId);
     if (!policy.enabled) return NextResponse.json({ error: "signals disabled" }, { status: 403 });
 
-    const body = await req.json();
+    const parsedBody = await limitedJson(req, 128 * 1024);
+    if (!parsedBody.ok) return parsedBody.response;
+    const body = parsedBody.data;
     const forbidden = containsForbiddenSignalsField(body);
     if (forbidden) {
       return NextResponse.json({ error: "forbidden signals field", field: forbidden }, { status: 400 });
@@ -178,7 +177,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (upserted > 0) {
-      await prisma.device.update({ where: { id: device.id }, data: { lastSeenAt: new Date(), status: "online" } });
+      await prisma.device.update({ where: { id: device.id }, data: { lastSeenAt: new Date() } });
       await enforceSignalsRetention(device.orgId, policy.retentionDays);
     }
 

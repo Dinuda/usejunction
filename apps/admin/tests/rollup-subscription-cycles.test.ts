@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { filterActiveSubscriptionCycles, rollupSubscriptionCyclesByTool } from "../lib/insights/queries/rollup-subscription-cycles";
+import {
+  enrichSubscriptionCyclesWithUtilization,
+  filterActiveSubscriptionCycles,
+  rollupSubscriptionCyclesByTool,
+} from "../lib/insights/queries/rollup-subscription-cycles";
+import type { PlanUsageSubscriptionRow } from "../lib/insights/contracts/plan-usage.v1";
 
 const cycle = (nextRenewalDate: string, elapsedPercent = 0.5) => ({
   cycleStart: "2026-06-16",
@@ -192,4 +197,77 @@ test("active cycle filter hides unused seats with no quota signal", () => {
   );
   assert.equal(Math.round(filtered[0]!.spendSharePercent), 100);
   assert.equal(filtered[1]!.spendSharePercent, 0);
+});
+
+test("previous cycles enrichment ignores live quota pace", () => {
+  const cycles = [
+    {
+      id: "cursor",
+      toolName: "cursor",
+      toolKey: "cursor",
+      planNames: ["Pro+"],
+      planCount: 1,
+      cycleSpend: 60,
+      verifiedUsageCost: 0,
+      estimatedApiCost: 0,
+      modelCalls: 10,
+      windowFrom: "2026-06-15",
+      windowTo: "2026-07-14",
+      spendSharePercent: 100,
+      utilizationPercent: null,
+      utilizationDisplayPercent: null,
+      verdictCode: null,
+      billingCycle: cycle("2026-07-15"),
+    },
+  ];
+  const plan: PlanUsageSubscriptionRow = {
+    planTemplateId: "cursor",
+    toolKey: "cursor",
+    toolName: "cursor",
+    planName: "Pro+",
+    tier: "Pro+",
+    seatCapacity: 1,
+    assignedSeats: 1,
+    availableSeats: 0,
+    billingCadence: "monthly",
+    billingCycle: cycle("2026-08-15"),
+    cycleSeatMicros: "60000000",
+    includedCycleMicros: "0",
+    primaryQuota: {
+      quotaKey: "cursor:plan",
+      label: "plan",
+      unit: "percent",
+      limit: null,
+      consumed: null,
+      remaining: null,
+      rawRatio: 0.64,
+      displayRatio: 0.64,
+      periodStartsAt: null,
+      resetsAt: null,
+      source: "provider",
+      observedAt: "2026-07-18T00:00:00.000Z",
+      stale: false,
+      toolKey: "cursor",
+      windowType: "plan",
+      developerId: null,
+    },
+    quotas: [],
+    included: null,
+    primaryRatio: 0.64,
+    verdict: {
+      code: "HEALTHY",
+      severity: "info",
+      reasons: [],
+      policyVersion: "plan-utilization-v1",
+    },
+    billing: null,
+  };
+
+  const live = enrichSubscriptionCyclesWithUtilization(cycles, [plan], { includeLiveQuota: true });
+  assert.equal(live[0]?.utilizationPercent, 64);
+  assert.equal(live[0]?.verdictCode, "HEALTHY");
+
+  const previous = enrichSubscriptionCyclesWithUtilization(cycles, [plan], { includeLiveQuota: false });
+  assert.equal(previous[0]?.utilizationPercent, null);
+  assert.equal(previous[0]?.verdictCode, null);
 });

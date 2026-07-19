@@ -45,7 +45,7 @@ Now:
 - cycle-based field names and totals
 - cycle-aware billing lines
 - dashboard cards and timelines keyed to active billing cycles
-- operational traffic views still keep short lookbacks like 7, 30, or 90 days
+- operational traffic views still keep short lookbacks like 7, 14, or 30 days
 
 The important split is:
 
@@ -96,4 +96,4 @@ Existing records are still readable after the rename migration.
 - cycle anchors are populated from existing renewal dates or creation dates
 - custom cycles require a positive cycle length in days
 
-Historical traffic reporting is unchanged. The system still uses 7/30/90-day windows where the user is looking at activity history rather than subscription billing.
+Historical traffic reporting remains window-based. The shared UI offers 7/14/30-day shortcuts where the user is looking at activity history rather than subscription billing, with custom dates available when needed.

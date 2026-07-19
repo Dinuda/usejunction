@@ -1,4 +1,4 @@
-import type { SignalsFiltersInput, SignalsRange } from "./shared";
+import type { SignalsFiltersInput } from "./shared";
 
 export type SignalsActivityInput = SignalsFiltersInput & {
   limit?: number;
@@ -16,7 +16,7 @@ export type SignalsActivitySession = {
 };
 
 export type SignalsActivityV1 = {
-  range: SignalsRange;
+  windowDays: number;
   filters: {
     developerId: string | null;
     teamId: string | null;

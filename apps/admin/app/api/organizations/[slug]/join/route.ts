@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
 import { hasVerifiedIdentity, linkDeveloperToUser, normalizeEmail } from "@/lib/developer-identity";
-import { assertCanAddDeveloperSeat } from "@/lib/saas-billing/quantity";
+import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/quantity";
+import { assertCanAddUser } from "@/lib/saas-billing/status";
 import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 import { audit } from "@/lib/rbac";
 
@@ -17,15 +18,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
   if (!organization) return NextResponse.json({ error: "organization not found" }, { status: 404 });
   const domain = await prisma.organizationDomain.findFirst({ where: { orgId: organization.id, domain: emailDomain, verifiedAt: { not: null } } });
   if (!domain) return NextResponse.json({ error: "a verified organization domain or invitation is required" }, { status: 403 });
-
-  const seatGate = await assertCanAddDeveloperSeat({
-    orgId: organization.id,
-    userId: session.user.id,
-    email,
-  });
-  if (!seatGate.allowed) {
-    return NextResponse.json({ error: seatGate.message }, { status: 403 });
-  }
+  const userGate = await assertCanAddUser(organization.id, { userId: session.user.id, email });
+  if (!userGate.allowed) return NextResponse.json({ error: userGate.message }, { status: 403 });
 
   const developer = await prisma.$transaction(async (tx) => {
     await tx.organizationMembership.upsert({
@@ -35,6 +29,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
     });
     return linkDeveloperToUser({ tx, orgId: organization.id, userId: session.user.id, email, name: session.user.name });
   });
+  await syncTeamSeatQuantityBestEffort(organization.id, "domain_join.accepted");
   await audit({ orgId: organization.id, actorType: "user", actorId: session.user.id, action: "domain_join.accepted", targetType: "developer", targetId: developer.id, metadata: { domain: emailDomain } });
   const response = NextResponse.json({ orgId: organization.id, developerId: developer.id, role: "user" });
   response.cookies.set(ACTIVE_ORG_COOKIE, organization.id, activeOrgCookieOptions());

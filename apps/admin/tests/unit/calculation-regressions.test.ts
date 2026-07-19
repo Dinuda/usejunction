@@ -47,7 +47,6 @@ import {
   toToolRows,
 } from "../../lib/signals/policies/rollup";
 import {
-  encodeFlowKey,
   flowKeyFromSession,
   parseFlowKey,
   sessionMatchesFlowKey,
@@ -91,6 +90,33 @@ test("billing cadence helpers cover defaults, custom lengths, month ends, and of
     remainingDays: beforeAnchor.remainingDays,
     totalDays: beforeAnchor.totalDays,
   });
+});
+
+test("current and offset billing cycles use the same elapsed and remaining-day semantics", () => {
+  const cases = [
+    { billingCadence: "monthly", billingCycleAnchorDate: day("2026-07-01"), billingCycleDays: null, createdAt: null, now: day("2026-07-10") },
+    { billingCadence: "annual", billingCycleAnchorDate: day("2025-07-08"), billingCycleDays: null, createdAt: null, now: day("2026-01-01") },
+    { billingCadence: "weekly", billingCycleAnchorDate: day("2026-07-01"), billingCycleDays: null, createdAt: null, now: day("2026-07-10") },
+    { billingCadence: "custom", billingCycleAnchorDate: day("2026-07-01"), billingCycleDays: 10, createdAt: null, now: day("2026-07-23") },
+    { billingCadence: "monthly", billingCycleAnchorDate: day("2026-07-15"), billingCycleDays: null, createdAt: null, now: day("2026-06-01") },
+  ];
+
+  for (const input of cases) {
+    const current = resolveBillingCycle(input, input.now);
+    assert.deepEqual(resolveBillingCycleOffset(input, input.now, 0), current);
+
+    for (const cycle of [current, resolveBillingCycleOffset(input, input.now, -1), resolveBillingCycleOffset(input, input.now, 1)]) {
+      const totalDays = Math.max(1, Math.round((cycle.cycleEnd.getTime() - cycle.cycleStart.getTime()) / 86_400_000));
+      const elapsedDays = Math.min(
+        totalDays,
+        Math.max(0, Math.floor((input.now.getTime() - cycle.cycleStart.getTime()) / 86_400_000) + 1),
+      );
+      assert.equal(cycle.totalDays, totalDays);
+      assert.equal(cycle.elapsedPercent, elapsedDays / totalDays);
+      assert.equal(cycle.remainingDays, Math.max(0, Math.ceil((cycle.cycleEnd.getTime() - input.now.getTime()) / 86_400_000)));
+      assert.equal(cycle.nextRenewalDate.getTime(), cycle.cycleEnd.getTime());
+    }
+  }
 });
 
 test("pricing estimation handles model precedence, cache semantics, and row aggregation", () => {
@@ -152,7 +178,7 @@ test("dashboard rolling-period preferences normalize, deduplicate, and remove sa
     active: { kind: "preset", days: 90 },
     saved: [{ kind: "custom", from: "bad", to: "bad" }, { kind: "custom", from: "2026-07-01", to: "2026-07-02" }],
   }));
-  assert.equal(readRollingPeriodPrefs().active.kind, "preset");
+  assert.deepEqual(readRollingPeriodPrefs().active, DEFAULT_ROLLING_PERIOD);
   assert.equal(readRollingPeriodPrefs().saved.length, 1);
 
   const custom = { kind: "custom" as const, id: "custom:2026-07-01:2026-07-03", from: "2026-07-01", to: "2026-07-03" };
@@ -160,12 +186,12 @@ test("dashboard rolling-period preferences normalize, deduplicate, and remove sa
   assert.deepEqual(setActiveRollingPeriod(custom), { active: custom, saved: [custom] });
   assert.deepEqual(setActiveRollingPeriod(custom).saved, [custom]);
   assert.deepEqual(removeSavedRollingPeriod(custom.id), { active: DEFAULT_ROLLING_PERIOD, saved: [] });
-  assert.deepEqual(setActiveRollingPeriod({ kind: "preset", days: 60 }), {
-    active: { kind: "preset", days: 60 },
+  assert.deepEqual(setActiveRollingPeriod({ kind: "preset", days: 14 }), {
+    active: { kind: "preset", days: 14 },
     saved: [],
   });
   assert.deepEqual(removeSavedRollingPeriod("missing"), {
-    active: { kind: "preset", days: 60 },
+    active: { kind: "preset", days: 14 },
     saved: [],
   });
 });
@@ -227,12 +253,12 @@ test("Signals flow keys and windows are stable for generated and invalid routes"
   assert.equal(sessionMatchesFlowKey({ domainBefore: "github.com", appBefore: null, aiTool: "Claude", domainAfter: "slack.com", appAfter: null }, generated), false);
   assert.equal(signalsFlow({ domainBefore: null, appBefore: null, aiTool: "Cursor", domainAfter: null, appAfter: null }), "unknown -> Cursor -> unknown");
 
-  const windows = resolveSignalsWindows({ range: 7, developerId: "d1", teamId: "t1", tool: "cursor" }, day("2026-07-16"));
-  assert.equal(windows.range, 7);
+  const windows = resolveSignalsWindows({ days: 7, developerId: "d1", teamId: "t1", tool: "cursor" }, day("2026-07-16"));
+  assert.equal(windows.windowDays, 7);
   assert.deepEqual(windows.filters, { developerId: "d1", teamId: "t1", tool: "cursor" });
   assert.equal(windows.current.from.toISOString(), "2026-07-10T00:00:00.000Z");
   assert.equal(windows.prior.to.toISOString(), "2026-07-09T23:59:59.999Z");
-  assert.equal(resolveSignalsWindows({ range: 999 as 7 }, day("2026-07-16")).range, 30);
+  assert.equal(resolveSignalsWindows({}, day("2026-07-16")).windowDays, 30);
 });
 
 test("quota formatters cover recognized, fallback, date, and empty values", () => {

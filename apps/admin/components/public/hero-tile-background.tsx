@@ -1,21 +1,17 @@
 "use client";
 
 import {
-  Anthropic,
   ClaudeCode,
   Cline,
-  Codex,
   Cursor,
   DeepSeek,
   Gemini,
   GithubCopilot,
-  Groq,
   LmStudio,
   Mistral,
   Ollama,
   OpenAI,
   OpenCode,
-  RooCode,
 } from "@/lib/tool-icons";
 import type { ComponentType, CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";

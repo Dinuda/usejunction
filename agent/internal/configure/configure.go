@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
-	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/usejunction/agent/internal/config"
+	"github.com/usejunction/agent/internal/controlurl"
 )
 
 type manifestEntry struct {
@@ -68,6 +68,7 @@ func RestoreBackups() error {
 	}
 
 	_ = os.Remove(filepath.Join(config.ConfigDir(), "claude-env.sh"))
+	_ = os.Remove(filepath.Join(config.ConfigDir(), "claude-env.ps1"))
 
 	return firstErr
 }
@@ -87,25 +88,9 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
-func validateHTTPSURL(raw string) error {
-	parsed, err := url.ParseRequestURI(raw)
-	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return fmt.Errorf("URL must be an absolute http(s) URL")
-	}
-	host := parsed.Hostname()
-	isLoopback := host == "localhost"
-	if ip := net.ParseIP(host); ip != nil {
-		isLoopback = ip.IsLoopback()
-	}
-	if parsed.Scheme != "https" && !isLoopback {
-		return fmt.Errorf("URL must use HTTPS unless it is loopback")
-	}
-	return nil
-}
-
 // WriteClaudeOtelEnv writes ~/.usejunction/claude-env.sh with OTEL settings only.
 func WriteClaudeOtelEnv(opts ClaudeOtelOptions) error {
-	if err := validateHTTPSURL(opts.MetricsEndpoint); err != nil {
+	if err := controlurl.Validate(opts.MetricsEndpoint); err != nil {
 		return fmt.Errorf("OTEL metrics endpoint: %w", err)
 	}
 	if strings.TrimSpace(opts.DeviceToken) == "" {
@@ -126,6 +111,42 @@ func WriteClaudeOtelEnv(opts ClaudeOtelOptions) error {
 	b.WriteString("export OTEL_LOG_TOOL_DETAILS=0\n")
 	b.WriteString("export OTEL_LOG_TOOL_CONTENT=0\n")
 	b.WriteString(fmt.Sprintf("# source %s\n", snippetPath))
+	if err := os.MkdirAll(config.ConfigDir(), 0700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(snippetPath, []byte(b.String()), 0600); err != nil {
+		return err
+	}
+	if runtime.GOOS == "windows" {
+		return writeClaudePowerShellEnv(opts)
+	}
+	return nil
+}
+
+func powershellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+func writeClaudePowerShellEnv(opts ClaudeOtelOptions) error {
+	snippetPath := filepath.Join(config.ConfigDir(), "claude-env.ps1")
+	values := [][2]string{
+		{"CLAUDE_CODE_ENABLE_TELEMETRY", "1"},
+		{"OTEL_METRICS_EXPORTER", "otlp"},
+		{"OTEL_LOGS_EXPORTER", "none"},
+		{"OTEL_TRACES_EXPORTER", "none"},
+		{"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "http/json"},
+		{"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", opts.MetricsEndpoint},
+		{"OTEL_EXPORTER_OTLP_METRICS_HEADERS", "Authorization=Bearer " + opts.DeviceToken},
+		{"OTEL_LOG_USER_PROMPTS", "0"},
+		{"OTEL_LOG_TOOL_DETAILS", "0"},
+		{"OTEL_LOG_TOOL_CONTENT", "0"},
+	}
+	var b strings.Builder
+	b.WriteString("# Managed by UseJunction agent - dot-source this file from PowerShell.\n")
+	for _, item := range values {
+		b.WriteString(fmt.Sprintf("$env:%s = %s\n", item[0], powershellQuote(item[1])))
+	}
+	b.WriteString(fmt.Sprintf("# . %s\n", powershellQuote(snippetPath)))
 	if err := os.MkdirAll(config.ConfigDir(), 0700); err != nil {
 		return err
 	}

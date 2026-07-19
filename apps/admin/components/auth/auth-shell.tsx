@@ -38,8 +38,8 @@ export function AuthShell({
     (accent === "yellow" ? "Make model decisions based on evidence." : "Visibility before control.");
 
   return (
-    <div className="auth-shell grid min-h-svh bg-background lg:grid-cols-2">
-      <section className="flex min-h-svh flex-col px-5 py-6 sm:px-8 sm:py-8 lg:px-12 lg:py-10">
+    <div className="auth-shell grid min-h-dvh bg-background lg:grid-cols-2">
+      <section className="flex min-h-dvh min-w-0 flex-col px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-5 sm:px-8 sm:py-8 lg:px-12 lg:py-10">
         <a href="/" className="flex w-fit items-center" aria-label="UseJunction home">
           <BrandLogo className="h-9 sm:h-10" />
         </a>
@@ -47,8 +47,8 @@ export function AuthShell({
           className={cn(
             "flex flex-1 justify-center",
             contentAlign === "top"
-              ? "items-center pb-15"
-              : "items-center py-14 sm:py-20",
+              ? "items-start py-10 sm:items-center sm:pb-15 sm:pt-12"
+              : "items-center py-10 sm:py-20",
           )}
         >
           <div className={cn("w-full", sizeClass[size])}>
@@ -64,7 +64,7 @@ export function AuthShell({
               {title}
             </h1>
             <p className="mt-3 max-w-sm text-sm leading-6 text-muted-foreground">{description}</p>
-            <div className="mt-8">{children}</div>
+            <div className="mt-7 min-w-0 sm:mt-8">{children}</div>
           </div>
         </div>
         <p className="font-mono text-[0.68rem] text-muted-foreground">Open source · self-hosted · MIT licensed</p>
@@ -97,12 +97,12 @@ export function AuthFrame({
   description: string;
 }) {
   return (
-    <div className="auth-shell min-h-svh bg-muted/30 px-5 py-6 sm:px-8 sm:py-10">
-      <div className="mx-auto flex min-h-[calc(100svh-3rem)] w-full max-w-5xl flex-col">
+    <div className="auth-shell min-h-dvh bg-muted/30 px-4 py-5 sm:px-8 sm:py-10">
+      <div className="mx-auto flex min-h-[calc(100dvh-2.5rem)] w-full max-w-5xl flex-col sm:min-h-[calc(100dvh-5rem)]">
         <a href="/" className="flex w-fit items-center" aria-label="UseJunction home">
           <BrandLogo className="h-9 sm:h-10" />
         </a>
-        <main className="flex flex-1 items-center justify-center py-12 sm:py-16">
+        <main className="flex flex-1 items-center justify-center py-10 sm:py-16">
           <div className="w-full max-w-lg">
             <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">{title}</h1>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">{description}</p>

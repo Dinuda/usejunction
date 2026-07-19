@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, type Prisma } from "@usejunction/db";
+import { findDeviceByTokenValue } from "@/lib/auth";
 import { hashOpaqueToken } from "@/lib/security";
 import { invalidateAnalyticsCache } from "@/lib/analytics/query";
 
@@ -58,8 +59,7 @@ async function resolveOtelAuth(bearer: string) {
   if (endpoint?.enabled) {
     return { orgId: endpoint.orgId, defaultDeveloperId: null as string | null };
   }
-  const device = await prisma.device.findUnique({
-    where: { deviceToken: token },
+  const device = await findDeviceByTokenValue(token, {
     select: { orgId: true, userId: true },
   });
   if (!device) return null;

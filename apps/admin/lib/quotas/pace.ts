@@ -6,7 +6,7 @@ import {
   type QuotaSnapshotInput,
   type QuotaUtilization,
 } from "@/lib/quotas/plan-utilization-policy";
-import { canonicalToolKey } from "@/lib/tools/catalog";
+import { toolDisplayName } from "@/lib/tools/catalog";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
@@ -38,19 +38,12 @@ export type QuotaPace = {
   summary: string;
 };
 
-function toolLabel(tool: string) {
-  const key = canonicalToolKey(tool) || tool;
-  if (key === "chatgpt-codex") return "ChatGPT";
-  if (key === "github-copilot") return "Copilot";
-  return key ? key.charAt(0).toUpperCase() + key.slice(1) : "Tool";
-}
-
 /** Infer billing-window length when providers omit periodStartsAt. */
 export function inferQuotaWindowMs(windowType: string): number | null {
-  if (/session_5h|5h/i.test(windowType)) return 5 * HOUR_MS;
-  if (/month/i.test(windowType)) return 30 * DAY_MS;
+  if (/session_5h|5[-_]?h/i.test(windowType)) return 5 * HOUR_MS;
   if (/week|seven_day/i.test(windowType)) return 7 * DAY_MS;
-  if (/day/i.test(windowType)) return DAY_MS;
+  if (/day|daily/i.test(windowType)) return DAY_MS;
+  if (/month|^plan$|^api$|^auto$|^copilot_/i.test(windowType)) return 30 * DAY_MS;
   return null;
 }
 
@@ -63,7 +56,7 @@ function formatDuration(days: number): string {
 
 /**
  * Project whether current burn empties the plan before reset.
- * Excess = exhausts before the vendor window resets.
+ * Above pace = projected to exhaust before the vendor window resets.
  */
 export function projectQuotaPace(
   quota: QuotaUtilization,
@@ -71,7 +64,7 @@ export function projectQuotaPace(
 ): QuotaPace {
   const base = {
     toolKey: quota.toolKey,
-    toolLabel: toolLabel(quota.toolKey),
+    toolLabel: toolDisplayName(quota.toolKey),
     windowType: quota.windowType,
     windowLabel: quotaWindowLabel(quota.windowType),
     usedPercent: quota.rawRatio == null ? null : quota.rawRatio * 100,
@@ -98,24 +91,36 @@ export function projectQuotaPace(
     };
   }
 
+  if (quota.stale) {
+    return {
+      ...base,
+      code: "UNKNOWN",
+      summary: `${base.toolLabel} quota reading is stale · pace unavailable.`,
+    };
+  }
+
   const windowMs = inferQuotaWindowMs(quota.windowType);
   const resetMs = quota.resetsAt ? new Date(quota.resetsAt).getTime() : NaN;
   if (!windowMs || Number.isNaN(resetMs)) {
     const pct = Math.round(quota.rawRatio * 100);
     return {
       ...base,
-      code: quota.rawRatio >= 0.85 ? "EXCESS" : "UNKNOWN",
-      summary:
-        quota.rawRatio >= 0.85
-          ? `${base.toolLabel} is at ${pct}% with no clear reset — treat as pressure.`
-          : `${base.toolLabel} is at ${pct}% · reset timing unknown.`,
+      code: "UNKNOWN",
+      summary: `${base.toolLabel} is at ${pct}% · reset timing unavailable, so pace cannot be calculated.`,
     };
   }
 
   const nowMs = now.getTime();
   const startMs = resetMs - windowMs;
+  if (resetMs <= nowMs || startMs > nowMs) {
+    return {
+      ...base,
+      code: "UNKNOWN",
+      summary: `${base.toolLabel} is at ${Math.round(quota.rawRatio * 100)}% · vendor window timing is not current.`,
+    };
+  }
   const elapsedMs = Math.max(1, Math.min(windowMs, nowMs - startMs));
-  const remainingMs = Math.max(0, resetMs - nowMs);
+  const remainingMs = resetMs - nowMs;
   const expectedRatio = elapsedMs / windowMs;
   const usedRatio = quota.rawRatio;
   const burnPerMs = usedRatio / elapsedMs;
@@ -131,9 +136,7 @@ export function projectQuotaPace(
   const usedPercent = usedRatio * 100;
 
   let code: QuotaPaceCode;
-  if (remainingMs <= 0) {
-    code = "UNKNOWN";
-  } else if (msToExhaust < remainingMs) {
+  if (msToExhaust < remainingMs) {
     code = "EXCESS";
   } else if (usedRatio <= expectedRatio * 0.75) {
     code = "UNDER";
@@ -143,9 +146,9 @@ export function projectQuotaPace(
 
   let summary: string;
   if (code === "EXCESS" && daysToExhaust != null) {
-    summary = `${base.toolLabel} burns out in ~${formatDuration(daysToExhaust)} at this pace — before reset (${formatDuration(daysToReset)} left). Excess.`;
-  } else if (code === "UNDER" && daysToExhaust != null) {
-    summary = `${base.toolLabel} is under pace (${Math.round(usedPercent)}% used vs ~${Math.round(expectedPercent)}% expected). Headroom through reset.`;
+    summary = `${base.toolLabel} is above pace and burns out in ~${formatDuration(daysToExhaust)} — before reset (${formatDuration(daysToReset)} left).`;
+  } else if (code === "UNDER") {
+    summary = `${base.toolLabel} is underutilized (${Math.round(usedPercent)}% used vs ~${Math.round(expectedPercent)}% expected).`;
   } else if (code === "ON_TRACK" && daysToExhaust != null) {
     summary = `${base.toolLabel} is on pace — ~${formatDuration(daysToExhaust)} of runway left; resets in ${formatDuration(daysToReset)}.`;
   } else {
@@ -196,14 +199,14 @@ export function projectMemberQuotaPaces(
 export function paceVerdictLabel(code: QuotaPaceCode): string {
   switch (code) {
     case "EXCESS":
-      return "Excess";
+      return "Above pace";
     case "ALREADY_EXCEEDED":
       return "Over limit";
     case "ON_TRACK":
       return "On pace";
     case "UNDER":
-      return "Headroom";
+      return "Underutilized";
     default:
-      return "No signal";
+      return "Pace unavailable";
   }
 }

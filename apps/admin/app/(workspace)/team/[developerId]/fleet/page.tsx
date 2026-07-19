@@ -1,20 +1,9 @@
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
-import { StatusBadge } from "@/components/app-shell";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { ToolBrandLabel } from "@/components/tools/tool-brand-icon";
-import { compact, loadMemberMetrics, money } from "@/lib/developers/member-page-context";
-
-function relativeTime(date: Date | string | null | undefined) {
-  if (!date) return null;
-  const value = typeof date === "string" ? new Date(date) : date;
-  if (Number.isNaN(value.getTime())) return null;
-  const ms = Date.now() - value.getTime();
-  if (ms < 60_000) return "just now";
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
-  if (ms < 7 * 86_400_000) return `${Math.floor(ms / 86_400_000)}d ago`;
-  return value.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
+import { loadMemberMetrics } from "@/lib/developers/member-page-context";
+import { formatCompactNumber, formatRelativeTime, formatUsd } from "@/lib/format";
 
 export default async function MemberFleetPage({
   params,
@@ -33,7 +22,7 @@ export default async function MemberFleetPage({
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Fleet.</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Machines reporting into this workspace, plus tool traffic for {selectedPeriodLabel}.
+            The device reporting into this workspace, plus tool traffic for {selectedPeriodLabel}.
           </p>
         </div>
         <Link
@@ -48,17 +37,16 @@ export default async function MemberFleetPage({
       <div className="grid gap-10 lg:grid-cols-2">
         <section>
           <div className="mb-4">
-            <h3 className="text-sm font-semibold tracking-tight">Machines</h3>
+            <h3 className="text-sm font-semibold tracking-tight">Device</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              Agent version and last sync when available.
-              {personal.sync.stale ? " · reporting looks stale" : ""}
+              Agent version, last heartbeat, and last sync when available.
             </p>
           </div>
           {personal.developer.devices.length ? (
             <ul>
               {personal.developer.devices.map((device) => {
-                const lastSeen = relativeTime(device.lastSeenAt);
-                const lastSync = relativeTime(device.lastUsageSyncAt);
+                const lastSeen = formatRelativeTime(device.lastSeenAt);
+                const lastSync = formatRelativeTime(device.lastUsageSyncAt);
                 return (
                   <li key={device.id} className="flex items-start justify-between gap-3 py-4">
                     <div className="min-w-0">
@@ -75,15 +63,14 @@ export default async function MemberFleetPage({
                         {lastSync ? ` · usage sync ${lastSync}` : ""}
                       </p>
                     </div>
-                    <StatusBadge variant={device.status === "online" ? "success" : "default"}>
-                      {device.status}
-                    </StatusBadge>
                   </li>
                 );
               })}
             </ul>
           ) : (
-            <p className="py-6 text-sm text-muted-foreground">No machines enrolled yet.</p>
+            <Empty className="min-h-0 gap-1 border-0 p-6 md:p-6">
+              <EmptyDescription>No device enrolled yet.</EmptyDescription>
+            </Empty>
           )}
         </section>
 
@@ -91,7 +78,7 @@ export default async function MemberFleetPage({
           <div className="mb-4">
             <h3 className="text-sm font-semibold tracking-tight">By tool</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              Detected on their machines · {selectedPeriodLabel}.
+              Detected on their device · {selectedPeriodLabel}.
             </p>
           </div>
           {personal.toolsUsage30d.length ? (
@@ -103,19 +90,21 @@ export default async function MemberFleetPage({
                     light
                     subtitle={
                       [
-                        tool.tokens > 0 ? `${compact(tool.tokens)} tokens` : "Detected",
-                        tool.cost > 0 ? money(tool.cost) : null,
+                        tool.tokens > 0 ? `${formatCompactNumber(tool.tokens)} tokens` : "Detected",
+                        tool.cost > 0 ? formatUsd(tool.cost) : null,
                       ]
                         .filter(Boolean)
                         .join(" · ") || null
                     }
                   />
-                  <p className="text-sm font-medium tabular-nums">{compact(tool.requests)}</p>
+                  <p className="text-sm font-medium tabular-nums">{formatCompactNumber(tool.requests)}</p>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="py-6 text-sm text-muted-foreground">No tools detected yet.</p>
+            <Empty className="min-h-0 gap-1 border-0 p-6 md:p-6">
+              <EmptyDescription>No tools detected yet.</EmptyDescription>
+            </Empty>
           )}
         </section>
       </div>

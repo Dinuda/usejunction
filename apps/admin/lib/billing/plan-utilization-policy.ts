@@ -70,10 +70,12 @@ function mapSource(source: string): QuotaUtilization["source"] {
 }
 
 function windowRank(windowType: string): number {
-  if (isSecondaryQuotaWindow(windowType)) return 4;
-  if (/month/i.test(windowType)) return 0;
-  if (/week/i.test(windowType)) return 1;
-  return 2;
+  if (isSecondaryQuotaWindow(windowType)) return 99;
+  if (/month|^plan$|copilot_premium/i.test(windowType)) return 0;
+  if (/week|seven_day/i.test(windowType)) return 1;
+  if (/day|daily|^api$|^auto$/i.test(windowType)) return 2;
+  if (/session|5[-_]?h|hour|copilot_(chat|completions)/i.test(windowType)) return 3;
+  return 4;
 }
 
 /**
@@ -82,17 +84,27 @@ function windowRank(windowType: string): number {
  * billing-pressure window exists.
  */
 export function selectPrimaryQuota(rows: QuotaUtilization[]): QuotaUtilization | null {
-  const usable = rows.filter((row) => !row.stale || row.rawRatio != null);
-  if (!usable.length) return rows[0] ?? null;
-
-  const primaryCandidates = usable.filter((row) => !isSecondaryQuotaWindow(row.windowType));
-  const pool = primaryCandidates.length > 0 ? primaryCandidates : usable;
+  const primaryCandidates = rows.filter((row) => !isSecondaryQuotaWindow(row.windowType));
+  const candidates = primaryCandidates.length > 0 ? primaryCandidates : rows;
+  const fresh = candidates.filter((row) => !row.stale);
+  const pool = fresh.length > 0 ? fresh : candidates;
+  if (!pool.length) return null;
 
   return [...pool].sort((a, b) => {
     const rank = windowRank(a.windowType) - windowRank(b.windowType);
     if (rank !== 0) return rank;
+    const resetDelta = timestamp(b.resetsAt) - timestamp(a.resetsAt);
+    if (resetDelta !== 0) return resetDelta;
+    const observedDelta = timestamp(b.observedAt) - timestamp(a.observedAt);
+    if (observedDelta !== 0) return observedDelta;
     return (b.rawRatio ?? -1) - (a.rawRatio ?? -1);
   })[0];
+}
+
+function timestamp(value: string | null): number {
+  if (!value) return 0;
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 /** Map QuotaSnapshot rows into QuotaUtilization values. Missing absolutes stay null. */
@@ -130,7 +142,7 @@ export function mapQuotaSnapshots(
   });
 }
 
-/** Dedupe by tool+window keeping the highest rawRatio (and freshest on ties). */
+/** Dedupe by tool+window, preferring the current reset window and freshest reading. */
 export function dedupeQuotaUtilizations(rows: QuotaUtilization[]): QuotaUtilization[] {
   const map = new Map<string, QuotaUtilization>();
   for (const row of rows) {
@@ -140,11 +152,15 @@ export function dedupeQuotaUtilizations(rows: QuotaUtilization[]): QuotaUtilizat
       map.set(key, row);
       continue;
     }
-    const existingRatio = existing.rawRatio ?? -1;
-    const nextRatio = row.rawRatio ?? -1;
-    if (nextRatio > existingRatio) {
+    const resetDelta = timestamp(row.resetsAt) - timestamp(existing.resetsAt);
+    const observedDelta = timestamp(row.observedAt) - timestamp(existing.observedAt);
+    if (resetDelta > 0 || (resetDelta === 0 && observedDelta > 0)) {
       map.set(key, row);
-    } else if (nextRatio === existingRatio && row.observedAt > existing.observedAt) {
+    } else if (
+      resetDelta === 0 &&
+      observedDelta === 0 &&
+      (row.rawRatio ?? -1) > (existing.rawRatio ?? -1)
+    ) {
       map.set(key, row);
     }
   }

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { MobileDataCard, MobileDataField, MobileDataList } from "@/components/ui/mobile-data";
+import { formatUsd } from "@/lib/format";
 import { ClaudeCode, Cursor, GithubCopilot, Ollama } from "@/lib/tool-icons";
 
 const VIEW_CYCLE_MS = 7000;
@@ -61,10 +63,6 @@ const STATS = [
 
 function formatRequests(n: number) {
   return n.toLocaleString("en-US");
-}
-
-function formatCost(n: number) {
-  return n === 0 ? "$0.00" : `$${n.toFixed(2)}`;
 }
 
 function formatLatency(ms: number) {
@@ -166,7 +164,26 @@ function ViewTabs({
 
 function ToolView({ rows }: { rows: ToolRow[] }) {
   return (
-    <table className="w-full table-fixed text-sm">
+    <>
+      <MobileDataList className="gap-0 p-3">
+        {rows.slice(0, 4).map((row) => (
+          <MobileDataCard key={row.developer} className="border-b-0 p-3 last:border-b">
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{row.developer}</p>
+                <p className="mt-0.5 text-xs text-[var(--public-muted)]">{row.team}</p>
+              </div>
+              <span className="public-mono shrink-0 text-xs font-medium">{row.values[0]}</span>
+            </div>
+            <dl className="mt-3 grid grid-cols-2 gap-3">
+              <MobileDataField label="Tokens" value={row.values[1]} />
+              <MobileDataField label="Latency" value={row.values[2]} />
+            </dl>
+            {row.alert ? <WarningBadge label={row.alert} /> : null}
+          </MobileDataCard>
+        ))}
+      </MobileDataList>
+      <table className="hidden w-full table-fixed text-sm md:table">
       <colgroup>
         <col className="w-[34%]" />
         <col className="w-[16.5%]" />
@@ -206,13 +223,33 @@ function ToolView({ rows }: { rows: ToolRow[] }) {
           </tr>
         ))}
       </tbody>
-    </table>
+      </table>
+    </>
   );
 }
 
 function ModelView({ rows }: { rows: ModelRow[] }) {
   return (
-    <table className="w-full table-fixed text-sm">
+    <>
+      <MobileDataList className="gap-0 p-3">
+        {rows.map((row) => (
+          <MobileDataCard key={row.model} className="border-b-0 p-3 last:border-b">
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate font-mono text-sm font-medium">{row.model}</p>
+                <p className="mt-0.5 text-xs text-[var(--public-muted)]">{row.provider}</p>
+              </div>
+              <span className="public-mono shrink-0 text-xs font-medium">{formatUsd(row.cost)}</span>
+            </div>
+            <dl className="mt-3 grid grid-cols-3 gap-2">
+              <MobileDataField label="Requests" value={formatRequests(row.requests)} />
+              <MobileDataField label="Latency" value={formatLatency(row.latencyMs)} />
+              <MobileDataField label="Errors" value={formatError(row.errorRate)} />
+            </dl>
+          </MobileDataCard>
+        ))}
+      </MobileDataList>
+      <table className="hidden w-full table-fixed text-sm md:table">
       <colgroup>
         <col className="w-[30%]" />
         <col className="w-[18%]" />
@@ -246,7 +283,7 @@ function ModelView({ rows }: { rows: ModelRow[] }) {
               <AnimatedValue value={formatRequests(row.requests)} />
             </td>
             <td className="px-4 py-3 text-right public-mono text-[12px] text-[var(--public-muted)]">
-              <AnimatedValue value={formatCost(row.cost)} />
+              <AnimatedValue value={formatUsd(row.cost)} />
             </td>
             <td className="px-4 py-3 text-right public-mono text-[12px] text-[var(--public-muted)]">
               <AnimatedValue value={formatLatency(row.latencyMs)} />
@@ -254,7 +291,8 @@ function ModelView({ rows }: { rows: ModelRow[] }) {
           </tr>
         ))}
       </tbody>
-    </table>
+      </table>
+    </>
   );
 }
 
@@ -344,11 +382,11 @@ export function DashboardMock() {
 
   return (
     <div
-      className="flex w-full flex-col"
-      style={{ background: "var(--public-surface)", minHeight: "26.5rem" }}
+      className="flex min-h-[40rem] w-full flex-col md:min-h-[26.5rem]"
+      style={{ background: "var(--public-surface)" }}
     >
       <div
-        className="flex h-10 items-center justify-between gap-3 border-b px-4"
+        className="flex min-h-10 flex-wrap items-center justify-between gap-2 border-b px-3 py-2 sm:h-10 sm:flex-nowrap sm:gap-3 sm:px-4 sm:py-0"
         style={{ borderColor: "var(--public-border)", background: "var(--public-surface)" }}
       >
         <div className="flex min-w-0 items-center gap-2">
@@ -356,7 +394,7 @@ export function DashboardMock() {
           <span className="text-[var(--public-border)]">/</span>
           <span className="text-[11px] public-mono text-[var(--public-muted)]">last 24h</span>
         </div>
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-3">
           <ViewTabs view={view} onChange={handleViewChange} />
           <div className="flex items-center gap-1.5 text-[10px] public-mono text-[var(--public-muted)]">
             <span
@@ -395,7 +433,7 @@ export function DashboardMock() {
             animate={{ opacity: 1 }}
             exit={reduceMotion ? undefined : { opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            className="absolute inset-0 overflow-x-auto overflow-y-hidden"
+            className="absolute inset-0 overflow-x-hidden overflow-y-auto overscroll-contain"
           >
             {view === "tool" ? <ToolView rows={toolRows} /> : <ModelView rows={modelRows} />}
           </motion.div>

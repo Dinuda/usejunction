@@ -9,7 +9,6 @@ export type DeviceActivityDevice = {
   os: string;
   architecture: string;
   agentVersion: string;
-  online: boolean;
 };
 
 export type DeviceActivityDeveloper = {

@@ -7,6 +7,7 @@ import {
   markSubscriptionExpired,
   markSubscriptionPaymentFailed,
 } from "@/lib/saas-billing/lemonsqueezy";
+import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/quantity";
 import { audit } from "@/lib/rbac";
 
 type WebhookPayload = {
@@ -106,6 +107,14 @@ export async function POST(request: NextRequest) {
         break;
       default:
         break;
+    }
+
+    if (
+      eventName === "subscription_created" ||
+      eventName === "subscription_updated" ||
+      eventName === "subscription_resumed"
+    ) {
+      await syncTeamSeatQuantityBestEffort(orgId, `webhook.${eventName}`);
     }
 
     if (isCreateOrUpdate || eventName === "subscription_expired" || eventName === "subscription_payment_failed") {

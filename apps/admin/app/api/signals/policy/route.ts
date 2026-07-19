@@ -11,6 +11,7 @@ import {
   signalsPolicyInputSchema,
 } from "@/lib/signals/contracts";
 import { getOrgSignalsPolicy } from "@/lib/signals/service";
+import { nextWorkExtractionStartedAt } from "@/lib/signals/collection-window";
 
 export async function GET(req: NextRequest) {
   const auth = await requireOrgRole(req, rolesFor("settings_billing"));
@@ -33,6 +34,14 @@ export async function PATCH(req: NextRequest) {
   const wasWorkExtractionEnabled = existing?.workExtractionEnabled ?? false;
   const workExtractionEnabled =
     parsed.data.workExtractionEnabled ?? existing?.workExtractionEnabled ?? false;
+  const rawWorkTextEnabled =
+    parsed.data.rawWorkTextEnabled ?? existing?.rawWorkTextEnabled ?? false;
+  const workExtractionStartedAt = nextWorkExtractionStartedAt({
+    wasEnabled: wasWorkExtractionEnabled,
+    enabled: workExtractionEnabled,
+    existingStartedAt: existing?.workExtractionStartedAt,
+    now: new Date(),
+  });
 
   const data = {
     // Classic app/domain journey sampling stays off for this release.
@@ -43,6 +52,8 @@ export async function PATCH(req: NextRequest) {
     excludedDomains: normalizeList(parsed.data.excludedDomains ?? existing?.excludedDomains, defaultExcludedDomains),
     storeEvents: false,
     workExtractionEnabled,
+    rawWorkTextEnabled,
+    workExtractionStartedAt,
     updatedByUserId: auth.userId,
   };
   const policy = existing
@@ -69,6 +80,8 @@ export async function PATCH(req: NextRequest) {
       collectionMode: policy.collectionMode,
       retentionDays: policy.retentionDays,
       workExtractionEnabled: policy.workExtractionEnabled,
+      rawWorkTextEnabled: policy.rawWorkTextEnabled,
+      workExtractionStartedAt: policy.workExtractionStartedAt?.toISOString() ?? null,
       agentRollout,
     },
   });

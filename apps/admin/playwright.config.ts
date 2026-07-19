@@ -34,7 +34,7 @@ export default defineConfig({
     },
     {
       name: "public",
-      testMatch: /public\.spec\.ts/,
+      testMatch: /(?:^|\/)public\.spec\.ts$/,
       use: {
         ...devices["Desktop Chrome"],
         storageState: { cookies: [], origins: [] },
@@ -47,7 +47,7 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
         storageState: path.join(authDir, "owner.json"),
       },
-      testIgnore: [/.*\.setup\.ts/, /developer\.spec\.ts/, /public\.spec\.ts/],
+      testIgnore: [/.*\.setup\.ts$/, /(?:^|\/)developer\.spec\.ts$/, /(?:^|\/)public\.spec\.ts$/, /mobile-.*\.spec\.ts$/],
     },
     {
       name: "developer",
@@ -56,7 +56,45 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
         storageState: path.join(authDir, "developer.json"),
       },
-      testMatch: /developer\.spec\.ts/,
+      testMatch: /(?:^|\/)developer\.spec\.ts$/,
+    },
+    {
+      name: "mobile-public",
+      testMatch: /mobile-public\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 390, height: 844 },
+        deviceScaleFactor: 2,
+        hasTouch: true,
+        isMobile: true,
+        storageState: { cookies: [], origins: [] },
+      },
+    },
+    {
+      name: "mobile-owner",
+      dependencies: ["setup"],
+      testMatch: /mobile-workspace\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 390, height: 844 },
+        deviceScaleFactor: 2,
+        hasTouch: true,
+        isMobile: true,
+        storageState: path.join(authDir, "owner.json"),
+      },
+    },
+    {
+      name: "mobile-developer",
+      dependencies: ["setup"],
+      testMatch: /mobile-developer\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 390, height: 844 },
+        deviceScaleFactor: 2,
+        hasTouch: true,
+        isMobile: true,
+        storageState: path.join(authDir, "developer.json"),
+      },
     },
   ],
 });

@@ -97,7 +97,7 @@ The implementation exposes these endpoints:
 - `POST /api/ingest/work-sessions` - coding-tool work ingest
 - `GET /api/signals/policy` - org policy read
 - `PATCH /api/signals/policy` - org policy update
-- `GET /api/signals/summary` - admin aggregate summary
+- `GET /api/signals/summary` - admin aggregate summary; accepts `days=1..366` or paired UTC `from`/`to` dates and returns the exact inclusive `windowDays` (the former `range` parameter is rejected)
 - `GET /api/me/signals-ledger` - personal ledger view
 
 The database models are:
@@ -125,6 +125,20 @@ The intended privacy posture is:
 - raw screen capture is not part of v1
 - full chat transcript capture is not part of v1
 - raw clipboard capture is not part of v1
+
+### Forward-only activation
+
+Turning on work extraction creates a server-timestamped collection epoch. Each
+device uses the later of that epoch and its enrollment time, so local work that
+was only observed before the boundary is never imported. Devices that are
+waiting for a compatible agent or a future heartbeat may upload work observed after the
+boundary when they reconnect.
+
+Disabling work extraction closes the epoch. Re-enabling creates a new boundary;
+settings edits while extraction remains enabled preserve the existing boundary.
+Sessions that began earlier but are updated after the boundary are treated as
+current cumulative snapshots. Existing server-side records remain governed by
+the configured retention policy.
 
 ## Product Intent
 

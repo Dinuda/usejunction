@@ -1,11 +1,10 @@
 import { prisma } from "@usejunction/db";
 import type { OrganizationRole } from "@/lib/workspace-context";
-import { activeDevicesForOrg } from "@/lib/devices/decommission";
 import { canManageSettings } from "@/lib/rbac/permissions";
 import {
-  getDeviceLimit,
   getPlanDisplayName,
   getTrialDaysLeft,
+  getUserLimit,
   isPaidPlan,
   resolveEffectivePlan,
   type SaasPlan,
@@ -17,24 +16,21 @@ export type OrgBillingStatus = {
   planLabel: string;
   trialDaysLeft: number | null;
   subscriptionStatus: string | null;
-  devicesUsed: number;
-  devicesLimit: number | null;
-  coveragePercent: number | null;
+  usersUsed: number;
+  usersLimit: number | null;
+  usagePercent: number | null;
   canUpgrade: boolean;
   canManage: boolean;
-  isAtDeviceLimit: boolean;
-  developerCount: number;
-  purchasedSeats: number | null;
-  seatsRemaining: number | null;
-  isAtSeatCapacity: boolean;
-  minCheckoutSeats: number;
+  isAtUserLimit: boolean;
+  billingSeatQuantity: number | null;
+  seatSyncPending: boolean;
 };
 
 export async function getOrgBillingStatus(
   orgId: string,
   role: OrganizationRole | null,
 ): Promise<OrgBillingStatus> {
-  const [org, devicesUsed, developerCount] = await Promise.all([
+  const [org, usersUsed] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: orgId },
       select: {
@@ -47,7 +43,6 @@ export async function getOrgBillingStatus(
         lemonSqueezyQuantity: true,
       },
     }),
-    prisma.device.count({ where: activeDevicesForOrg(orgId) }),
     prisma.developer.count({ where: { orgId, removedAt: null } }),
   ]);
 
@@ -56,23 +51,19 @@ export async function getOrgBillingStatus(
   }
 
   const effectivePlan = resolveEffectivePlan(org);
-  const devicesLimit = getDeviceLimit(effectivePlan);
+  const usersLimit = getUserLimit(effectivePlan);
   const trialDaysLeft = effectivePlan === "trial" ? getTrialDaysLeft(org.trialEndsAt) : null;
   const paid = isPaidPlan(effectivePlan);
   const isAdmin = canManageSettings(role);
-  const purchasedSeats = paid ? org.lemonSqueezyQuantity : null;
-  const seatsRemaining =
-    purchasedSeats !== null && purchasedSeats !== undefined
-      ? Math.max(0, purchasedSeats - developerCount)
-      : null;
-  const isAtSeatCapacity =
-    paid && purchasedSeats !== null && purchasedSeats !== undefined && developerCount >= purchasedSeats;
-
-  let coveragePercent: number | null = null;
-  if (paid && purchasedSeats !== null && purchasedSeats > 0) {
-    coveragePercent = Math.min(100, Math.round((developerCount / purchasedSeats) * 100));
-  } else if (devicesLimit !== null) {
-    coveragePercent = Math.min(100, Math.round((devicesUsed / devicesLimit) * 100));
+  const desiredSeatQuantity = Math.max(1, usersUsed);
+  const billingSeatQuantity = effectivePlan === "team" ? org.lemonSqueezyQuantity : null;
+  const seatSyncPending =
+    effectivePlan === "team" &&
+    (org.subscriptionStatus === "active" || org.subscriptionStatus === "on_trial") &&
+    billingSeatQuantity !== desiredSeatQuantity;
+  let usagePercent: number | null = null;
+  if (!paid && usersLimit !== null) {
+    usagePercent = Math.min(100, Math.round((usersUsed / usersLimit) * 100));
   }
 
   return {
@@ -81,46 +72,73 @@ export async function getOrgBillingStatus(
     planLabel: getPlanDisplayName(effectivePlan),
     trialDaysLeft,
     subscriptionStatus: org.subscriptionStatus,
-    devicesUsed,
-    devicesLimit,
-    coveragePercent,
+    usersUsed,
+    usersLimit,
+    usagePercent,
     canUpgrade: isAdmin && !paid,
     canManage: isAdmin && paid && Boolean(org.lemonSqueezyCustomerId),
-    isAtDeviceLimit: devicesLimit !== null && devicesUsed >= devicesLimit,
-    developerCount,
-    purchasedSeats,
-    seatsRemaining,
-    isAtSeatCapacity,
-    minCheckoutSeats: Math.max(1, developerCount),
+    isAtUserLimit: usersLimit !== null && usersUsed >= usersLimit,
+    billingSeatQuantity,
+    seatSyncPending,
   };
 }
 
-export async function assertCanEnrollDevice(orgId: string): Promise<{ allowed: true } | { allowed: false; message: string }> {
-  const org = await prisma.organization.findUnique({
-    where: { id: orgId },
-    select: {
-      plan: true,
-      trialEndsAt: true,
-      subscriptionStatus: true,
-      currentPeriodEnd: true,
-    },
+export async function assertCanEnrollDevice(
+  orgId: string,
+  developerId: string,
+): Promise<{ allowed: true } | { allowed: false; message: string }> {
+  const activeDevice = await prisma.device.findFirst({
+    where: { orgId, userId: developerId, decommissionedAt: null },
+    select: { id: true },
   });
-
-  if (!org) {
-    return { allowed: false, message: "organization not found" };
-  }
-
-  const effectivePlan = resolveEffectivePlan(org);
-  const limit = getDeviceLimit(effectivePlan);
-  if (limit === null) {
-    return { allowed: true };
-  }
-
-  const devicesUsed = await prisma.device.count({ where: activeDevicesForOrg(orgId) });
-  if (devicesUsed >= limit) {
+  if (activeDevice) {
     return {
       allowed: false,
-      message: `Device limit reached (${limit}). Upgrade to Team for unlimited enrolled devices.`,
+      message: "This user already has a device enrolled.",
+    };
+  }
+
+  return { allowed: true };
+}
+
+export async function assertCanAddUser(
+  orgId: string,
+  identity: { userId: string; email: string },
+): Promise<{ allowed: true } | { allowed: false; message: string }> {
+  const [org, existingUser] = await Promise.all([
+    prisma.organization.findUnique({
+      where: { id: orgId },
+      select: {
+        plan: true,
+        trialEndsAt: true,
+        subscriptionStatus: true,
+        currentPeriodEnd: true,
+      },
+    }),
+    prisma.developer.findFirst({
+      where: {
+        orgId,
+        removedAt: null,
+        OR: [
+          { authUserId: identity.userId },
+          { email: identity.email.trim().toLowerCase() },
+        ],
+      },
+      select: { id: true },
+    }),
+  ]);
+
+  if (!org) return { allowed: false, message: "organization not found" };
+  if (existingUser) return { allowed: true };
+
+  const limit = getUserLimit(resolveEffectivePlan(org));
+  if (limit === null) return { allowed: true };
+
+  const usersUsed = await prisma.developer.count({ where: { orgId, removedAt: null } });
+  if (usersUsed >= limit) {
+    return {
+      allowed: false,
+      message: `User limit reached (${limit}). Upgrade to Team to add more users.`,
     };
   }
 

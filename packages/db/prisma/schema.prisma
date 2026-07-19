@@ -124,8 +124,8 @@ model Device {
   architecture       String
   agentVersion       String    @map("agent_version")
   lastSeenAt         DateTime  @default(now()) @map("last_seen_at")
-  status             String    @default("online")
   deviceToken        String    @unique @map("device_token")
+  deviceTokenHash    String?   @unique @map("device_token_hash")
   localEndpoint      String?   @map("local_endpoint")
   localSyncTokenHash String?   @map("local_sync_token_hash")
   localSyncTokenEnc  String?   @map("local_sync_token_enc")
@@ -151,6 +151,20 @@ model Device {
   deviceActivityEvents   DeviceActivityEvent[]
 
   @@map("devices")
+}
+
+model RateLimitBucket {
+  id          String   @id @default(cuid())
+  key         String
+  windowStart DateTime @map("window_start")
+  count       Int      @default(0)
+  expiresAt   DateTime @map("expires_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([key, windowStart])
+  @@index([expiresAt])
+  @@map("rate_limit_buckets")
 }
 
 model AgentRelease {
@@ -806,6 +820,8 @@ model SignalsPolicy {
   excludedDomains       String[] @default([]) @map("excluded_domains")
   storeEvents           Boolean  @default(false) @map("store_events")
   workExtractionEnabled Boolean  @default(false) @map("work_extraction_enabled")
+  rawWorkTextEnabled    Boolean  @default(false) @map("raw_work_text_enabled")
+  workExtractionStartedAt DateTime? @map("work_extraction_started_at")
   updatedByUserId       String?  @map("updated_by_user_id")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")

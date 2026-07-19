@@ -29,34 +29,12 @@ import { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
 import { rollupSubscriptionCyclesByTool, enrichSubscriptionCyclesWithUtilization, filterActiveSubscriptionCycles } from "@/lib/insights/queries/rollup-subscription-cycles";
 import { readDeviceCoverage } from "@/lib/insights/readers/devices";
 import { getDashboardConfigHealth } from "@/lib/queries/dashboard/config-health";
+import { reportWindowForCycleOffset } from "@/lib/dashboard/cycle-view";
 import { isCodingTool, toolUsageNames } from "@/lib/tools/catalog";
+import { fillOverviewTrend } from "@/lib/insights/policies/overview-trend";
 
 function isoDay(date: Date) {
   return date.toISOString().slice(0, 10);
-}
-
-function fillTrend(
-  range: number,
-  from: Date,
-  rows: Array<{ date: string; modelCalls: number; cost: number }>,
-  previousRows: Array<{ date: string; modelCalls: number; cost: number }>,
-) {
-  const start = utcDateOnly(from);
-  const current = new Map(rows.map((row) => [row.date, row]));
-  const previous = new Map(previousRows.map((row) => [row.date, row]));
-  return Array.from({ length: range }, (_, index) => {
-    const day = new Date(start.getTime() + index * DAY_MS);
-    const previousDay = new Date(day.getTime() - range * DAY_MS);
-    const row = current.get(isoDay(day));
-    const previousRow = previous.get(isoDay(previousDay));
-    return {
-      date: isoDay(day),
-      requests: row?.modelCalls ?? 0,
-      cost: row?.cost ?? 0,
-      previousRequests: previousRow?.modelCalls ?? 0,
-      previousCost: previousRow?.cost ?? 0,
-    };
-  });
 }
 
 function toMetricWindow(from: Date, to: Date): MetricWindow {
@@ -70,7 +48,13 @@ async function readOverviewUsage(
   filters: { toolNames?: string[] } = {},
 ) {
   const [summary, costs, trend, tools] = await Promise.all([
-    readUsageMetrics({ orgId, window, measures: ["requests"], filters, limit: 1 }),
+    readUsageMetrics({
+      orgId,
+      window,
+      measures: ["requests", "inputTokens", "outputTokens"],
+      filters,
+      limit: 1,
+    }),
     readUsageMetrics({ orgId, window, measures: ["costMicros"], dimensions: ["source", "costKind"], filters }),
     readUsageMetrics({ orgId, window, measures: ["requests", "costMicros"], dimensions: ["day"], filters }),
     includeTools
@@ -91,10 +75,12 @@ async function readOverviewUsage(
     })),
   );
 
+  const summaryRow = summary.data.rows[0];
   return {
     dataThrough: summary.dataThrough ? new Date(summary.dataThrough) : null,
     kpis: {
-      modelCalls: metricNumber(summary.data.rows[0], "requests"),
+      modelCalls: metricNumber(summaryRow, "requests"),
+      tokens: metricNumber(summaryRow, "inputTokens") + metricNumber(summaryRow, "outputTokens"),
       verifiedUsageCost: costSummary.verifiedUsageCost,
       estimatedApiCost: costSummary.estimatedApiCost,
       partialData: false,
@@ -113,7 +99,7 @@ async function readOverviewUsage(
   };
 }
 
-type CycleView = NonNullable<OverviewInput["cycleView"]>;
+type CycleView = OverviewInput["cycleView"];
 
 type SubscriptionCycleSource = {
   id: string;
@@ -343,9 +329,52 @@ export async function getOrgOverview(
   assertInsightRoles(context, ["owner", "admin"]);
 
   const orgId = context.orgId;
-  const cycleView: CycleView = input.cycleView ?? "current_cycles";
-  const reportWindow = input.reportWindow;
-  const previousWindow = input.previousWindow;
+  const cycleView: CycleView = input.cycleView;
+
+  // Load plans first so current/previous cycle views can align KPI/chart windows
+  // to billing cycles (same behavior as team/tools/signals).
+  const subscriptionPlans = await prisma.billingPlanTemplate.findMany({
+    where: { orgId, active: true },
+    select: {
+      cycleSeatMicros: true,
+      id: true,
+      name: true,
+      seatCapacity: true,
+      billingCadence: true,
+      billingCycleAnchorDate: true,
+      billingCycleDays: true,
+      toolKey: true,
+      toolName: true,
+      createdAt: true,
+    },
+  });
+
+  const subscriptions: SubscriptionCycleSource[] = filterCycleCodingSubscriptions(subscriptionPlans, isCodingTool).map((plan) => ({
+    id: plan.id,
+    name: plan.name,
+    toolKey: plan.toolKey,
+    toolName: plan.toolName,
+    usageToolNames: toolUsageNames(plan.toolKey ?? plan.toolName),
+    billingCadence: plan.billingCadence,
+    billingCycleAnchorDate: plan.billingCycleAnchorDate,
+    billingCycleDays: plan.billingCycleDays,
+    cycleSeatMicros: plan.cycleSeatMicros,
+    seatCount: plan.seatCapacity,
+    startDate: plan.createdAt,
+    endDate: null as Date | null,
+  }));
+
+  let reportWindow: MetricWindow;
+  let previousWindow: MetricWindow;
+  if (input.cycleView === "last_30_days") {
+    reportWindow = input.reportWindow;
+    previousWindow = input.previousWindow;
+  } else {
+    const offset = cycleView === "previous_cycles" ? -1 : 0;
+    reportWindow = reportWindowForCycleOffset(subscriptions, offset, context.now);
+    previousWindow = reportWindowForCycleOffset(subscriptions, offset - 1, context.now);
+  }
+
   const range = inclusiveDayCount(reportWindow.from, reportWindow.to);
   const dates = {
     from: utcDateOnly(reportWindow.from),
@@ -366,7 +395,6 @@ export async function getOrgOverview(
     trackedTools,
     health,
     detectedInstallations,
-    subscriptionPlans,
     planUsage,
   ] = await Promise.all([
     readOverviewUsage(orgId, reportWindow, true),
@@ -397,7 +425,7 @@ export async function getOrgOverview(
       ORDER BY r.created_at DESC LIMIT 5
     `,
     prisma.developer.count({ where: { orgId } }),
-    readDeviceCoverage(orgId, context.now),
+    readDeviceCoverage(orgId),
     prisma.toolInstallation.count({ where: { orgId, detected: true, configured: true } }),
     prisma.toolInstallation.count({ where: { orgId, detected: true } }),
     getDashboardConfigHealth(orgId),
@@ -405,21 +433,6 @@ export async function getOrgOverview(
       by: ["toolName"],
       where: { orgId, detected: true },
       _count: { id: true },
-    }),
-    prisma.billingPlanTemplate.findMany({
-      where: { orgId, active: true },
-      select: {
-        cycleSeatMicros: true,
-        id: true,
-        name: true,
-        seatCapacity: true,
-        billingCadence: true,
-        billingCycleAnchorDate: true,
-        billingCycleDays: true,
-        toolKey: true,
-        toolName: true,
-        createdAt: true,
-      },
     }),
     getPlanUsage(context, { reportWindow }),
   ]);
@@ -429,21 +442,6 @@ export async function getOrgOverview(
   const currentTrend = currentUsage.trend;
   const previousTrend = previousUsage.trend;
   const toolRows = currentUsage.tools;
-
-  const subscriptions: SubscriptionCycleSource[] = filterCycleCodingSubscriptions(subscriptionPlans, isCodingTool).map((plan) => ({
-    id: plan.id,
-    name: plan.name,
-    toolKey: plan.toolKey,
-    toolName: plan.toolName,
-    usageToolNames: toolUsageNames(plan.toolKey ?? plan.toolName),
-    billingCadence: plan.billingCadence,
-    billingCycleAnchorDate: plan.billingCycleAnchorDate,
-    billingCycleDays: plan.billingCycleDays,
-    cycleSeatMicros: plan.cycleSeatMicros,
-    seatCount: plan.seatCapacity,
-    startDate: plan.createdAt,
-    endDate: null as Date | null,
-  }));
 
   const subscriptionSlices = buildSubscriptionSlices({
     subscriptions,
@@ -478,7 +476,6 @@ export async function getOrgOverview(
   }
 
   const attention = buildAttentionItems({
-    offlineDevices: deviceCoverage.offlineDevices,
     healthIssues: health.issues,
     planVerdicts: planUsage.data.subscriptions.map((row) => ({
       id: row.planTemplateId,
@@ -498,6 +495,7 @@ export async function getOrgOverview(
     },
     hasActivity:
       usageKpis.modelCalls > 0 ||
+      usageKpis.tokens > 0 ||
       mergedTools.some((tool) => tool.requests > 0) ||
       detectedInstallations.length > 0,
     partialData: previousKpis.partialData,
@@ -521,9 +519,9 @@ export async function getOrgOverview(
         previousValue: previousKpis.estimatedApiCost,
         deltaPercent: null,
       },
-      modelCalls: {
-        value: usageKpis.modelCalls,
-        previousValue: previousKpis.modelCalls,
+      tokens: {
+        value: usageKpis.tokens,
+        previousValue: previousKpis.tokens,
         deltaPercent: null,
       },
     },
@@ -549,6 +547,7 @@ export async function getOrgOverview(
           }),
         ),
         planUsage.data.subscriptions,
+        { includeLiveQuota: cycleView !== "previous_cycles" },
       ),
     ),
     renewals: rollupSubscriptionCyclesByTool(
@@ -578,14 +577,16 @@ export async function getOrgOverview(
         elapsedPercent: row.billingCycle.elapsedPercent,
       }))
       .sort((a, b) => a.nextRenewalDate.localeCompare(b.nextRenewalDate)),
-    trend: fillTrend(range, dates.from, currentTrend, previousTrend),
+    trend: fillOverviewTrend(range, dates.from, currentTrend, previousTrend, {
+      align: cycleView === "last_30_days" ? "calendar" : "index",
+      previousFrom: dates.previousFrom,
+    }),
     attention,
     tools: mergedTools,
     coverage: {
       developers: totalDevelopers,
       activeDevelopers: metricNumber(activeUsage.data.rows[0], "activeDevelopers"),
       devices: deviceCoverage.devices,
-      onlineDevices: deviceCoverage.onlineDevices,
       configuredTools,
       trackedTools,
     },
@@ -612,13 +613,11 @@ export async function getOrgOverview(
 export function overviewInputFromRange(
   range: number,
   now: Date = new Date(),
-  cycleView: CycleView = "current_cycles",
 ): OverviewInput {
   const days = Math.max(1, Math.min(366, Math.round(range)));
   const dates = usageWindowDays(days, now);
   return {
-    range: days,
-    cycleView,
+    cycleView: "last_30_days",
     reportWindow: toMetricWindow(dates.from, dates.to),
     previousWindow: toMetricWindow(dates.previousFrom, dates.previousTo),
   };
@@ -627,7 +626,6 @@ export function overviewInputFromRange(
 export function overviewInputFromBounds(
   from: Date | string,
   to: Date | string,
-  cycleView: CycleView = "current_cycles",
 ): OverviewInput {
   const start = utcDateOnly(typeof from === "string" ? new Date(`${from}T00:00:00Z`) : from);
   const end = usageInclusiveEnd(typeof to === "string" ? new Date(`${to}T00:00:00Z`) : to);
@@ -635,8 +633,7 @@ export function overviewInputFromBounds(
   const previousTo = new Date(start.getTime() - DAY_MS);
   const previousFrom = new Date(previousTo.getTime() - (days - 1) * DAY_MS);
   return {
-    range: days,
-    cycleView,
+    cycleView: "last_30_days",
     reportWindow: toMetricWindow(start, end),
     previousWindow: toMetricWindow(previousFrom, previousTo),
   };

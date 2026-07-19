@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { AiCodingPanel } from "@/components/dashboard/ai-coding-panel";
@@ -81,7 +81,7 @@ describe("calculation-bearing components", () => {
 
     await userEvent.click(screen.getAllByRole("button", { name: "Next" })[0]!);
     expect(screen.getByText("Showing 26–26 of 26")).toBeInTheDocument();
-    expect(screen.getByText("model-25")).toBeInTheDocument();
+    expect(screen.getAllByText("model-25").length).toBeGreaterThanOrEqual(1);
 
     const search = screen.getAllByPlaceholderText("Search models…")[0]!;
     await userEvent.type(search, "model-25");
@@ -190,8 +190,6 @@ describe("calculation-bearing components", () => {
           people: [],
           quotas: [],
           plans: [],
-          toolsUsed: [],
-          toolSequences: [],
           modelsByDeveloper: [],
         }}
       />,
@@ -201,5 +199,109 @@ describe("calculation-bearing components", () => {
     expect(screen.getByText("$6.00")).toBeInTheDocument();
     expect(screen.getByText(/10 requests · verified \+ estimated/)).toBeInTheDocument();
     expect(screen.getByLabelText("Subscription view")).toBeInTheDocument();
+  });
+
+  test("ToolProviderDetail makes plans and live quota pressure scannable", () => {
+    render(
+      <ToolProviderDetail
+        data={{
+          toolKey: "chatgpt-codex",
+          name: "ChatGPT / Codex",
+          shortName: "Codex",
+          provider: "openai",
+          product: "codex",
+          toolName: "codex",
+          aliases: [],
+          sourceUrl: "https://example.com",
+          kpis: { devices: 1, people: 1, seatsFree: 0, seatsPurchased: 1, seatsAssigned: 1, usageCost: 0, requests: 0, tokens: 0 },
+          people: [
+            {
+              developerId: "dev-1",
+              name: "Ada Lovelace",
+              email: "ada@example.com",
+              detected: true,
+              deviceHostname: "ada-mac",
+              vendorPlan: "Plus",
+              vendorEmail: "ada@example.com",
+              mappedCatalogPlanKey: "plus",
+              assignment: {
+                id: "assignment-1",
+                planTemplateId: "plan-1",
+                planName: "Plus",
+                catalogPlanKey: "plus",
+                source: "detected",
+              },
+              planMismatch: false,
+            },
+          ],
+          quotas: [
+            {
+              toolName: "codex",
+              windowType: "weekly",
+              usedPercent: 92,
+              creditsRemaining: null,
+              resetAt: new Date("2026-07-23T07:10:20Z"),
+              deviceHostname: "ada-mac",
+              developerId: "dev-1",
+              developerName: "Ada Lovelace",
+            },
+          ],
+          plans: [],
+          modelsByDeveloper: [],
+        }}
+      />,
+    );
+
+    expect(screen.queryByText("Tools used.")).not.toBeInTheDocument();
+    expect(screen.getByText("Plus")).toBeInTheDocument();
+    expect(screen.getByText("Detected plan")).toBeInTheDocument();
+    expect(screen.getByText("Near limit")).toBeInTheDocument();
+    expect(screen.getByRole("meter", { name: "Weekly usage" })).toHaveAttribute("aria-valuenow", "92");
+  });
+
+  test("ToolProviderDetail aggregates tokens per person in Models", () => {
+    render(
+      <ToolProviderDetail
+        data={{
+          toolKey: "cursor",
+          name: "Cursor",
+          shortName: "Cursor",
+          provider: "cursor",
+          product: "cursor",
+          toolName: "cursor",
+          aliases: [],
+          sourceUrl: "https://example.com",
+          kpis: { devices: 1, people: 1, seatsFree: 0, seatsPurchased: 1, seatsAssigned: 1, usageCost: 12.5, requests: 30, tokens: 15_000 },
+          people: [],
+          quotas: [],
+          plans: [],
+          modelsByDeveloper: [
+            {
+              developerId: "dev-1",
+              developerName: "Ada Lovelace",
+              model: "gpt-5",
+              requests: 20,
+              tokens: 10_000,
+              cost: 8,
+            },
+            {
+              developerId: "dev-1",
+              developerName: "Ada Lovelace",
+              model: "composer-2",
+              requests: 10,
+              tokens: 5_000,
+              cost: 4.5,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/2 rows · 30 requests/)).toBeInTheDocument();
+    expect(screen.getAllByText("Ada Lovelace").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("gpt-5").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("composer-2").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/10[\u00a0,]?000/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/5[\u00a0,]?000/).length).toBeGreaterThanOrEqual(1);
   });
 });

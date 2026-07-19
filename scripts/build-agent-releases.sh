@@ -25,6 +25,9 @@ fi
 OUT="${ROOT}/apps/admin/public/releases/download/v${VERSION}"
 AGENT_DIR="${ROOT}/agent"
 LDFLAGS="-s -w -X github.com/usejunction/agent/internal/config.Version=${VERSION}"
+if [[ -n "${AGENT_UPDATE_TRUSTED_KEYS:-}" ]]; then
+  LDFLAGS="${LDFLAGS} -X github.com/usejunction/agent/internal/updater.TrustedUpdateSigningKeys=${AGENT_UPDATE_TRUSTED_KEYS}"
+fi
 
 mkdir -p "$OUT"
 rm -f "${OUT}"/usejunction-* "${OUT}/checksums.txt"
@@ -34,13 +37,17 @@ targets=(
   "darwin/arm64"
   "linux/amd64"
   "linux/arm64"
+  "windows/amd64"
+  "windows/arm64"
 )
 
 echo "Building agent ${VERSION} into ${OUT}"
 for target in "${targets[@]}"; do
   os="${target%/*}"
   arch="${target#*/}"
-  name="usejunction-${os}-${arch}"
+  suffix=""
+  [[ "$os" == "windows" ]] && suffix=".exe"
+  name="usejunction-${os}-${arch}${suffix}"
   echo "  ${name}"
   (cd "$AGENT_DIR" && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -ldflags="$LDFLAGS" -o "${OUT}/${name}" .)
   if [[ "$os" == "darwin" && "$(uname -s)" == "Darwin" ]]; then
@@ -80,6 +87,7 @@ cat "${OUT}/checksums.txt"
 node - "$OUT" "$VERSION" "$URGENCY" <<'NODE'
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const [out, version, urgency] = process.argv.slice(2);
 const checksums = new Map(
   fs.readFileSync(path.join(out, "checksums.txt"), "utf8")
@@ -89,8 +97,8 @@ const checksums = new Map(
     }),
 );
 const artifacts = {};
-for (const key of ["darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64"]) {
-  const name = `usejunction-${key}`;
+for (const key of ["darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"]) {
+  const name = `usejunction-${key}${key.startsWith("windows-") ? ".exe" : ""}`;
   const file = path.join(out, name);
   if (!checksums.has(name) || !fs.existsSync(file)) throw new Error(`missing ${name}`);
   artifacts[key] = {
@@ -100,13 +108,27 @@ for (const key of ["darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64"]
   };
 }
 const manifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   version,
   publishedAt: new Date().toISOString(),
   urgency,
   rolloutHours: urgency === "critical" ? 0 : 24,
   artifacts,
 };
+const signingKeyId = process.env.AGENT_UPDATE_SIGNING_KEY_ID;
+const signingPrivateKey = process.env.AGENT_UPDATE_SIGNING_PRIVATE_KEY;
+if (signingKeyId && signingPrivateKey) {
+  const normalized = signingPrivateKey.trim();
+  const seed = /^[a-f0-9]{64}$/i.test(normalized)
+    ? Buffer.from(normalized, "hex")
+    : Buffer.from(normalized.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+  if (seed.length !== 32) throw new Error("AGENT_UPDATE_SIGNING_PRIVATE_KEY must be a 32-byte Ed25519 private seed");
+  const pkcs8Prefix = Buffer.from("302e020100300506032b657004220420", "hex");
+  const privateKey = crypto.createPrivateKey({ key: Buffer.concat([pkcs8Prefix, seed]), format: "der", type: "pkcs8" });
+  manifest.signingKeyId = signingKeyId;
+  const payload = Buffer.from(JSON.stringify(manifest));
+  manifest.signature = crypto.sign(null, payload, privateKey).toString("base64url");
+}
 fs.writeFileSync(path.join(out, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 NODE
 

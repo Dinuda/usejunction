@@ -60,6 +60,7 @@ export function SignalsKpi({
   hero,
   accent,
   action,
+  compactMobile = false,
   className,
 }: {
   label: string;
@@ -67,17 +68,22 @@ export function SignalsKpi({
   sub?: ReactNode;
   footer?: ReactNode;
   hero?: boolean;
-  /** Pale yellow left-rail highlight — use for the primary cost / focus metric. */
+  /** Pale yellow highlight — use for the primary cost / focus metric. */
   accent?: boolean;
   action?: ReactNode;
+  compactMobile?: boolean;
   className?: string;
 }) {
   return (
     <div
       className={cn(
         "relative flex h-full flex-col justify-start",
+        compactMobile ? "min-h-24 py-3 sm:min-h-32 sm:py-5" : "min-h-32 py-5",
         accent
-          ? "border-l-2 border-brand-yellow-dark bg-brand-yellow-pale py-3 pl-4 pr-4"
+          ? cn(
+              "w-full border-l-2 border-brand-yellow-dark bg-brand-yellow-pale",
+              compactMobile ? "px-3 sm:px-5" : "px-5",
+            )
           : null,
         className,
       )}
@@ -85,7 +91,8 @@ export function SignalsKpi({
       {action ? <div className="absolute right-3 top-0 z-10 sm:right-4">{action}</div> : null}
       <p
         className={cn(
-          "text-xs font-medium leading-4 uppercase tracking-[0.08em] text-muted-foreground",
+          "font-medium uppercase tracking-[0.08em] text-muted-foreground",
+          compactMobile ? "text-[0.65rem] leading-3 sm:text-xs sm:leading-4" : "text-xs leading-4",
           action && "pr-12",
         )}
       >
@@ -94,13 +101,29 @@ export function SignalsKpi({
       <div
         className={cn(
           // Shared value box so hero (text-4xl) and default (text-3xl) share one baseline.
-          "mt-2 flex min-h-10 items-end font-semibold tracking-tight tabular-nums leading-none",
-          hero ? "text-4xl" : "text-3xl",
+          "flex items-end font-semibold tracking-tight tabular-nums leading-none",
+          compactMobile ? "mt-1.5 min-h-8" : "mt-2 min-h-10",
+          hero
+            ? compactMobile
+              ? "text-[1.75rem] sm:text-4xl"
+              : "text-4xl"
+            : compactMobile
+              ? "text-[1.75rem] sm:text-3xl"
+              : "text-3xl",
         )}
       >
         {value}
       </div>
-      {sub ? <div className="mt-2 text-xs leading-4 text-muted-foreground">{sub}</div> : null}
+      {sub ? (
+        <div
+          className={cn(
+            "mt-2 text-muted-foreground",
+            compactMobile ? "text-[0.68rem] leading-4 sm:text-xs" : "text-xs leading-4",
+          )}
+        >
+          {sub}
+        </div>
+      ) : null}
       {footer ? <div className="mt-2">{footer}</div> : null}
     </div>
   );
@@ -118,8 +141,8 @@ export function SignalsSectionHeader({
   bordered?: boolean;
 }) {
   return (
-    <div className={cn("mb-6 flex items-end justify-between gap-3", bordered && "border-b pb-4")}>
-      <div>
+    <div className={cn("mb-6 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between", bordered && "border-b pb-4")}>
+      <div className="min-w-0">
         <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
         {description ? <p className="mt-1.5 text-xs text-muted-foreground">{description}</p> : null}
       </div>

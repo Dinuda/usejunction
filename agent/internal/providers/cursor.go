@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/usejunction/agent/internal/probe"
+	"github.com/usejunction/agent/internal/platformdirs"
 	"github.com/usejunction/agent/internal/scan"
 	"github.com/usejunction/agent/internal/types"
 )
@@ -18,8 +19,7 @@ func (p *CursorProvider) ID() string { return "cursor" }
 func (p *CursorProvider) Detect(ctx context.Context) (*types.ToolStatus, error) {
 	home, _ := os.UserHomeDir()
 	candidates := []string{
-		filepath.Join(home, "Library", "Application Support", "Cursor", "User"),
-		filepath.Join(home, ".config", "Cursor", "User"),
+		platformdirs.CursorUserDir(),
 		filepath.Join(home, ".cursor"),
 	}
 	detected := false

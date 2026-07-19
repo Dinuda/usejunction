@@ -238,7 +238,7 @@ export function summarizeWindow(sessions: SignalsSessionRow[]) {
 }
 
 export function compatibilitySummaryFromSessions(
-  range: 7 | 30 | 90,
+  windowDays: number,
   sessions: SignalsSessionRow[],
   priorSessions: SignalsSessionRow[],
 ) {
@@ -246,7 +246,7 @@ export function compatibilitySummaryFromSessions(
   const tools = toToolRows(aggregateTools(sessions), aggregateTools(priorSessions));
   const summary = summarizeWindow(sessions);
   return {
-    range,
+    windowDays,
     sessions: summary.sessions,
     activeDevelopers: summary.activePeople,
     durationSeconds: summary.durationSeconds,

@@ -5,25 +5,17 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	_ "modernc.org/sqlite"
 
 	"github.com/usejunction/agent/internal/config"
+	"github.com/usejunction/agent/internal/platformdirs"
 	"github.com/usejunction/agent/internal/types"
 )
 
 func cursorStateDBPath() string {
-	home, _ := os.UserHomeDir()
-	if runtime.GOOS == "darwin" {
-		return filepath.Join(home, "Library", "Application Support", "Cursor", "User", "globalStorage", "state.vscdb")
-	}
-	configHome := os.Getenv("XDG_CONFIG_HOME")
-	if configHome == "" {
-		configHome = filepath.Join(home, ".config")
-	}
-	return filepath.Join(configHome, "Cursor", "User", "globalStorage", "state.vscdb")
+	return filepath.Join(platformdirs.CursorUserDir(), "globalStorage", "state.vscdb")
 }
 
 func cursorAITrackingDBPath() string {

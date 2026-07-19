@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/usejunction/agent/internal/client"
+	"github.com/usejunction/agent/internal/platformdirs"
 	"github.com/usejunction/agent/internal/scan"
 )
 
@@ -24,15 +24,7 @@ func cursorAITrackingDBPath() string {
 }
 
 func cursorStateDBPath() string {
-	home, _ := os.UserHomeDir()
-	if runtime.GOOS == "darwin" {
-		return filepath.Join(home, "Library", "Application Support", "Cursor", "User", "globalStorage", "state.vscdb")
-	}
-	configHome := os.Getenv("XDG_CONFIG_HOME")
-	if configHome == "" {
-		configHome = filepath.Join(home, ".config")
-	}
-	return filepath.Join(configHome, "Cursor", "User", "globalStorage", "state.vscdb")
+	return filepath.Join(platformdirs.CursorUserDir(), "globalStorage", "state.vscdb")
 }
 
 // extractCursor prefers composer headers (titles/modes/location) from Cursor's

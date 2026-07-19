@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Clipboard, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { hasToolBrandIcon, ToolLogoTile } from "@/components/tools/tool-brand-icon";
-import { buildInstallCommand } from "@/lib/connect-command";
+import { Panel } from "@/components/panel";
+import { PlatformCommand } from "@/components/onboarding/platform-command";
+import { buildPlatformInstallCommands } from "@/lib/connect-command";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { canonicalToolKey } from "@/lib/tools/catalog";
-import { cn } from "@/lib/utils";
 import { userFacingError } from "@/lib/errors/user-facing";
 
 type Device = {
@@ -22,30 +23,25 @@ type Props = {
   title?: string;
   description?: string;
   compact?: boolean;
-  /** Always show the enroll command (skip the connected summary). */
-  forceEnroll?: boolean;
   onConnected?: (device: Device) => void;
 };
 
 /** Device is ready once enrolled and the agent has reported at least one tool. */
-function isReadyDevice(device: Device | null | undefined): device is Device {
+function isReadyDevice(device: Device | null | undefined): boolean {
   return Boolean(device && (device.toolInstallations?.length ?? 0) > 0);
 }
 
 export function DeviceConnectCard({
   title = "Connect command",
-  description = "Run this in Terminal. Installs the agent, configures tools, enables reporting, and starts the daemon. Expires in 15 minutes.",
+  description = "Choose this device's platform, then run the command. It installs the agent, enables reporting, and starts it in the background. Expires in 15 minutes.",
   compact = false,
-  forceEnroll = false,
   onConnected,
 }: Props) {
   const [device, setDevice] = useState<Device | null>(null);
   const [knownIds, setKnownIds] = useState<Set<string>>(new Set());
-  const [addingAnother, setAddingAnother] = useState(forceEnroll);
   const [token, setToken] = useState<string | null>(null);
   const [controlPlaneUrl, setControlPlaneUrl] = useState("");
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [waitingForTools, setWaitingForTools] = useState(false);
@@ -79,14 +75,13 @@ export function DeviceConnectCard({
       const status = await refreshStatus();
       const devices = status?.devices ?? [];
       setKnownIds(new Set(devices.map((item) => item.id)));
-      // Only skip the enroll UI when a known device has already reported tools.
-      if (forceEnroll || !isReadyDevice(status?.next)) await generateToken();
+      if (!status?.next) await generateToken();
       setLoading(false);
     })();
-  }, [forceEnroll, generateToken, refreshStatus]);
+  }, [generateToken, refreshStatus]);
 
   useEffect(() => {
-    if (isReadyDevice(device) && !addingAnother && !forceEnroll) return;
+    if (isReadyDevice(device)) return;
     const interval = window.setInterval(async () => {
       const status = await refreshStatus();
       const devices = status?.devices ?? [];
@@ -105,9 +100,8 @@ export function DeviceConnectCard({
         return;
       }
 
-      if (isReadyDevice(candidate)) {
+      if (candidate && isReadyDevice(candidate)) {
         setWaitingForTools(false);
-        setAddingAnother(false);
         setDevice(candidate);
         if (notifiedRef.current !== candidate.id) {
           notifiedRef.current = candidate.id;
@@ -116,35 +110,28 @@ export function DeviceConnectCard({
       }
     }, 2500);
     return () => window.clearInterval(interval);
-  }, [addingAnother, device, forceEnroll, knownIds, onConnected, refreshStatus]);
+  }, [device, knownIds, onConnected, refreshStatus]);
 
-  const command = useMemo(() => {
-    if (!token || !controlPlaneUrl) return "";
-    return buildInstallCommand(token, controlPlaneUrl);
+  const commands = useMemo(() => {
+    if (!token || !controlPlaneUrl) return null;
+    return buildPlatformInstallCommands(token, controlPlaneUrl);
   }, [token, controlPlaneUrl]);
-
-  async function copy() {
-    if (!command) return;
-    await navigator.clipboard.writeText(command);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
-  }
 
   if (loading) {
     return (
-      <div className="flex items-center gap-3 border border-border bg-card px-4 py-5 text-sm text-muted-foreground">
+      <Panel padded={false} className="flex items-center gap-3 border-border px-4 py-5 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin text-primary" />
         Checking device…
-      </div>
+      </Panel>
     );
   }
 
-  if (isReadyDevice(device) && !addingAnother && !forceEnroll) {
+  if (device && isReadyDevice(device)) {
     const connectedTools = [
       ...new Set((device.toolInstallations ?? []).map((tool) => canonicalToolKey(tool.toolName)).filter(hasToolBrandIcon)),
     ];
     return (
-      <div className="border border-border bg-card p-4">
+      <Panel padded={false} className="border-border p-4">
         <p className="font-mono text-[0.65rem] uppercase tracking-[0.14em] text-primary">Connected</p>
         <p className="mt-2 text-sm font-medium">{device.hostname}</p>
         <p className="mt-1 text-xs text-muted-foreground">
@@ -157,20 +144,7 @@ export function DeviceConnectCard({
             ))}
           </div>
         )}
-        {!compact && (
-          <Button
-            className="mt-4"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setAddingAnother(true);
-              void generateToken();
-            }}
-          >
-            Connect another
-          </Button>
-        )}
-      </div>
+      </Panel>
     );
   }
 
@@ -184,21 +158,11 @@ export function DeviceConnectCard({
           <p className="mt-1 text-xs text-muted-foreground">{description}</p>
         </div>
       )}
-      <div className="relative overflow-hidden border border-brand-olive bg-brand-olive p-4 pr-14 font-mono text-xs leading-6 text-primary-foreground">
-        <code className="break-all">{command || "Preparing command…"}</code>
-        <button
-          type="button"
-          className={cn(
-            "absolute right-3 top-3 border border-brand-olive-border p-2 text-primary-foreground/80 transition hover:bg-brand-olive-secondary",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          )}
-          onClick={copy}
-          disabled={!command}
-          aria-label="Copy connect command"
-        >
-          {copied ? <Check className="size-4" /> : <Clipboard className="size-4" />}
-        </button>
-      </div>
+      {commands ? (
+        <PlatformCommand commands={commands} />
+      ) : (
+        <div className="border border-brand-olive bg-brand-olive p-4 font-mono text-xs text-primary-foreground">Preparing commands…</div>
+      )}
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>

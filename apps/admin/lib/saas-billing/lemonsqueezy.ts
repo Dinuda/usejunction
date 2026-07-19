@@ -12,10 +12,9 @@ import {
 
 export { ensureLemonSqueezyConfigured, getAppBaseUrl } from "@/lib/saas-billing/lemonsqueezy-setup";
 export {
-  assertCanAddDeveloperSeat,
-  setSubscriptionQuantity,
+  syncTeamSeatQuantity,
+  syncTeamSeatQuantityBestEffort,
   syncSubscriptionQuantityForOrg,
-  wouldConsumeDeveloperSeat,
 } from "@/lib/saas-billing/quantity";
 
 export async function createTeamCheckout(input: {
@@ -29,9 +28,16 @@ export async function createTeamCheckout(input: {
   const storeId = requireLemonEnv("LEMONSQUEEZY_STORE_ID");
   const variantId = requireLemonEnv("LEMONSQUEEZY_VARIANT_ID_TEAM");
   const quantity = Math.max(1, input.quantity);
+  const memberLabel = quantity === 1 ? "member" : "members";
 
   const response = await createCheckout(storeId, variantId, {
     productOptions: {
+      name: "UseJunction Team",
+      description: [
+        `<strong>${quantity} active ${memberLabel}</strong>`,
+        "Members who join or leave are reflected automatically on your next bill.",
+      ].join("<br>"),
+      enabledVariants: [Number(variantId)],
       redirectUrl: `${getAppBaseUrl()}/dashboard?upgraded=1`,
     },
     checkoutData: {
@@ -48,6 +54,7 @@ export async function createTeamCheckout(input: {
       ],
     },
     checkoutOptions: {
+      desc: true,
       subscriptionPreview: true,
     },
   });

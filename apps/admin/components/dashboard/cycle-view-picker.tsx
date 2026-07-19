@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import {
   DEFAULT_ROLLING_PERIOD,
   PERIOD_PRESETS,
+  isValidCustomPeriod,
   periodsEqual,
   readRollingPeriodPrefs,
   removeSavedRollingPeriod,
@@ -112,7 +113,7 @@ export function CycleViewPicker({
   }
 
   function applyCustom() {
-    if (!customFrom || !customTo || customFrom > customTo) return;
+    if (!isValidCustomPeriod(customFrom, customTo)) return;
     applyPeriod({
       kind: "custom",
       id: `custom:${customFrom}:${customTo}`,
@@ -122,11 +123,115 @@ export function CycleViewPicker({
     setCustomOpen(false);
   }
 
+  function rollingPeriodItems() {
+    return (
+      <>
+        <DropdownMenuLabel className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          Rolling period
+        </DropdownMenuLabel>
+        {PERIOD_PRESETS.map((days) => {
+          const option: RollingPeriod = { kind: "preset", days };
+          const selected = view === "last_30_days" && periodsEqual(prefs.active, option);
+          return (
+            <DropdownMenuItem
+              key={days}
+              className="rounded-none"
+              onSelect={() => applyPeriod(option)}
+            >
+              <span className="flex-1">Last {days} days</span>
+              {selected ? <Check className="size-3.5 text-foreground" aria-hidden /> : null}
+            </DropdownMenuItem>
+          );
+        })}
+
+        {prefs.saved.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
+              Saved ranges
+            </DropdownMenuLabel>
+            {prefs.saved.map((item) => {
+              const selected = view === "last_30_days" && periodsEqual(prefs.active, item);
+              return (
+                <DropdownMenuItem
+                  key={item.id}
+                  className="rounded-none"
+                  onSelect={() => applyPeriod(item)}
+                >
+                  <span className="flex-1 truncate">{rollingPeriodLabel(item)}</span>
+                  {selected ? <Check className="size-3.5 shrink-0" aria-hidden /> : null}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${rollingPeriodLabel(item)}`}
+                    className="rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onClick={(event) => deleteSaved(item, event)}
+                  >
+                    <Trash2 className="size-3.5" aria-hidden />
+                  </button>
+                </DropdownMenuItem>
+              );
+            })}
+          </>
+        ) : null}
+
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="rounded-none"
+          onSelect={(event) => {
+            event.preventDefault();
+            setCustomFrom(period.kind === "custom" ? period.from : daysAgoIso(30));
+            setCustomTo(period.kind === "custom" ? period.to : todayIso());
+            setCustomOpen(true);
+          }}
+        >
+          Custom date range…
+        </DropdownMenuItem>
+      </>
+    );
+  }
+
   return (
     <>
-      <div className="flex flex-wrap items-center gap-1 border bg-card p-1" aria-label="Subscription view">
+      <div className="md:hidden">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              className="size-11 rounded-none"
+              aria-label="Choose reporting period"
+            >
+              <ListFilter className="size-4.5" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64 rounded-none">
+            <DropdownMenuLabel className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
+              Subscription view
+            </DropdownMenuLabel>
+            {(["current_cycles", "previous_cycles"] as const).map((value) => (
+              <DropdownMenuItem
+                key={value}
+                className="rounded-none"
+                onSelect={() => router.push(`${basePath}?view=${value}`)}
+              >
+                <span className="flex-1">{cycleViewLabels[value]}</span>
+                {view === value ? <Check className="size-3.5 text-foreground" aria-hidden /> : null}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            {rollingPeriodItems()}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <div className="hidden max-w-full flex-nowrap items-center gap-1 overflow-x-auto overscroll-x-contain border bg-card p-1 md:flex" aria-label="Subscription view">
         {(["current_cycles", "previous_cycles"] as const).map((value) => (
-          <Button key={value} asChild size="sm" variant="ghost">
+          <Button key={value} asChild size="sm" variant="ghost" className="shrink-0">
             <Link
               href={`${basePath}?view=${value}`}
               className={cn(
@@ -164,70 +269,7 @@ export function CycleViewPicker({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-64 rounded-none">
-              <DropdownMenuLabel className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                Rolling period
-              </DropdownMenuLabel>
-              {PERIOD_PRESETS.map((days) => {
-                const option: RollingPeriod = { kind: "preset", days };
-                const selected = periodsEqual(prefs.active, option);
-                return (
-                  <DropdownMenuItem
-                    key={days}
-                    className="rounded-none"
-                    onSelect={() => applyPeriod(option)}
-                  >
-                    <span className="flex-1">Last {days} days</span>
-                    {selected ? <Check className="size-3.5 text-foreground" aria-hidden /> : null}
-                  </DropdownMenuItem>
-                );
-              })}
-
-              {prefs.saved.length > 0 ? (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                    Saved ranges
-                  </DropdownMenuLabel>
-                  {prefs.saved.map((item) => {
-                    const selected = periodsEqual(prefs.active, item);
-                    return (
-                      <DropdownMenuItem
-                        key={item.id}
-                        className="rounded-none"
-                        onSelect={() => applyPeriod(item)}
-                      >
-                        <span className="flex-1 truncate">{rollingPeriodLabel(item)}</span>
-                        {selected ? <Check className="size-3.5 shrink-0" aria-hidden /> : null}
-                        <button
-                          type="button"
-                          aria-label={`Remove ${rollingPeriodLabel(item)}`}
-                          className="rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                          }}
-                          onClick={(event) => deleteSaved(item, event)}
-                        >
-                          <Trash2 className="size-3.5" aria-hidden />
-                        </button>
-                      </DropdownMenuItem>
-                    );
-                  })}
-                </>
-              ) : null}
-
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="rounded-none"
-                onSelect={(event) => {
-                  event.preventDefault();
-                  setCustomFrom(period.kind === "custom" ? period.from : daysAgoIso(30));
-                  setCustomTo(period.kind === "custom" ? period.to : todayIso());
-                  setCustomOpen(true);
-                }}
-              >
-                Custom date range…
-              </DropdownMenuItem>
+              {rollingPeriodItems()}
             </DropdownMenuContent>
           </DropdownMenu>
 

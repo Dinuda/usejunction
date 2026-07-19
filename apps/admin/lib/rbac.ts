@@ -17,7 +17,7 @@ export {
 } from "@/lib/rbac/permissions";
 
 export async function requireOrgRole(
-  req: NextRequest,
+  _req: NextRequest,
   allowed: readonly OrganizationRole[]
 ): Promise<{ email: string; userId: string; orgId: string; role: OrganizationRole } | NextResponse> {
   const ctx = await getWorkspaceContext();

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { audit, requireOrgRole, rolesFor } from "@/lib/rbac";
 import { decommissionDevices } from "@/lib/devices/decommission";
-import { syncSubscriptionQuantityForOrg } from "@/lib/saas-billing/lemonsqueezy";
+import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/lemonsqueezy";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -84,11 +84,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     },
   });
 
-  try {
-    await syncSubscriptionQuantityForOrg(auth.orgId);
-  } catch (error) {
-    console.error("[developers/remove] lemon quantity sync failed", error);
-  }
+  await syncTeamSeatQuantityBestEffort(auth.orgId, "member.removed");
 
   return NextResponse.json({
     ok: true,

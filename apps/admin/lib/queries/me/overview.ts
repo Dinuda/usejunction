@@ -3,7 +3,6 @@ import { usageWindowDays } from "@/lib/metrics/date-range";
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
 import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
-import { isDeviceOnline } from "@/lib/devices/presence";
 import { orgNeedsPlanSync } from "@/lib/queries/me/local-sync-context";
 import { canonicalToolKey, findCatalogTool } from "@/lib/tools/catalog";
 import type { OrganizationRole } from "@/lib/workspace-context";
@@ -55,7 +54,6 @@ export interface MeOverviewData {
       os: string;
       architecture: string;
       agentVersion: string;
-      status: string;
       lastSeenAt: Date;
       lastUsageSyncAt: Date | null;
       lastAccountSyncAt: Date | null;
@@ -112,7 +110,6 @@ export interface MeOverviewData {
     lastSeenAt: string | null;
     lastUsageSyncAt: string | null;
     lastAccountSyncAt: string | null;
-    stale: boolean;
     hasLocalEndpoint: boolean;
     needsPlanSync: boolean;
   };
@@ -357,7 +354,6 @@ async function buildMeOverview(
         os: device.os,
         architecture: device.architecture,
         agentVersion: device.agentVersion,
-        status: isDeviceOnline(device.lastSeenAt) ? "online" : "offline",
         lastSeenAt: device.lastSeenAt,
         lastUsageSyncAt: device.lastUsageSyncAt ?? null,
         lastAccountSyncAt: device.lastAccountSyncAt ?? null,
@@ -385,7 +381,6 @@ async function buildMeOverview(
       lastSeenAt: primaryDevice?.lastSeenAt?.toISOString() ?? null,
       lastUsageSyncAt: latestUsageSync?.toISOString() ?? null,
       lastAccountSyncAt: latestAccountSync?.toISOString() ?? null,
-      stale: !developer.devices.some((device) => isDeviceOnline(device.lastSeenAt)),
       hasLocalEndpoint: developer.devices.some((d) => Boolean(d.localEndpoint)),
       needsPlanSync,
     },

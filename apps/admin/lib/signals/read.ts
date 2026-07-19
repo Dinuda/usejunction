@@ -1,6 +1,5 @@
 import { prisma } from "@usejunction/db";
-import type { SignalsFiltersInput, SignalsRange } from "@/lib/signals/contracts/shared";
-import { normalizeSignalsRange } from "@/lib/signals/contracts/shared";
+import type { SignalsFiltersInput } from "@/lib/signals/contracts/shared";
 import { signalsFlow } from "@/lib/signals/policies/flow";
 import { compatibilitySummaryFromSessions } from "@/lib/signals/policies/rollup";
 import { readSignalsFilterOptions } from "@/lib/signals/readers/filter-options";
@@ -10,7 +9,7 @@ import { resolveSignalsWindows } from "@/lib/signals/queries/windows";
 /** @deprecated Prefer getSignalsOverview / getSignals* composers from @/lib/signals */
 export type SignalsSummaryFilters = SignalsFiltersInput;
 
-export { normalizeSignalsRange, signalsFlow };
+export { signalsFlow };
 export { readSignalsFilterOptions as getSignalsFilterOptions };
 
 /** Compatibility wrapper for Activity UI and /api/signals/summary until IA cutover. */
@@ -28,7 +27,7 @@ export async function getSignalsSummary(orgId: string, filters: SignalsSummaryFi
       ...windows.filters,
     }),
   ]);
-  return compatibilitySummaryFromSessions(windows.range, current, prior);
+  return compatibilitySummaryFromSessions(windows.windowDays, current, prior);
 }
 
 export async function getPersonalSignalsLedger(orgId: string, authUserId: string) {
@@ -44,5 +43,3 @@ export async function getPersonalSignalsLedger(orgId: string, authUserId: string
     include: { device: { select: { hostname: true } } },
   });
 }
-
-export type { SignalsRange };

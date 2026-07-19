@@ -5,6 +5,7 @@ import { githubInstallationToken } from "@/lib/integrations/github-app";
 import type { IntegrationConfig, ProviderMember, ProviderUsage } from "@/lib/integrations/types";
 import { decryptSecret } from "@/lib/security";
 import { invalidateAnalyticsCache } from "@/lib/analytics/query";
+import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/quantity";
 
 function json(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
@@ -132,6 +133,7 @@ export async function syncConnection(connectionId: string) {
       prisma.providerConnection.update({ where: { id: connection.id }, data: { status: "active", externalOrgId: data.externalOrgId ?? connection.externalOrgId, permissions: json(data.permissions ?? []), lastSyncedAt: now, nextSyncAt: new Date(now.getTime() + 15 * 60_000), leaseUntil: null, lastError: null } }),
       prisma.providerSyncRun.update({ where: { id: run.id }, data: { status: "success", finishedAt: now, counts } }),
     ]);
+    await syncTeamSeatQuantityBestEffort(connection.orgId, "provider_sync.members");
     if (data.usage.length > 0) await invalidateAnalyticsCache(connection.orgId);
     return counts;
   } catch (error) {

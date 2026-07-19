@@ -7,7 +7,6 @@ function workLabel(title: string | null, tldr: string | null) {
 
 export function buildMemberInsight(input: {
   name: string;
-  onlineMachines: number;
   totalMachines: number;
   topTool: string | null;
   requests: number;
@@ -21,10 +20,6 @@ export function buildMemberInsight(input: {
 
   if (input.totalMachines === 0) {
     return `${first} has no machines enrolled yet. Connect a device to see tools, plan use, and work traces.`;
-  }
-
-  if (input.onlineMachines === 0 && input.totalMachines > 0) {
-    return `${first}'s ${input.totalMachines === 1 ? "machine is" : "machines are"} offline. Coverage gaps usually mean the agent stopped reporting — check enrollment before reading spend.`;
   }
 
   if (input.planVerdict === "LIMIT_EXCEEDED" || input.planVerdict === "NEAR_LIMIT") {
@@ -50,8 +45,8 @@ export function buildMemberInsight(input: {
   }
 
   if (input.requests <= 0) {
-    return `${first} is enrolled but quiet in this window. Machines are reporting — waiting on usage or work extraction.`;
+    return `${first} is enrolled but quiet in this window. Waiting on usage or work extraction.`;
   }
 
-  return `${first} has ${input.onlineMachines}/${input.totalMachines} machines online. Open Plans and Work for seat health and what AI is being used for.`;
+  return `${first} has ${input.totalMachines} ${input.totalMachines === 1 ? "machine" : "machines"} enrolled. Open Plans and Work for seat health and what AI is being used for.`;
 }

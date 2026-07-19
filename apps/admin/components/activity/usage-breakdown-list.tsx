@@ -1,20 +1,10 @@
 "use client";
 
+import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
+import { formatCompactNumber, formatUsd } from "@/lib/format";
 import { toolDisplayName } from "@/lib/tools/catalog";
 import { ScrollFadeList } from "./scroll-fade-list";
-
-function money(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: value < 1 ? 3 : 2,
-  }).format(value);
-}
-
-function compact(value: number) {
-  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
-}
 
 export type UsageBreakdownRow = {
   key: string;
@@ -47,7 +37,11 @@ export function UsageBreakdownList({
   countNoun = "items",
 }: UsageBreakdownListProps) {
   if (!rows.length) {
-    return <p className="py-6 text-sm text-muted-foreground">{empty}</p>;
+    return (
+      <Empty className="min-h-0 gap-1 border-0 p-6 md:p-6">
+        <EmptyDescription>{empty}</EmptyDescription>
+      </Empty>
+    );
   }
 
   const totalCost = rows.reduce((sum, row) => sum + row.cost, 0);
@@ -89,7 +83,7 @@ export function UsageBreakdownList({
                     )}
                   </div>
                   <p className="shrink-0 text-sm font-medium tabular-nums">
-                    {valueMode === "requests" ? compact(row.requests) : money(row.cost)}
+                    {valueMode === "requests" ? formatCompactNumber(row.requests) : formatUsd(row.cost)}
                   </p>
                 </div>
                 <div className="mt-1.5 h-1.5 w-full bg-muted">

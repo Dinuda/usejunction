@@ -129,14 +129,14 @@ test("selectPrimaryQuota ignores promo grants and rate-limit resets when plan wi
   assert.equal(primary?.rawRatio, 0.63);
 });
 
-test("dedupeQuotaUtilizations keeps highest ratio", () => {
+test("dedupeQuotaUtilizations keeps the freshest reading instead of an older high ratio", () => {
   const now = new Date("2026-07-14T12:00:00.000Z");
   const rows = mapQuotaSnapshots(
     [
       {
         toolName: "claude",
         windowType: "monthly",
-        usedPercent: 20,
+        usedPercent: 55,
         creditsRemaining: null,
         resetAt: null,
         source: "cli_rpc",
@@ -146,7 +146,7 @@ test("dedupeQuotaUtilizations keeps highest ratio", () => {
       {
         toolName: "claude",
         windowType: "monthly",
-        usedPercent: 55,
+        usedPercent: 20,
         creditsRemaining: null,
         resetAt: null,
         source: "cli_rpc",
@@ -158,7 +158,120 @@ test("dedupeQuotaUtilizations keeps highest ratio", () => {
   );
   const deduped = dedupeQuotaUtilizations(rows);
   assert.equal(deduped.length, 1);
-  assert.equal(deduped[0]?.rawRatio, 0.55);
+  assert.equal(deduped[0]?.rawRatio, 0.2);
+});
+
+test("dedupeQuotaUtilizations prefers the current reset window", () => {
+  const now = new Date("2026-07-14T12:00:00.000Z");
+  const rows = mapQuotaSnapshots(
+    [
+      {
+        toolName: "cursor",
+        windowType: "plan",
+        usedPercent: 95,
+        creditsRemaining: null,
+        resetAt: new Date("2026-07-01T00:00:00.000Z"),
+        source: "cli_rpc",
+        updatedAt: new Date("2026-07-14T12:01:00.000Z"),
+      },
+      {
+        toolName: "cursor",
+        windowType: "plan",
+        usedPercent: 5,
+        creditsRemaining: null,
+        resetAt: new Date("2026-08-01T00:00:00.000Z"),
+        source: "cli_rpc",
+        updatedAt: now,
+      },
+    ],
+    now,
+  );
+
+  const deduped = dedupeQuotaUtilizations(rows);
+  assert.equal(deduped[0]?.rawRatio, 0.05);
+  assert.equal(deduped[0]?.resetsAt, "2026-08-01T00:00:00.000Z");
+});
+
+test("selectPrimaryQuota prefers aggregate plan and Copilot premium windows", () => {
+  const now = new Date("2026-07-14T12:00:00.000Z");
+  const cursorRows = mapQuotaSnapshots(
+    [
+      {
+        toolName: "cursor",
+        windowType: "api",
+        usedPercent: 90,
+        creditsRemaining: null,
+        resetAt: new Date("2026-08-01T00:00:00.000Z"),
+        source: "cli_rpc",
+        updatedAt: now,
+      },
+      {
+        toolName: "cursor",
+        windowType: "plan",
+        usedPercent: 20,
+        creditsRemaining: null,
+        resetAt: new Date("2026-08-01T00:00:00.000Z"),
+        source: "cli_rpc",
+        updatedAt: now,
+      },
+    ],
+    now,
+  );
+  const copilotRows = mapQuotaSnapshots(
+    [
+      {
+        toolName: "copilot",
+        windowType: "copilot_completions",
+        usedPercent: 0,
+        creditsRemaining: null,
+        resetAt: new Date("2026-08-01T00:00:00.000Z"),
+        source: "github_api",
+        updatedAt: now,
+      },
+      {
+        toolName: "copilot",
+        windowType: "copilot_premium_interactions",
+        usedPercent: 15,
+        creditsRemaining: 255,
+        resetAt: new Date("2026-08-01T00:00:00.000Z"),
+        source: "github_api",
+        updatedAt: now,
+      },
+    ],
+    now,
+  );
+
+  assert.equal(selectPrimaryQuota(cursorRows)?.windowType, "plan");
+  assert.equal(selectPrimaryQuota(copilotRows)?.windowType, "copilot_premium_interactions");
+});
+
+test("selectPrimaryQuota never promotes fresh bonus inventory over a stale plan window", () => {
+  const now = new Date("2026-07-14T12:00:00.000Z");
+  const rows = mapQuotaSnapshots(
+    [
+      {
+        toolName: "cursor",
+        windowType: "plan",
+        usedPercent: 40,
+        creditsRemaining: null,
+        resetAt: new Date("2026-08-01T00:00:00.000Z"),
+        source: "cli_rpc",
+        updatedAt: new Date("2026-07-12T00:00:00.000Z"),
+      },
+      {
+        toolName: "cursor",
+        windowType: "bonus",
+        usedPercent: null,
+        creditsRemaining: 20,
+        resetAt: new Date("2026-08-01T00:00:00.000Z"),
+        source: "cli_rpc",
+        updatedAt: now,
+      },
+    ],
+    now,
+  );
+
+  assert.equal(selectPrimaryQuota(rows)?.windowType, "plan");
 });
 
 test("included allowance caps display ratio but preserves raw over 100%", () => {

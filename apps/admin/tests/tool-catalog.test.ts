@@ -7,6 +7,7 @@ import {
   findCatalogTool,
   serializeCatalog,
   subscriptionToolKeys,
+  toolDisplayName,
   toolUsageNames,
 } from "../lib/tools/catalog";
 import { deriveSubscription } from "../lib/tools/subscriptions";
@@ -30,6 +31,20 @@ test("catalog contains the supported branded tools and stable aliases", () => {
     assert.match(tool.sourceUrl, /^https:\/\//);
     assert.ok(tool.plans.length >= 4);
   }
+});
+
+test("tool display names cover catalog keys, aliases, and fallbacks", () => {
+  assert.equal(toolDisplayName("chatgpt-codex"), "ChatGPT");
+  assert.equal(toolDisplayName("chatgpt"), "ChatGPT");
+  assert.equal(toolDisplayName("codex"), "ChatGPT");
+  assert.equal(toolDisplayName("codex-work"), "ChatGPT");
+  assert.equal(toolDisplayName("github-copilot"), "Copilot");
+  assert.equal(toolDisplayName("copilot"), "Copilot");
+  assert.equal(toolDisplayName("claude-code"), "Claude");
+  assert.equal(toolDisplayName("unknown-tool"), "Unknown-tool");
+  assert.equal(toolDisplayName(""), "Tool");
+  assert.equal(toolDisplayName("   "), "Tool");
+  assert.equal(toolDisplayName(null), "Tool");
 });
 
 test("usage queries include all catalog aliases for a subscription tool", () => {
@@ -78,6 +93,23 @@ test("custom and enterprise subscriptions accept explicit editable pricing", () 
   assert.equal(subscription.billingCycleDays, 45);
   assert.equal(subscription.priceSource, "custom");
   assert.equal(subscription.providerSourceUrl, "https://chatgpt.com/pricing/");
+
+  const claudeEnterprise = deriveSubscription({
+    toolKey: "claude",
+    planKey: "enterprise",
+    billingCadence: "monthly",
+    seatCapacity: 1,
+    cycleSeatMicros: BigInt(31_000_000),
+    includedCycleMicros: BigInt(0),
+    inputRateMicrosPerMillion: BigInt(2_000_000),
+    outputRateMicrosPerMillion: BigInt(4_000_000),
+    cacheRateMicrosPerMillion: BigInt(1_000_000),
+  });
+  assert.equal(claudeEnterprise.name, "Enterprise");
+  assert.equal(claudeEnterprise.cycleSeatMicros, BigInt(31_000_000));
+  assert.equal(claudeEnterprise.inputRateMicrosPerMillion, BigInt(2_000_000));
+  assert.equal(claudeEnterprise.outputRateMicrosPerMillion, BigInt(4_000_000));
+  assert.equal(claudeEnterprise.cacheRateMicrosPerMillion, BigInt(1_000_000));
 });
 
 test("serialized catalog is JSON-safe", () => {

@@ -1,9 +1,8 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronDown } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -13,53 +12,22 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { SignalsSectionHeader } from "@/components/signals/signals-ui";
+import { Panel } from "@/components/panel";
+import { StatusBadge } from "@/components/status-badge";
 import type {
   DeviceActivityFeed as DeviceActivityFeedData,
   DeviceActivityItem,
 } from "@/lib/queries/activity/device-activity-types";
+import { formatDateTime, formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ScrollFadeList } from "./scroll-fade-list";
-
-function formatWhen(iso: string) {
-  return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
-}
-
-function formatRelative(iso: string) {
-  const ms = Date.now() - Date.parse(iso);
-  if (ms < 60_000) return "just now";
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
-  return `${Math.floor(ms / 86_400_000)}d ago`;
-}
-
-function StatusBadge({
-  children,
-  variant = "default",
-}: {
-  children: ReactNode;
-  variant?: "default" | "success" | "warning" | "error";
-}) {
-  const classes = {
-    default: "border-border bg-muted text-muted-foreground",
-    success: "border-success/30 bg-success/10 text-success",
-    warning: "border-warning/30 bg-warning/10 text-[#9a5f0d]",
-    error: "border-destructive/30 bg-destructive/10 text-destructive",
-  };
-  return (
-    <Badge variant="outline" className={cn("text-[0.65rem] uppercase tracking-[0.08em]", classes[variant])}>
-      {children}
-    </Badge>
-  );
-}
 
 function itemBadge(item: DeviceActivityItem): {
   label: string;
   variant: "success" | "warning" | "error" | "default";
 } {
   if (item.kind === "heartbeat") {
-    return item.device.online
-      ? { label: "online", variant: "success" }
-      : { label: "offline", variant: "warning" };
+    return { label: "heartbeat", variant: "default" };
   }
   if (item.status === "error" || item.errorCode) {
     return { label: item.errorCode ?? "error", variant: "error" };
@@ -242,8 +210,8 @@ function FeedRow({
           ) : null}
         </div>
         <div className="shrink-0 text-right">
-          <p className="text-xs text-muted-foreground">{formatRelative(item.at)}</p>
-          <p className="mt-1 text-[11px] text-muted-foreground/80">{formatWhen(item.at)}</p>
+          <p className="text-xs text-muted-foreground">{formatRelativeTime(item.at)}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground/80">{formatDateTime(item.at)}</p>
         </div>
       </button>
       {open ? (
@@ -257,7 +225,7 @@ function FeedRow({
 
 function feedStatusSummary(items: DeviceActivityItem[]) {
   if (!items.length) {
-    return { line: "No device exchanges or observed activity yet.", online: null as boolean | null, count: 0 };
+    return { line: "No device exchanges or observed activity yet.", count: 0 };
   }
 
   const latestHeartbeat = items.find((item) => item.kind === "heartbeat");
@@ -265,22 +233,17 @@ function feedStatusSummary(items: DeviceActivityItem[]) {
   const parts: string[] = [];
 
   if (latestHeartbeat) {
-    parts.push(
-      latestHeartbeat.device.online
-        ? `${latestHeartbeat.device.hostname} online · ${formatRelative(latestHeartbeat.at)}`
-        : `${latestHeartbeat.device.hostname} offline · ${formatRelative(latestHeartbeat.at)}`,
-    );
+    parts.push(`${latestHeartbeat.device.hostname} heartbeat · ${formatRelativeTime(latestHeartbeat.at)}`);
   }
   if (latestExchange) {
-    parts.push(`Last ${latestExchange.title.toLowerCase()} ${formatRelative(latestExchange.at)}`);
+    parts.push(`Last ${latestExchange.title.toLowerCase()} ${formatRelativeTime(latestExchange.at)}`);
   }
   if (!parts.length) {
-    parts.push(`Latest event ${formatRelative(items[0]!.at)}`);
+    parts.push(`Latest event ${formatRelativeTime(items[0]!.at)}`);
   }
 
   return {
     line: parts.join(" · "),
-    online: latestHeartbeat?.device.online ?? null,
     count: items.length,
   };
 }
@@ -297,7 +260,7 @@ export function DeviceActivityFeed({
 
   return (
     <>
-      <section className="mt-10 border bg-card p-5">
+      <Panel as="section" className="mt-10">
         <SignalsSectionHeader
           title="Device activity."
           description="Requests Junction made to connected machines, what came back, and observed activity on those machines."
@@ -317,8 +280,6 @@ export function DeviceActivityFeed({
           }
         />
         <div className="flex flex-wrap items-center gap-2">
-          {status.online === true ? <StatusBadge variant="success">online</StatusBadge> : null}
-          {status.online === false ? <StatusBadge variant="warning">offline</StatusBadge> : null}
           <p className="text-sm text-muted-foreground">{status.line}</p>
         </div>
         {status.count > 0 ? (
@@ -327,7 +288,7 @@ export function DeviceActivityFeed({
             {feed.presenceFallback ? " (presence fallback until the next collect)." : "."}
           </p>
         ) : null}
-      </section>
+      </Panel>
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent

@@ -22,7 +22,6 @@ export async function getDeveloperRoster(
           select: {
             id: true,
             hostname: true,
-            status: true,
             lastSeenAt: true,
             toolInstallations: {
               where: { detected: true },
@@ -90,6 +89,7 @@ export async function getDeveloperRoster(
       id: developer.id,
       name: developer.name,
       email: developer.email,
+      authUserId: developer.authUserId,
       role: developer.role,
       teamId: developer.teamId,
       createdAt: developer.createdAt,

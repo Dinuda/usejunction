@@ -33,7 +33,11 @@ export function deriveSubscription(input: z.infer<typeof subscriptionInputSchema
   const cadence = input.billingCadence as BillingCadence;
   const catalogMicros = catalogPrice(plan, cadence);
   const customPrice = Boolean(plan.customPrice || cadence === "custom");
-  if (catalogMicros === undefined && !customPrice) throw new Error("CADENCE_NOT_SUPPORTED");
+  // Allow explicit micros when catalog has no price for this cadence (e.g. ChatGPT weekly
+  // quota cycle priced from the monthly catalog seat).
+  if (catalogMicros === undefined && !customPrice && input.cycleSeatMicros === undefined) {
+    throw new Error("CADENCE_NOT_SUPPORTED");
+  }
   if (customPrice && input.cycleSeatMicros === undefined && catalogMicros === undefined) throw new Error("CUSTOM_PRICE_REQUIRED");
   if (cadence === "custom" && !input.billingCycleDays) throw new Error("CUSTOM_CYCLE_DAYS_REQUIRED");
   const fromRenewal = input.nextRenewalDate
@@ -65,7 +69,9 @@ export function deriveSubscription(input: z.infer<typeof subscriptionInputSchema
     billingCycleAnchorDate,
     billingCycleDays: cadence === "custom" ? input.billingCycleDays! : null,
     seatCapacity: input.seatCapacity,
-    cycleSeatMicros: customPrice ? (input.cycleSeatMicros ?? catalogMicros)! : catalogMicros!,
+    cycleSeatMicros: customPrice || catalogMicros === undefined
+      ? (input.cycleSeatMicros ?? catalogMicros)!
+      : catalogMicros!,
     includedCycleMicros: input.includedCycleMicros ?? plan.includedCycleMicros,
     inputRateMicrosPerMillion: input.inputRateMicrosPerMillion ?? BigInt(0),
     outputRateMicrosPerMillion: input.outputRateMicrosPerMillion ?? BigInt(0),

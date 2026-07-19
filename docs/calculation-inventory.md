@@ -12,11 +12,11 @@ This is the discovery pass for calculation and filter testing. It records what e
 | `/tools/[toolKey]` | admin, owner | provider detail | tool key from route |
 | `/team` | admin, owner | roster / inventory | selected developers for bulk assignment |
 | `/team/[developerId]` | admin, owner | member usage / plans / machines / tools | developer id from route; usage is 30 days |
-| `/signals` | admin, owner | overview | range `7\|30\|90`, person, team, AI tool (URL params) |
-| `/signals/activity` | admin, owner | activity table | range, person, team, AI tool; result limit is 50 |
-| `/signals/journeys` | admin, owner | journey rollup table | range, team, AI tool; person options are not shown |
-| `/signals/tools` | admin, owner | tool adoption table | range, team; AI-tool selector is hidden |
-| `/signals/journeys/[flowKey]` | admin, owner | journey detail | range, person, team, AI tool from URL; filters are read but no filter control is rendered on this page |
+| `/signals` | admin, owner | overview | cycle view or rolling `days`/custom bounds, person, team, AI tool (URL params) |
+| `/signals/activity` | admin, owner | activity table | cycle/rolling period, person, team, AI tool; result limit is 50 |
+| `/signals/journeys` | admin, owner | journey rollup table | rolling period, team, AI tool; person options are not shown |
+| `/signals/tools` | admin, owner | tool adoption table | rolling period, team; AI-tool selector is hidden |
+| `/signals/journeys/[flowKey]` | admin, owner | journey detail | rolling period, person, team, AI tool from URL; filters are read but no filter control is rendered on this page |
 
 Public/auth/onboarding/settings pages were inspected for calculation-bearing code and currently do not expose product metrics. They are out of scope for this calculation inventory; they still need ordinary frontend smoke tests later.
 
@@ -29,9 +29,9 @@ Source: `apps/admin/lib/metrics/date-range.ts`, `apps/admin/lib/analytics/contra
 - Usage windows are UTC calendar-day windows, inclusive at both ends. “Today” is included by querying through tomorrow at exclusive midnight.
 - A `days` window ends today and starts at `today - (days - 1)`. Its comparison window is the immediately preceding, same-length window.
 - Explicit dashboard bounds normalize `from` and `to` to UTC dates. The previous window ends one day before `from` and has the same number of days.
-- Dashboard range inputs clamp to 1–366 days and round non-integers.
+- Dashboard rolling shortcuts are 7, 14, and 30 days. Obsolete saved shortcuts fall back to 30 days.
 - Generic analytics queries reject windows longer than 366 inclusive days and reject an end before the start.
-- Signals normalize any range other than 7 or 90 to 30. Signals use the same current window and create a prior window of the same span immediately before it.
+- Signals accepts whole-number `days` values from 1–366 or a complete `from`/`to` pair, defaults to 30 days, and rejects mixed or invalid window modes. Its prior window is the immediately preceding span of equal length.
 - All current product metric windows use `grain: "day"` and `timezone: "UTC"`.
 - Tests must cover month/year boundaries, today’s records, one-day windows, leap days, custom bounds, invalid bounds, and non-UTC timestamps.
 
@@ -85,7 +85,7 @@ Calculations:
 - Cycle utilization is averaged across plan rows with a raw signal. Raw utilization uses live quota ratio first, otherwise included-allowance ratio. Display utilization averages clamped display ratios separately.
 - Worst plan verdict wins using `LIMIT_EXCEEDED > NEAR_LIMIT > DATA_STALE > UNKNOWN > LIGHT_USE > HEALTHY`.
 - `daysWithActivity` counts trend days with model calls > 0; `firstActivityDate` is the first active trend date; observation is partial if activity starts after the window or appears on fewer days than the range.
-- Coverage bars: active people = `activeDevelopers / developers` capped at 100%; online devices = `onlineDevices / devices` rounded to a whole percent; tracked tools is 100% when nonzero, otherwise 0%.
+- Coverage bars: active people = `activeDevelopers / developers` capped at 100%; enrolled devices is the active device count; tracked tools is 100% when nonzero, otherwise 0%.
 - “Has activity” is true when cycle calls > 0, any merged tool has requests > 0, or there is a detected installation. Empty state additionally requires zero devices.
 - Failed requests are restricted to the selected report window, status != success, ordered newest first, limited to five.
 
@@ -93,7 +93,7 @@ Frontend-only calculations/nuances:
 
 - Cycle header averages `utilizationPercent` over rows with a signal and counts near-limit/over-limit rows.
 - Meter width clamps to `[2, 100]` for any display ratio; `aria-valuenow` rounds the display ratio. A missing signal renders no numeric value and a 0% bar.
-- Coverage active-people bar is capped but online-device bar is only rounded, so test both numeric and CSS width behavior.
+- Coverage active-people bar is capped; the enrolled-device row is present when the active device count is nonzero.
 - KPI deltas are rendered as whole percentages and color-positive/negative; current dashboard data currently supplies `null` deltas, which should be explicitly verified.
 - Developer route bypasses the admin overview and renders the personal home instead.
 
@@ -103,7 +103,7 @@ Sources: `apps/admin/lib/queries/me/overview.ts`, dashboard page, `components/da
 
 - Fixed 30-day UTC window.
 - Model calls and sessions come from the summary query.
-- Device KPI is `online devices / total devices`; online is based on the presence threshold, not merely the stored status.
+- Device KPI is the enrolled device count.
 - Tools are usage rows plus detected-only tools; each tool shows requests, input+output tokens, and cost.
 - AI coding acceptance = `acceptedLines / suggestedLines * 100`, or no percentage when suggested lines is 0.
 - AI-driven commits shows `aiPercent` when non-null, otherwise commit count. Current data builder sets `aiPercent` to null.
@@ -183,12 +183,12 @@ Sources: `lib/queries/dashboard/tool-detail.ts`, `components/tools/tool-provider
 Sources: `app/(workspace)/team/page.tsx`, `components/developers/developer-tool-inventory.tsx`, `components/developers/roster-plan-usage.tsx`.
 
 - Members = roster length.
-- Online machines uses `isDeviceOnline(lastSeenAt)` when available, otherwise stored status; denominator is dashboard device count.
+- Enrolled machines uses the active dashboard device count.
 - Requests KPI sums each developer’s `requests7d` and displays compact notation.
 - Inventory summary: covered people = developers with at least one manual plan / total developers; needs a plan = detected tools exist and manual plan count is zero; available seats = sum subscription `availableSeats`.
 - Bulk assignment is offered only when more than one developer exists and at least one subscription has a positive available seat count. Assignment requests one seat per selected developer.
 - Detected tools per developer are the sorted set union of device installations and tool evidence.
-- Per-member metadata shows online/total machines and requests only when requests7d > 0.
+- Per-member metadata shows the enrolled machine count and requests only when requests7d > 0.
 - Roster plan meter averages only plans with non-null `primaryRatio`; it does not weight by seats. Verdict is the worst-ranked plan verdict. Meter width clamps to `[4, 100]`; no-signal plans show chips but no aggregate percentage.
 
 ### Member detail
@@ -197,7 +197,7 @@ Sources: `app/(workspace)/team/[developerId]/page.tsx`, `components/developers/m
 
 - Fixed 30-day window.
 - Requests = summary requests; tokens = input + output; spend = cost micros / 1,000,000.
-- Machines KPI is online/total, with the UI label “last 5 minutes”; presence logic must be tested at the threshold.
+- Machines are represented by enrollment and last-heartbeat timestamps, without an online/offline state.
 - Plan usage uses live primary quota when available, falling back to included allowance; raw percentage can exceed 100%, display bar is clamped.
 - Included allowance shows gross usage of included cycle allowance; plans with zero include show “seat cost only”.
 - Member plan summary uses server-provided average utilization and developer verdict.
@@ -206,7 +206,7 @@ Sources: `app/(workspace)/team/[developerId]/page.tsx`, `components/developers/m
 
 Shared filters: `components/signals/signals-filters.tsx`, `lib/signals/queries/windows.ts`, `lib/signals/readers/sessions.ts`.
 
-- Range select is 7/30/90 days. The filter component debounces URL navigation by 400ms.
+- The shared rolling-period picker offers 7/14/30-day shortcuts plus custom dates. The API can resolve any whole-number 1–366-day window.
 - Optional filters: `developerId`, `teamId`, `tool`. Empty selection removes the parameter. Hidden controls are not added to the URL even if a value exists.
 - Session query uses UTC `startedAt >= from` and `< day after to`, newest first, with a default in-memory read cap of 2,000. Activity overrides the cap with 1–200, default 50.
 - Filter options are all org developers, teams, and distinct session AI tools, each sorted by name/tool.

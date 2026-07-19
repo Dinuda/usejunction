@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
+import { Panel } from "@/components/panel";
 import { MemberWorkSessionList } from "@/components/developers/member-work-session-list";
 import { SignalsPageHeader } from "@/components/signals/signals-page-header";
+import { SignalsDisabledEmptyState } from "@/components/signals/signals-disabled-empty-state";
 import { SignalsTrendChart } from "@/components/signals/signals-trend-chart";
 import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
 import { flowDisplayLabel } from "@/components/signals/flow-segment";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
-import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 import {
   cycleViewPeriodLabel,
@@ -64,26 +66,17 @@ export default async function SignalsOverviewPage({
     <>
       <SignalsPageHeader
         title="Signals"
-        description="What your team ships with local AI coding tools — not full chat transcripts."
+        description="See what your team does well—and help more people do it."
       >
-        <div className="flex justify-end">
-          <CycleViewPicker view={cycleView} period={rollingPeriod} basePath="/signals" />
-        </div>
+        {work.enabled ? (
+          <div className="flex justify-end">
+            <CycleViewPicker view={cycleView} period={rollingPeriod} basePath="/signals" />
+          </div>
+        ) : null}
       </SignalsPageHeader>
 
       {!work.enabled ? (
-        <div className="mb-10 flex flex-col gap-3 border border-border bg-card p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
-          <p className="max-w-2xl text-sm leading-6 text-foreground">
-            Turn on work extraction under Settings to see structured coding-tool work from Cursor,
-            Claude, and Codex.
-          </p>
-          <Button asChild variant="outline" className="shrink-0 rounded-none">
-            <Link href="/settings">
-              Open Settings
-              <ArrowUpRight />
-            </Link>
-          </Button>
-        </div>
+        <SignalsDisabledEmptyState />
       ) : (
         <>
           <div className="grid items-start gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
@@ -144,15 +137,15 @@ export default async function SignalsOverviewPage({
           </div>
 
           <div className="mt-10 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-            <section className="border bg-card p-5">
+            <Panel as="section">
               <SignalsSectionHeader
                 title="Daily trend."
                 description="Work sessions by day in this window."
                 bordered={false}
               />
               <SignalsTrendChart data={work.trend} />
-            </section>
-            <section className="border bg-card p-5">
+            </Panel>
+            <Panel as="section">
               <SignalsSectionHeader
                 title="Top tools."
                 description="Where coding-tool work concentrates."
@@ -193,12 +186,14 @@ export default async function SignalsOverviewPage({
                   ))}
                 </ul>
               ) : (
-                <p className="py-4 text-sm text-muted-foreground">No tool sessions yet.</p>
+                <Empty className="min-h-0 gap-1 border-0 p-6 md:p-6">
+                  <EmptyDescription>No tool sessions yet.</EmptyDescription>
+                </Empty>
               )}
-            </section>
+            </Panel>
           </div>
 
-          <section className="mt-10 border bg-card p-5">
+          <Panel as="section" className="mt-10">
             <SignalsSectionHeader
               title="Recent work."
               description="Asks, change summaries, and file activity from local AI tools."
@@ -221,9 +216,11 @@ export default async function SignalsOverviewPage({
                 maxHeightClass="max-h-[28rem]"
               />
             ) : (
-              <p className="py-4 text-sm text-muted-foreground">No extracted work in this window yet.</p>
+              <Empty className="min-h-0 gap-1 border-0 p-6 md:p-6">
+                <EmptyDescription>No extracted work in this window yet.</EmptyDescription>
+              </Empty>
             )}
-          </section>
+          </Panel>
         </>
       )}
     </>

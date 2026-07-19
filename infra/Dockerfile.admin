@@ -17,15 +17,14 @@ WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
 COPY packages/db/package.json ./packages/db/
 COPY apps/admin/package.json ./apps/admin/
-RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+RUN pnpm install --frozen-lockfile
 
-FROM base AS migrate
+FROM deps AS migrate
 WORKDIR /app/prisma-migrate
 COPY packages/db/prisma ./prisma
 COPY packages/db/package.json ./
-RUN npm install prisma@6.19.3 @prisma/client@6.19.3 tsx@4.22.4 bcryptjs@3.0.3
 ENV DATABASE_URL=postgresql://usejunction:usejunction@postgres:5432/usejunction
-RUN npx prisma generate
+RUN pnpm --dir /app --filter @usejunction/db exec prisma generate --schema=/app/prisma-migrate/prisma/schema.prisma
 # Ensure seed can resolve @prisma/client at runtime
 RUN ln -sf /app/prisma-migrate/node_modules /app/node_modules 2>/dev/null || true
 
@@ -42,15 +41,16 @@ RUN pnpm --filter @usejunction/admin build
 
 FROM base AS runner
 WORKDIR /app
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl && addgroup -S nodejs && adduser -S nextjs -G nodejs
 ENV NODE_ENV=production
 ENV PORT=3001
 ENV HOSTNAME=0.0.0.0
-COPY --from=builder /app/apps/admin/.next/standalone ./
-COPY --from=builder /app/apps/admin/.next/static ./apps/admin/.next/static
-COPY --from=builder /app/apps/admin/public ./apps/admin/public
-COPY --from=builder /app/install.sh ./install.sh
-COPY --from=migrate /app/prisma-migrate ./prisma-migrate
+COPY --chown=nextjs:nodejs --from=builder /app/apps/admin/.next/standalone ./
+COPY --chown=nextjs:nodejs --from=builder /app/apps/admin/.next/static ./apps/admin/.next/static
+COPY --chown=nextjs:nodejs --from=builder /app/apps/admin/public ./apps/admin/public
+COPY --chown=nextjs:nodejs --from=builder /app/install.sh ./install.sh
+COPY --chown=nextjs:nodejs --from=builder /app/install.ps1 ./install.ps1
+COPY --chown=nextjs:nodejs --from=migrate /app/prisma-migrate ./prisma-migrate
 RUN ARCH=$(uname -m) && \
     if [ "$ARCH" = "aarch64" ]; then ENGINE=libquery_engine-linux-musl-arm64-openssl-3.0.x.so.node; \
     else ENGINE=libquery_engine-linux-musl-openssl-3.0.x.so.node; fi && \
@@ -62,5 +62,6 @@ RUN ARCH=$(uname -m) && \
     cp prisma-migrate/node_modules/.prisma/client/schema.prisma apps/admin/.next/server/
 COPY infra/docker-entrypoint-admin.sh /docker-entrypoint-admin.sh
 RUN chmod +x /docker-entrypoint-admin.sh
+USER nextjs
 EXPOSE 3001
 CMD ["/docker-entrypoint-admin.sh"]

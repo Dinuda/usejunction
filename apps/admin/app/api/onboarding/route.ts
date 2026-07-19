@@ -82,7 +82,9 @@ export async function GET() {
       name: true,
       email: true,
       devices: {
+        where: { decommissionedAt: null },
         orderBy: { lastSeenAt: "desc" },
+        take: 1,
         select: {
           id: true,
           hostname: true,

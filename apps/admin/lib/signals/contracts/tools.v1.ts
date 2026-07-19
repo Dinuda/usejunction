@@ -1,9 +1,9 @@
-import type { SignalsFiltersInput, SignalsRange, SignalsToolRow } from "./shared";
+import type { SignalsFiltersInput, SignalsToolRow } from "./shared";
 
 export type SignalsToolsInput = SignalsFiltersInput;
 
 export type SignalsToolsV1 = {
-  range: SignalsRange;
+  windowDays: number;
   filters: {
     developerId: string | null;
     teamId: string | null;

@@ -11,6 +11,17 @@ export const WORKSPACE_COLORS = [
 
 export type WorkspaceColor = (typeof WORKSPACE_COLORS)[number];
 
+export const WORKSPACE_COLOR_LABELS: Record<WorkspaceColor, string> = {
+  "#64748b": "Slate",
+  "#0f766e": "Teal",
+  "#2563eb": "Blue",
+  "#7c3aed": "Violet",
+  "#db2777": "Pink",
+  "#ea580c": "Orange",
+  "#ca8a04": "Gold",
+  "#16a34a": "Green",
+};
+
 export function isWorkspaceColor(value: string | null | undefined): value is WorkspaceColor {
   return !!value && (WORKSPACE_COLORS as readonly string[]).includes(value);
 }

@@ -178,6 +178,7 @@ export async function updateDirectiveForDevice(
   const parsed = agentReleaseManifestSchema.safeParse(deployment.release.manifest);
   if (!parsed.success) return null;
   const artifact = parsed.data.artifacts[artifactKey(device.os, device.architecture)];
+  const selectedArtifactKey = artifactKey(device.os, device.architecture);
   if (!artifact) return null;
 
   if (!deployment.directiveDeliveredAt) {
@@ -210,9 +211,11 @@ export async function updateDirectiveForDevice(
     targetVersion: deployment.targetVersion,
     urgency: deployment.release.urgency as "normal" | "critical",
     artifactUrl: artifact.url,
+    artifactKey: selectedArtifactKey,
     sha256: artifact.sha256.toLowerCase(),
     size: artifact.size,
     eligibleAt: deployment.eligibleAt.toISOString(),
+    manifest: parsed.data,
   };
 }
 
@@ -304,7 +307,7 @@ export async function recordAgentUpdateEvent(device: DeviceIdentity, input: {
         data.confirmedAt = now;
         data.lastErrorCode = null;
         data.lastErrorStage = null;
-        await tx.device.update({ where: { id: device.id }, data: { agentVersion: input.targetVersion, lastSeenAt: now, status: "online" } });
+        await tx.device.update({ where: { id: device.id }, data: { agentVersion: input.targetVersion, lastSeenAt: now } });
       }
       if (input.event === "rollback_confirmed") data.rolledBackAt = now;
       return tx.agentUpdateDeployment.update({ where: { id: deployment.id }, data });
@@ -329,7 +332,6 @@ type CoverageMetricRow = {
   downloadedAt: Date | null;
   installStartedAt: Date | null;
   state: string;
-  lastSeenAt: Date;
 };
 
 export function calculateCoverageMetrics(rows: CoverageMetricRow[], now: Date = new Date()) {
@@ -342,7 +344,6 @@ export function calculateCoverageMetrics(rows: CoverageMetricRow[], now: Date = 
   const confirmed = count((row) => row.state === "confirmed");
   const failed = count((row) => row.state === "failed");
   const rolledBack = count((row) => row.state === "rolled_back");
-  const onlineCutoff = now.getTime() - 30 * 60_000;
   const pending = rows.filter((row) => !["confirmed", "failed", "rolled_back"].includes(row.state));
   const percent = (numerator: number, denominator: number) => denominator ? Math.round((numerator / denominator) * 1000) / 10 : 0;
   return {
@@ -354,8 +355,7 @@ export function calculateCoverageMetrics(rows: CoverageMetricRow[], now: Date = 
     confirmed,
     failed,
     rolledBack,
-    pendingOnline: pending.filter((row) => row.lastSeenAt.getTime() >= onlineCutoff).length,
-    pendingOffline: pending.filter((row) => row.lastSeenAt.getTime() < onlineCutoff).length,
+    pending: pending.length,
     pullCoveragePercent: percent(downloaded, total),
     installCoveragePercent: percent(confirmed, total),
     downloadToInstallPercent: percent(confirmed, downloaded),
@@ -383,7 +383,6 @@ export async function getAgentUpdateCoverage(orgId?: string, version?: string, n
     downloadedAt: row.downloadedAt,
     installStartedAt: row.installStartedAt,
     state: row.state,
-    lastSeenAt: row.device.lastSeenAt,
   })), now);
   return {
     release: { version: release.version, status: release.status, urgency: release.urgency, rolloutHours: release.rolloutHours, rolloutStartedAt: release.rolloutStartedAt?.toISOString() ?? null },
@@ -519,11 +518,11 @@ export async function accelerateOrgAgentRollout(
   };
 }
 
-export async function getWorkExtractionReadiness(orgId: string, now: Date = new Date()) {
+export async function getWorkExtractionReadiness(orgId: string) {
   const [devices, activeRelease] = await Promise.all([
     prisma.device.findMany({
       where: { orgId, decommissionedAt: null },
-      select: { id: true, agentVersion: true, lastSeenAt: true },
+      select: { id: true, agentVersion: true },
     }),
     prisma.agentRelease.findFirst({
       where: { status: "active" },
@@ -549,13 +548,11 @@ export async function getWorkExtractionReadiness(orgId: string, now: Date = new 
   return summarizeWorkExtractionReadiness(
     devices.map((device) => ({
       agentVersion: device.agentVersion,
-      lastSeenAt: device.lastSeenAt,
       updating: updatingIds.has(device.id),
     })),
     {
       minAgentVersion: WORK_EXTRACTION_MIN_AGENT_VERSION,
       activeReleaseVersion: activeRelease?.version ?? null,
-      now,
     },
   );
 }

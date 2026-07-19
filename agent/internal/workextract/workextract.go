@@ -23,47 +23,59 @@ import (
 	"github.com/usejunction/agent/internal/client"
 )
 
-// MinAgentVersion is the first agent release that includes work extraction
-// with changeNarrative (clipped allowlisted summaries).
+// MinAgentVersion is the first agent release that enforces forward-only work
+// extraction with a server-authoritative collection epoch.
 // Keep in sync with WORK_EXTRACTION_MIN_AGENT_VERSION on the control plane.
-const MinAgentVersion = "0.3.0"
+const MinAgentVersion = "0.3.1"
 
 const (
 	maxSessionsIncremental = 200
-	maxSessionsBackfill    = 1000
 	cursorLimitIncremental = 150
-	cursorLimitBackfill    = 1000
 )
 
 // Options controls collect depth.
 type Options struct {
-	// Backfill scans a larger historical window (first sync after enable/update).
-	Backfill bool
-	// Since, when set and Backfill is false, keeps sessions with ObservedAt
-	// strictly greater than this watermark (already-captured boundary excluded).
+	// NotBefore is the server-authoritative collection epoch. Sessions observed
+	// before it are never returned.
+	NotBefore time.Time
+	// Since keeps sessions with ObservedAt strictly greater than the local
+	// incremental watermark (already-captured boundary excluded).
 	Since time.Time
 }
 
 // Collect gathers work sessions from supported local tools.
 func Collect(opts Options) []client.WorkSession {
-	cursorLimit := cursorLimitIncremental
-	maxSessions := maxSessionsIncremental
-	if opts.Backfill {
-		cursorLimit = cursorLimitBackfill
-		maxSessions = maxSessionsBackfill
-	}
-
 	var out []client.WorkSession
-	out = append(out, extractCursor(cursorLimit)...)
+	out = append(out, extractCursor(cursorLimitIncremental)...)
 	out = append(out, extractCodex()...)
 	out = append(out, extractClaude()...)
 
-	if !opts.Backfill && !opts.Since.IsZero() {
+	if !opts.NotBefore.IsZero() {
+		out = FilterAtOrAfter(out, opts.NotBefore)
+	}
+	if !opts.Since.IsZero() {
 		out = FilterSince(out, opts.Since)
 	}
 
-	if len(out) > maxSessions {
-		out = sortByObservedDesc(out)[:maxSessions]
+	if len(out) > maxSessionsIncremental {
+		out = sortByObservedDesc(out)[:maxSessionsIncremental]
+	}
+	return out
+}
+
+// FilterAtOrAfter enforces the inclusive server-authoritative collection
+// epoch. ObservedAt is intentional: an older session updated after enablement
+// is a current cumulative snapshot and may be reported.
+func FilterAtOrAfter(sessions []client.WorkSession, cutoff time.Time) []client.WorkSession {
+	if cutoff.IsZero() {
+		return nil
+	}
+	out := make([]client.WorkSession, 0, len(sessions))
+	for _, session := range sessions {
+		observed, err := time.Parse(time.RFC3339Nano, session.ObservedAt)
+		if err == nil && !observed.Before(cutoff) {
+			out = append(out, session)
+		}
 	}
 	return out
 }
@@ -193,13 +205,10 @@ func FilterSince(sessions []client.WorkSession, since time.Time) []client.WorkSe
 	if since.IsZero() {
 		return sessions
 	}
-	watermark := since.UTC().Format(time.RFC3339)
 	out := make([]client.WorkSession, 0, len(sessions))
 	for _, session := range sessions {
-		if session.ObservedAt == "" {
-			continue
-		}
-		if session.ObservedAt > watermark {
+		observed, err := time.Parse(time.RFC3339Nano, session.ObservedAt)
+		if err == nil && observed.After(since) {
 			out = append(out, session)
 		}
 	}

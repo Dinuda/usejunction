@@ -1,5 +1,5 @@
 import {
-  DEVICE_LIMIT_FREE,
+  USER_LIMIT_FREE,
   TEAM_PRICE_PER_DEV_USD,
   TRIAL_DAYS,
 } from "@/lib/saas-billing/entitlements";
@@ -7,19 +7,34 @@ import {
 export const siteConfig = {
   name: "UseJunction",
   tagline: "Open-source observability for AI coding tools",
+  /** Secondary promise for SEO / AEO (plan usage + team insights) */
+  promise:
+    "See AI coding tool usage, plan utilization, and team insights—before you try to control it.",
   description:
-    "See every AI coding tool your team uses, what it costs, how it performs, and whether devices are configured correctly. Self-hosted and open source.",
+    "Open-source AI coding observability for teams. Track Cursor, Claude Code, and Copilot usage, cost, plan seat waste, and device health. Self-hosted.",
+  seoTitle: "UseJunction — AI Coding Observability for Teams | Plan Usage & Tool Insights",
   url: process.env.NEXTAUTH_URL ?? "https://usejunction.dev",
   githubUrl: "https://github.com/usejunction/usejunction",
   docsUrl: "https://github.com/usejunction/usejunction#readme",
+  changelogUrl: "https://github.com/usejunction/usejunction/releases",
   signupUrl: "/signup",
   license: "MIT",
+  /** X/Twitter handle (with @). Override via NEXT_PUBLIC_TWITTER_HANDLE. */
+  twitterHandle: process.env.NEXT_PUBLIC_TWITTER_HANDLE ?? "@usejunction",
 } as const;
 
+/** X/Twitter profile URL derived from the handle, for sameAs. */
+export const twitterUrl = `https://x.com/${siteConfig.twitterHandle.replace(/^@/, "")}`;
+
 export const navAnchors = [
-  { id: "how-it-works", label: "How it works" },
+  { id: "product", label: "Product" },
   { id: "features", label: "Features" },
   { id: "pricing", label: "Pricing" },
+] as const;
+
+export const navLinks = [
+  { href: "/guides", label: "Guides" },
+  { href: "/compare", label: "Compare" },
 ] as const;
 
 export const SUPPORTED_TOOLS = [
@@ -63,7 +78,7 @@ export const OBSERVABILITY_FEATURES = [
   {
     title: "Device configuration health",
     description: "Agent heartbeats, config drift, and unhealthy device flags in one view.",
-    metric: "31/33 online",
+    metric: "33 enrolled",
     icon: "fi-rr-laptop-mobile",
   },
   {
@@ -139,7 +154,7 @@ export const PRICING_PLANS = [
     featured: false,
     features: [
       "Self-hosted MIT license",
-      `Up to ${DEVICE_LIMIT_FREE} enrolled devices`,
+      `Up to ${USER_LIMIT_FREE} users`,
       "Usage & cost dashboard",
       "Tool & model visibility",
       "Community support on GitHub",
@@ -151,13 +166,13 @@ export const PRICING_PLANS = [
     name: "Team",
     description: "For growing teams that need full coverage",
     price: `$${TEAM_PRICE_PER_DEV_USD}`,
-    period: "per developer / month",
+    period: "per active developer / month",
     cta: { label: "Start free trial", href: siteConfig.signupUrl },
     featured: true,
     badge: "Popular",
     features: [
       `${TRIAL_DAYS}-day free trial`,
-      "Unlimited enrolled devices",
+      "One connected device per user",
       "Per-developer cost attribution",
       "Latency & error rate metrics",
       "Personal key detection",
@@ -210,13 +225,17 @@ export const TRUST_FEATURES = [
 export const FOOTER_COLUMNS = {
   product: [
     { label: "Overview", href: "/" },
-    { label: "Dashboard", href: "/login" },
-    { label: "Changelog", href: "#" },
+    { label: "Pricing", href: "/#pricing" },
+    { label: "Changelog", href: siteConfig.changelogUrl },
+    { label: "Contact", href: "/contact" },
   ],
-  docs: [
+  learn: [
+    { label: "Guides", href: "/guides" },
+    { label: "Plan usage & waste", href: "/guides/see-plan-usage-and-waste" },
+    { label: "Team AI coding insights", href: "/guides/see-team-ai-coding-usage" },
+    { label: "Compare WakaTime", href: "/compare/wakatime" },
+    { label: "Blog", href: "/blog" },
     { label: "Documentation", href: siteConfig.docsUrl },
-    { label: "Self-host guide", href: siteConfig.docsUrl },
-    { label: "API reference", href: "#" },
   ],
   community: [
     { label: "GitHub", href: siteConfig.githubUrl },
@@ -225,7 +244,8 @@ export const FOOTER_COLUMNS = {
   ],
   license: [
     { label: siteConfig.license, href: `${siteConfig.githubUrl}/blob/main/LICENSE` },
-    { label: "Privacy", href: "#" },
-    { label: "Terms", href: "#" },
+    { label: "Privacy", href: "/privacy" },
+    { label: "Terms", href: "/terms" },
+    { label: "llms.txt", href: "/llms.txt" },
   ],
 } as const;

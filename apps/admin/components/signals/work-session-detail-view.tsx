@@ -1,6 +1,15 @@
 import Link from "next/link";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { WorkCsvExportButton } from "@/components/signals/work-csv-export-button";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
+import { formatDateTime, formatShortDate } from "@/lib/format";
 import type { WorkSessionDetail } from "@/lib/signals/queries/get-work-session-detail";
 import { displayWorkTitle } from "@/lib/signals/work-display";
 import { workSessionDetailToCsv } from "@/lib/signals/work-export";
@@ -23,23 +32,6 @@ import {
 } from "@/lib/signals/work-trace";
 
 const FILE_CHANGE_PREVIEW = 40;
-
-function formatWhen(iso: string) {
-  return new Date(iso).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function formatDay(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString(undefined, {
@@ -229,7 +221,7 @@ function elapsedSub(
     const startDay = new Date(startedAt).toDateString();
     const endDay = new Date(endedAt).toDateString();
     if (startDay !== endDay) {
-      return `${formatDay(startedAt)} – ${formatDay(endedAt)}`;
+      return `${formatShortDate(startedAt)} – ${formatShortDate(endedAt)}`;
     }
   }
   return undefined;
@@ -238,13 +230,13 @@ function elapsedSub(
 export function WorkSessionDetailView({
   session,
   backHref = "/signals/activity",
-  backLabel = "Activity",
 }: {
   session: WorkSessionDetail;
   backHref?: string;
   backLabel?: string;
 }) {
   const title = displayWorkTitle(session.title, session.tldr);
+  const fromTeam = backHref.startsWith("/team/");
   const location = formatTraceLocation(session.trace) ?? session.locationLabel;
   const stats = formatTraceStats(session.trace);
   const duration = formatTraceDuration(session.trace);
@@ -405,12 +397,53 @@ export function WorkSessionDetailView({
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link
-          href={backHref}
-          className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-        >
-          ← {backLabel}
-        </Link>
+        {fromTeam ? (
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild>
+                  <Link href="/team">Team</Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild>
+                  <Link href={`/team/${session.developer.id}`}>{session.developer.name}</Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild>
+                  <Link href={backHref}>Work</Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>{title}</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        ) : (
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild>
+                  <Link href="/signals">Signals</Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild>
+                  <Link href="/signals/activity">Activity</Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>{title}</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        )}
         <WorkCsvExportButton filename={filename} csv={csv} label="Export CSV" />
       </div>
 
@@ -419,7 +452,7 @@ export function WorkSessionDetailView({
         <div className="min-w-0">
           <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">{title}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            {[session.toolName, session.model, session.mode, formatWhen(session.observedAt)]
+            {[session.toolName, session.model, session.mode, formatDateTime(session.observedAt)]
               .filter(Boolean)
               .join(" · ")}
           </p>
@@ -867,13 +900,13 @@ export function WorkSessionDetailView({
               {session.startedAt ? (
                 <div>
                   <dt className="text-xs text-muted-foreground">Started</dt>
-                  <dd className="mt-1">{formatWhen(session.startedAt)}</dd>
+                  <dd className="mt-1">{formatDateTime(session.startedAt)}</dd>
                 </div>
               ) : null}
               {session.endedAt ? (
                 <div>
                   <dt className="text-xs text-muted-foreground">Ended</dt>
-                  <dd className="mt-1">{formatWhen(session.endedAt)}</dd>
+                  <dd className="mt-1">{formatDateTime(session.endedAt)}</dd>
                 </div>
               ) : null}
             </dl>

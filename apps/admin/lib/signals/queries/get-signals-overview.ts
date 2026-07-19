@@ -52,7 +52,7 @@ export async function getSignalsOverview(
       : 0;
 
   const data: SignalsOverviewV1 = {
-    range: windows.range,
+    windowDays: windows.windowDays,
     policyEnabled: policy.enabled,
     insight: buildSignalsInsight({
       policyEnabled: policy.enabled,

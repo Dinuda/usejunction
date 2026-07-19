@@ -242,31 +242,48 @@ export function planBoardLeadLabel(cards: MemberPlanBoardCard[]): {
 
   const over = live.filter((c) => c.pace.code === "ALREADY_EXCEEDED").length;
   const excess = live.filter((c) => c.pace.code === "EXCESS").length;
+  const onTrack = live.filter((c) => c.pace.code === "ON_TRACK").length;
   const under = live.filter((c) => c.pace.code === "UNDER").length;
-  const avg =
-    live.reduce((sum, c) => sum + (c.pace.usedPercent ?? 0), 0) / live.length;
+  const unavailable = live.filter((c) => c.pace.code === "UNKNOWN").length;
   const countLabel = live.length === 1 ? "1 plan" : `${live.length} plans`;
+  const distribution = [
+    over > 0 ? `${over} over` : null,
+    excess > 0 ? `${excess} above pace` : null,
+    onTrack > 0 ? `${onTrack} on pace` : null,
+    under > 0 ? `${under} under` : null,
+    unavailable > 0 ? `${unavailable} unavailable` : null,
+  ].filter((part): part is string => part != null);
+  const sub = `${countLabel} · ${distribution.join(" · ")}`;
 
   if (over > 0) {
     return {
-      value: over === live.length ? "All over limit" : `${over} over limit`,
-      sub: `${countLabel} · avg ${Math.round(avg)}% used`,
+      value: over === 1 ? "1 plan over limit" : `${over} plans over limit`,
+      sub,
     };
   }
   if (excess > 0) {
     return {
-      value: excess === 1 ? "One plan heating up" : `${excess} plans heating up`,
-      sub: `${countLabel} · avg ${Math.round(avg)}% used`,
+      value: excess === 1 ? "1 plan above pace" : `${excess} plans above pace`,
+      sub,
     };
   }
-  if (under === live.length) {
+  if (under > 0) {
     return {
-      value: "Room across the board",
-      sub: `${countLabel} · avg ${Math.round(avg)}% used`,
+      value: under === 1 ? "1 plan underutilized" : `${under} plans underutilized`,
+      sub,
+    };
+  }
+  if (unavailable > 0) {
+    return {
+      value:
+        unavailable === 1
+          ? "Pace unavailable for 1 plan"
+          : `Pace unavailable for ${unavailable} plans`,
+      sub,
     };
   }
   return {
-    value: "Steady across plans",
-    sub: `${countLabel} · avg ${Math.round(avg)}% used`,
+    value: "All plans on pace",
+    sub,
   };
 }

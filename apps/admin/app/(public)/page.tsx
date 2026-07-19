@@ -1,23 +1,25 @@
 import type { Metadata } from "next";
 import { UseJunctionHomeContent } from "@/components/public/use-junction-home-content";
 import { siteConfig } from "@/lib/public/config";
+import { absoluteUrl } from "@/lib/public/site-url";
 
 export const metadata: Metadata = {
-  title: `${siteConfig.name} — ${siteConfig.tagline}`,
+  title: { absolute: siteConfig.seoTitle },
   description: siteConfig.description,
   alternates: {
-    canonical: siteConfig.url,
+    canonical: absoluteUrl("/"),
   },
   openGraph: {
-    title: `${siteConfig.name} — ${siteConfig.tagline}`,
+    title: siteConfig.seoTitle,
     description: siteConfig.description,
-    url: siteConfig.url,
+    url: absoluteUrl("/"),
     siteName: siteConfig.name,
     type: "website",
+    locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    title: `${siteConfig.name} — ${siteConfig.tagline}`,
+    title: siteConfig.seoTitle,
     description: siteConfig.description,
   },
 };

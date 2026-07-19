@@ -1,5 +1,11 @@
 import { prisma } from "@usejunction/db";
 import { assignmentSnapshot } from "@/lib/billing/assignments";
+import {
+  detectedCycleFromQuotas,
+  detectedCycleSeatMicros,
+  quotaToolNamesForKey,
+  type QuotaResetRow,
+} from "./detected-cycle";
 import { canonicalToolKey, findCatalogPlan, findCatalogTool } from "./catalog";
 import { deriveSubscription } from "./subscriptions";
 
@@ -88,12 +94,115 @@ function utcDateOnly(date = new Date()) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
+async function loadQuotaRowsForTool(orgId: string, toolKey: string): Promise<QuotaResetRow[]> {
+  const names = quotaToolNamesForKey(toolKey);
+  if (!names.length) return [];
+  return prisma.quotaSnapshot.findMany({
+    where: { orgId, toolName: { in: names } },
+    select: {
+      toolName: true,
+      windowType: true,
+      usedPercent: true,
+      resetAt: true,
+      updatedAt: true,
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 40,
+  });
+}
+
+function deriveDetectedSubscription(input: {
+  toolKey: string;
+  catalogPlanKey: string;
+  quotas: QuotaResetRow[];
+  seatCapacity?: number;
+  existingAnchor?: Date | null;
+  existingCadence?: string | null;
+}) {
+  const catalogPlan = findCatalogPlan(input.toolKey, input.catalogPlanKey);
+  const cycle = detectedCycleFromQuotas(input.quotas, { toolKey: input.toolKey });
+  const seatFromCadence = detectedCycleSeatMicros(input.toolKey, input.catalogPlanKey, cycle.billingCadence);
+
+  // No billing-grade renewal (common for ChatGPT: weekly quotas only). Preserve an
+  // existing monthly anchor; never promote a weekly quota reset into Plus renewal.
+  const canPreserveAnchor =
+    !cycle.nextRenewalDate &&
+    input.existingAnchor &&
+    (input.existingCadence ?? cycle.billingCadence) === cycle.billingCadence;
+
+  return deriveSubscription({
+    toolKey: input.toolKey,
+    planKey: input.catalogPlanKey,
+    billingCadence: cycle.billingCadence,
+    ...(cycle.nextRenewalDate
+      ? { nextRenewalDate: cycle.nextRenewalDate }
+      : canPreserveAnchor
+        ? { billingCycleAnchorDate: utcDateOnly(input.existingAnchor!) }
+        : {}),
+    seatCapacity: input.seatCapacity ?? 1,
+    ...(catalogPlan?.customPrice ? { cycleSeatMicros: BigInt(0) } : {}),
+    ...(seatFromCadence !== undefined && !catalogPlan?.customPrice ? { cycleSeatMicros: seatFromCadence } : {}),
+    notes: "Auto-synced from detected device usage",
+  });
+}
+
+function cycleFieldsChanged(
+  template: {
+    billingCadence: string;
+    billingCycleAnchorDate: Date | null;
+    billingCycleDays: number | null;
+    cycleSeatMicros: bigint;
+  },
+  derived: {
+    billingCadence: string;
+    billingCycleAnchorDate: Date;
+    billingCycleDays: number | null;
+    cycleSeatMicros: bigint;
+  },
+) {
+  const anchor = (value: Date | null) => (value ? value.toISOString().slice(0, 10) : null);
+  return (
+    template.billingCadence !== derived.billingCadence ||
+    anchor(template.billingCycleAnchorDate) !== anchor(derived.billingCycleAnchorDate) ||
+    template.billingCycleDays !== derived.billingCycleDays ||
+    template.cycleSeatMicros !== derived.cycleSeatMicros
+  );
+}
+
+async function syncDetectedAssignmentsCycle(
+  orgId: string,
+  templateId: string,
+  fields: {
+    billingCadence: string;
+    billingCycleAnchorDate: Date;
+    billingCycleDays: number | null;
+    cycleSeatMicros: bigint;
+  },
+) {
+  await prisma.developerPlanAssignment.updateMany({
+    where: {
+      orgId,
+      planTemplateId: templateId,
+      active: true,
+      seatStatus: "active",
+      source: "detected",
+    },
+    data: {
+      billingCadence: fields.billingCadence,
+      billingCycleAnchorDate: fields.billingCycleAnchorDate,
+      billingCycleDays: fields.billingCycleDays,
+      cycleSeatMicros: fields.cycleSeatMicros,
+    },
+  });
+}
+
 async function ensureTemplate(input: {
   orgId: string;
   toolKey: string;
   catalogPlanKey: string;
   actorId: string;
 }) {
+  const quotas = await loadQuotaRowsForTool(input.orgId, input.toolKey);
   const existing = await prisma.billingPlanTemplate.findFirst({
     where: {
       orgId: input.orgId,
@@ -102,16 +211,44 @@ async function ensureTemplate(input: {
       active: true,
     },
   });
-  if (existing) return { template: existing, created: false };
 
-  const catalogPlan = findCatalogPlan(input.toolKey, input.catalogPlanKey);
-  const derived = deriveSubscription({
+  if (existing) {
+    if (existing.priceSource !== "detected") {
+      return { template: existing, created: false, updated: false };
+    }
+    const derived = deriveDetectedSubscription({
+      toolKey: input.toolKey,
+      catalogPlanKey: input.catalogPlanKey,
+      quotas,
+      seatCapacity: existing.seatCapacity,
+      existingAnchor: existing.billingCycleAnchorDate,
+      existingCadence: existing.billingCadence,
+    });
+    if (!cycleFieldsChanged(existing, derived)) {
+      return { template: existing, created: false, updated: false };
+    }
+    const template = await prisma.billingPlanTemplate.update({
+      where: { id: existing.id },
+      data: {
+        billingCadence: derived.billingCadence,
+        billingCycleAnchorDate: derived.billingCycleAnchorDate,
+        billingCycleDays: derived.billingCycleDays,
+        cycleSeatMicros: derived.cycleSeatMicros,
+      },
+    });
+    await syncDetectedAssignmentsCycle(input.orgId, template.id, {
+      billingCadence: derived.billingCadence,
+      billingCycleAnchorDate: derived.billingCycleAnchorDate,
+      billingCycleDays: derived.billingCycleDays,
+      cycleSeatMicros: derived.cycleSeatMicros,
+    });
+    return { template, created: false, updated: true };
+  }
+
+  const derived = deriveDetectedSubscription({
     toolKey: input.toolKey,
-    planKey: input.catalogPlanKey,
-    billingCadence: "monthly",
-    seatCapacity: 1,
-    ...(catalogPlan?.customPrice ? { cycleSeatMicros: BigInt(0) } : {}),
-    notes: "Auto-synced from detected device usage",
+    catalogPlanKey: input.catalogPlanKey,
+    quotas,
   });
 
   const template = await prisma.billingPlanTemplate.create({
@@ -122,7 +259,7 @@ async function ensureTemplate(input: {
       priceSource: "detected",
     },
   });
-  return { template, created: true };
+  return { template, created: true, updated: false };
 }
 
 async function deactivateOrphanDetectedTemplate(orgId: string, templateId: string) {
@@ -386,4 +523,68 @@ export async function applyDetectedPlanForDeveloper(input: {
   });
 
   return { template: ensured.template, migrated: true, catalogPlanKey };
+}
+
+/**
+ * Recompute cadence/anchors for all active detected plan templates from live quotas.
+ * Safe to run repeatedly (idempotent when quotas unchanged).
+ */
+export async function repairDetectedPlanCycles(orgId?: string) {
+  const templates = await prisma.billingPlanTemplate.findMany({
+    where: {
+      active: true,
+      priceSource: "detected",
+      ...(orgId ? { orgId } : {}),
+      toolKey: { not: null },
+      catalogPlanKey: { not: null },
+    },
+    select: {
+      id: true,
+      orgId: true,
+      toolKey: true,
+      catalogPlanKey: true,
+      seatCapacity: true,
+      billingCadence: true,
+      billingCycleAnchorDate: true,
+      billingCycleDays: true,
+      cycleSeatMicros: true,
+      createdByUserId: true,
+    },
+  });
+
+  let updated = 0;
+  for (const template of templates) {
+    if (!template.toolKey || !template.catalogPlanKey) continue;
+    try {
+      const quotas = await loadQuotaRowsForTool(template.orgId, template.toolKey);
+      const derived = deriveDetectedSubscription({
+        toolKey: template.toolKey,
+        catalogPlanKey: template.catalogPlanKey,
+        quotas,
+        seatCapacity: template.seatCapacity,
+        existingAnchor: template.billingCycleAnchorDate,
+        existingCadence: template.billingCadence,
+      });
+      if (!cycleFieldsChanged(template, derived)) continue;
+      await prisma.billingPlanTemplate.update({
+        where: { id: template.id },
+        data: {
+          billingCadence: derived.billingCadence,
+          billingCycleAnchorDate: derived.billingCycleAnchorDate,
+          billingCycleDays: derived.billingCycleDays,
+          cycleSeatMicros: derived.cycleSeatMicros,
+        },
+      });
+      await syncDetectedAssignmentsCycle(template.orgId, template.id, {
+        billingCadence: derived.billingCadence,
+        billingCycleAnchorDate: derived.billingCycleAnchorDate,
+        billingCycleDays: derived.billingCycleDays,
+        cycleSeatMicros: derived.cycleSeatMicros,
+      });
+      updated += 1;
+    } catch (error) {
+      console.error("[repair-detected-cycles]", template.toolKey, error);
+    }
+  }
+  return { scanned: templates.length, updated };
 }

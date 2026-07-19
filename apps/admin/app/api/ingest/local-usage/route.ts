@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, type Prisma } from "@usejunction/db";
 import {
-  compactNumber,
   recordDeviceActivityEvent,
   uniqueStrings,
 } from "@/lib/activity/record-device-activity-event";
-import { bearerToken, requireIngestAuth } from "@/lib/auth";
+import { formatCompactNumber } from "@/lib/format";
+import { findDeviceByBearerToken, requireIngestAuth } from "@/lib/auth";
+import { limitedJson } from "@/lib/security/http";
 import { CALCULATION_VERSION } from "@/lib/metrics/source-priority";
 import { shouldPreserveProductivityRequests } from "@/lib/metrics/local-usage-inventory";
 import { invalidateAnalyticsCache } from "@/lib/analytics/query";
@@ -73,20 +74,19 @@ function inferCostKind(row: UsageRow, source: string, estimatedCost: number): st
 export async function POST(req: NextRequest) {
   const started = Date.now();
   try {
-    const body = await req.json();
-    const token = bearerToken(req);
+    const parsedBody = await limitedJson(req, 128 * 1024);
+    if (!parsedBody.ok) return parsedBody.response;
+    const body = parsedBody.data as Record<string, any>;
 
     let orgId: string | null = null;
     let userId: string | null = null;
     let deviceId: string | null = null;
 
-    if (token) {
-      const device = await prisma.device.findUnique({ where: { deviceToken: token } });
-      if (device) {
-        orgId = device.orgId;
-        userId = device.userId;
-        deviceId = device.id;
-      }
+    const device = await findDeviceByBearerToken(req, {});
+    if (device) {
+      orgId = device.orgId;
+      userId = device.userId;
+      deviceId = device.id;
     }
 
     if (!deviceId) {
@@ -305,7 +305,7 @@ export async function POST(req: NextRequest) {
     if (upserted > 0) {
       await prisma.device.update({
         where: { id: deviceId },
-        data: { lastUsageSyncAt: new Date(), lastSeenAt: new Date(), status: "online" },
+        data: { lastUsageSyncAt: new Date(), lastSeenAt: new Date() },
       });
       await invalidateAnalyticsCache(orgId);
     }
@@ -319,7 +319,7 @@ export async function POST(req: NextRequest) {
       kind: "usage",
       status: "ok",
       summary: `Usage sync · ${upserted} rows${tools.length ? ` · ${tools.join(", ")}` : ""}${
-        totalTokens > 0 ? ` · ${compactNumber(totalTokens)} tokens` : ""
+        totalTokens > 0 ? ` · ${formatCompactNumber(totalTokens)} tokens` : ""
       }`,
       requestSummary: {
         aggregates: rows.length,

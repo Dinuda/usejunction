@@ -1,14 +1,14 @@
-export type SignalsRange = 7 | 30 | 90;
-
-export type SignalsFiltersInput = {
-  range?: SignalsRange;
-  /** Dashboard-style rolling presets (3 / 30 / 60 / 90). */
-  days?: number;
-  from?: string;
-  to?: string;
+export type SignalsDimensionFilters = {
   developerId?: string;
   teamId?: string;
   tool?: string;
+};
+
+export type SignalsFiltersInput = SignalsDimensionFilters & {
+  /** Inclusive UTC calendar days. API callers may request 1–366 days. */
+  days?: number;
+  from?: string;
+  to?: string;
 };
 
 export type SignalsRecommendedAction = {
@@ -43,8 +43,3 @@ export type SignalsTrendPoint = {
   people: number;
   durationSeconds: number;
 };
-
-export function normalizeSignalsRange(value: unknown): SignalsRange {
-  const n = Number(value);
-  return n === 7 || n === 90 ? n : 30;
-}

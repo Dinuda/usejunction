@@ -3,6 +3,10 @@ import { hash } from "bcryptjs";
 import { prisma } from "@usejunction/db";
 import { appUrl, createAuthActionToken, safeAuthNextPath, sendAuthEmail } from "@/lib/auth-actions";
 import { ensureOwnerWorkspace } from "@/lib/ensure-workspace";
+import { limitedJson } from "@/lib/security/http";
+import { enforceRateLimit } from "@/lib/security/rate-limit";
+
+const MAX_PASSWORD_BYTES = 256;
 
 function isInviteSignup(from: string) {
   return from.startsWith("/i/") || from.startsWith("/join/") || from.startsWith("/connect-invite/");
@@ -10,13 +14,17 @@ function isInviteSignup(from: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const limited = await enforceRateLimit(request, { key: "auth-register", limit: 10, windowSeconds: 60 });
+    if (limited !== true) return limited;
+    const parsedBody = await limitedJson(request, 16 * 1024);
+    if (!parsedBody.ok) return parsedBody.response;
+    const body = parsedBody.data as Record<string, unknown>;
     const name = String(body.name ?? "").trim();
     const email = String(body.email ?? "").trim().toLowerCase();
     const password = String(body.password ?? "");
     const intent = body.intent === "team" ? "team" : null;
     const from = safeAuthNextPath(typeof body.from === "string" ? body.from : null, "/dashboard");
-    if (!name || !/^\S+@\S+\.\S+$/.test(email) || password.length < 12 || password !== body.confirmPassword) {
+    if (!name || !/^\S+@\S+\.\S+$/.test(email) || password.length < 12 || Buffer.byteLength(password, "utf8") > MAX_PASSWORD_BYTES || password !== body.confirmPassword) {
       return NextResponse.json(
         { error: "Enter a valid name, work email, and matching password of at least 12 characters." },
         { status: 400 },
@@ -49,7 +57,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       next: from,
-      needsVerification: !user.emailVerified,
+      needsVerification: true,
     });
   } catch (error) {
     console.error("[auth/register]", error);

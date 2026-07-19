@@ -51,7 +51,6 @@ const feed: DeviceActivityFeedData = {
         os: "darwin",
         architecture: "arm64",
         agentVersion: "0.0.1",
-        online: true,
       },
       developer: { id: "dev1", name: "Ada", email: "ada@example.com" },
       details: {

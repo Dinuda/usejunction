@@ -4,12 +4,18 @@ import {
   recordDeviceActivityEvent,
   uniqueStrings,
 } from "@/lib/activity/record-device-activity-event";
-import { bearerToken } from "@/lib/auth";
+import { isAgentCompatibleForWorkExtraction } from "@/lib/agent-updates/contracts";
+import { findDeviceByBearerToken } from "@/lib/auth";
+import { limitedJson } from "@/lib/security/http";
 import {
   containsForbiddenWorkExtractionField,
   workSessionsIngestSchema,
   type WorkSessionInput,
 } from "@/lib/signals/contracts";
+import {
+  deviceWorkExtractionStartedAt,
+  isObservedAtEligible,
+} from "@/lib/signals/collection-window";
 import { enforceSignalsRetention, getEffectiveSignalsPolicy } from "@/lib/signals/service";
 
 function asDate(value: string | null | undefined): Date | null {
@@ -32,7 +38,7 @@ function cleanRepository(repo: WorkSessionInput["repository"]): Prisma.InputJson
   return { host, owner, name };
 }
 
-function cleanTrace(trace: WorkSessionInput["trace"]): Prisma.InputJsonValue | null {
+function cleanTrace(trace: WorkSessionInput["trace"], allowRawWorkText: boolean): Prisma.InputJsonValue | null {
   if (!trace) return null;
   const out: Record<string, unknown> = {};
   const approach = cleanText(trace.approach, 240);
@@ -140,7 +146,7 @@ function cleanTrace(trace: WorkSessionInput["trace"]): Prisma.InputJsonValue | n
     const u = cleanUnderstanding(trace.understanding);
     if (u) out.understanding = u;
   }
-  if (trace.userTurns?.length) {
+  if (allowRawWorkText && trace.userTurns?.length) {
     const allowedOps = new Set(["read", "write", "create", "delete", "edit", "unknown"]);
     const allowedSources = new Set(["composer", "human", "tab", "tool", "unknown"]);
     const cleanChange = (row: { file: string; op: string; source?: string; events?: number }) => {
@@ -352,7 +358,7 @@ function cleanUnderstanding(raw: NonNullable<WorkSessionInput["trace"]> extends 
   return out;
 }
 
-function cleanSession(row: WorkSessionInput) {
+function cleanSession(row: WorkSessionInput, allowRawWorkText: boolean) {
   const observedAt = asDate(row.observedAt);
   if (!observedAt) return null;
   const startedAt = asDate(row.startedAt);
@@ -382,7 +388,7 @@ function cleanSession(row: WorkSessionInput) {
     toolCallCounts: (toolCallCounts && Object.keys(toolCallCounts).length > 0
       ? toolCallCounts
       : null) as Prisma.InputJsonValue | null,
-    trace: cleanTrace(row.trace),
+    trace: cleanTrace(row.trace, allowRawWorkText),
     repository: cleanRepository(row.repository),
     source: cleanText(row.source, 64) ?? "unknown",
     metadata: (row.metadata ?? {}) as Prisma.InputJsonValue,
@@ -392,11 +398,7 @@ function cleanSession(row: WorkSessionInput) {
 export async function POST(req: NextRequest) {
   const started = Date.now();
   try {
-    const token = bearerToken(req);
-    if (!token) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-    const device = await prisma.device.findUnique({
-      where: { deviceToken: token },
+    const device = await findDeviceByBearerToken(req, {
       include: { user: { select: { teamId: true } } },
     });
     if (!device) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -405,8 +407,20 @@ export async function POST(req: NextRequest) {
     if (!policy.workExtractionEnabled) {
       return NextResponse.json({ error: "work extraction disabled" }, { status: 403 });
     }
+    if (!isAgentCompatibleForWorkExtraction(device.agentVersion)) {
+      return NextResponse.json({ error: "agent update required" }, { status: 409 });
+    }
+    const collectionStartedAt = deviceWorkExtractionStartedAt(
+      policy.workExtractionStartedAt,
+      device.createdAt,
+    );
+    if (!collectionStartedAt) {
+      return NextResponse.json({ error: "work extraction collection start unavailable" }, { status: 403 });
+    }
 
-    const body = await req.json();
+    const parsedBody = await limitedJson(req, 1024 * 1024);
+    if (!parsedBody.ok) return parsedBody.response;
+    const body = parsedBody.data;
     const forbidden = containsForbiddenWorkExtractionField(body);
     if (forbidden) {
       return NextResponse.json({ error: "forbidden work extraction field", field: forbidden }, { status: 400 });
@@ -418,11 +432,17 @@ export async function POST(req: NextRequest) {
 
     let upserted = 0;
     let skipped = 0;
+    let beforeCollectionStartSkipped = 0;
     const sample: Array<{ toolName: string; model: string | null; title: string | null }> = [];
     for (const input of parsed.data.sessions) {
-      const session = cleanSession(input);
+      const session = cleanSession(input, Boolean(policy.rawWorkTextEnabled));
       if (!session) {
         skipped += 1;
+        continue;
+      }
+      if (!isObservedAtEligible(session.observedAt, collectionStartedAt)) {
+        skipped += 1;
+        beforeCollectionStartSkipped += 1;
         continue;
       }
 
@@ -476,7 +496,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (upserted > 0) {
-      await prisma.device.update({ where: { id: device.id }, data: { lastSeenAt: new Date(), status: "online" } });
+      await prisma.device.update({ where: { id: device.id }, data: { lastSeenAt: new Date() } });
       await enforceSignalsRetention(device.orgId, policy.retentionDays);
     }
 
@@ -489,17 +509,21 @@ export async function POST(req: NextRequest) {
       status: "ok",
       summary: `Work sessions · ${upserted} upserted${tools.length ? ` · ${tools.join(", ")}` : ""}${
         skipped ? ` · ${skipped} skipped` : ""
+      }${
+        beforeCollectionStartSkipped
+          ? ` · ${beforeCollectionStartSkipped} before collection start`
+          : ""
       }`,
       requestSummary: {
         sessions: parsed.data.sessions.length,
         tools,
         sample,
       },
-      responseSummary: { upserted, skipped },
+      responseSummary: { upserted, skipped, beforeCollectionStartSkipped },
       durationMs: Date.now() - started,
     });
 
-    return NextResponse.json({ upserted, skipped });
+    return NextResponse.json({ upserted, skipped, beforeCollectionStartSkipped });
   } catch (e) {
     console.error("[ingest/work-sessions]", e);
     return NextResponse.json({ error: "work sessions ingest failed" }, { status: 500 });

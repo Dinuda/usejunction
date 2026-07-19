@@ -1,6 +1,6 @@
 export const DASHBOARD_PERIOD_STORAGE_KEY = "uj.dashboard.rolling-period";
 
-export const PERIOD_PRESETS = [3, 30, 60, 90] as const;
+export const PERIOD_PRESETS = [7, 14, 30] as const;
 export type PeriodPresetDays = (typeof PERIOD_PRESETS)[number];
 
 export type PresetRollingPeriod = {
@@ -34,6 +34,13 @@ export function isIsoDate(value: string | undefined | null): value is string {
   if (!value || !DATE_RE.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+export function isValidCustomPeriod(from: string | undefined, to: string | undefined) {
+  if (!isIsoDate(from) || !isIsoDate(to) || from > to) return false;
+  const fromMs = Date.parse(`${from}T00:00:00Z`);
+  const toMs = Date.parse(`${to}T00:00:00Z`);
+  return Math.round((toMs - fromMs) / 86_400_000) + 1 <= 366;
 }
 
 export function shortUtcDate(value: string) {
@@ -96,8 +103,8 @@ export function parseRollingPeriodFromSearch(params: {
 }): RollingPeriod {
   const from = params.from;
   const to = params.to;
-  if (isIsoDate(from) && isIsoDate(to) && from <= to) {
-    return { kind: "custom", id: `custom:${from}:${to}`, from, to };
+  if (isValidCustomPeriod(from, to)) {
+    return { kind: "custom", id: `custom:${from}:${to}`, from: from!, to: to! };
   }
 
   const days = Number(params.days);
@@ -112,12 +119,12 @@ function normalizeCustom(period: unknown): CustomRollingPeriod | null {
   if (!period || typeof period !== "object") return null;
   const value = period as Partial<CustomRollingPeriod>;
   if (value.kind !== "custom") return null;
-  if (!isIsoDate(value.from) || !isIsoDate(value.to) || value.from > value.to) return null;
+  if (!isValidCustomPeriod(value.from, value.to)) return null;
   return {
     kind: "custom",
     id: typeof value.id === "string" && value.id ? value.id : `custom:${value.from}:${value.to}`,
-    from: value.from,
-    to: value.to,
+    from: value.from!,
+    to: value.to!,
   };
 }
 

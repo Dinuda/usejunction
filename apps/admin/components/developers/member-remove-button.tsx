@@ -17,10 +17,16 @@ import { userFacingError } from "@/lib/errors/user-facing";
 export function MemberRemoveButton({
   developerId,
   memberName,
+  label = "Remove from team",
+  ariaLabel,
+  className,
   locked = false,
 }: {
   developerId: string;
   memberName: string;
+  label?: string;
+  ariaLabel?: string;
+  className?: string;
   locked?: boolean;
 }) {
   const router = useRouter();
@@ -51,13 +57,14 @@ export function MemberRemoveButton({
         type="button"
         variant="outline"
         size="sm"
-        className="rounded-none text-destructive hover:bg-destructive/10 hover:text-destructive"
+        aria-label={ariaLabel}
+        className={`rounded-none text-destructive hover:bg-destructive/10 hover:text-destructive${className ? ` ${className}` : ""}`}
         onClick={() => {
           setError(null);
           setOpen(true);
         }}
       >
-        Remove from team
+        {label}
       </Button>
 
       <Dialog
@@ -72,7 +79,7 @@ export function MemberRemoveButton({
           <DialogHeader>
             <DialogTitle>Remove {memberName}?</DialogTitle>
             <DialogDescription>
-              They lose workspace access, their machines are removed from coverage,
+              They lose workspace access, their device is removed from coverage,
               and the agent uninstalls on the next heartbeat. Usage history and
               extracted work stay on this workspace.
             </DialogDescription>

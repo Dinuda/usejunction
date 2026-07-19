@@ -1,14 +1,10 @@
 import { resolveReportWindow, type MetricWindow } from "@/lib/analytics/contracts/time-window";
-import {
-  parseRollingPeriodFromSearch,
-  type RollingPeriod,
-} from "@/lib/dashboard/period-prefs";
-import type { SignalsFiltersInput, SignalsRange } from "@/lib/signals/contracts/shared";
-import { normalizeSignalsRange } from "@/lib/signals/contracts/shared";
+import { isIsoDate } from "@/lib/dashboard/period-prefs";
+import { inclusiveDayCount, usageInclusiveEnd, utcDateOnly } from "@/lib/metrics/date-range";
+import type { SignalsFiltersInput } from "@/lib/signals/contracts/shared";
 
 export type SignalsQueryWindows = {
-  range: SignalsRange;
-  period: RollingPeriod;
+  windowDays: number;
   current: MetricWindow;
   prior: MetricWindow;
   filters: {
@@ -18,49 +14,56 @@ export type SignalsQueryWindows = {
   };
 };
 
-function periodFromInput(input: SignalsFiltersInput): RollingPeriod {
-  if (input.from || input.to || input.days != null) {
-    return parseRollingPeriodFromSearch({
-      days: input.days != null ? String(input.days) : undefined,
-      from: input.from,
-      to: input.to,
-    });
+export class InvalidSignalsWindowError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidSignalsWindowError";
   }
-  // Legacy Signals `range=7|30|90` → nearest dashboard preset.
-  if (input.range != null) {
-    const legacy = normalizeSignalsRange(input.range);
-    if (legacy === 7) return { kind: "preset", days: 3 };
-    if (legacy === 90) return { kind: "preset", days: 90 };
-    return { kind: "preset", days: 30 };
-  }
-  return parseRollingPeriodFromSearch({});
 }
 
-function rangeApprox(period: RollingPeriod): SignalsRange {
-  if (period.kind === "preset") {
-    if (period.days <= 7) return 7;
-    if (period.days >= 90) return 90;
-    return 30;
+function resolveCurrentWindow(input: SignalsFiltersInput, now: Date): MetricWindow {
+  const hasFrom = input.from != null;
+  const hasTo = input.to != null;
+  const hasDays = input.days != null;
+
+  if (hasDays && (hasFrom || hasTo)) {
+    throw new InvalidSignalsWindowError("Use either days or from/to, not both.");
   }
-  const ms = Date.parse(`${period.to}T00:00:00Z`) - Date.parse(`${period.from}T00:00:00Z`);
-  const days = Math.round(ms / 86_400_000) + 1;
-  if (days <= 7) return 7;
-  if (days >= 90) return 90;
-  return 30;
+  if (hasFrom !== hasTo) {
+    throw new InvalidSignalsWindowError("Both from and to are required for a custom window.");
+  }
+
+  if (hasFrom && hasTo) {
+    if (!isIsoDate(input.from) || !isIsoDate(input.to) || input.from > input.to) {
+      throw new InvalidSignalsWindowError("from and to must be valid YYYY-MM-DD dates in ascending order.");
+    }
+    const window = resolveReportWindow({ from: input.from, to: input.to, now });
+    if (inclusiveDayCount(window.from, window.to) > 366) {
+      throw new InvalidSignalsWindowError("Custom windows may not exceed 366 days.");
+    }
+    return window;
+  }
+
+  const days = input.days ?? 30;
+  if (!Number.isInteger(days) || days < 1 || days > 366) {
+    throw new InvalidSignalsWindowError("days must be a whole number from 1 to 366.");
+  }
+  return resolveReportWindow({ range: days, now });
 }
 
 export function resolveSignalsWindows(
   input: SignalsFiltersInput = {},
   now = new Date(),
 ): SignalsQueryWindows {
-  const period = periodFromInput(input);
-  const current =
-    period.kind === "custom"
-      ? resolveReportWindow({ from: period.from, to: period.to, now })
-      : resolveReportWindow({ range: period.days, now });
-  const spanMs = current.to.getTime() - current.from.getTime();
+  const resolved = resolveCurrentWindow(input, now);
+  const current: MetricWindow = {
+    ...resolved,
+    from: utcDateOnly(resolved.from),
+    to: usageInclusiveEnd(resolved.to),
+  };
+  const windowDays = inclusiveDayCount(current.from, current.to);
   const priorTo = new Date(current.from.getTime() - 1);
-  const priorFrom = new Date(priorTo.getTime() - spanMs);
+  const priorFrom = new Date(current.from.getTime() - windowDays * 86_400_000);
   const prior: MetricWindow = {
     from: priorFrom,
     to: priorTo,
@@ -68,8 +71,7 @@ export function resolveSignalsWindows(
     grain: "day",
   };
   return {
-    range: rangeApprox(period),
-    period,
+    windowDays,
     current,
     prior,
     filters: {

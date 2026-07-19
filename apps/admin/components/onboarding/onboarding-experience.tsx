@@ -7,6 +7,7 @@ import { DeviceConnectCard } from "@/components/onboarding/device-connect-card";
 import { InviteTeamForm } from "@/components/onboarding/invite-team-form";
 import { hasToolBrandIcon, ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { canonicalToolKey } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
 import { canManageSettings } from "@/lib/rbac/permissions";
@@ -144,8 +145,8 @@ export function OnboardingExperience() {
         statement="Visibility before control."
       >
         <div className="space-y-3" aria-busy="true">
-          <div className="h-11 animate-pulse rounded-md bg-muted" />
-          <div className="h-11 animate-pulse rounded-md bg-muted" />
+          <Skeleton className="h-11" />
+          <Skeleton className="h-11" />
         </div>
       </AuthShell>
     );

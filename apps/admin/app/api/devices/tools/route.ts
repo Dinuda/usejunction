@@ -4,22 +4,20 @@ import {
   recordDeviceActivityEvent,
   uniqueStrings,
 } from "@/lib/activity/record-device-activity-event";
-import { bearerToken } from "@/lib/auth";
+import { findDeviceByBearerToken } from "@/lib/auth";
+import { limitedJson } from "@/lib/security/http";
 
 export async function POST(req: NextRequest) {
   const started = Date.now();
   try {
-    const token = bearerToken(req);
-    if (!token) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-
-    const device = await prisma.device.findUnique({ where: { deviceToken: token } });
+    const device = await findDeviceByBearerToken(req, {});
     if (!device) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json();
+    const parsedBody = await limitedJson(req, 128 * 1024);
+    if (!parsedBody.ok) return parsedBody.response;
+    const body = parsedBody.data as Record<string, unknown>;
     const tools = body.tools;
     if (!Array.isArray(tools)) {
       return NextResponse.json({ error: "tools array required" }, { status: 400 });

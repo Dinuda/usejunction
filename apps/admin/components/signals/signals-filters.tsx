@@ -29,7 +29,7 @@ type SignalsFiltersProps = {
 };
 
 const selectClassName =
-  "block h-9 border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+  "block h-11 w-full border border-input bg-background px-3 text-base outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:h-9 md:text-sm";
 
 function buildHref(
   pathname: string,
@@ -91,14 +91,14 @@ export function SignalsFilters({
   }
 
   return (
-    <div className={cn("mb-6 flex w-full flex-wrap items-end justify-end gap-3", className)}>
+    <div className={cn("mb-6 grid w-full grid-cols-1 items-end gap-3 sm:grid-cols-2 md:flex md:flex-wrap md:justify-end", className)}>
       {showPerson ? (
-        <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
+        <label className="min-w-0 space-y-1.5 text-xs font-medium text-muted-foreground">
           Person
           <select
             value={draft.developerId ?? ""}
             onChange={(event) => scheduleApply({ developerId: event.target.value || undefined })}
-            className={cn(selectClassName, "min-w-[11rem]")}
+            className={cn(selectClassName, "md:min-w-[11rem]")}
           >
             <option value="">All people</option>
             {developers.map((developer) => (
@@ -110,12 +110,12 @@ export function SignalsFilters({
         </label>
       ) : null}
       {showTeam ? (
-        <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
+        <label className="min-w-0 space-y-1.5 text-xs font-medium text-muted-foreground">
           Team
           <select
             value={draft.teamId ?? ""}
             onChange={(event) => scheduleApply({ teamId: event.target.value || undefined })}
-            className={cn(selectClassName, "min-w-[11rem]")}
+            className={cn(selectClassName, "md:min-w-[11rem]")}
           >
             <option value="">All teams</option>
             {teams.map((team) => (
@@ -127,12 +127,12 @@ export function SignalsFilters({
         </label>
       ) : null}
       {showTool ? (
-        <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
+        <label className="min-w-0 space-y-1.5 text-xs font-medium text-muted-foreground">
           AI tool
           <select
             value={draft.tool ?? ""}
             onChange={(event) => scheduleApply({ tool: event.target.value || undefined })}
-            className={cn(selectClassName, "min-w-[9rem]")}
+            className={cn(selectClassName, "md:min-w-[9rem]")}
           >
             <option value="">All tools</option>
             {tools.map((item) => (

@@ -74,7 +74,6 @@ export default async function ToolProviderPage({
             lastSeenAt={syncContext.lastSeenAt}
             lastUsageSyncAt={syncContext.lastUsageSyncAt}
             lastAccountSyncAt={syncContext.lastAccountSyncAt}
-            stale={syncContext.stale}
           />
         </div>
       ) : null}

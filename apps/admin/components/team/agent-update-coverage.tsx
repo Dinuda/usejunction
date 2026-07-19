@@ -3,8 +3,19 @@
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { MobileDataCard, MobileDataField, MobileDataList } from "@/components/ui/mobile-data";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
+import { Panel } from "@/components/panel";
+import { formatDateTime } from "@/lib/format";
 
 type Coverage = {
   release: {
@@ -23,8 +34,7 @@ type Coverage = {
     confirmed: number;
     failed: number;
     rolledBack: number;
-    pendingOnline: number;
-    pendingOffline: number;
+    pending: number;
     pullCoveragePercent: number;
     installCoveragePercent: number;
     downloadToInstallPercent: number;
@@ -48,11 +58,6 @@ type Coverage = {
   }>;
 };
 
-function formatTime(value: string | null) {
-  if (!value) return "—";
-  return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-}
-
 export function AgentUpdateCoverage({ coverage }: { coverage: Coverage }) {
   const [query, setQuery] = useState("");
   const [state, setState] = useState("all");
@@ -69,7 +74,7 @@ export function AgentUpdateCoverage({ coverage }: { coverage: Coverage }) {
 
   const { release, metrics } = coverage;
   return (
-    <section className="mt-10 border bg-card p-5">
+    <Panel as="section" className="mt-10">
       <SignalsSectionHeader
         title="Agent update coverage."
         description={`Version ${release.version} · ${release.rolloutHours === 0 ? "immediate rollout" : `${release.rolloutHours}-hour rollout`}`}
@@ -111,7 +116,7 @@ export function AgentUpdateCoverage({ coverage }: { coverage: Coverage }) {
           label="Currently eligible"
           className="sm:pl-8"
           value={metrics.eligible}
-          sub={`${metrics.pendingOnline} pending online · ${metrics.pendingOffline} offline`}
+          sub={`${metrics.pending} awaiting a future heartbeat`}
         />
       </div>
 
@@ -137,57 +142,89 @@ export function AgentUpdateCoverage({ coverage }: { coverage: Coverage }) {
         </Select>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-left text-sm">
-          <thead className="border-b border-border/70 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
-            <tr>
-              <th className="pb-3 pr-4 pt-1 font-medium">Machine</th>
-              <th className="pb-3 pr-4 pt-1 font-medium">Developer</th>
-              <th className="pb-3 pr-4 pt-1 font-medium">Version</th>
-              <th className="pb-3 pr-4 pt-1 font-medium">Stage</th>
-              <th className="pb-3 pr-4 pt-1 font-medium">Update activity</th>
-              <th className="pb-3 pr-4 pt-1 font-medium">Last seen</th>
-              <th className="pb-3 pr-4 pt-1 font-medium">Failure</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.attemptId} className="transition-colors hover:bg-muted/30">
-                <td className="py-5 pr-4">
-                  <p className="font-medium">{row.device.hostname}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {row.device.os}/{row.device.architecture}
-                  </p>
-                </td>
-                <td className="py-5 pr-4">
-                  <p>{row.device.user.name}</p>
-                  <p className="text-xs text-muted-foreground">{row.device.user.email}</p>
-                </td>
-                <td className="py-5 pr-4 font-mono text-xs tabular-nums">
-                  {row.device.agentVersion} → {row.targetVersion}
-                </td>
-                <td className="py-5 pr-4">
-                  <Badge variant="outline" className="rounded-none">
-                    {row.state.replaceAll("_", " ")}
-                  </Badge>
-                </td>
-                <td className="py-5 pr-4 text-xs text-muted-foreground">{formatTime(row.lastEventAt)}</td>
-                <td className="py-5 pr-4 text-xs text-muted-foreground">{formatTime(row.device.lastSeenAt)}</td>
-                <td className="py-5 pr-4 text-xs text-destructive">
-                  {row.lastErrorCode ? `${row.lastErrorStage ?? "update"}: ${row.lastErrorCode}` : "—"}
-                </td>
-              </tr>
-            ))}
-            {!rows.length ? (
-              <tr>
-                <td colSpan={7} className="py-8 text-center text-muted-foreground">
-                  No devices match this filter.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-    </section>
+      <MobileDataList>
+        {rows.map((row) => (
+          <MobileDataCard key={row.attemptId}>
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{row.device.hostname}</p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">
+                  {row.device.user.name} · {row.device.user.email}
+                </p>
+              </div>
+              <Badge variant="outline" className="shrink-0 rounded-none">
+                {row.state.replaceAll("_", " ")}
+              </Badge>
+            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
+              <MobileDataField label="Platform" value={`${row.device.os}/${row.device.architecture}`} />
+              <MobileDataField label="Version" value={`${row.device.agentVersion} → ${row.targetVersion}`} />
+              <MobileDataField label="Update activity" value={row.lastEventAt ? formatDateTime(row.lastEventAt) : "—"} />
+              <MobileDataField label="Last seen" value={formatDateTime(row.device.lastSeenAt)} />
+              {row.lastErrorCode ? (
+                <MobileDataField
+                  className="col-span-2 [&_dd]:text-destructive"
+                  label="Failure"
+                  value={`${row.lastErrorStage ?? "update"}: ${row.lastErrorCode}`}
+                />
+              ) : null}
+            </dl>
+          </MobileDataCard>
+        ))}
+      </MobileDataList>
+      {!rows.length ? (
+        <p className="py-8 text-center text-sm text-muted-foreground md:hidden">No devices match this filter.</p>
+      ) : null}
+
+      <Table containerClassName="hidden md:block" className="min-w-[900px] text-left text-sm">
+        <TableHeader className="border-b border-border/70 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          <TableRow>
+            <TableHead className="pb-3 pr-4 pt-1 font-medium">Machine</TableHead>
+            <TableHead className="pb-3 pr-4 pt-1 font-medium">Developer</TableHead>
+            <TableHead className="pb-3 pr-4 pt-1 font-medium">Version</TableHead>
+            <TableHead className="pb-3 pr-4 pt-1 font-medium">Stage</TableHead>
+            <TableHead className="pb-3 pr-4 pt-1 font-medium">Update activity</TableHead>
+            <TableHead className="pb-3 pr-4 pt-1 font-medium">Last seen</TableHead>
+            <TableHead className="pb-3 pr-4 pt-1 font-medium">Failure</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.attemptId} className="transition-colors hover:bg-muted/30">
+              <TableCell className="py-5 pr-4">
+                <p className="font-medium">{row.device.hostname}</p>
+                <p className="text-xs text-muted-foreground">
+                  {row.device.os}/{row.device.architecture}
+                </p>
+              </TableCell>
+              <TableCell className="py-5 pr-4">
+                <p>{row.device.user.name}</p>
+                <p className="text-xs text-muted-foreground">{row.device.user.email}</p>
+              </TableCell>
+              <TableCell className="py-5 pr-4 font-mono text-xs tabular-nums">
+                {row.device.agentVersion} → {row.targetVersion}
+              </TableCell>
+              <TableCell className="py-5 pr-4">
+                <Badge variant="outline" className="rounded-none">
+                  {row.state.replaceAll("_", " ")}
+                </Badge>
+              </TableCell>
+              <TableCell className="py-5 pr-4 text-xs text-muted-foreground">{row.lastEventAt ? formatDateTime(row.lastEventAt) : "—"}</TableCell>
+              <TableCell className="py-5 pr-4 text-xs text-muted-foreground">{formatDateTime(row.device.lastSeenAt)}</TableCell>
+              <TableCell className="py-5 pr-4 text-xs text-destructive">
+                {row.lastErrorCode ? `${row.lastErrorStage ?? "update"}: ${row.lastErrorCode}` : "—"}
+              </TableCell>
+            </TableRow>
+          ))}
+          {!rows.length ? (
+            <TableRow>
+              <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                No devices match this filter.
+              </TableCell>
+            </TableRow>
+          ) : null}
+        </TableBody>
+      </Table>
+    </Panel>
   );
 }

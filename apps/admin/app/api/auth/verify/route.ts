@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { hashActionToken, safeAuthNextPath } from "@/lib/auth-actions";
+import { enforceRateLimit } from "@/lib/security/rate-limit";
 
 export async function GET(request: NextRequest) {
+  const limited = await enforceRateLimit(request, { key: "auth-verify", limit: 20, windowSeconds: 60 });
+  if (limited !== true) return limited;
   const token = request.nextUrl.searchParams.get("token");
   const next = safeAuthNextPath(request.nextUrl.searchParams.get("next"), "/dashboard");
   if (!token) return NextResponse.redirect(new URL("/login?error=invalid_verification", request.url));

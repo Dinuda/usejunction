@@ -8,6 +8,8 @@ import { compare } from "bcryptjs";
 import { prisma } from "@usejunction/db";
 import authConfig from "./auth.config";
 
+const MAX_PASSWORD_BYTES = 256;
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   adapter: PrismaAdapter(prisma),
@@ -21,6 +23,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const email = String(credentials?.email ?? "").trim().toLowerCase();
         const password = String(credentials?.password ?? "");
         if (!email || !password) return null;
+        if (Buffer.byteLength(password, "utf8") > MAX_PASSWORD_BYTES) return null;
 
         const user = await prisma.user.findUnique({
           where: { email },
@@ -65,20 +68,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.role = (user as { role?: string | null }).role ?? null;
       }
       if (token.userId) {
-        let dbUser = await prisma.user.findUnique({
+        const dbUser = await prisma.user.findUnique({
           where: { id: String(token.userId) },
           select: { id: true, image: true, email: true },
         });
-        if (!dbUser && token.email) {
-          dbUser = await prisma.user.findUnique({
-            where: { email: String(token.email).trim().toLowerCase() },
-            select: { id: true, image: true, email: true },
-          });
-          if (dbUser) {
-            token.userId = dbUser.id;
-            token.email = dbUser.email;
-          }
-        }
         if (!dbUser) {
           return {};
         }

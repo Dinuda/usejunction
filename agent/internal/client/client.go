@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/usejunction/agent/internal/config"
+	"github.com/usejunction/agent/internal/controlurl"
 )
 
 // ErrUnauthorized means the device token is no longer accepted by the control plane.
@@ -39,6 +40,9 @@ func (c *APIClient) post(path string, body any) error {
 }
 
 func (c *APIClient) postJSON(path string, body any, out any) error {
+	if err := controlurl.Validate(c.baseURL); err != nil {
+		return err
+	}
 	data, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -82,14 +86,33 @@ type HeartbeatPayload struct {
 }
 
 type AgentUpdateDirective struct {
-	ReleaseID     string `json:"releaseId"`
-	AttemptID     string `json:"attemptId"`
-	TargetVersion string `json:"targetVersion"`
-	Urgency       string `json:"urgency"`
-	ArtifactURL   string `json:"artifactUrl"`
-	SHA256        string `json:"sha256"`
-	Size          int64  `json:"size"`
-	EligibleAt    string `json:"eligibleAt"`
+	ReleaseID     string               `json:"releaseId"`
+	AttemptID     string               `json:"attemptId"`
+	TargetVersion string               `json:"targetVersion"`
+	Urgency       string               `json:"urgency"`
+	ArtifactURL   string               `json:"artifactUrl"`
+	ArtifactKey   string               `json:"artifactKey"`
+	SHA256        string               `json:"sha256"`
+	Size          int64                `json:"size"`
+	EligibleAt    string               `json:"eligibleAt"`
+	Manifest      AgentReleaseManifest `json:"manifest"`
+}
+
+type AgentReleaseArtifact struct {
+	URL    string `json:"url"`
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+}
+
+type AgentReleaseManifest struct {
+	SchemaVersion int                             `json:"schemaVersion"`
+	Version       string                          `json:"version"`
+	PublishedAt   string                          `json:"publishedAt"`
+	Urgency       string                          `json:"urgency"`
+	RolloutHours  int                             `json:"rolloutHours"`
+	Artifacts     map[string]AgentReleaseArtifact `json:"artifacts"`
+	SigningKeyID  string                          `json:"signingKeyId"`
+	Signature     string                          `json:"signature"`
 }
 
 type HeartbeatResponse struct {
@@ -175,14 +198,15 @@ type UsageAggregate struct {
 }
 
 type SignalsPolicy struct {
-	Enabled               bool     `json:"enabled"`
-	RetentionDays         int      `json:"retentionDays"`
-	CollectionMode        string   `json:"collectionMode"`
-	ExcludedApps          []string `json:"excludedApps"`
-	ExcludedDomains       []string `json:"excludedDomains"`
-	StoreEvents           bool     `json:"storeEvents"`
-	WorkExtractionEnabled bool     `json:"workExtractionEnabled"`
-	UpdatedAt             string   `json:"updatedAt,omitempty"`
+	Enabled                 bool     `json:"enabled"`
+	RetentionDays           int      `json:"retentionDays"`
+	CollectionMode          string   `json:"collectionMode"`
+	ExcludedApps            []string `json:"excludedApps"`
+	ExcludedDomains         []string `json:"excludedDomains"`
+	StoreEvents             bool     `json:"storeEvents"`
+	WorkExtractionEnabled   bool     `json:"workExtractionEnabled"`
+	WorkExtractionStartedAt string   `json:"workExtractionStartedAt,omitempty"`
+	UpdatedAt               string   `json:"updatedAt,omitempty"`
 }
 
 type SignalsStep struct {
@@ -260,23 +284,23 @@ type WorkTraceGit struct {
 // WorkTraceUnderstanding is derived episode claims. Never includes prompts or
 // message bodies — only structured insights with confidence.
 type WorkTraceUnderstanding struct {
-	Version      int                           `json:"version"`
-	Intent       string                        `json:"intent,omitempty"`
-	IntentSource string                        `json:"intentSource,omitempty"` // summary|title|plan|user_turn_derived
-	Context      *WorkTraceUnderstandingContext `json:"context,omitempty"`
-	Actors       *WorkTraceUnderstandingActors  `json:"actors,omitempty"`
-	Sequence     *WorkTraceUnderstandingSequence `json:"sequence,omitempty"`
-	Attempts     *WorkTraceUnderstandingAttempts `json:"attempts,omitempty"`
+	Version      int                               `json:"version"`
+	Intent       string                            `json:"intent,omitempty"`
+	IntentSource string                            `json:"intentSource,omitempty"` // summary|title|plan|user_turn_derived
+	Context      *WorkTraceUnderstandingContext    `json:"context,omitempty"`
+	Actors       *WorkTraceUnderstandingActors     `json:"actors,omitempty"`
+	Sequence     *WorkTraceUnderstandingSequence   `json:"sequence,omitempty"`
+	Attempts     *WorkTraceUnderstandingAttempts   `json:"attempts,omitempty"`
 	Authorship   *WorkTraceUnderstandingAuthorship `json:"authorship,omitempty"`
 	Acceptance   *WorkTraceUnderstandingAcceptance `json:"acceptance,omitempty"`
-	Outcome      *WorkTraceUnderstandingOutcome `json:"outcome,omitempty"`
+	Outcome      *WorkTraceUnderstandingOutcome    `json:"outcome,omitempty"`
 	Confidence   *WorkTraceUnderstandingConfidence `json:"confidence,omitempty"`
 }
 
 type WorkTraceUnderstandingContext struct {
-	Kinds         []string `json:"kinds,omitempty"`
-	PrimaryFiles  []string `json:"primaryFiles,omitempty"`
-	Skills        []string `json:"skills,omitempty"`
+	Kinds        []string `json:"kinds,omitempty"`
+	PrimaryFiles []string `json:"primaryFiles,omitempty"`
+	Skills       []string `json:"skills,omitempty"`
 }
 
 type WorkTraceUnderstandingActors struct {
@@ -326,32 +350,32 @@ type WorkTraceUnderstandingConfidence struct {
 // file contents are never included. Allowlisted prose lives under userTurns[].text
 // and changeNarrative.text only.
 type WorkTrace struct {
-	Approach         string             `json:"approach,omitempty"`
-	Location         *WorkTraceLocation `json:"location,omitempty"`
-	Skills           []string           `json:"skills,omitempty"`
-	Tools            []string           `json:"tools,omitempty"`
-	Files            []string           `json:"files,omitempty"`
-	Steps            []WorkTraceStep    `json:"steps,omitempty"`
-	Stats            *WorkTraceStats    `json:"stats,omitempty"`
-	DurationSeconds  int                `json:"durationSeconds,omitempty"`
-	Phases           []string           `json:"phases,omitempty"`
-	PhaseFingerprint string             `json:"phaseFingerprint,omitempty"`
-	Churn            *WorkTraceChurn    `json:"churn,omitempty"`
-	Verify           *WorkTraceVerify   `json:"verify,omitempty"`
-	Languages        []string           `json:"languages,omitempty"`
-	TestInvolved     *bool              `json:"testInvolved,omitempty"`
-	SkillCounts      map[string]int     `json:"skillCounts,omitempty"`
-	Git              *WorkTraceGit      `json:"git,omitempty"`
-	Understanding    *WorkTraceUnderstanding `json:"understanding,omitempty"`
-	UserTurns        []WorkTraceUserTurn     `json:"userTurns,omitempty"`
-	FileChangelog    []WorkTraceFileChange   `json:"fileChangelog,omitempty"`
+	Approach         string                    `json:"approach,omitempty"`
+	Location         *WorkTraceLocation        `json:"location,omitempty"`
+	Skills           []string                  `json:"skills,omitempty"`
+	Tools            []string                  `json:"tools,omitempty"`
+	Files            []string                  `json:"files,omitempty"`
+	Steps            []WorkTraceStep           `json:"steps,omitempty"`
+	Stats            *WorkTraceStats           `json:"stats,omitempty"`
+	DurationSeconds  int                       `json:"durationSeconds,omitempty"`
+	Phases           []string                  `json:"phases,omitempty"`
+	PhaseFingerprint string                    `json:"phaseFingerprint,omitempty"`
+	Churn            *WorkTraceChurn           `json:"churn,omitempty"`
+	Verify           *WorkTraceVerify          `json:"verify,omitempty"`
+	Languages        []string                  `json:"languages,omitempty"`
+	TestInvolved     *bool                     `json:"testInvolved,omitempty"`
+	SkillCounts      map[string]int            `json:"skillCounts,omitempty"`
+	Git              *WorkTraceGit             `json:"git,omitempty"`
+	Understanding    *WorkTraceUnderstanding   `json:"understanding,omitempty"`
+	UserTurns        []WorkTraceUserTurn       `json:"userTurns,omitempty"`
+	FileChangelog    []WorkTraceFileChange     `json:"fileChangelog,omitempty"`
 	ChangeNarrative  *WorkTraceChangeNarrative `json:"changeNarrative,omitempty"`
 }
 
 // WorkTraceUserTurn is a user-only turn. Never store assistant replies here.
 type WorkTraceUserTurn struct {
-	At    string               `json:"at,omitempty"`
-	Text  string               `json:"text"`
+	At    string                `json:"at,omitempty"`
+	Text  string                `json:"text"`
 	Files []WorkTraceFileChange `json:"files,omitempty"` // files touched after this turn, before the next
 }
 
@@ -368,7 +392,7 @@ type WorkTraceChangeNarrative struct {
 // WorkTraceFileChange is a basename-level change log entry (no file contents).
 type WorkTraceFileChange struct {
 	File   string `json:"file"`
-	Op     string `json:"op"` // read|write|create|delete|edit|unknown
+	Op     string `json:"op"`               // read|write|create|delete|edit|unknown
 	Source string `json:"source,omitempty"` // composer|human|tab|tool|unknown
 	Events int    `json:"events,omitempty"`
 }
@@ -520,6 +544,9 @@ type EnrollOtel struct {
 
 // Enroll sends the enrollment request to baseURL without authentication.
 func Enroll(baseURL string, req EnrollRequest) (*EnrollResponse, error) {
+	if err := controlurl.Validate(baseURL); err != nil {
+		return nil, err
+	}
 	data, err := json.Marshal(req)
 	if err != nil {
 		return nil, err

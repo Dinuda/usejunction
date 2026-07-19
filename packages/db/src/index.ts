@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
  * Bump when Device (or other hot models) gain fields so a long-lived Next.js
  * process drops a stale PrismaClient after `prisma generate`.
  */
-const PRISMA_SCHEMA_REV = "device-activity-events-v1";
+const PRISMA_SCHEMA_REV = "security-hardening-v1";
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
@@ -65,6 +65,7 @@ export type {
   ProviderConnection,
   ProviderSyncRun,
   QuotaSnapshot,
+  RateLimitBucket,
   Repository,
   RequestMetadata,
   SeatAssignment,

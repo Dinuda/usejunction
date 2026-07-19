@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@usejunction/db";
 import { agentUpdateEventSchema, recordAgentUpdateEvent } from "@/lib/agent-updates";
-import { bearerToken } from "@/lib/auth";
+import { findDeviceByBearerToken } from "@/lib/auth";
+import { limitedJson } from "@/lib/security/http";
 
 export async function POST(req: NextRequest) {
-  const token = bearerToken(req);
-  if (!token) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const device = await prisma.device.findUnique({
-    where: { deviceToken: token },
+  const device = await findDeviceByBearerToken(req, {
     select: { id: true, orgId: true, os: true, architecture: true, agentVersion: true },
   });
   if (!device) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const parsed = agentUpdateEventSchema.safeParse(await req.json().catch(() => ({})));
+  const parsedBody = await limitedJson(req, 128 * 1024);
+  if (!parsedBody.ok) return parsedBody.response;
+  const parsed = agentUpdateEventSchema.safeParse(parsedBody.data);
   if (!parsed.success) return NextResponse.json({ error: "invalid update event" }, { status: 400 });
   try {
     const deployment = await recordAgentUpdateEvent(device, parsed.data);

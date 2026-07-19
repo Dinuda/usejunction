@@ -2,11 +2,10 @@ import { describe, expect, it } from "vitest";
 import { buildMemberInsight } from "@/lib/developers/member-insight";
 
 describe("buildMemberInsight", () => {
-  it("flags offline machines first", () => {
+  it("flags missing enrollment first", () => {
     const text = buildMemberInsight({
       name: "Dinuda Yaggahavita",
-      onlineMachines: 0,
-      totalMachines: 1,
+      totalMachines: 0,
       topTool: "Cursor",
       requests: 100,
       planVerdict: "HEALTHY",
@@ -15,13 +14,12 @@ describe("buildMemberInsight", () => {
       latestWorkTldr: null,
       workExtractionEnabled: true,
     });
-    expect(text).toMatch(/offline/i);
+    expect(text).toMatch(/no machines enrolled/i);
   });
 
   it("surfaces recent work when extraction is on", () => {
     const text = buildMemberInsight({
       name: "Dinuda Yaggahavita",
-      onlineMachines: 1,
       totalMachines: 1,
       topTool: "Cursor",
       requests: 100,
@@ -38,7 +36,6 @@ describe("buildMemberInsight", () => {
   it("warns on near-limit plans", () => {
     const text = buildMemberInsight({
       name: "Alex",
-      onlineMachines: 1,
       totalMachines: 1,
       topTool: "ChatGPT",
       requests: 50,

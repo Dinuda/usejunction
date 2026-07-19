@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { fetchJson, fetchNdjson } from "@/lib/integrations/http";
-import type { AdapterContext, ProviderAdapter, ProviderMember, ProviderSeat, ProviderSyncData, ProviderUsage } from "@/lib/integrations/types";
+import type { AdapterContext, ProviderAdapter, ProviderMember, ProviderSeat, ProviderUsage } from "@/lib/integrations/types";
 
 type Row = Record<string, any>;
 

@@ -1,8 +1,12 @@
 // @vitest-environment happy-dom
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi, beforeEach } from "vitest";
-import { PlanStatusCard } from "@/components/saas-billing/plan-status-card";
+import {
+  ActivePlanBadge,
+  PlanStatusCard,
+  shouldShowSidebarPlanCard,
+} from "@/components/saas-billing/plan-status-card";
 import type { OrgBillingStatus } from "@/lib/saas-billing/status";
 import "../setup/component";
 
@@ -12,24 +16,21 @@ const upgradeBilling: OrgBillingStatus = {
   planLabel: "Community",
   trialDaysLeft: null,
   subscriptionStatus: null,
-  devicesUsed: 10,
-  devicesLimit: 10,
-  coveragePercent: 100,
+  usersUsed: 10,
+  usersLimit: 10,
+  usagePercent: 100,
   canUpgrade: true,
   canManage: false,
-  isAtDeviceLimit: true,
-  developerCount: 10,
-  purchasedSeats: null,
-  seatsRemaining: null,
-  isAtSeatCapacity: false,
-  minCheckoutSeats: 10,
+  isAtUserLimit: true,
+  billingSeatQuantity: null,
+  seatSyncPending: false,
 };
 
 beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-test("seat picker sends quantity 12 when upgrading from a 10-dev roster", async () => {
+test("upgrade opens checkout directly without an intermediate dialog", async () => {
   const fetchMock = vi.fn().mockResolvedValue({
     ok: true,
     json: async () => ({ url: "https://lemon.test/checkout" }),
@@ -49,16 +50,10 @@ test("seat picker sends quantity 12 when upgrading from a 10-dev roster", async 
   });
 
   render(<PlanStatusCard billing={upgradeBilling} />);
+  expect(screen.getByText("10 / 10 users")).toBeTruthy();
+  expect(screen.queryByText(/devices?/i)).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: /Upgrade to Team/i }));
-  const dialog = await screen.findByRole("dialog");
-  const input = within(dialog).getByRole("spinbutton");
-  expect(input).toHaveValue(10);
-
-  fireEvent.change(input, { target: { value: "12" } });
-  expect(within(dialog).getByText(/\$144/)).toBeTruthy();
-
-  fireEvent.click(within(dialog).getByRole("button", { name: /Continue to checkout/i }));
 
   await waitFor(() => {
     expect(fetchMock).toHaveBeenCalled();
@@ -66,39 +61,73 @@ test("seat picker sends quantity 12 when upgrading from a 10-dev roster", async 
 
   const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
   expect(init.method).toBe("POST");
-  expect(JSON.parse(String(init.body))).toEqual({ quantity: 12 });
+  expect(JSON.parse(String(init.body))).toEqual({});
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(href).toBe("https://lemon.test/checkout");
 });
 
-test("checkout stays disabled when seats are below the roster floor", async () => {
-  render(<PlanStatusCard billing={upgradeBilling} />);
-  fireEvent.click(screen.getByRole("button", { name: /Upgrade to Team/i }));
-  const dialog = await screen.findByRole("dialog");
-  const input = within(dialog).getByRole("spinbutton");
-  fireEvent.change(input, { target: { value: "8" } });
-  expect(within(dialog).getByRole("button", { name: /Continue to checkout/i })).toBeDisabled();
-});
-
-test("Team card shows seat coverage and Add seats", () => {
+test("Team card shows organization coverage and billing management", () => {
   const teamBilling: OrgBillingStatus = {
     ...upgradeBilling,
     plan: "team",
     effectivePlan: "team",
     planLabel: "Team",
-    devicesLimit: null,
+    usersLimit: null,
     canUpgrade: false,
     canManage: true,
-    isAtDeviceLimit: false,
-    purchasedSeats: 5,
-    seatsRemaining: 3,
-    isAtSeatCapacity: false,
-    developerCount: 2,
-    minCheckoutSeats: 2,
-    coveragePercent: 40,
+    isAtUserLimit: false,
+    billingSeatQuantity: 2,
+    seatSyncPending: false,
+    usersUsed: 2,
+    usagePercent: null,
   };
 
   render(<PlanStatusCard billing={teamBilling} />);
-  expect(screen.getByText("2 / 5 seats")).toBeTruthy();
-  expect(screen.getByRole("button", { name: /Add seats/i })).toBeTruthy();
+  expect(screen.getByText("2 active users")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Add seats/i })).toBeNull();
   expect(screen.getByRole("button", { name: /Manage billing/i })).toBeTruthy();
+});
+
+test("active paid plans use a compact footer badge", () => {
+  const teamBilling: OrgBillingStatus = {
+    ...upgradeBilling,
+    plan: "team",
+    effectivePlan: "team",
+    planLabel: "Team",
+    subscriptionStatus: "active",
+    usersLimit: null,
+    canUpgrade: false,
+    canManage: true,
+    isAtUserLimit: false,
+    billingSeatQuantity: 2,
+    usersUsed: 2,
+    usagePercent: null,
+  };
+
+  expect(shouldShowSidebarPlanCard(teamBilling)).toBe(false);
+  expect(shouldShowSidebarPlanCard({ ...teamBilling, subscriptionStatus: "on_trial" })).toBe(false);
+  expect(shouldShowSidebarPlanCard({ ...teamBilling, subscriptionStatus: "cancelled" })).toBe(true);
+  expect(shouldShowSidebarPlanCard(upgradeBilling)).toBe(true);
+
+  render(<ActivePlanBadge billing={teamBilling} />);
+  expect(screen.getByText("Team plan")).toBeTruthy();
+  expect(screen.getByLabelText("Current plan: Team")).toBeTruthy();
+});
+
+test("Team card surfaces a confirmed quantity mismatch", () => {
+  render(<PlanStatusCard billing={{
+    ...upgradeBilling,
+    plan: "team",
+    effectivePlan: "team",
+    planLabel: "Team",
+    subscriptionStatus: "active",
+    usersLimit: null,
+    canUpgrade: false,
+    canManage: true,
+    usersUsed: 3,
+    billingSeatQuantity: 2,
+    seatSyncPending: true,
+    usagePercent: null,
+  }} />);
+  expect(screen.getByText(/Billing sync pending/i)).toBeTruthy();
 });

@@ -1,12 +1,15 @@
 "use client";
 
 import { Bar, BarChart, XAxis, YAxis } from "recharts";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { formatCompactNumber } from "@/lib/format";
 
 /** Map raw agent tool names to what managers care about. */
 const ACTION_LABELS: Record<string, string> = {
@@ -36,20 +39,19 @@ const chartConfig = {
   calls: { label: "Calls", color: "var(--primary)" },
 } satisfies ChartConfig;
 
-function compact(value: number) {
-  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
-}
-
 export function ToolUsageChart({
   tools,
 }: {
   tools: Array<{ name: string; calls: number }>;
 }) {
+  const isMobile = useIsMobile();
   if (!tools.length) {
     return (
-      <p className="py-8 text-sm text-muted-foreground">
-        No usage mix yet — it appears after agents run on connected machines.
-      </p>
+      <Empty className="min-h-0 gap-1 border-0 p-6 md:p-6">
+        <EmptyDescription>
+          No usage mix yet — it appears after agents run on connected machines.
+        </EmptyDescription>
+      </Empty>
     );
   }
 
@@ -73,17 +75,17 @@ export function ToolUsageChart({
         <BarChart
           data={rows}
           layout="vertical"
-          margin={{ top: 4, right: 48, left: 0, bottom: 4 }}
+          margin={{ top: 4, right: isMobile ? 16 : 48, left: 0, bottom: 4 }}
           accessibilityLayer
         >
           <XAxis type="number" hide />
           <YAxis
             type="category"
             dataKey="label"
-            width={148}
+            width={isMobile ? 92 : 148}
             tickLine={false}
             axisLine={false}
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: isMobile ? 10 : 12 }}
           />
           <ChartTooltip
             content={
@@ -105,7 +107,7 @@ export function ToolUsageChart({
         </BarChart>
       </ChartContainer>
       <p className="mt-3 text-xs text-muted-foreground">
-        {compact(total)} agent actions in this window · top {rows.length} by call volume
+        {formatCompactNumber(total)} agent actions in this window · top {rows.length} by call volume
       </p>
     </div>
   );

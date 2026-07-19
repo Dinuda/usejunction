@@ -13,8 +13,8 @@ test("parseRollingPeriodFromSearch defaults to 30 days", () => {
 });
 
 test("parseRollingPeriodFromSearch accepts presets and custom bounds", () => {
-  assert.deepEqual(parseRollingPeriodFromSearch({ days: "3" }), { kind: "preset", days: 3 });
-  assert.deepEqual(parseRollingPeriodFromSearch({ days: "60" }), { kind: "preset", days: 60 });
+  assert.deepEqual(parseRollingPeriodFromSearch({ days: "7" }), { kind: "preset", days: 7 });
+  assert.deepEqual(parseRollingPeriodFromSearch({ days: "14" }), { kind: "preset", days: 14 });
   assert.deepEqual(parseRollingPeriodFromSearch({ from: "2026-05-01", to: "2026-06-15" }), {
     kind: "custom",
     id: "custom:2026-05-01:2026-06-15",
@@ -25,12 +25,14 @@ test("parseRollingPeriodFromSearch accepts presets and custom bounds", () => {
 
 test("parseRollingPeriodFromSearch rejects inverted custom ranges", () => {
   assert.deepEqual(parseRollingPeriodFromSearch({ from: "2026-06-15", to: "2026-05-01" }), DEFAULT_ROLLING_PERIOD);
+  assert.deepEqual(parseRollingPeriodFromSearch({ from: "2025-01-01", to: "2026-01-02" }), DEFAULT_ROLLING_PERIOD);
+  assert.deepEqual(parseRollingPeriodFromSearch({ days: "60" }), DEFAULT_ROLLING_PERIOD);
 });
 
 test("rollingPeriodHref omits days for the 30-day default", () => {
   assert.equal(rollingPeriodHref(DEFAULT_ROLLING_PERIOD), "/dashboard?view=last_30_days");
-  assert.equal(rollingPeriodHref({ kind: "preset", days: 90 }), "/dashboard?view=last_30_days&days=90");
-  assert.equal(rollingPeriodHref({ kind: "preset", days: 3 }, "/team/developer-1"), "/team/developer-1?view=last_30_days&days=3");
+  assert.equal(rollingPeriodHref({ kind: "preset", days: 14 }), "/dashboard?view=last_30_days&days=14");
+  assert.equal(rollingPeriodHref({ kind: "preset", days: 7 }, "/team/developer-1"), "/team/developer-1?view=last_30_days&days=7");
   assert.equal(
     rollingPeriodHref({ kind: "custom", id: "x", from: "2026-05-01", to: "2026-06-01" }),
     "/dashboard?view=last_30_days&from=2026-05-01&to=2026-06-01",
@@ -38,7 +40,7 @@ test("rollingPeriodHref omits days for the 30-day default", () => {
 });
 
 test("rollingPeriodLabel and equality helpers", () => {
-  assert.equal(rollingPeriodLabel({ kind: "preset", days: 60 }), "Last 60 days");
+  assert.equal(rollingPeriodLabel({ kind: "preset", days: 14 }), "Last 14 days");
   assert.equal(
     rollingPeriodLabel({ kind: "custom", id: "x", from: "2026-05-01", to: "2026-06-01" }),
     "May 1 – Jun 1",

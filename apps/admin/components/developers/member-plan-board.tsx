@@ -16,22 +16,8 @@ import type {
   MemberPlanWindow,
 } from "@/lib/quotas/plan-board";
 import type { WorkActivitySession } from "@/lib/signals/queries/get-work-activity";
+import { formatCompactNumber, formatUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
-
-function money(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: value < 1 ? 3 : 2,
-  }).format(value);
-}
-
-function compact(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-}
 
 function toneForPace(code: QuotaPaceCode) {
   switch (code) {
@@ -50,8 +36,8 @@ function toneForPace(code: QuotaPaceCode) {
 function barTone(code: QuotaPaceCode, usedPercent: number | null) {
   if (usedPercent != null && usedPercent >= 100) return "bg-destructive";
   if (code === "EXCESS" || code === "ALREADY_EXCEEDED") return "bg-destructive";
-  if (usedPercent != null && usedPercent >= 85) return "bg-brand-yellow-dark";
   if (code === "ON_TRACK") return "bg-primary";
+  if (code === "UNKNOWN") return "bg-muted-foreground/35";
   return "bg-foreground/70";
 }
 
@@ -162,9 +148,9 @@ function PlanCardButton({
         ) : null}
 
         <div className="mt-4 flex flex-wrap gap-x-6 gap-y-3">
-          {tokens > 0 ? <Stat label="Tokens" value={compact(tokens)} /> : null}
+          {tokens > 0 ? <Stat label="Tokens" value={formatCompactNumber(tokens)} /> : null}
           {card.usage && card.usage.cost > 0 ? (
-            <Stat label="Usage" value={money(card.usage.cost)} />
+            <Stat label="Usage" value={formatUsd(card.usage.cost)} />
           ) : null}
           {reset ? <Stat label="Reset" value={reset} /> : null}
           {card.promotions.map((promo) => (
@@ -177,7 +163,7 @@ function PlanCardButton({
         </div>
       </button>
 
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-h-[calc(100vh-2rem)] min-w-0 max-w-2xl overflow-x-hidden overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center gap-3">
             <ToolLogoTile tool={card.toolName} size="md" light />
@@ -191,7 +177,7 @@ function PlanCardButton({
           </div>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <section className="space-y-3">
             {card.primary ? (
               <WindowMeter window={card.primary} code={card.pace.code} summary={card.pace.summary} />
@@ -206,12 +192,12 @@ function PlanCardButton({
           </section>
 
           <section className="flex flex-wrap gap-x-8 gap-y-4">
-            {tokens > 0 ? <Stat label="Tokens" value={compact(tokens)} /> : null}
+            {tokens > 0 ? <Stat label="Tokens" value={formatCompactNumber(tokens)} /> : null}
             {card.usage && card.usage.cost > 0 ? (
-              <Stat label="Usage" value={money(card.usage.cost)} />
+              <Stat label="Usage" value={formatUsd(card.usage.cost)} />
             ) : null}
             {card.usage && card.usage.requests > 0 ? (
-              <Stat label="Calls" value={compact(card.usage.requests)} />
+              <Stat label="Calls" value={formatCompactNumber(card.usage.requests)} />
             ) : null}
             {reset ? <Stat label="Reset" value={reset} /> : null}
             {card.promotions.map((promo) => (
@@ -223,7 +209,7 @@ function PlanCardButton({
             ))}
           </section>
 
-          <section>
+          <section className="min-w-0">
             <p className="mb-3 text-[0.65rem] uppercase tracking-[0.08em] text-muted-foreground">
               Recent work
             </p>

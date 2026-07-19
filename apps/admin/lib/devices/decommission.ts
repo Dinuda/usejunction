@@ -1,5 +1,4 @@
 import type { Prisma } from "@usejunction/db";
-import { generateDeviceToken } from "@/lib/auth";
 
 /** Devices that still count toward coverage and appear in fleet lists. */
 export const activeDeviceWhere: Prisma.DeviceWhereInput = {
@@ -21,7 +20,6 @@ export async function decommissionDevices(
     where: { id: { in: deviceIds }, decommissionedAt: null },
     data: {
       decommissionedAt: at,
-      status: "offline",
       localEndpoint: null,
       localSyncTokenHash: null,
       localSyncTokenEnc: null,
@@ -34,8 +32,8 @@ export async function revokeDeviceAuth(tx: Prisma.TransactionClient, deviceId: s
   await tx.device.update({
     where: { id: deviceId },
     data: {
-      deviceToken: generateDeviceToken(),
-      status: "offline",
+      deviceToken: `revoked:${deviceId}`,
+      deviceTokenHash: null,
       localEndpoint: null,
       localSyncTokenHash: null,
       localSyncTokenEnc: null,

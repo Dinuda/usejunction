@@ -1,5 +1,4 @@
 import { prisma } from "@usejunction/db";
-import { isDeviceOnline } from "@/lib/devices/presence";
 import { workSessionPath } from "@/lib/signals/work-display";
 import type {
   DeviceActivityDeveloper,
@@ -25,7 +24,6 @@ function deviceSnapshot(
     agentVersion: string;
     lastSeenAt: Date;
   },
-  now: Date,
 ): DeviceActivityDevice {
   return {
     id: device.id,
@@ -33,7 +31,6 @@ function deviceSnapshot(
     os: device.os,
     architecture: device.architecture,
     agentVersion: device.agentVersion,
-    online: isDeviceOnline(device.lastSeenAt, now),
   };
 }
 
@@ -85,7 +82,6 @@ export async function getDeviceActivityFeed(
   options: { developerId?: string; limit?: number; now?: Date } = {},
 ): Promise<DeviceActivityFeed> {
   const limit = Math.min(options.limit ?? 50, 100);
-  const now = options.now ?? new Date();
   const developerWhere = options.developerId ? { developerId: options.developerId } : {};
   const deviceDeveloperWhere = options.developerId ? { userId: options.developerId } : {};
   const perSource = Math.min(limit, 40);
@@ -211,7 +207,7 @@ export async function getDeviceActivityFeed(
       summary: event.summary,
       errorCode: event.errorCode,
       durationMs: event.durationMs,
-      device: deviceSnapshot(event.device, now),
+      device: deviceSnapshot(event.device),
       developer: developerSnapshot(event.developer),
       details: {
         ...asRecord(event.requestSummary),
@@ -242,7 +238,7 @@ export async function getDeviceActivityFeed(
       }`,
       errorCode: event.errorCode,
       durationMs: null,
-      device: deviceSnapshot(event.device, now),
+      device: deviceSnapshot(event.device),
       developer: developerSnapshot(event.device.user),
       details: {
         eventType: event.eventType,
@@ -278,7 +274,7 @@ export async function getDeviceActivityFeed(
       summary: `${row.device.hostname} · ${row.toolName ?? "tool"} · ${row.model ?? "model"} · ${tokens} tokens`,
       errorCode: row.status === "success" ? null : row.status,
       durationMs: row.latencyMs || null,
-      device: deviceSnapshot(row.device, now),
+      device: deviceSnapshot(row.device),
       developer: developerSnapshot(row.user),
       details: {
         toolName: row.toolName,
@@ -323,7 +319,7 @@ export async function getDeviceActivityFeed(
       }${session.title ? ` · ${session.title}` : ""}`,
       errorCode: null,
       durationMs: null,
-      device: deviceSnapshot(session.device, now),
+      device: deviceSnapshot(session.device),
       developer: developerSnapshot(session.developer),
       details: {
         toolName: session.toolName,
@@ -365,7 +361,7 @@ export async function getDeviceActivityFeed(
       summary: `${session.device.hostname} · ${before} → ${session.aiTool} → ${after}`,
       errorCode: null,
       durationMs: session.durationSeconds * 1000,
-      device: deviceSnapshot(session.device, now),
+      device: deviceSnapshot(session.device),
       developer: developerSnapshot(session.developer),
       details: {
         aiTool: session.aiTool,
@@ -409,7 +405,7 @@ export async function getDeviceActivityFeed(
         summary: `${device.hostname} · agent ${device.agentVersion} · ${device.os}`,
         errorCode: null,
         durationMs: null,
-        device: deviceSnapshot(device, now),
+        device: deviceSnapshot(device),
         developer: developerSnapshot(device.user),
         details: {
           fallback: true,
@@ -422,7 +418,7 @@ export async function getDeviceActivityFeed(
             note: "Presence fallback until the next agent collect writes activity events.",
           },
           responseSummary: {
-            online: isDeviceOnline(device.lastSeenAt, now),
+            lastSeenAt: device.lastSeenAt.toISOString(),
             lastUsageSyncAt: device.lastUsageSyncAt?.toISOString() ?? null,
             lastAccountSyncAt: device.lastAccountSyncAt?.toISOString() ?? null,
           },

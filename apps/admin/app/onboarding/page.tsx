@@ -8,7 +8,10 @@ import { prisma } from "@usejunction/db";
 
 const STALE_SESSION_REDIRECT = "/api/auth/signout?callbackUrl=/login?error=session_expired";
 
-export const metadata = { title: "Set up your workspace — UseJunction" };
+export const metadata = {
+  title: "Set up your workspace",
+  robots: { index: false, follow: false },
+};
 
 export default async function OnboardingPage({
   searchParams,

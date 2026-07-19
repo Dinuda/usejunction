@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { prisma } from "@usejunction/db";
-import { buildInstallCommand, getPublicAppUrl } from "@/lib/connect-command";
+import { Prisma, prisma } from "@usejunction/db";
+import { buildInstallCommand, buildPlatformInstallCommands, getPublicAppUrl } from "@/lib/connect-command";
 import { hasVerifiedIdentity, linkDeveloperToUser, normalizeEmail } from "@/lib/developer-identity";
-import { assertCanAddDeveloperSeat } from "@/lib/saas-billing/quantity";
+import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/quantity";
+import { assertCanAddUser } from "@/lib/saas-billing/status";
 import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 import { audit } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
@@ -34,21 +35,24 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
 
   // Possession of the invite link is enough — admins only share it with people who should join.
   const sessionEmail = normalizeEmail(session.user.email);
+  const userGate = await assertCanAddUser(link.orgId, { userId: session.user.id, email: sessionEmail });
+  if (!userGate.allowed) return NextResponse.json({ error: userGate.message }, { status: 403 });
 
-  const seatGate = await assertCanAddDeveloperSeat({
-    orgId: link.orgId,
-    userId: session.user.id,
-    email: sessionEmail,
-  });
-  if (!seatGate.allowed) {
-    return NextResponse.json({ error: seatGate.message }, { status: 403 });
+  try {
+    await prisma.teamInviteAllowlist.upsert({
+      where: { linkId_email: { linkId: link.id, email: sessionEmail } },
+      update: {},
+      create: { linkId: link.id, email: sessionEmail },
+    });
+  } catch (error) {
+    // Prisma upsert is not guaranteed to be race-free when two redeem requests
+    // arrive before either transaction has committed (React Strict Mode can
+    // trigger this in development). The unique index is the source of truth,
+    // so a duplicate means the allowlist entry was created concurrently.
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+      throw error;
+    }
   }
-
-  await prisma.teamInviteAllowlist.upsert({
-    where: { linkId_email: { linkId: link.id, email: sessionEmail } },
-    update: {},
-    create: { linkId: link.id, email: sessionEmail },
-  });
 
   const pendingInvite = await prisma.organizationInvite.findFirst({
     where: {
@@ -97,6 +101,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
     });
   });
 
+  await syncTeamSeatQuantityBestEffort(link.orgId, "team_invite_link.redeemed");
+
   const enrollmentToken = generateOpaqueToken("uj_enroll", 32);
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
   await prisma.$transaction(async (tx) => {
@@ -123,6 +129,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
 
   const base = getPublicAppUrl();
   const installCommand = buildInstallCommand(enrollmentToken, base);
+  const installCommands = buildPlatformInstallCommands(enrollmentToken, base);
 
   const response = NextResponse.json({
     status: "ready",
@@ -132,6 +139,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
     email: sessionEmail,
     enrollmentToken,
     installCommand,
+    installCommands,
     expiresAt: expiresAt.toISOString(),
   });
   response.cookies.set(ACTIVE_ORG_COOKIE, link.orgId, activeOrgCookieOptions());

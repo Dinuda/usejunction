@@ -88,7 +88,6 @@ export async function loadMemberWork(
   developerId: string,
   opts: {
     limit?: number;
-    range?: 7 | 30 | 90;
     days?: number;
     from?: string;
     to?: string;
@@ -99,7 +98,7 @@ export async function loadMemberWork(
   const periodFilter =
     opts.days != null || opts.from || opts.to
       ? { days: opts.days, from: opts.from, to: opts.to }
-      : { range: opts.range ?? 90 };
+      : { days: 90 };
   const [workEnvelope, signalsPolicy] = await Promise.all([
     getWorkActivity(
       { orgId, actorId: userId, roles: [role], now, timezone: UTC_TIMEZONE },
@@ -114,5 +113,3 @@ export async function loadMemberWork(
     workExtractionEnabled: signalsPolicy.workExtractionEnabled,
   };
 }
-export function money(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: value < 1 ? 3 : 2 }).format(value); }
-export function compact(value: number) { return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value); }

@@ -1,6 +1,5 @@
 import { verdictLabel, verdictToneClass, type PlanVerdict, type PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
-import { canonicalToolKey } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
 
 export type RosterPlanUsagePlan = {
@@ -10,17 +9,6 @@ export type RosterPlanUsagePlan = {
   primaryRatio: number | null;
   verdict: PlanVerdict;
 };
-
-function toolLabel(tool: string) {
-  const key = canonicalToolKey(tool);
-  return key === "chatgpt-codex"
-    ? "ChatGPT"
-    : key === "github-copilot"
-      ? "Copilot"
-      : key
-        ? key.charAt(0).toUpperCase() + key.slice(1)
-        : "Tool";
-}
 
 function barTone(ratio: number | null, code: PlanVerdictCode) {
   if (ratio == null) return "bg-muted";

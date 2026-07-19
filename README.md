@@ -1,6 +1,8 @@
 # UseJunction
 
-Open-source observability for AI coding tools. Track usage, cost, latency, and configuration health across Codex, Claude Code, Cursor, Continue, local models, and more.
+Open-source observability for AI coding tools. Track usage, cost, latency, plan/seat utilization, and configuration health across Codex, Claude Code, Cursor, Continue, local models, and more.
+
+**Site:** [usejunction.dev](https://usejunction.dev) · **Guides:** [Plan usage & waste](https://usejunction.dev/guides/see-plan-usage-and-waste) · [Team AI coding insights](https://usejunction.dev/guides/see-team-ai-coding-usage) · [llms.txt](https://usejunction.dev/llms.txt)
 
 ## Quick start
 

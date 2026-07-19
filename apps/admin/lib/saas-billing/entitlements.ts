@@ -5,8 +5,8 @@
 export type SaasPlan = "trial" | "community" | "team" | "enterprise";
 
 export const TRIAL_DAYS = 14;
-export const DEVICE_LIMIT_FREE = 10;
-export const TEAM_PRICE_PER_DEV_USD = 12;
+export const USER_LIMIT_FREE = 10;
+export const TEAM_PRICE_PER_DEV_USD = 8;
 
 export type OrgBillingFields = {
   plan: string;
@@ -38,11 +38,11 @@ export function resolveEffectivePlan(org: OrgBillingFields): SaasPlan {
   return "community";
 }
 
-export function getDeviceLimit(effectivePlan: SaasPlan): number | null {
+export function getUserLimit(effectivePlan: SaasPlan): number | null {
   if (effectivePlan === "team" || effectivePlan === "enterprise") {
     return null;
   }
-  return DEVICE_LIMIT_FREE;
+  return USER_LIMIT_FREE;
 }
 
 export function getTrialDaysLeft(trialEndsAt: Date | null): number | null {

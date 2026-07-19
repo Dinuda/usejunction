@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { InviteTeamForm } from "@/components/onboarding/invite-team-form";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 type Invite = {
   id: string;
@@ -13,7 +15,15 @@ type Invite = {
   acceptedAt?: string | null;
 };
 
-export function DashboardInviteSection() {
+export function DashboardInviteSection({
+  inviteTitle = "Invite your team",
+  inviteDescription = "Add developer emails and we\u2019ll send each person a secure link. They sign in, run one command, and they\u2019re done.",
+  className,
+}: {
+  inviteTitle?: string;
+  inviteDescription?: string | null;
+  className?: string;
+}) {
   const [invites, setInvites] = useState<Invite[]>([]);
 
   const refresh = useCallback(async () => {
@@ -26,16 +36,15 @@ export function DashboardInviteSection() {
   }, [refresh]);
 
   return (
-    <section className="mb-8 grid gap-5 lg:grid-cols-[1fr_0.9fr]">
+    <section className={cn("grid gap-5 lg:grid-cols-[1fr_0.9fr]", className)}>
       <Card className="shadow-none">
         <CardHeader className="border-b">
-          <CardTitle>Invite your team</CardTitle>
+          <CardTitle>{inviteTitle}</CardTitle>
         </CardHeader>
         <CardContent className="p-6">
-          <p className="mb-5 text-sm text-muted-foreground">
-            Add developer emails and we&apos;ll send each person a secure link. They sign in, run one command, and
-            they&apos;re done.
-          </p>
+          {inviteDescription ? (
+            <p className="mb-5 text-sm text-muted-foreground">{inviteDescription}</p>
+          ) : null}
           <InviteTeamForm onInvited={() => void refresh()} />
         </CardContent>
       </Card>
@@ -62,7 +71,9 @@ export function DashboardInviteSection() {
               </div>
             ))
           ) : (
-            <p className="p-5 text-sm text-muted-foreground">No invitations yet.</p>
+            <Empty className="min-h-0 gap-1 border-0 p-5 md:p-5">
+              <EmptyDescription>No invitations yet.</EmptyDescription>
+            </Empty>
           )}
         </CardContent>
       </Card>

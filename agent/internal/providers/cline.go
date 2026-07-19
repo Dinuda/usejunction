@@ -3,9 +3,9 @@ package providers
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 
+	"github.com/usejunction/agent/internal/platformdirs"
 	"github.com/usejunction/agent/internal/scan"
 	"github.com/usejunction/agent/internal/types"
 )
@@ -25,13 +25,7 @@ func (p *ClineProvider) ID() string {
 }
 
 func (p *ClineProvider) Detect(ctx context.Context) (*types.ToolStatus, error) {
-	home, _ := os.UserHomeDir()
-	globalStorageDirs := []string{
-		filepath.Join(home, "Library", "Application Support", "Code", "User", "globalStorage"),
-		filepath.Join(home, "Library", "Application Support", "Cursor", "User", "globalStorage"),
-		filepath.Join(home, ".config", "Code", "User", "globalStorage"),
-		filepath.Join(home, ".config", "Cursor", "User", "globalStorage"),
-	}
+	globalStorageDirs := platformdirs.GlobalStorageRoots()
 
 	detected := false
 	for _, base := range globalStorageDirs {

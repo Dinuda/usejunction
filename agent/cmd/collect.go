@@ -156,30 +156,23 @@ func maybeReportWorkSessions(api *client.APIClient, progress collectProgress) er
 		return nil
 	}
 
-	cfg, cfgErr := config.Load()
-	opts := workextract.Options{Backfill: true}
-	if cfgErr == nil {
-		opts.Backfill = strings.TrimSpace(cfg.WorkExtractionLastAt) == ""
-		if !opts.Backfill {
-			if since, parseErr := time.Parse(time.RFC3339, cfg.WorkExtractionLastAt); parseErr == nil {
-				opts.Since = since
-			} else {
-				opts.Backfill = true
-			}
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load work extraction state: %w", err)
+	}
+	opts, stateChanged, err := forwardOnlyWorkOptions(policy.WorkExtractionStartedAt, cfg)
+	if err != nil {
+		return err
+	}
+	if stateChanged {
+		if err := config.Save(cfg); err != nil {
+			return fmt.Errorf("save work extraction epoch: %w", err)
 		}
 	}
 
-	if opts.Backfill {
-		progress("work-extract", "Backfilling structured work history")
-	} else {
-		progress("work-extract", "Extracting recent work sessions")
-	}
+	progress("work-extract", "Extracting work observed since Signals was enabled")
 	sessions := workextract.Collect(opts)
 	if len(sessions) == 0 {
-		if opts.Backfill && cfgErr == nil {
-			cfg.WorkExtractionLastAt = time.Now().UTC().Format(time.RFC3339)
-			_ = config.Save(cfg)
-		}
 		return nil
 	}
 
@@ -196,21 +189,53 @@ func maybeReportWorkSessions(api *client.APIClient, progress collectProgress) er
 		}
 	}
 
-	if cfgErr == nil {
-		newest := sessions[0].ObservedAt
-		for _, session := range sessions[1:] {
-			if session.ObservedAt > newest {
-				newest = session.ObservedAt
-			}
+	newest := opts.NotBefore
+	for _, session := range sessions {
+		observed, parseErr := time.Parse(time.RFC3339Nano, session.ObservedAt)
+		if parseErr == nil && observed.After(newest) {
+			newest = observed
 		}
-		if newest == "" {
-			newest = time.Now().UTC().Format(time.RFC3339)
-		}
-		cfg.WorkExtractionLastAt = newest
-		cfg.SignalsWorkExtraction = true
-		_ = config.Save(cfg)
+	}
+	cfg.WorkExtractionLastAt = newest.UTC().Format(time.RFC3339Nano)
+	cfg.SignalsWorkExtraction = true
+	if err := config.Save(cfg); err != nil {
+		return fmt.Errorf("save work extraction watermark: %w", err)
 	}
 	return nil
+}
+
+func forwardOnlyWorkOptions(policyStartedAt string, cfg *config.Config) (workextract.Options, bool, error) {
+	cutoff, err := time.Parse(time.RFC3339Nano, policyStartedAt)
+	if err != nil || cutoff.IsZero() {
+		return workextract.Options{}, false, fmt.Errorf("work extraction policy missing valid collection start")
+	}
+	cutoff = cutoff.UTC()
+	cutoffText := cutoff.Format(time.RFC3339Nano)
+	opts := workextract.Options{NotBefore: cutoff}
+	changed := false
+
+	if cfg.WorkExtractionStartedAt != cutoffText {
+		// A new enablement epoch always resets the incremental watermark to the
+		// server boundary; it never authorizes a historical scan.
+		cfg.WorkExtractionStartedAt = cutoffText
+		cfg.WorkExtractionLastAt = ""
+		changed = true
+	} else if strings.TrimSpace(cfg.WorkExtractionLastAt) != "" {
+		since, parseErr := time.Parse(time.RFC3339Nano, cfg.WorkExtractionLastAt)
+		if parseErr != nil {
+			// Corrupt local state is repaired to the safe policy epoch. NotBefore
+			// remains mandatory, so no pre-enable session can be returned.
+			cfg.WorkExtractionLastAt = ""
+			changed = true
+		} else {
+			opts.Since = since.UTC()
+		}
+	}
+	if !cfg.SignalsWorkExtraction {
+		cfg.SignalsWorkExtraction = true
+		changed = true
+	}
+	return opts, changed, nil
 }
 
 func collectProviderWithTimeout(ctx context.Context, p providers.Provider, refresh bool) (providerCollectResult, bool) {

@@ -112,6 +112,23 @@ func TestFilterSinceSkipsOldSessions(t *testing.T) {
 	}
 }
 
+func TestFilterAtOrAfterUsesObservedTimeInclusively(t *testing.T) {
+	sessions := []client.WorkSession{
+		{LocalID: "dormant-old", StartedAt: "2026-01-01T00:00:00Z", ObservedAt: "2026-07-19T09:59:59Z"},
+		{LocalID: "exact", StartedAt: "2026-01-01T00:00:00Z", ObservedAt: "2026-07-19T10:00:00Z"},
+		{LocalID: "updated-after", StartedAt: "2026-01-01T00:00:00Z", ObservedAt: "2026-07-19T10:00:01Z"},
+		{LocalID: "invalid", ObservedAt: "not-a-time"},
+	}
+	cutoff, _ := time.Parse(time.RFC3339, "2026-07-19T10:00:00Z")
+	filtered := FilterAtOrAfter(sessions, cutoff)
+	if len(filtered) != 2 || filtered[0].LocalID != "exact" || filtered[1].LocalID != "updated-after" {
+		t.Fatalf("filtered = %#v", filtered)
+	}
+	if got := FilterAtOrAfter(sessions, time.Time{}); len(got) != 0 {
+		t.Fatalf("missing cutoff must fail closed, got %#v", got)
+	}
+}
+
 func TestParseComposerHeadersPayload(t *testing.T) {
 	raw := []byte(`{
 	  "allComposers": [

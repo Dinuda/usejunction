@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@usejunction/db";
+import { randomUUID } from "node:crypto";
+import { Prisma, prisma } from "@usejunction/db";
 import { assertCanEnrollDevice } from "@/lib/saas-billing/status";
 import { generateDeviceToken } from "@/lib/auth";
 import { getPublicAppUrl } from "@/lib/public-url";
 import { hashOpaqueToken } from "@/lib/security";
+import { limitedJson } from "@/lib/security/http";
+import { enforceRateLimit } from "@/lib/security/rate-limit";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { token, hostname, os, architecture, agentVersion } = body;
+    const limited = await enforceRateLimit(req, { key: "enroll", limit: 20, windowSeconds: 60 });
+    if (limited !== true) return limited;
+    const parsedBody = await limitedJson(req, 16 * 1024);
+    if (!parsedBody.ok) return parsedBody.response;
+    const body = parsedBody.data as Record<string, unknown>;
+    const { hostname, os, architecture, agentVersion } = body;
+    const token = String(body.token ?? "");
 
     if (!token) {
       return NextResponse.json({ error: "token required" }, { status: 400 });
@@ -41,14 +49,16 @@ export async function POST(req: NextRequest) {
 
     const orgId = enrollment.orgId;
 
-    const enrollmentCheck = await assertCanEnrollDevice(orgId);
+    const enrollmentCheck = await assertCanEnrollDevice(orgId, enrollment.developer.id);
     if (!enrollmentCheck.allowed) {
       return NextResponse.json({ error: enrollmentCheck.message }, { status: 403 });
     }
 
     const deviceToken = generateDeviceToken();
-    const device = await prisma
-      .$transaction(async (tx) => {
+    const deviceTokenHash = hashOpaqueToken(deviceToken);
+    let device;
+    try {
+      device = await prisma.$transaction(async (tx) => {
         const consumed = await tx.enrollmentToken.updateMany({
           where: { id: enrollment.id, usedAt: null, expiresAt: { gt: new Date() } },
           data: { usedAt: new Date() },
@@ -62,16 +72,20 @@ export async function POST(req: NextRequest) {
             os: String(os || "unknown").slice(0, 64),
             architecture: String(architecture || "unknown").slice(0, 64),
             agentVersion: String(agentVersion || "0.1.0").slice(0, 64),
-            deviceToken,
-            status: "online",
+            deviceToken: `rotated:new:${randomUUID()}`,
+            deviceTokenHash,
           },
         });
-      })
-      .catch((error) => {
-        if (error instanceof Error && error.message === "TOKEN_CONSUMED") return null;
-        throw error;
       });
-    if (!device) return NextResponse.json({ error: "token already used" }, { status: 401 });
+    } catch (error) {
+      if (error instanceof Error && error.message === "TOKEN_CONSUMED") {
+        return NextResponse.json({ error: "token already used" }, { status: 401 });
+      }
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        return NextResponse.json({ error: "This user already has a device enrolled." }, { status: 409 });
+      }
+      throw error;
+    }
 
     const appUrl = getPublicAppUrl();
     const telemetryEndpoint = await prisma.telemetryEndpoint.findUnique({

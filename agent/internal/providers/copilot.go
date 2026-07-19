@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/usejunction/agent/internal/probe"
+	"github.com/usejunction/agent/internal/platformdirs"
 	"github.com/usejunction/agent/internal/scan"
 	"github.com/usejunction/agent/internal/types"
 )
@@ -16,13 +17,7 @@ type CopilotProvider struct{}
 func (p *CopilotProvider) ID() string { return "copilot" }
 
 func (p *CopilotProvider) Detect(ctx context.Context) (*types.ToolStatus, error) {
-	home, _ := os.UserHomeDir()
-	roots := []string{
-		filepath.Join(home, ".vscode", "extensions"),
-		filepath.Join(home, ".vscode-insiders", "extensions"),
-		filepath.Join(home, ".cursor", "extensions"),
-		filepath.Join(home, "Library", "Application Support", "Cursor", "User", "extensions"),
-	}
+	roots := platformdirs.ExtensionRoots()
 	detected := false
 	configPath := ""
 	for _, root := range roots {

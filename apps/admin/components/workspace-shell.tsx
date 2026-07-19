@@ -11,7 +11,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
-import { PlanStatusCard } from "@/components/saas-billing/plan-status-card";
+import {
+  ActivePlanBadge,
+  PlanStatusCard,
+  shouldShowSidebarPlanCard,
+} from "@/components/saas-billing/plan-status-card";
 import { SignalsMark } from "@/components/signals/signals-mark";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { WorkspaceUserMenu } from "@/components/workspace-user-menu";
@@ -30,6 +34,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
 
 type NavIcon = LucideIcon | typeof SignalsMark;
@@ -85,11 +91,16 @@ function AppSidebar({
   billing: OrgBillingStatus | null;
 }) {
   const nav = navForRole(role);
+  const { setOpenMobile } = useSidebar();
 
   return (
-    <Sidebar collapsible="none" variant="sidebar" className="h-full border-r md:h-svh">
+    <Sidebar collapsible="offcanvas" variant="sidebar" className="border-r">
       <SidebarHeader className="h-14 justify-center border-b px-4 py-0">
-        <Link href="/dashboard" className="flex h-full items-center gap-3 overflow-hidden">
+        <Link
+          href="/dashboard"
+          className="flex h-full items-center gap-3 overflow-hidden"
+          onClick={() => setOpenMobile(false)}
+        >
           <BrandLogo className="h-8 w-auto" />
         </Link>
       </SidebarHeader>
@@ -105,7 +116,11 @@ function AppSidebar({
                 return (
                 <SidebarMenuItem key={href}>
                   <SidebarMenuButton asChild isActive={isActive} tooltip={label}>
-                    <Link href={href} aria-current={isActive ? "page" : undefined}>
+                    <Link
+                      href={href}
+                      aria-current={isActive ? "page" : undefined}
+                      onClick={() => setOpenMobile(false)}
+                    >
                       <Icon aria-hidden="true" />
                       <span>{label}</span>
                     </Link>
@@ -119,7 +134,11 @@ function AppSidebar({
       </SidebarContent>
       {billing && (
         <SidebarFooter className="mt-auto shrink-0 border-t-0 p-2 pt-0">
-          <PlanStatusCard billing={billing} />
+          {shouldShowSidebarPlanCard(billing) ? (
+            <PlanStatusCard billing={billing} />
+          ) : (
+            <ActivePlanBadge billing={billing} />
+          )}
         </SidebarFooter>
       )}
     </Sidebar>
@@ -141,15 +160,32 @@ export function WorkspaceShell({
   return (
     <SidebarProvider
       defaultOpen
-      className="grid h-svh grid-rows-[auto_1fr] overflow-hidden md:grid-cols-[var(--sidebar-width)_1fr] md:grid-rows-1"
+      className="h-dvh min-h-dvh overflow-hidden"
     >
       <AppSidebar active={pathname} role={role} billing={billing} />
-      <SidebarInset className="min-h-0 overflow-y-auto">
-        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-end gap-4 border-b bg-background/95 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
-          <WorkspaceSwitcher organizations={organizations} currentOrgId={currentOrgId} role={role} />
-          <WorkspaceUserMenu name={name} email={email} image={image} role={role} />
+      <SidebarInset className="h-dvh min-h-0 min-w-0 overflow-y-auto overscroll-contain">
+        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-2 border-b bg-background/95 px-3 backdrop-blur-sm sm:gap-4 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-3">
+            <SidebarTrigger className="-ml-1 size-11 shrink-0 md:hidden" />
+            <Link
+              href="/dashboard"
+              aria-label="UseJunction dashboard"
+              className="flex shrink-0 items-center md:hidden"
+            >
+              <BrandLogo className="h-5 w-auto min-[360px]:h-6" />
+            </Link>
+          </div>
+          <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-6">
+            <WorkspaceSwitcher
+              organizations={organizations}
+              currentOrgId={currentOrgId}
+              role={role}
+              className="h-11 min-w-0 w-[clamp(5.25rem,27vw,9rem)] px-2 sm:h-9 sm:w-auto sm:min-w-[12rem] sm:max-w-[18rem] sm:px-3"
+            />
+            <WorkspaceUserMenu name={name} email={email} image={image} role={role} />
+          </div>
         </header>
-        <div className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <div className="min-w-0 flex-1 px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
           <div className="mx-auto w-full max-w-[1440px]">{children}</div>
         </div>
       </SidebarInset>

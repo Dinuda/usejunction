@@ -20,6 +20,9 @@
     "node": ">=20"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["@prisma/client", "prisma", "esbuild", "sharp"]
+    "onlyBuiltDependencies": ["@prisma/client", "prisma", "esbuild", "sharp"],
+    "overrides": {
+      "postcss": "8.5.19"
+    }
   }
 }

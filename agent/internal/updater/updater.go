@@ -2,8 +2,10 @@ package updater
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -24,6 +26,10 @@ import (
 const MaxArtifactBytes int64 = 100 * 1024 * 1024
 
 var ErrBlockedVersion = errors.New("update version is blocked after rollback")
+
+// TrustedUpdateSigningKeys is a comma-separated list of keyId:base64urlPublicKey
+// entries. Production builds should inject it with -ldflags.
+var TrustedUpdateSigningKeys = ""
 
 type Reporter interface {
 	ReportAgentUpdate(client.AgentUpdateEvent) error
@@ -162,6 +168,83 @@ func isNumeric(value string) bool {
 	return true
 }
 
+type signedManifestPayload struct {
+	SchemaVersion int                                    `json:"schemaVersion"`
+	Version       string                                 `json:"version"`
+	PublishedAt   string                                 `json:"publishedAt"`
+	Urgency       string                                 `json:"urgency"`
+	RolloutHours  int                                    `json:"rolloutHours"`
+	Artifacts     map[string]client.AgentReleaseArtifact `json:"artifacts"`
+	SigningKeyID  string                                 `json:"signingKeyId"`
+}
+
+func trustedSigningKeys() map[string]ed25519.PublicKey {
+	out := map[string]ed25519.PublicKey{}
+	for _, entry := range strings.Split(TrustedUpdateSigningKeys, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		keyID, encoded, ok := strings.Cut(entry, ":")
+		if !ok || strings.TrimSpace(keyID) == "" {
+			continue
+		}
+		raw, err := base64.RawURLEncoding.DecodeString(encoded)
+		if err != nil {
+			raw, err = base64.StdEncoding.DecodeString(encoded)
+		}
+		if err == nil && len(raw) == ed25519.PublicKeySize {
+			out[strings.TrimSpace(keyID)] = ed25519.PublicKey(raw)
+		}
+	}
+	return out
+}
+
+func signedManifestBytes(manifest client.AgentReleaseManifest) ([]byte, error) {
+	return json.Marshal(signedManifestPayload{
+		SchemaVersion: manifest.SchemaVersion,
+		Version:       manifest.Version,
+		PublishedAt:   manifest.PublishedAt,
+		Urgency:       manifest.Urgency,
+		RolloutHours:  manifest.RolloutHours,
+		Artifacts:     manifest.Artifacts,
+		SigningKeyID:  manifest.SigningKeyID,
+	})
+}
+
+func verifyDirectiveSignature(directive client.AgentUpdateDirective) error {
+	keys := trustedSigningKeys()
+	publicKey, ok := keys[directive.Manifest.SigningKeyID]
+	if !ok {
+		return errors.New("unknown update signing key")
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(directive.Manifest.Signature)
+	if err != nil {
+		signature, err = base64.StdEncoding.DecodeString(directive.Manifest.Signature)
+	}
+	if err != nil || len(signature) != ed25519.SignatureSize {
+		return errors.New("invalid update signature encoding")
+	}
+	payload, err := signedManifestBytes(directive.Manifest)
+	if err != nil {
+		return err
+	}
+	if !ed25519.Verify(publicKey, payload, signature) {
+		return errors.New("invalid update signature")
+	}
+	if directive.Manifest.Version != directive.TargetVersion || directive.Manifest.Urgency != directive.Urgency {
+		return errors.New("update directive does not match signed manifest")
+	}
+	artifact, ok := directive.Manifest.Artifacts[directive.ArtifactKey]
+	if !ok {
+		return errors.New("signed manifest missing directive artifact")
+	}
+	if artifact.URL != directive.ArtifactURL || strings.ToLower(artifact.SHA256) != strings.ToLower(directive.SHA256) || artifact.Size != directive.Size {
+		return errors.New("update artifact does not match signed manifest")
+	}
+	return nil
+}
+
 // Apply downloads and installs an agent update artifact.
 //
 // Current contract: the artifact is a single executable. Apply atomically
@@ -187,6 +270,9 @@ func Apply(ctx context.Context, cfg *config.Config, opts ApplyOptions) (bool, er
 	}
 	if len(directive.SHA256) != 64 {
 		return false, errors.New("invalid artifact checksum")
+	}
+	if err := verifyDirectiveSignature(directive); err != nil {
+		return false, err
 	}
 
 	report(opts.Reporter, directive, opts.CurrentVersion, "download_started", "download", "")

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Github, Menu, X } from "lucide-react";
 import usejunctionLogo from "@/public/usejunction.png";
-import { navAnchors, siteConfig } from "@/lib/public/config";
+import { navAnchors, navLinks, siteConfig } from "@/lib/public/config";
 
 interface MarketingTopNavProps {
   isAuthenticated: boolean;
@@ -57,6 +57,24 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
     }
   }, [pathname]);
 
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [mobileOpen]);
+
   return (
     <header
       className="fixed inset-x-0 top-0 z-50 transition-colors duration-200"
@@ -73,7 +91,7 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
             width={usejunctionLogo.width}
             height={usejunctionLogo.height}
             priority
-            className="h-12 w-auto"
+            className="h-10 w-auto sm:h-12"
           />
         </Link>
 
@@ -88,9 +106,26 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
               {anchor.label}
             </button>
           ))}
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="inline-flex h-10 items-center text-sm leading-none text-[var(--public-muted)] transition-colors hover:text-[var(--public-fg)]"
+            >
+              {link.label}
+            </Link>
+          ))}
         </nav>
 
         <div className="hidden h-10 items-center gap-3 md:flex md:justify-self-end">
+          {isAuthenticated ? null : (
+            <Link
+              href="/login"
+              className="inline-flex h-10 items-center text-sm leading-none text-[var(--public-muted)] transition-colors hover:text-[var(--public-fg)]"
+            >
+              Sign in
+            </Link>
+          )}
           <a
             href={siteConfig.githubUrl}
             target="_blank"
@@ -105,17 +140,19 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
               Dashboard
             </Link>
           ) : (
-            <a href={siteConfig.docsUrl} className="public-btn public-btn-primary">
-              Deploy
-            </a>
+            <Link href={siteConfig.signupUrl} className="public-btn public-btn-primary">
+              Get started
+            </Link>
           )}
         </div>
 
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center md:hidden"
+          className="inline-flex h-11 w-11 items-center justify-center md:hidden"
           onClick={() => setMobileOpen(!mobileOpen)}
           aria-label={mobileOpen ? "Close menu" : "Open menu"}
+          aria-expanded={mobileOpen}
+          aria-controls="mobile-primary-navigation"
         >
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
@@ -123,36 +160,56 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
 
       {mobileOpen && (
         <div
-          className="border-t md:hidden"
+          id="mobile-primary-navigation"
+          className="max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain border-t md:hidden"
           style={{ borderColor: "var(--public-border)", background: "var(--public-surface)" }}
         >
-          <nav className="public-container flex flex-col gap-4 py-4" aria-label="Mobile navigation">
+          <nav className="public-container flex flex-col gap-1 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]" aria-label="Mobile navigation">
             {navAnchors.map((anchor) => (
               <button
                 key={anchor.id}
                 type="button"
                 onClick={() => scrollToAnchor(anchor.id)}
-                className="text-left text-sm"
+                className="flex min-h-11 items-center px-1 text-left text-sm"
               >
                 {anchor.label}
               </button>
             ))}
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="flex min-h-11 items-center px-1 text-left text-sm"
+                onClick={() => setMobileOpen(false)}
+              >
+                {link.label}
+              </Link>
+            ))}
+            {isAuthenticated ? null : (
+              <Link
+                href="/login"
+                className="flex min-h-11 items-center px-1 text-left text-sm"
+                onClick={() => setMobileOpen(false)}
+              >
+                Sign in
+              </Link>
+            )}
             <a
               href={siteConfig.githubUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="public-btn public-btn-outline text-center text-sm"
+              className="public-btn public-btn-outline mt-2 w-full text-center text-sm"
             >
               GitHub
             </a>
             {isAuthenticated ? (
-              <Link href="/dashboard" className="public-btn public-btn-primary text-center text-sm">
+              <Link href="/dashboard" className="public-btn public-btn-primary w-full text-center text-sm">
                 Dashboard
               </Link>
             ) : (
-              <a href={siteConfig.docsUrl} className="public-btn public-btn-primary text-center text-sm">
-                Deploy
-              </a>
+              <Link href={siteConfig.signupUrl} className="public-btn public-btn-primary w-full text-center text-sm">
+                Get started
+              </Link>
             )}
           </nav>
         </div>

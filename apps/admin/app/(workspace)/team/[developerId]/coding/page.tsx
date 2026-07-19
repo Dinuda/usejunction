@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { AiCodingPanel } from "@/components/dashboard/ai-coding-panel";
 import { loadMemberMetrics, memberPeriodQuery } from "@/lib/developers/member-page-context";
 
@@ -24,13 +31,19 @@ export default async function MemberCodingPage({
             never collected.
           </p>
         </div>
-        <Link
-          href={`/team/${developerId}${memberPeriodQuery(paramsValue)}`}
-          className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-        >
-          Back to overview
-          <ArrowUpRight className="size-3" />
-        </Link>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link href={`/team/${developerId}${memberPeriodQuery(paramsValue)}`}>Overview</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>AI coding</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       </div>
 
       <AiCodingPanel

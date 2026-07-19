@@ -103,7 +103,7 @@ The public and internal routes intentionally differ:
 
 Promotion creates or reuses an `agentRelease` record and snapshots the eligible fleet into `agentUpdateDeployment` rows.
 
-Each rollout snapshot includes every compatible device enrolled at the moment promotion starts, including offline devices.
+Each rollout snapshot includes every compatible device enrolled at the moment promotion starts.
 
 The snapshot uses the device’s current recorded OS, architecture, and agent version to decide whether it is compatible.
 
@@ -136,7 +136,6 @@ When the daemon calls `POST /api/devices/heartbeat` it sends:
 The server then:
 
 - updates `lastSeenAt`
-- marks the device online
 - records the most recent agent metadata
 - checks whether an update directive should be returned
 
@@ -265,7 +264,7 @@ That restores the retained binary, restarts the service, and reports rollback co
 
 Coverage is defined against the release-time cohort.
 
-That denominator includes every compatible device enrolled when the release activated, even if the device was offline.
+That denominator includes every compatible device enrolled when the release activated.
 
 Devices enrolled after activation are excluded from that historical denominator, although they still receive the current version normally.
 
@@ -279,8 +278,7 @@ Per release, the control plane tracks:
 - successfully installed and confirmed
 - failed
 - rolled back
-- pending but online
-- pending and offline
+- pending, awaiting a future heartbeat
 
 Primary ratios:
 
@@ -383,15 +381,15 @@ If you are changing the release control plane, the most important files are:
 
 Some user-facing features require a minimum agent version. Work extraction is the first:
 
-- Minimum version: `0.3.0` (`WORK_EXTRACTION_MIN_AGENT_VERSION` / agent `workextract.MinAgentVersion`) — includes clipped `changeNarrative` summaries
+- Minimum version: `0.3.1` (`WORK_EXTRACTION_MIN_AGENT_VERSION` / agent `workextract.MinAgentVersion`) — enforces the server-authoritative forward-only collection epoch
 - When an admin turns **Work extraction** on under Settings → Signals, the control plane calls `accelerateOrgAgentRollout(orgId)` for that workspace only
 - Pending deployments on the **active** release for that org become immediately eligible (`eligibleAt = now`)
 - Other orgs keep their staggered rollout schedule
-- Updated agents perform a one-shot **history backfill** of local AI tool sessions on first collect, then watermark with `workExtractionLastAt` (exclusive: only `ObservedAt` strictly newer than the watermark is uploaded)
+- Updated agents use the later of workspace enablement and device enrollment as their collection boundary. Existing local history is not imported; post-boundary observations may upload on a later heartbeat, then advance `workExtractionLastAt` incrementally
 - Work extraction does **not** require classic app/domain collection (`enabled`) to be on
 - Background collect also delta-uploads local usage: always include **today (UTC)**, skip unchanged historical aggregates using fingerprints in `~/.usejunction/cache/cost-usage/usage-upload.json`
 
-Ops still must promote an agent release that includes workextract (`agent-v0.3.0` or later) before devices can download a compatible binary. Enabling the setting cannot invent artifacts.
+Ops still must promote the forward-only work extraction release (`agent-v0.3.1` or later) before devices can download a compatible binary. Enabling the setting cannot invent artifacts.
 
 Settings shows a readiness strip (compatible vs needs update) and links to Team → Agent update coverage.
 
@@ -447,7 +445,7 @@ Common failure modes:
 
 - tag exists but no release is active yet
 - release exists but was never promoted
-- device is offline and has not heartbeated yet
+- the device has not sent its next heartbeat yet
 - device architecture does not match a published artifact
 - checksum validation failed on the agent
 - the agent was rolled back and the version is locally blocked

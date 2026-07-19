@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
 import { MemberWorkSessionList } from "@/components/developers/member-work-session-list";
 import { SignalsFilters } from "@/components/signals/signals-filters";
@@ -118,9 +119,9 @@ export default async function SignalsActivityPage({
             maxHeightClass="max-h-[40rem]"
           />
         ) : (
-          <p className="py-2 text-sm text-muted-foreground">
-            No extracted work sessions in this period yet.
-          </p>
+          <Empty className="min-h-0 gap-1 border-0 p-6 md:p-6">
+            <EmptyDescription>No extracted work sessions in this period yet.</EmptyDescription>
+          </Empty>
         )}
       </section>
     </>

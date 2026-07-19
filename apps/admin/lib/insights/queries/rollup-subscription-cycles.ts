@@ -1,4 +1,4 @@
-import type { PlanVerdict, PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
+import type { PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
 import type { BillingCycleInfo, PlanUsageSubscriptionRow } from "@/lib/insights/contracts/plan-usage.v1";
 
 export type SubscriptionCycleSliceRow = {
@@ -48,23 +48,39 @@ export function toolGroupKey(toolKey: string | null, toolName: string) {
   return toolKey?.trim() || toolName.trim().toLowerCase() || "unknown";
 }
 
-function planDisplayRatio(plan: PlanUsageSubscriptionRow) {
-  if (plan.primaryQuota?.displayRatio != null) return plan.primaryQuota.displayRatio;
+function planDisplayRatio(plan: PlanUsageSubscriptionRow, includeLiveQuota: boolean) {
+  if (includeLiveQuota && plan.primaryQuota?.displayRatio != null) return plan.primaryQuota.displayRatio;
   if (plan.included?.displayRatio != null) return plan.included.displayRatio;
+  if (!includeLiveQuota) return null;
   return plan.primaryRatio != null ? Math.min(plan.primaryRatio, 1) : null;
 }
 
-function aggregateUtilization(plans: PlanUsageSubscriptionRow[]) {
-  const withSignal = plans.filter((plan) => plan.primaryRatio != null);
-  const withDisplay = plans.map(planDisplayRatio).filter((ratio): ratio is number => ratio != null);
+function planPrimaryRatio(plan: PlanUsageSubscriptionRow, includeLiveQuota: boolean) {
+  if (!includeLiveQuota) return plan.included?.rawRatio ?? null;
+  return plan.primaryRatio;
+}
+
+function aggregateUtilization(plans: PlanUsageSubscriptionRow[], includeLiveQuota: boolean) {
+  const withSignal = plans.filter((plan) => planPrimaryRatio(plan, includeLiveQuota) != null);
+  const withDisplay = plans
+    .map((plan) => planDisplayRatio(plan, includeLiveQuota))
+    .filter((ratio): ratio is number => ratio != null);
   const utilizationPercent =
     withSignal.length > 0
-      ? (withSignal.reduce((sum, plan) => sum + (plan.primaryRatio ?? 0), 0) / withSignal.length) * 100
+      ? (withSignal.reduce((sum, plan) => sum + (planPrimaryRatio(plan, includeLiveQuota) ?? 0), 0) /
+          withSignal.length) *
+        100
       : null;
   const utilizationDisplayPercent =
     withDisplay.length > 0
       ? (withDisplay.reduce((sum, ratio) => sum + ratio, 0) / withDisplay.length) * 100
       : null;
+
+  // Previous cycles must not reuse live quota pace verdicts.
+  if (!includeLiveQuota) {
+    return { utilizationPercent, utilizationDisplayPercent, verdictCode: null };
+  }
+
   const verdict =
     plans.reduce<PlanUsageSubscriptionRow | null>((worst, plan) => {
       if (!worst) return plan;
@@ -77,7 +93,9 @@ function aggregateUtilization(plans: PlanUsageSubscriptionRow[]) {
 export function enrichSubscriptionCyclesWithUtilization(
   cycles: ToolSubscriptionCycleRow[],
   planSubscriptions: PlanUsageSubscriptionRow[],
+  options: { includeLiveQuota?: boolean } = {},
 ): ToolSubscriptionCycleRow[] {
+  const includeLiveQuota = options.includeLiveQuota !== false;
   const plansByTool = new Map<string, PlanUsageSubscriptionRow[]>();
   for (const plan of planSubscriptions) {
     const key = toolGroupKey(plan.toolKey, plan.toolName);
@@ -87,7 +105,7 @@ export function enrichSubscriptionCyclesWithUtilization(
   }
   return cycles.map((row) => ({
     ...row,
-    ...aggregateUtilization(plansByTool.get(row.id) ?? []),
+    ...aggregateUtilization(plansByTool.get(row.id) ?? [], includeLiveQuota),
   }));
 }
 

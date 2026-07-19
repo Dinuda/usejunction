@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { userFacingError } from "@/lib/errors/user-facing";
+import { PlatformCommand } from "@/components/onboarding/platform-command";
+import type { PlatformCommands } from "@/lib/connect-command";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -20,7 +22,7 @@ type AllowlistRow = { email: string; createdAt: string };
 
 type ConnectCommandRow = {
   email: string;
-  command: string;
+  commands: PlatformCommands;
   expiresAt?: string;
 };
 
@@ -244,6 +246,7 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
       status: string;
       email: string;
       command?: string;
+      connectCommands?: PlatformCommands;
       expiresAt?: string;
     }>;
     setCommands(
@@ -251,7 +254,7 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
         .filter((item) => item.status === "ok" && item.command)
         .map((item) => ({
           email: item.email,
-          command: item.command!,
+          commands: item.connectCommands ?? { macosLinux: item.command!, windows: item.command! },
           expiresAt: item.expiresAt,
         })),
     );
@@ -441,21 +444,8 @@ export function InviteTeamForm({ onInvited }: { onInvited?: (result: InviteResul
               <ul className="space-y-3">
                 {commands.map((row) => (
                   <li key={row.email} className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-medium">{row.email}</p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void copy(row.email, row.command)}
-                      >
-                        {copied === row.email ? <Check className="size-4" /> : <Clipboard className="size-4" />}
-                        {copied === row.email ? "Copied" : "Copy"}
-                      </Button>
-                    </div>
-                    <div className="overflow-hidden border border-zinc-800 bg-zinc-950 p-3 font-mono text-[0.7rem] leading-5 text-zinc-100">
-                      <code className="break-all">{row.command}</code>
-                    </div>
+                    <p className="truncate text-sm font-medium">{row.email}</p>
+                    <PlatformCommand commands={row.commands} />
                   </li>
                 ))}
               </ul>

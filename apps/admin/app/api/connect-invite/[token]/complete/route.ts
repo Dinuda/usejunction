@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
 import { hasVerifiedIdentity, linkDeveloperToUser, normalizeEmail } from "@/lib/developer-identity";
-import { assertCanAddDeveloperSeat } from "@/lib/saas-billing/quantity";
+import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/quantity";
+import { assertCanAddUser } from "@/lib/saas-billing/status";
 import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 import { audit } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
@@ -44,15 +45,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
       { status: 403 },
     );
   }
-
-  const seatGate = await assertCanAddDeveloperSeat({
-    orgId: connectInvite.orgId,
-    userId: session.user.id,
-    email: connectInvite.email,
-  });
-  if (!seatGate.allowed) {
-    return NextResponse.json({ error: seatGate.message }, { status: 403 });
-  }
+  const userGate = await assertCanAddUser(connectInvite.orgId, { userId: session.user.id, email: sessionEmail });
+  if (!userGate.allowed) return NextResponse.json({ error: userGate.message }, { status: 403 });
 
   const developer = await prisma.$transaction(async (tx) => {
     if (connectInvite.inviteId) {
@@ -90,6 +84,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
       role: "user",
     });
   });
+
+  await syncTeamSeatQuantityBestEffort(connectInvite.orgId, "connect_invite.ready");
 
   const enrollmentToken = generateOpaqueToken("uj_enroll", 32);
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000);

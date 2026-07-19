@@ -3,21 +3,16 @@ import { prisma } from "@usejunction/db";
 import {
   recordDeviceActivityEvent,
 } from "@/lib/activity/record-device-activity-event";
-import { bearerToken } from "@/lib/auth";
+import { findDeviceByBearerToken } from "@/lib/auth";
 import { updateDirectiveForHeartbeat } from "@/lib/agent-updates";
 import { revokeDeviceAuth } from "@/lib/devices/decommission";
 import { encryptSecret, hashOpaqueToken } from "@/lib/security";
+import { limitedJson } from "@/lib/security/http";
 
 export async function POST(req: NextRequest) {
   const started = Date.now();
   try {
-    const token = bearerToken(req);
-    if (!token) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-
-    const device = await prisma.device.findUnique({
-      where: { deviceToken: token },
+    const device = await findDeviceByBearerToken(req, {
       include: { user: { select: { removedAt: true } } },
     });
     if (!device) {
@@ -32,7 +27,6 @@ export async function POST(req: NextRequest) {
             where: { id: device.id },
             data: {
               decommissionedAt: device.user.removedAt ?? new Date(),
-              status: "offline",
               localEndpoint: null,
               localSyncTokenHash: null,
               localSyncTokenEnc: null,
@@ -56,7 +50,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, deviceId: device.id, uninstall: true });
     }
 
-    const body = await req.json().catch(() => ({}));
+    const parsedBody = await limitedJson(req, 128 * 1024);
+    if (!parsedBody.ok) return parsedBody.response;
+    const body = parsedBody.data as Record<string, unknown>;
     const localEndpoint =
       typeof body.localEndpoint === "string" && body.localEndpoint.startsWith("http://127.0.0.1")
         ? body.localEndpoint.slice(0, 128)
@@ -87,7 +83,6 @@ export async function POST(req: NextRequest) {
         where: { id: device.id },
         data: {
           lastSeenAt: new Date(),
-          status: "online",
           ...(body.agentVersion ? { agentVersion: String(body.agentVersion).slice(0, 64) } : {}),
           ...(body.os ? { os: String(body.os).slice(0, 64) } : {}),
           ...(body.architecture ? { architecture: String(body.architecture).slice(0, 64) } : {}),

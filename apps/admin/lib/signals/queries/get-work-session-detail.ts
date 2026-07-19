@@ -11,6 +11,7 @@ import {
   parseWorkTrace,
   type WorkTrace,
 } from "@/lib/signals/work-trace";
+import { audit } from "@/lib/rbac";
 import { rolesFor } from "@/lib/rbac/permissions";
 
 export type WorkSessionDetail = {
@@ -88,14 +89,31 @@ export async function getWorkSessionDetail(
       toolCallCounts: true,
       trace: true,
       repository: true,
-      developer: { select: { id: true, name: true, email: true } },
+      developer: { select: { id: true, name: true, email: true, authUserId: true } },
       device: { select: { id: true, hostname: true } },
     },
   });
   if (!row) return null;
 
   const trace = parseWorkTrace(row.trace);
-  const repository = asRepository(row.repository) ?? trace?.location?.repository ?? null;
+  const canSeeRawTrace = context.actorId === row.developer.authUserId || context.roles.includes("owner") || context.roles.includes("admin");
+  const visibleTrace = canSeeRawTrace
+    ? trace
+    : trace
+      ? { ...trace, userTurns: undefined }
+      : null;
+  if (visibleTrace?.userTurns?.length) {
+    await audit({
+      orgId: context.orgId,
+      actorType: "user",
+      actorId: context.actorId,
+      action: "work_session.raw_trace_viewed",
+      targetType: "local_work_session",
+      targetId: row.id,
+      metadata: { developerId: row.developer.id },
+    });
+  }
+  const repository = asRepository(row.repository) ?? visibleTrace?.location?.repository ?? null;
 
   return makeInsightEnvelope({
     context,
@@ -121,12 +139,12 @@ export async function getWorkSessionDetail(
       observedAt: row.observedAt.toISOString(),
       source: row.source,
       toolCallCounts: asCounts(row.toolCallCounts),
-      trace,
+      trace: visibleTrace,
       repository,
       locationLabel: formatTraceLocation(trace) ?? (repository?.owner && repository?.name
         ? `${repository.owner}/${repository.name}`
         : repository?.name ?? null),
-      developer: row.developer,
+      developer: { id: row.developer.id, name: row.developer.name, email: row.developer.email },
       device: row.device,
     },
   });

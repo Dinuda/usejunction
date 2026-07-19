@@ -5,36 +5,18 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 
 	"github.com/usejunction/agent/internal/config"
+	"github.com/usejunction/agent/internal/platformdirs"
 	"github.com/usejunction/agent/internal/types"
 )
 
 func workspaceStorageRoots() []string {
-	home, _ := os.UserHomeDir()
-	var roots []string
-	if runtime.GOOS == "darwin" {
-		roots = append(roots,
-			filepath.Join(home, "Library", "Application Support", "Code", "User", "workspaceStorage"),
-			filepath.Join(home, "Library", "Application Support", "Cursor", "User", "workspaceStorage"),
-			filepath.Join(home, "Library", "Application Support", "Code - Insiders", "User", "workspaceStorage"),
-		)
-	} else {
-		configHome := os.Getenv("XDG_CONFIG_HOME")
-		if configHome == "" {
-			configHome = filepath.Join(home, ".config")
-		}
-		roots = append(roots,
-			filepath.Join(configHome, "Code", "User", "workspaceStorage"),
-			filepath.Join(configHome, "Cursor", "User", "workspaceStorage"),
-		)
-	}
-	return roots
+	return platformdirs.WorkspaceStorageRoots()
 }
 
 // ScanCopilot reads opt-in Copilot Chat agent-traces.db token spans when present.
@@ -161,24 +143,7 @@ func scanCopilotDebugJSONL(path string, buckets map[string]*types.DailyUsage) er
 }
 
 func globalStorageRoots() []string {
-	home, _ := os.UserHomeDir()
-	var roots []string
-	if runtime.GOOS == "darwin" {
-		roots = append(roots,
-			filepath.Join(home, "Library", "Application Support", "Code", "User", "globalStorage"),
-			filepath.Join(home, "Library", "Application Support", "Cursor", "User", "globalStorage"),
-		)
-	} else {
-		configHome := os.Getenv("XDG_CONFIG_HOME")
-		if configHome == "" {
-			configHome = filepath.Join(home, ".config")
-		}
-		roots = append(roots,
-			filepath.Join(configHome, "Code", "User", "globalStorage"),
-			filepath.Join(configHome, "Cursor", "User", "globalStorage"),
-		)
-	}
-	return roots
+	return platformdirs.GlobalStorageRoots()
 }
 
 var clineExtensionDirs = map[string][]string{

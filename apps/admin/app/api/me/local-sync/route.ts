@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
-import { isDeviceOnline } from "@/lib/devices/presence";
 import { requireOrgRole, rolesFor } from "@/lib/rbac";
 import { decryptSecret } from "@/lib/security";
 
@@ -37,7 +36,6 @@ export async function GET(req: NextRequest) {
         lastSeenAt: true,
         lastUsageSyncAt: true,
         lastAccountSyncAt: true,
-        status: true,
       },
     });
 
@@ -60,15 +58,12 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const online = isDeviceOnline(device.lastSeenAt);
-
     return NextResponse.json({
       available: true,
       deviceId: device.id,
       hostname: device.hostname,
       url: device.localEndpoint,
       token,
-      online,
       lastSeenAt: device.lastSeenAt.toISOString(),
       lastUsageSyncAt: device.lastUsageSyncAt?.toISOString() ?? null,
       lastAccountSyncAt: device.lastAccountSyncAt?.toISOString() ?? null,

@@ -2,8 +2,8 @@
 
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowRight, Github } from "lucide-react";
+import Link from "next/link";
 import { DashboardMock } from "@/components/public/dashboard-mock";
-import { HeroTileBackground } from "@/components/public/hero-tile-background";
 import { siteConfig } from "@/lib/public/config";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
@@ -11,7 +11,7 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const container = {
   hidden: {},
   show: {
-    transition: { staggerChildren: 0.05, delayChildren: 0.05 },
+    transition: { staggerChildren: 0.06, delayChildren: 0.04 },
   },
 };
 
@@ -20,7 +20,7 @@ const item = {
   show: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.35, ease: EASE },
+    transition: { duration: 0.4, ease: EASE },
   },
 };
 
@@ -28,58 +28,53 @@ export function HeroSection() {
   const reduceMotion = useReducedMotion();
 
   return (
-    <section
-      className="hero-atmosphere relative overflow-hidden"
-      style={{ paddingTop: "14rem", paddingBottom: "7rem", borderBottom: "none" }}
-    >
-      <HeroTileBackground />
+    <section className="hero-atmosphere relative overflow-hidden pb-16 pt-28 sm:pb-20 sm:pt-32 lg:pb-28 lg:pt-36">
+      <div className="hero-atmosphere-dots" aria-hidden />
 
       <div className="public-container relative z-10 w-full">
-        <div className="grid gap-10 lg:grid-cols-[38fr_62fr] lg:items-start lg:gap-10 xl:gap-12">
+        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:gap-14 xl:gap-16">
           <motion.div
-            className="relative isolate min-w-0"
+            className="relative min-w-0"
             variants={reduceMotion ? undefined : container}
             initial={reduceMotion ? false : "hidden"}
             animate="show"
           >
-            <div
-              className="pointer-events-none absolute -inset-x-6 -inset-y-8 -z-10"
-              style={{
-                background:
-                  "linear-gradient(105deg, #fafafa 0%, #fafafa 55%, rgba(250, 250, 250, 0.72) 78%, transparent 100%)",
-              }}
-              aria-hidden
-            />
+            <motion.p
+              variants={item}
+              className="font-mono text-xs uppercase tracking-[0.16em] text-primary"
+            >
+              AI coding observability
+            </motion.p>
+
             <motion.h1
               variants={item}
-              className="text-[2.15rem] font-bold leading-[1.06] tracking-[-0.025em] sm:text-4xl lg:text-[2.75rem] xl:text-[3rem]"
+              className="mt-4 text-[2.35rem] font-bold leading-[1.05] tracking-[-0.03em] sm:text-5xl lg:text-[3.25rem] xl:text-[3.5rem]"
             >
-              See every AI coding tool your team uses —{" "}
-              <span className="public-headline-emphasis">before you try to control it</span>
+              See every AI coding tool.
+              <br />
+              <span className="public-headline-emphasis">Before you try to control it.</span>
             </motion.h1>
 
             <motion.p
               variants={item}
-              className="mt-5 max-w-sm text-base leading-relaxed text-[var(--public-muted)]"
+              className="mt-6 max-w-md text-base leading-relaxed text-[var(--public-muted)] sm:text-lg sm:leading-8"
             >
-              Models, cost, and device health across your org. Self-hosted and open source.
+              Models, cost, plan utilization, and device health across Cursor, Claude Code,
+              Copilot, and more — open-source and self-hosted.
             </motion.p>
 
-            <motion.div variants={item} className="mt-8 flex flex-wrap items-center gap-3">
-              <motion.a
-                href={siteConfig.docsUrl}
-                className="public-btn public-btn-primary"
-                whileHover={reduceMotion ? undefined : { scale: 1.02 }}
-                whileTap={reduceMotion ? undefined : { scale: 0.98 }}
-              >
-                Deploy UseJunction
-                <ArrowRight className="h-4 w-4" />
-              </motion.a>
+            <motion.div variants={item} className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+              <motion.div whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
+                <Link href={siteConfig.signupUrl} className="public-btn public-btn-primary w-full sm:w-auto">
+                  Get started
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </motion.div>
               <motion.a
                 href={siteConfig.githubUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="public-btn public-btn-outline"
+                className="public-btn public-btn-outline w-full sm:w-auto"
                 whileHover={reduceMotion ? undefined : { scale: 1.02 }}
                 whileTap={reduceMotion ? undefined : { scale: 0.98 }}
               >
@@ -87,18 +82,22 @@ export function HeroSection() {
                 Star on GitHub
               </motion.a>
             </motion.div>
+
+            <motion.p variants={item} className="mt-4 text-sm text-[var(--public-muted)]">
+              <span className="text-primary">Self-hosted</span>
+              {" · "}
+              <span className="text-primary">MIT</span>
+              {" · no prompts by default"}
+            </motion.p>
           </motion.div>
 
           <motion.div
-            initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.15, ease: EASE }}
-            className="relative min-w-0 w-full lg:-mr-2 xl:-mr-4"
+            transition={{ duration: 0.45, delay: 0.12, ease: EASE }}
+            className="relative min-w-0 w-full"
           >
-            <div
-              className="hero-mock-frame relative border"
-              style={{ borderColor: "var(--public-border)" }}
-            >
+            <div className="hero-mock-frame max-h-[36rem] overflow-hidden lg:max-h-none">
               <DashboardMock />
             </div>
           </motion.div>

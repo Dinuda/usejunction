@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"runtime"
 
 	"github.com/spf13/cobra"
 	"github.com/usejunction/agent/internal/configure"
@@ -33,6 +34,11 @@ and push the first telemetry report.`,
 			return nil
 		}
 
+		if runtime.GOOS == "windows" {
+			fmt.Println("Claude OTEL env written to ~/.usejunction/claude-env.sh and claude-env.ps1")
+			fmt.Println(`Load Claude env in PowerShell: . "$HOME\.usejunction\claude-env.ps1"`)
+			return nil
+		}
 		fmt.Println("Claude OTEL env written to ~/.usejunction/claude-env.sh")
 		fmt.Println("Initial report sent.")
 		fmt.Println("Source Claude env in your shell: source ~/.usejunction/claude-env.sh")

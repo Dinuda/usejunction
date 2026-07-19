@@ -4,23 +4,21 @@ import {
   recordDeviceActivityEvent,
   uniqueStrings,
 } from "@/lib/activity/record-device-activity-event";
-import { bearerToken } from "@/lib/auth";
+import { findDeviceByBearerToken } from "@/lib/auth";
+import { limitedJson } from "@/lib/security/http";
 import { syncDetectedPlansForDevice } from "@/lib/tools/sync-detected";
 
 export async function POST(req: NextRequest) {
   const started = Date.now();
   try {
-    const token = bearerToken(req);
-    if (!token) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-
-    const device = await prisma.device.findUnique({ where: { deviceToken: token } });
+    const device = await findDeviceByBearerToken(req, {});
     if (!device) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json();
+    const parsedBody = await limitedJson(req, 128 * 1024);
+    if (!parsedBody.ok) return parsedBody.response;
+    const body = parsedBody.data as Record<string, unknown>;
     const accounts = body.accounts;
     if (!Array.isArray(accounts)) {
       return NextResponse.json({ error: "accounts array required" }, { status: 400 });
@@ -72,7 +70,7 @@ export async function POST(req: NextRequest) {
     if (reported.length > 0) {
       await prisma.device.update({
         where: { id: device.id },
-        data: { lastAccountSyncAt: new Date(), lastSeenAt: new Date(), status: "online" },
+        data: { lastAccountSyncAt: new Date(), lastSeenAt: new Date() },
       });
       try {
         await syncDetectedPlansForDevice({

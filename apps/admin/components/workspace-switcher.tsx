@@ -30,6 +30,7 @@ import {
   resolveWorkspaceColor,
   type WorkspaceColor,
 } from "@/lib/workspace-colors";
+import { cn } from "@/lib/utils";
 
 const CREATE_WORKSPACE_VALUE = "__create_workspace__";
 const EDIT_WORKSPACE_VALUE = "__edit_workspace__";
@@ -47,10 +48,12 @@ export function WorkspaceSwitcher({
   organizations,
   currentOrgId,
   role,
+  className,
 }: {
   organizations: WorkspaceOption[];
   currentOrgId: string | null;
   role?: string | null;
+  className?: string;
 }) {
   const router = useRouter();
   const value = currentOrgId ?? organizations[0]?.id;
@@ -168,7 +171,10 @@ export function WorkspaceSwitcher({
       >
         <SelectTrigger
           size="sm"
-          className="h-9 min-w-[12rem] max-w-[18rem] border-border bg-background text-sm font-medium text-foreground shadow-none"
+          className={cn(
+            "h-9 min-w-[12rem] max-w-[18rem] border-border bg-background text-sm font-medium text-foreground shadow-none",
+            className,
+          )}
           aria-label="Workspace"
         >
           <SelectValue placeholder="Select workspace" />

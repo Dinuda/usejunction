@@ -2,7 +2,7 @@
 set -e
 
 export DATABASE_URL="${DATABASE_URL:-postgresql://usejunction:usejunction@postgres:5432/usejunction}"
-export DEMO_ENROLLMENT_TOKEN="${DEMO_ENROLLMENT_TOKEN:-uj_enroll_demo_token_change_me}"
+: "${DEMO_ENROLLMENT_TOKEN:?DEMO_ENROLLMENT_TOKEN is required}"
 
 PRISMA_DIR="/app/prisma-migrate"
 PRISMA_BIN="$PRISMA_DIR/node_modules/prisma/build/index.js"

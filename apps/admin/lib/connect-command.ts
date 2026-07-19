@@ -12,9 +12,50 @@ export function buildInstallCommand(token: string, controlPlaneUrl: string) {
   return `curl -fsSL ${base}/install.sh | sh -s -- --token ${token} --url ${base}`;
 }
 
+export type PlatformCommands = {
+  macosLinux: string;
+  windows: string;
+};
+
+function powerShellLiteral(value: string) {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function buildPowerShellCommand(
+  tokenFlag: "Token" | "Connect",
+  token: string,
+  controlPlaneUrl: string,
+) {
+  const base = controlPlaneUrl.replace(/\/$/, "");
+  const scriptUrl = powerShellLiteral(`${base}/install.ps1`);
+  return `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((Invoke-RestMethod -UseBasicParsing ${scriptUrl}))) -${tokenFlag} ${powerShellLiteral(token)} -Url ${powerShellLiteral(base)}"`;
+}
+
+export function buildWindowsInstallCommand(token: string, controlPlaneUrl: string) {
+  return buildPowerShellCommand("Token", token, controlPlaneUrl);
+}
+
+export function buildPlatformInstallCommands(token: string, controlPlaneUrl: string): PlatformCommands {
+  return {
+    macosLinux: buildInstallCommand(token, controlPlaneUrl),
+    windows: buildWindowsInstallCommand(token, controlPlaneUrl),
+  };
+}
+
 export function buildConnectInviteCommand(token: string, controlPlaneUrl: string) {
   const base = controlPlaneUrl.replace(/\/$/, "");
   return `curl -fsSL ${base}/install.sh | sh -s -- --connect ${token} --url ${base}`;
+}
+
+export function buildWindowsConnectInviteCommand(token: string, controlPlaneUrl: string) {
+  return buildPowerShellCommand("Connect", token, controlPlaneUrl);
+}
+
+export function buildPlatformConnectInviteCommands(token: string, controlPlaneUrl: string): PlatformCommands {
+  return {
+    macosLinux: buildConnectInviteCommand(token, controlPlaneUrl),
+    windows: buildWindowsConnectInviteCommand(token, controlPlaneUrl),
+  };
 }
 
 export function buildConnectInviteUrl(token: string, controlPlaneUrl: string) {

@@ -16,6 +16,8 @@ export type EffectiveSignalsPolicy = {
   excludedDomains: string[];
   storeEvents: boolean;
   workExtractionEnabled: boolean;
+  rawWorkTextEnabled: boolean;
+  workExtractionStartedAt: string | null;
   updatedAt: string | null;
 };
 
@@ -28,6 +30,8 @@ export function disabledSignalsPolicy(): EffectiveSignalsPolicy {
     excludedDomains: normalizeList(undefined, defaultExcludedDomains),
     storeEvents: false,
     workExtractionEnabled: false,
+    rawWorkTextEnabled: false,
+    workExtractionStartedAt: null,
     updatedAt: null,
   };
 }
@@ -50,6 +54,8 @@ export async function getEffectiveSignalsPolicy(orgId: string, teamId?: string |
     storeEvents: false,
     // Work extraction is independent of classic app/domain collection.
     workExtractionEnabled: policy.workExtractionEnabled,
+    rawWorkTextEnabled: policy.rawWorkTextEnabled,
+    workExtractionStartedAt: policy.workExtractionStartedAt?.toISOString() ?? null,
     updatedAt: policy.updatedAt.toISOString(),
   };
 }

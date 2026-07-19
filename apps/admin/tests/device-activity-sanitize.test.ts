@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import {
   DEVICE_ACTIVITY_JSON_CAP_BYTES,
-  compactNumber,
   sanitizeActivityPayload,
   uniqueStrings,
 } from "../lib/activity/record-device-activity-event";
@@ -49,11 +48,10 @@ test("sanitizeActivityPayload truncates large arrays and oversized JSON", () => 
   assert.ok(encoded.length <= DEVICE_ACTIVITY_JSON_CAP_BYTES);
 });
 
-test("uniqueStrings and compactNumber helpers", () => {
+test("uniqueStrings trims, deduplicates, and drops empty values", () => {
   assert.deepEqual(uniqueStrings(["cursor", "cursor", " codex ", "", null, "claude"]), [
     "cursor",
     "codex",
     "claude",
   ]);
-  assert.equal(compactNumber(20_300_000), "20.3M");
 });

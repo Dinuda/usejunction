@@ -36,7 +36,7 @@ export async function getSignalsJourneys(
     window: windows.current,
     dataThrough: currentSessions[0]?.startedAt ?? null,
     data: {
-      range: windows.range,
+      windowDays: windows.windowDays,
       filters: {
         developerId: windows.filters.developerId ?? null,
         teamId: windows.filters.teamId ?? null,

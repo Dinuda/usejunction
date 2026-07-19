@@ -9,12 +9,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 
+	"github.com/usejunction/agent/internal/platformdirs"
 	"github.com/usejunction/agent/internal/types"
 )
 
@@ -64,15 +64,7 @@ type cursorUserInfo struct {
 }
 
 func cursorStateDBPath() string {
-	home, _ := os.UserHomeDir()
-	if runtime.GOOS == "darwin" {
-		return filepath.Join(home, "Library", "Application Support", "Cursor", "User", "globalStorage", "state.vscdb")
-	}
-	configHome := os.Getenv("XDG_CONFIG_HOME")
-	if configHome == "" {
-		configHome = filepath.Join(home, ".config")
-	}
-	return filepath.Join(configHome, "Cursor", "User", "globalStorage", "state.vscdb")
+	return filepath.Join(platformdirs.CursorUserDir(), "globalStorage", "state.vscdb")
 }
 
 func cursorStateDBValue(key string) (string, error) {

@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { OrgActivitySettings } from "@/lib/activity/contracts";
+import { Panel } from "@/components/panel";
 import { cn } from "@/lib/utils";
 import { userFacingError } from "@/lib/errors/user-facing";
 
@@ -79,7 +80,7 @@ export function ActivitySettingsCard({ initialSettings }: { initialSettings: Org
   }
 
   return (
-    <section className="border bg-card p-5 sm:p-6">
+    <Panel as="section" className="sm:p-6">
       <div className="mb-2">
         <h2 className="text-lg font-semibold tracking-tight">Activity visibility</h2>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -103,11 +104,11 @@ export function ActivitySettingsCard({ initialSettings }: { initialSettings: Org
       />
       <ToggleRow
         title="Device activity feed"
-        description="Lets teammates see machine exchanges, returned data, and observed activity for their own devices."
+        description="Lets teammates see machine exchanges, returned data, and observed activity for their device."
         enabled={settings.teamDeviceActivityEnabled}
         pending={pending}
         onToggle={(teamDeviceActivityEnabled) => save({ teamDeviceActivityEnabled })}
       />
-    </section>
+    </Panel>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Panel } from "@/components/panel";
 
 /** Shown after Lemon checkout redirect (`?upgraded=1`) until Team status lands. */
 export function SubscriptionUpgradedBanner({ isTeam }: { isTeam: boolean }) {
@@ -29,10 +30,10 @@ export function SubscriptionUpgradedBanner({ isTeam }: { isTeam: boolean }) {
   if (!visible) return null;
 
   return (
-    <div className="mb-6 border border-border bg-card px-4 py-3 text-sm">
+    <Panel padded={false} className="mb-6 border-border px-4 py-3 text-sm">
       {isTeam
         ? "Team subscription is active."
         : "Subscription updating… This page refreshes until billing confirms Team."}
-    </div>
+    </Panel>
   );
 }

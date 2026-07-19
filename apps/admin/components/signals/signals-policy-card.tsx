@@ -24,6 +24,8 @@ type SignalsPolicy = {
   excludedApps: string[];
   excludedDomains: string[];
   workExtractionEnabled?: boolean;
+  rawWorkTextEnabled?: boolean;
+  workExtractionStartedAt?: string | null;
 };
 
 const NEVER = [
@@ -78,6 +80,7 @@ export function SignalsPolicyCard({ initialPolicy }: { initialPolicy: SignalsPol
           retentionDays: nextRetention,
           collectionMode: "app_domain",
           workExtractionEnabled: policy.workExtractionEnabled ?? false,
+          rawWorkTextEnabled: policy.rawWorkTextEnabled ?? false,
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -108,7 +111,7 @@ export function SignalsPolicyCard({ initialPolicy }: { initialPolicy: SignalsPol
           </Badge>
           <p className="text-sm leading-6 text-muted-foreground">
             {policy.workExtractionEnabled
-              ? `Coding-tool work is collecting · kept ${policy.retentionDays} days.`
+              ? `Coding-tool work is collecting from enablement onward · kept ${policy.retentionDays} days.`
               : "Turn on work extraction under Settings → Signals to start collecting."}
           </p>
         </div>

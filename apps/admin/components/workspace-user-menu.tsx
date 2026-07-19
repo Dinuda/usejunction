@@ -56,7 +56,7 @@ export function WorkspaceUserMenu({
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-9 rounded-full p-0 hover:bg-muted"
+                className="size-11 rounded-full p-0 hover:bg-muted sm:size-9"
               >
                 <Avatar className="size-9">
                   {image ? (

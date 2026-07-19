@@ -17,6 +17,7 @@ import {
 import type { WorkExtractionDeviceReadiness } from "@/lib/agent-updates/contracts";
 import type { AccelerateOrgAgentRolloutResult } from "@/lib/agent-updates/service";
 import type { EffectiveSignalsPolicy } from "@/lib/signals/service";
+import { Panel } from "@/components/panel";
 import { cn } from "@/lib/utils";
 import { userFacingError } from "@/lib/errors/user-facing";
 
@@ -60,7 +61,7 @@ export function SignalsSettingsCard({
         ? `No pending agent updates for this workspace (target ${result.targetVersion}). Compatible devices will start extracting on their next sync.`
         : "No pending agent updates for this workspace.";
     }
-    return `Accelerated ${result.accelerated} enrolled device${result.accelerated === 1 ? "" : "s"} onto agent ${result.targetVersion}. They will update on the next heartbeat and backfill local work history.`;
+    return `Accelerated ${result.accelerated} enrolled device${result.accelerated === 1 ? "" : "s"} onto agent ${result.targetVersion}. After updating, they will collect only work observed since Signals was enabled.`;
   }
 
   function save(patch: { workExtractionEnabled?: boolean }) {
@@ -93,7 +94,7 @@ export function SignalsSettingsCard({
 
   return (
     <>
-      <section className="border bg-card p-5 sm:p-6">
+      <Panel as="section" className="sm:p-6">
         <div className="mb-2">
           <h2 className="text-lg font-semibold tracking-tight">Signals</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -139,7 +140,8 @@ export function SignalsSettingsCard({
               Agents upload structured work from local AI tools: asks, clipped change summaries when
               available, models, modes, tools, and file touches. Raw prompts, full chat transcripts,
               and file contents stay on the device. Turning this on accelerates agent updates for
-              your workspace so enrolled machines can collect, including local history.
+              your workspace. Existing local history is not imported; devices may upload work they
+              observe after this enablement boundary on a future heartbeat.
             </p>
           </div>
           <div className="shrink-0">
@@ -195,7 +197,7 @@ export function SignalsSettingsCard({
             </div>
           </div>
         ) : null}
-      </section>
+      </Panel>
 
       <Dialog open={workConfirmOpen} onOpenChange={setWorkConfirmOpen}>
         <DialogContent className="rounded-none">
@@ -204,8 +206,8 @@ export function SignalsSettingsCard({
             <DialogDescription>
               Enrolled UseJunction agents will be accelerated onto the latest agent release so they
               can collect structured coding-tool work (asks, change summaries, models, modes, tools,
-              file touches) and backfill local history. Prompts, full chat transcripts, and file
-              contents stay on the device.
+              file touches) from this point forward. Existing local history is not imported. Prompts,
+              full chat transcripts, and file contents stay on the device.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

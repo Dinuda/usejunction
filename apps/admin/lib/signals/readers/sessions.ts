@@ -1,6 +1,6 @@
 import { prisma } from "@usejunction/db";
 import { usageExclusiveEnd, utcDateOnly } from "@/lib/metrics/date-range";
-import type { SignalsFiltersInput } from "@/lib/signals/contracts/shared";
+import type { SignalsDimensionFilters } from "@/lib/signals/contracts/shared";
 import { parseFlowKey, sessionMatchesFlowKey } from "@/lib/signals/policies/flow";
 
 /** Soft cap for v1 in-memory aggregation. Documented; SQL group-by is a follow-up. */
@@ -22,7 +22,7 @@ export type SignalsSessionRow = {
   developer: { name: string; email: string };
 };
 
-export type SignalsSessionWindowFilters = SignalsFiltersInput & {
+export type SignalsSessionWindowFilters = SignalsDimensionFilters & {
   from: Date;
   to: Date;
   take?: number;

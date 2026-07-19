@@ -113,7 +113,7 @@ export async function getSignalsJourneyDetail(
     window: windows.current,
     dataThrough: currentSessions[0]?.startedAt ?? null,
     data: {
-      range: windows.range,
+      windowDays: windows.windowDays,
       flowKey: input.flowKey,
       flow: displayFlow(parts),
       people: people.size,

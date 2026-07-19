@@ -3,10 +3,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { AddSubscriptionSheet } from "@/components/tools/add-subscription-sheet";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
-import { canonicalToolKey } from "@/lib/tools/catalog";
+import { formatMicrosAsCurrency } from "@/lib/format";
+import { toolDisplayName } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
 
 type Subscription = {
@@ -45,25 +48,10 @@ type Developer = {
   manualPlans: ManualPlan[];
 };
 
-const money = (micros: string) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(
-    Number(BigInt(micros)) / 1_000_000,
-  );
 const utcToday = () => new Date().toISOString().slice(0, 10);
 
-export function toolLabel(tool: string | null) {
-  const key = canonicalToolKey(tool ?? "");
-  return key === "chatgpt-codex"
-    ? "ChatGPT"
-    : key === "github-copilot"
-      ? "Copilot"
-      : key
-        ? key.charAt(0).toUpperCase() + key.slice(1)
-        : "Tool";
-}
-
 export function MemberPlansPanel({
-  developerId,
+  developerId: _developerId,
   developerName,
   initialDeveloper,
   initialSubscriptions,
@@ -157,9 +145,9 @@ export function MemberPlansPanel({
       </div>
 
       {error ? (
-        <div role="alert" className="mb-4 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {error}
-        </div>
+        <Alert variant="destructive" className="mb-4 rounded-none">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       ) : null}
 
       {plans.length ? (
@@ -169,11 +157,11 @@ export function MemberPlansPanel({
               <ToolLogoTile tool={plan.template.toolKey ?? plan.toolName} size="sm" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">
-                  {toolLabel(plan.template.toolKey ?? plan.toolName)} {plan.planName}
+                  {toolDisplayName(plan.template.toolKey ?? plan.toolName)} {plan.planName}
                   {(plan.seatCount ?? 1) > 1 ? ` · ${plan.seatCount} seats` : ""}
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  {money(plan.cycleSeatMicros)}/cycle · {plan.billingCadence} · since {new Date(plan.startDate).toLocaleDateString()}
+                  {formatMicrosAsCurrency(plan.cycleSeatMicros)}/cycle · {plan.billingCadence} · since {new Date(plan.startDate).toLocaleDateString()}
                 </p>
               </div>
               <Button
@@ -190,7 +178,9 @@ export function MemberPlansPanel({
           ))}
         </ul>
       ) : (
-        <p className="py-6 text-sm text-muted-foreground">No plans on this person yet.</p>
+        <Empty className="min-h-0 gap-1 border-0 p-6 md:p-6">
+          <EmptyDescription>No plans on this person yet.</EmptyDescription>
+        </Empty>
       )}
 
       {adding ? (
@@ -243,14 +233,14 @@ export function SubscriptionChoices({
 }) {
   if (!subscriptions.length) {
     return (
-      <div className="rounded-md bg-background/70 px-4 py-6 text-sm text-muted-foreground">
-        <p>No seats are available yet.</p>
+      <Empty className="min-h-0 gap-2 border-0 rounded-md bg-background/70 p-6 md:p-6">
+        <EmptyDescription>No seats are available yet.</EmptyDescription>
         {onAddSubscription && (
           <Button size="sm" className="mt-3" onClick={onAddSubscription}>
             <Plus /> Add subscription
           </Button>
         )}
-      </div>
+      </Empty>
     );
   }
   const hasExhausted = subscriptions.some((subscription) => subscription.availableSeats < requested);
@@ -272,7 +262,7 @@ export function SubscriptionChoices({
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">
                   {alreadyAssigned ? "Add another " : ""}
-                  {toolLabel(subscription.toolKey)} {subscription.name}
+                  {toolDisplayName(subscription.toolKey ?? "")} {subscription.name}
                 </p>
                 <p className={cn("text-xs", exhausted ? "text-destructive" : "text-muted-foreground")}>
                   {exhausted

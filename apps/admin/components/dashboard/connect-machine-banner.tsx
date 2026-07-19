@@ -80,7 +80,6 @@ export function ConnectMachineBanner({ show }: Props) {
           </DialogHeader>
           <DeviceConnectCard
             compact
-            forceEnroll
             title="Connect command"
             description="Installs the agent, configures tools, and starts reporting."
             onConnected={() => {

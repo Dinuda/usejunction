@@ -61,6 +61,7 @@ export const signalsPolicyInputSchema = z.object({
   excludedDomains: z.array(z.string().trim().min(1).max(253)).max(500).optional(),
   storeEvents: z.boolean().optional(),
   workExtractionEnabled: z.boolean().optional(),
+  rawWorkTextEnabled: z.boolean().optional(),
 }).strict();
 
 export const signalsStepSchema = z.object({

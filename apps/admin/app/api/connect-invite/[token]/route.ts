@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
-import { getPublicAppUrl } from "@/lib/connect-command";
 import { hashOpaqueToken } from "@/lib/security";
 
 function maskEmail(email: string) {
@@ -22,13 +21,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     return NextResponse.json({
       status: "expired",
       email: maskEmail(invite.email),
+      emailMasked: maskEmail(invite.email),
       organization: invite.organization,
     });
   }
 
   return NextResponse.json({
     status: invite.status,
-    email: invite.email,
+    email: maskEmail(invite.email),
     emailMasked: maskEmail(invite.email),
     organization: invite.organization,
     expiresAt: invite.expiresAt.toISOString(),

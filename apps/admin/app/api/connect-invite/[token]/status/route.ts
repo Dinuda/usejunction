@@ -27,10 +27,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
 
   if (invite.status === "ready" && invite.enrollmentTokenReveal) {
     const enrollmentToken = invite.enrollmentTokenReveal;
-    await prisma.connectInvite.update({
-      where: { id: invite.id },
+    const claimed = await prisma.connectInvite.updateMany({
+      where: { id: invite.id, status: "ready", enrollmentTokenReveal: { not: null } },
       data: { enrollmentTokenReveal: null, status: "used", usedAt: new Date() },
     });
+    if (claimed.count !== 1) return NextResponse.json({ status: "used" });
     return NextResponse.json({
       status: "ready",
       enrollmentToken,
