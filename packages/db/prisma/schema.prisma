@@ -42,6 +42,8 @@ model Organization {
   teamInviteLinks        TeamInviteLink[]
   providerConnections    ProviderConnection[]
   providerSyncRuns       ProviderSyncRun[]
+  apiCreditPools         ApiCreditPool[]
+  providerApiKeys        ProviderApiKey[]
   externalIdentities     ExternalIdentity[]
   seatAssignments        SeatAssignment[]
   repositories           Repository[]
@@ -100,6 +102,7 @@ model Developer {
   authUser              User?                     @relation(fields: [authUserId], references: [id], onDelete: SetNull)
   enrollmentTokens      EnrollmentToken[]
   externalIdentities    ExternalIdentity[]
+  providerApiKeys       ProviderApiKey[]
   seatAssignments       SeatAssignment[]
   toolClaims            DeveloperToolClaim[]
   planAssignments       DeveloperPlanAssignment[]
@@ -607,6 +610,8 @@ model ProviderConnection {
   config                Json?
   permissions           Json?
   lastSyncedAt          DateTime? @map("last_synced_at")
+  lastCostSyncedAt      DateTime? @map("last_cost_synced_at")
+  costDataThrough       DateTime? @map("cost_data_through")
   nextSyncAt            DateTime? @map("next_sync_at")
   leaseUntil            DateTime? @map("lease_until")
   lastError             String?   @map("last_error") @db.Text
@@ -619,10 +624,71 @@ model ProviderConnection {
   externalIdentities ExternalIdentity[]
   seatAssignments    SeatAssignment[]
   usageDaily         UsageDaily[]
+  apiCreditPool      ApiCreditPool?
+  apiKeys            ProviderApiKey[]
 
   @@unique([orgId, provider, product])
   @@index([status, nextSyncAt, leaseUntil])
   @@map("provider_connections")
+}
+
+model ApiCreditPool {
+  id                     String    @id @default(cuid())
+  orgId                  String    @map("org_id")
+  connectionId           String    @unique @map("connection_id")
+  provider               String
+  product                String
+  name                   String
+  mode                   String    @default("recurring")
+  currency               String    @default("USD")
+  budgetMicros           BigInt    @map("budget_micros")
+  billingCadence         String?   @map("billing_cadence")
+  billingCycleAnchorDate DateTime? @map("billing_cycle_anchor_date") @db.Date
+  billingCycleDays       Int?      @map("billing_cycle_days")
+  grantStartDate         DateTime? @map("grant_start_date") @db.Date
+  expiresAt              DateTime? @map("expires_at") @db.Date
+  active                 Boolean   @default(true)
+  createdByUserId        String    @map("created_by_user_id")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  organization Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  connection   ProviderConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, active])
+  @@index([orgId, provider, product])
+  @@map("api_credit_pools")
+}
+
+model ProviderApiKey {
+  id              String   @id @default(cuid())
+  orgId           String   @map("org_id")
+  connectionId    String   @map("connection_id")
+  developerId     String?  @map("developer_id")
+  externalKeyId   String   @map("external_key_id")
+  name            String?
+  redactedHint    String?  @map("redacted_hint")
+  projectId       String?  @map("project_id")
+  workspaceId     String?  @map("workspace_id")
+  ownerExternalId String?  @map("owner_external_id")
+  ownerEmail      String?  @map("owner_email")
+  principalType   String?  @map("principal_type")
+  status          String   @default("active")
+  mappingSource   String?  @map("mapping_source")
+  metadata        Json?
+  lastSeenAt      DateTime @default(now()) @map("last_seen_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  organization Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  connection   ProviderConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  developer    Developer?         @relation(fields: [developerId], references: [id], onDelete: SetNull)
+
+  @@unique([connectionId, externalKeyId])
+  @@index([orgId, externalKeyId])
+  @@index([orgId, developerId])
+  @@index([orgId, status])
+  @@map("provider_api_keys")
 }
 
 model ProviderSyncRun {

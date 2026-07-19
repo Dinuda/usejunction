@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { z } from "zod";
-import { validateConnection } from "@/lib/integrations/sync";
+import { getAdapter } from "@/lib/integrations/adapters";
+import type { IntegrationConfig } from "@/lib/integrations/types";
 import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { credentialFingerprint, encryptSecret } from "@/lib/security";
 
@@ -15,20 +16,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params;
   const existing = await prisma.providerConnection.findFirst({ where: { id, orgId: auth.orgId } });
   if (!existing) return NextResponse.json({ error: "integration not found" }, { status: 404 });
+  try {
+    await getAdapter(existing.provider, existing.product).validate({
+      credential: parsed.data.credential,
+      config: (existing.config ?? {}) as IntegrationConfig,
+      initialSync: !existing.lastSyncedAt,
+      now: new Date(),
+    });
+  } catch (error) {
+    console.error("[integrations] credential validation failed", error);
+    return NextResponse.json({ error: "provider credential validation failed" }, { status: 422 });
+  }
   const updated = await prisma.providerConnection.update({
     where: { id },
     data: { credentialCiphertext: encryptSecret(parsed.data.credential), credentialFingerprint: credentialFingerprint(parsed.data.credential), credentialVersion: { increment: 1 }, status: "pending", nextSyncAt: new Date(), lastError: null },
   });
-  try {
-    await validateConnection(updated);
-  } catch (error) {
-    console.error("[integrations] credential validation failed", error);
-    await prisma.providerConnection.update({
-      where: { id },
-      data: { status: "error", lastError: error instanceof Error ? error.message : String(error) },
-    });
-    return NextResponse.json({ error: "provider credential validation failed" }, { status: 422 });
-  }
   await audit({ orgId: auth.orgId, actorType: "user", actorId: auth.userId, action: "integration.credential_rotated", targetType: "provider_connection", targetId: id });
   return NextResponse.json({ id, credentialFingerprint: updated.credentialFingerprint, status: "pending" });
 }

@@ -310,7 +310,12 @@ func Apply(ctx context.Context, cfg *config.Config, opts ApplyOptions) (bool, er
 		return false, err
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
+	removeTemp := true
+	defer func() {
+		if removeTemp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
 	hash := sha256.New()
 	written, copyErr := io.Copy(io.MultiWriter(tmp, hash), io.LimitReader(resp.Body, MaxArtifactBytes+1))
 	closeErr := tmp.Close()
@@ -357,22 +362,53 @@ func Apply(ctx context.Context, cfg *config.Config, opts ApplyOptions) (bool, er
 		return false, err
 	}
 
-	previous := executable + ".previous"
-	_ = os.Remove(previous)
-	if err := os.Rename(executable, previous); err != nil {
+	deferred, err := replaceExecutable(executable, tmpPath)
+	if err != nil {
 		_ = os.Remove(config.UpdateStatePath())
 		_ = os.Remove(config.UpdateHistoryPath())
-		report(opts.Reporter, directive, opts.CurrentVersion, "install_failed", "replace", "backup_failed")
+		report(opts.Reporter, directive, opts.CurrentVersion, "install_failed", "replace", "replace_failed")
 		return false, err
 	}
-	if err := os.Rename(tmpPath, executable); err != nil {
-		_ = os.Rename(previous, executable)
-		_ = os.Remove(config.UpdateStatePath())
-		_ = os.Remove(config.UpdateHistoryPath())
-		report(opts.Reporter, directive, opts.CurrentVersion, "install_failed", "replace", "atomic_rename_failed")
-		return false, err
+	if deferred {
+		removeTemp = false
 	}
 	return true, nil
+}
+
+type handoffResult struct {
+	OK     bool   `json:"ok"`
+	Action string `json:"action"`
+	Error  string `json:"error,omitempty"`
+}
+
+// ConsumeHandoffResult closes the loop for Windows' deferred executable swap.
+// Successful swaps are confirmed by ConfirmPending; failures are reported and
+// the stale pending marker is cleared so the restored daemon can keep running.
+func ConsumeHandoffResult(cfg *config.Config, reporter Reporter, currentVersion string) error {
+	var result handoffResult
+	if err := readJSON(config.UpdateHandoffResultPath(), &result); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer os.Remove(config.UpdateHandoffResultPath())
+	if result.OK {
+		return nil
+	}
+	var pending pendingState
+	if err := readJSON(config.UpdateStatePath(), &pending); err == nil && reporter != nil {
+		_ = reporter.ReportAgentUpdate(client.AgentUpdateEvent{
+			AttemptID: pending.AttemptID, EventID: newEventID(), ReleaseVersion: pending.ReleaseVersion,
+			Event: "install_failed", CurrentVersion: currentVersion, TargetVersion: pending.ReleaseVersion,
+			Stage: "replace", ErrorCode: "windows_handoff_failed",
+		})
+	}
+	_ = os.Remove(config.UpdateStatePath())
+	if result.Error == "" {
+		result.Error = "Windows update handoff failed"
+	}
+	return errors.New(result.Error)
 }
 
 func ConfirmPending(cfg *config.Config, reporter Reporter, currentVersion string) (bool, error) {
@@ -427,25 +463,18 @@ func Rollback(cfg *config.Config, reporter Reporter, executableOverride string) 
 	if err := writeJSON(config.UpdateStatePath(), pending); err != nil {
 		return err
 	}
-	tmp := executable + ".rollback-swap"
-	_ = os.Remove(tmp)
-	if err := os.Rename(executable, tmp); err != nil {
-		return err
-	}
-	if err := os.Rename(previous, executable); err != nil {
-		_ = os.Rename(tmp, executable)
-		_ = os.Remove(config.UpdateStatePath())
-		return err
-	}
-	if err := os.Rename(tmp, previous); err != nil {
-		_ = os.Rename(executable, previous)
-		_ = os.Rename(tmp, executable)
+	deferred, err := rollbackExecutable(executable, previous)
+	if err != nil {
 		_ = os.Remove(config.UpdateStatePath())
 		return err
 	}
 	previousBlockedVersion := cfg.BlockedUpdateVersion
 	cfg.BlockedUpdateVersion = history.InstalledVersion
 	if err := config.Save(cfg); err != nil {
+		if deferred {
+			_ = os.Remove(config.UpdateStatePath())
+			return err
+		}
 		restore := executable + ".rollback-restore"
 		_ = os.Remove(restore)
 		if renameErr := os.Rename(executable, restore); renameErr == nil {

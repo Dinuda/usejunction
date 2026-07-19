@@ -14,9 +14,9 @@ export const siteConfig = {
     "Open-source AI coding observability for teams. Track Cursor, Claude Code, and Copilot usage, cost, plan seat waste, and device health. Self-hosted.",
   seoTitle: "UseJunction — AI Coding Observability for Teams | Plan Usage & Tool Insights",
   url: process.env.NEXTAUTH_URL ?? "https://usejunction.dev",
-  githubUrl: "https://github.com/usejunction/usejunction",
-  docsUrl: "https://github.com/usejunction/usejunction#readme",
-  changelogUrl: "https://github.com/usejunction/usejunction/releases",
+  githubUrl: "https://github.com/Dinuda/usejunction",
+  docsUrl: "https://github.com/Dinuda/usejunction#readme",
+  changelogUrl: "https://github.com/Dinuda/usejunction/releases",
   signupUrl: "/signup",
   license: "MIT",
   /** X/Twitter handle (with @). Override via NEXT_PUBLIC_TWITTER_HANDLE. */

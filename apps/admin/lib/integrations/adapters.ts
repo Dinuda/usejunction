@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { fetchJson, fetchNdjson } from "@/lib/integrations/http";
-import type { AdapterContext, ProviderAdapter, ProviderMember, ProviderSeat, ProviderUsage } from "@/lib/integrations/types";
+import type { AdapterContext, ProviderAdapter, ProviderApiKey, ProviderMember, ProviderSeat, ProviderUsage } from "@/lib/integrations/types";
 
 type Row = Record<string, any>;
 
@@ -33,6 +33,17 @@ function range(context: AdapterContext, maxDays = 90) {
   const end = context.now;
   const days = context.initialSync ? maxDays : 3;
   return { start: new Date(end.getTime() - days * 86400_000), end };
+}
+
+function dateChunks(start: Date, end: Date, maxDays: number) {
+  const chunks: Array<{ start: Date; end: Date }> = [];
+  let cursor = start;
+  while (cursor < end) {
+    const chunkEnd = new Date(Math.min(end.getTime(), cursor.getTime() + maxDays * 86400_000));
+    chunks.push({ start: cursor, end: chunkEnd });
+    cursor = chunkEnd;
+  }
+  return chunks;
 }
 
 function basic(key: string) {
@@ -154,20 +165,74 @@ const openai: ProviderAdapter = {
       if (!response.has_more || !response.last_id) break;
       after = String(response.last_id);
     }
+    const projects: Row[] = [];
+    after = "";
+    for (let pageNumber = 0; pageNumber < 50; pageNumber += 1) {
+      const response = await fetchJson<Row>(`https://api.openai.com/v1/organization/projects?limit=100&include_archived=true${after ? `&after=${encodeURIComponent(after)}` : ""}`, { headers });
+      projects.push(...(response.data ?? []));
+      if (!response.has_more || !response.last_id) break;
+      after = String(response.last_id);
+    }
+    const apiKeys: ProviderApiKey[] = [];
+    for (const project of projects) {
+      let keyAfter = "";
+      for (let pageNumber = 0; pageNumber < 50; pageNumber += 1) {
+        const response = await fetchJson<Row>(`https://api.openai.com/v1/organization/projects/${encodeURIComponent(String(project.id))}/api_keys?limit=100&owner_project_access=any${keyAfter ? `&after=${encodeURIComponent(keyAfter)}` : ""}`, { headers });
+        for (const key of response.data ?? []) apiKeys.push({
+          externalKeyId: String(key.id),
+          name: key.name ?? null,
+          redactedHint: key.redacted_value ?? null,
+          projectId: String(project.id),
+          ownerExternalId: key.owner?.user?.id ?? key.owner?.service_account?.id ?? null,
+          ownerEmail: key.owner?.user?.email?.toLowerCase() ?? null,
+          principalType: key.owner?.type ?? null,
+          status: key.owner_project_access === "inactive" ? "inactive" : "active",
+          metadata: { projectName: project.name ?? null, lastUsedAt: key.last_used_at ?? null },
+        });
+        if (!response.has_more || !response.last_id) break;
+        keyAfter = String(response.last_id);
+      }
+    }
     const dates = range(context, 90);
-    const usageResponse = await fetchJson<Row>(`https://api.openai.com/v1/organization/usage/completions?start_time=${Math.floor(dates.start.getTime() / 1000)}&end_time=${Math.floor(dates.end.getTime() / 1000)}&bucket_width=1d&group_by=user_id&group_by=model&limit=100`, { headers });
     const usage: ProviderUsage[] = [];
-    for (const bucket of usageResponse.data ?? []) for (const [index, row] of (bucket.results ?? []).entries()) usage.push({
-      externalKey: stableKey(`openai-usage:${bucket.start_time}`, row, index), externalUserId: row.user_id ?? null, date: day(Number(bucket.start_time) * 1000),
-      provider: "openai", product: "api_platform", toolName: "openai-api", model: row.model ?? "", requests: int(row.num_model_requests),
-      inputTokens: bigint(row.input_tokens), outputTokens: bigint(row.output_tokens), cacheReadTokens: bigint(row.input_cached_tokens), metadata: { projectId: row.project_id ?? null, apiKeyId: row.api_key_id ?? null },
-    });
-    const costResponse = await fetchJson<Row>(`https://api.openai.com/v1/organization/costs?start_time=${Math.floor(dates.start.getTime() / 1000)}&end_time=${Math.floor(dates.end.getTime() / 1000)}&bucket_width=1d&limit=180`, { headers });
-    for (const bucket of costResponse.data ?? []) for (const [index, row] of (bucket.results ?? []).entries()) usage.push({
-      externalKey: stableKey(`openai-cost:${bucket.start_time}`, row, index), date: day(Number(bucket.start_time) * 1000), provider: "openai", product: "api_platform", toolName: "openai-api",
-      costMicros: microsFromUsd(row.amount?.value ?? row.amount), metadata: { currency: row.amount?.currency ?? "usd", projectId: row.project_id ?? null, lineItem: row.line_item ?? null },
-    });
-    return { permissions: ["organization_users:read", "organization_usage:read", "organization_costs:read"], members, seats: [], usage };
+    let usagePage = "";
+    for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
+      const query = new URLSearchParams({ start_time: String(Math.floor(dates.start.getTime() / 1000)), end_time: String(Math.floor(dates.end.getTime() / 1000)), bucket_width: "1d", limit: "100" });
+      for (const group of ["user_id", "api_key_id", "project_id", "model"]) query.append("group_by", group);
+      if (usagePage) query.set("page", usagePage);
+      const response = await fetchJson<Row>(`https://api.openai.com/v1/organization/usage/completions?${query}`, { headers });
+      for (const bucket of response.data ?? []) for (const [index, row] of (bucket.results ?? []).entries()) usage.push({
+        externalKey: stableKey(`openai-usage:${bucket.start_time}`, row, index), externalUserId: row.user_id ?? null,
+        externalApiKeyId: row.api_key_id ?? null, externalProjectId: row.project_id ?? null, date: day(Number(bucket.start_time) * 1000),
+        provider: "openai", product: "api_platform", toolName: "openai-api", model: row.model ?? "", requests: int(row.num_model_requests),
+        inputTokens: bigint(row.input_tokens), outputTokens: bigint(row.output_tokens), cacheReadTokens: bigint(row.input_cached_tokens),
+        metadata: { projectId: row.project_id ?? null, apiKeyId: row.api_key_id ?? null },
+      });
+      usagePage = String(response.next_page ?? "");
+      if (!response.has_more || !usagePage) break;
+    }
+    let costSyncSucceeded = true;
+    try {
+      let costPage = "";
+      for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
+        const query = new URLSearchParams({ start_time: String(Math.floor(dates.start.getTime() / 1000)), end_time: String(Math.floor(dates.end.getTime() / 1000)), bucket_width: "1d", limit: "180" });
+        query.append("group_by", "project_id");
+        query.append("group_by", "line_item");
+        if (costPage) query.set("page", costPage);
+        const response = await fetchJson<Row>(`https://api.openai.com/v1/organization/costs?${query}`, { headers });
+        for (const bucket of response.data ?? []) for (const [index, row] of (bucket.results ?? []).entries()) usage.push({
+          externalKey: stableKey(`openai-cost:${bucket.start_time}`, row, index), externalProjectId: row.project_id ?? null,
+          date: day(Number(bucket.start_time) * 1000), provider: "openai", product: "api_platform", toolName: "openai-api",
+          costMicros: microsFromUsd(row.amount?.value ?? row.amount), metadata: { currency: row.amount?.currency ?? "usd", projectId: row.project_id ?? null, lineItem: row.line_item ?? null },
+        });
+        costPage = String(response.next_page ?? "");
+        if (!response.has_more || !costPage) break;
+      }
+    } catch (error) {
+      if (!String(error).includes("403") && !String(error).includes("404")) throw error;
+      costSyncSucceeded = false;
+    }
+    return { permissions: ["organization_users:read", "organization_usage:read", ...(costSyncSucceeded ? ["organization_costs:read"] : [])], members, seats: [], apiKeys, usage, costSyncSucceeded, costDataThrough: costSyncSucceeded ? dates.end : null };
   },
 };
 
@@ -191,28 +256,83 @@ const anthropic: ProviderAdapter = {
     const dates = range(context, 90);
     const path = product === "enterprise" ? "/v1/organizations/usage_report/claude_code" : "/v1/organizations/usage_report/messages";
     const headers = anthropicHeaders(context.credential);
-    const usage: ProviderUsage[] = [];
-    const query = `starting_at=${encodeURIComponent(dates.start.toISOString())}&ending_at=${encodeURIComponent(dates.end.toISOString())}&bucket_width=1d`;
-    const response = await fetchJson<Row>(`https://api.anthropic.com${path}?${query}`, { headers });
-    for (const bucket of response.data ?? []) for (const [index, row] of (bucket.results ?? []).entries()) usage.push({
-      externalKey: stableKey(`anthropic-usage:${bucket.starting_at}`, row, index), externalUserId: row.user_id ?? row.account_id ?? null, email: row.email?.toLowerCase(),
-      date: day(bucket.starting_at), provider: "anthropic", product, toolName: product === "enterprise" ? "claude-code" : "anthropic-api", model: row.model ?? "",
-      requests: int(row.request_count), sessions: int(row.session_count), inputTokens: bigint(row.uncached_input_tokens ?? row.input_tokens),
-      outputTokens: bigint(row.output_tokens), cacheReadTokens: bigint(row.cache_read_input_tokens), activeSeconds: bigint(row.active_time_seconds),
-      addedLines: bigint(row.lines_of_code_added), deletedLines: bigint(row.lines_of_code_removed), commits: int(row.commit_count), pullRequests: int(row.pull_request_count), metadata: row,
-    });
-    try {
-      const costs = await fetchJson<Row>(`https://api.anthropic.com/v1/organizations/cost_report?${query}`, { headers });
-      for (const bucket of costs.data ?? []) for (const [index, row] of (bucket.results ?? []).entries()) usage.push({
-        externalKey: stableKey(`anthropic-cost:${bucket.starting_at}`, row, index), date: day(bucket.starting_at), provider: "anthropic", product, toolName: product === "enterprise" ? "claude-code" : "anthropic-api",
-        costMicros: BigInt(Math.max(0, Math.round(Number(row.amount ?? 0) * 10_000))), metadata: { currency: row.currency ?? "USD", costType: row.cost_type ?? null, model: row.model ?? null },
-      });
-    } catch (error) {
-      if (!String(error).includes("403") && !String(error).includes("404")) throw error;
-    }
     const members: ProviderMember[] = [];
+    if (product === "api_platform") {
+      let userAfter = "";
+      try {
+        for (let pageNumber = 0; pageNumber < 50; pageNumber += 1) {
+          const response = await fetchJson<Row>(`https://api.anthropic.com/v1/organizations/users?limit=100${userAfter ? `&after_id=${encodeURIComponent(userAfter)}` : ""}`, { headers });
+          for (const row of response.data ?? []) members.push({ externalUserId: String(row.id), email: row.email?.toLowerCase(), name: row.name, role: row.role, metadata: row });
+          if (!response.has_more || !response.last_id) break;
+          userAfter = String(response.last_id);
+        }
+      } catch (error) {
+        if (!String(error).includes("403") && !String(error).includes("404")) throw error;
+      }
+    }
+    const memberById = new Map(members.map((member) => [member.externalUserId, member]));
+    const apiKeys: ProviderApiKey[] = [];
+    if (product === "api_platform") {
+      let keyAfter = "";
+      for (let pageNumber = 0; pageNumber < 50; pageNumber += 1) {
+        const response = await fetchJson<Row>(`https://api.anthropic.com/v1/organizations/api_keys?limit=1000${keyAfter ? `&after_id=${encodeURIComponent(keyAfter)}` : ""}`, { headers });
+        for (const key of response.data ?? []) {
+          const principalId = key.principal?.id ?? key.created_by?.id ?? null;
+          apiKeys.push({ externalKeyId: String(key.id), name: key.name ?? null, redactedHint: key.partial_key_hint ?? null,
+            workspaceId: key.workspace_id ?? null, ownerExternalId: principalId, ownerEmail: principalId ? memberById.get(String(principalId))?.email ?? null : null,
+            principalType: key.principal?.type ?? key.created_by?.type ?? null, status: key.status ?? "active", metadata: { expiresAt: key.expires_at ?? null } });
+        }
+        if (!response.has_more || !response.last_id) break;
+        keyAfter = String(response.last_id);
+      }
+    }
+    const usage: ProviderUsage[] = [];
+    let costSyncSucceeded = true;
+    for (const chunk of dateChunks(dates.start, dates.end, 31)) {
+      let usagePage = "";
+      for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
+        const query = new URLSearchParams({ starting_at: chunk.start.toISOString(), ending_at: chunk.end.toISOString(), bucket_width: "1d", limit: "31" });
+        if (product === "api_platform") for (const group of ["api_key_id", "workspace_id", "model"]) query.append("group_by[]", group);
+        if (usagePage) query.set("page", usagePage);
+        const response = await fetchJson<Row>(`https://api.anthropic.com${path}?${query}`, { headers });
+        for (const bucket of response.data ?? []) for (const [index, row] of (bucket.results ?? []).entries()) usage.push({
+          externalKey: stableKey(`anthropic-usage:${bucket.starting_at}`, row, index), externalUserId: row.user_id ?? row.account_id ?? null,
+          externalApiKeyId: row.api_key_id ?? null, externalWorkspaceId: row.workspace_id ?? null, email: row.email?.toLowerCase(),
+          date: day(bucket.starting_at), provider: "anthropic", product, toolName: product === "enterprise" ? "claude-code" : "anthropic-api", model: row.model ?? "",
+          requests: int(row.request_count), sessions: int(row.session_count), inputTokens: bigint(row.uncached_input_tokens ?? row.input_tokens),
+          outputTokens: bigint(row.output_tokens), cacheReadTokens: bigint(row.cache_read_input_tokens),
+          cacheWriteTokens: bigint(Number(row.cache_creation_input_tokens ?? 0) + Number(row.cache_creation?.ephemeral_1h_input_tokens ?? 0) + Number(row.cache_creation?.ephemeral_5m_input_tokens ?? 0)),
+          activeSeconds: bigint(row.active_time_seconds), addedLines: bigint(row.lines_of_code_added), deletedLines: bigint(row.lines_of_code_removed),
+          commits: int(row.commit_count), pullRequests: int(row.pull_request_count), metadata: row,
+        });
+        usagePage = String(response.next_page ?? "");
+        if (!response.has_more || !usagePage) break;
+      }
+      if (product !== "api_platform" || !costSyncSucceeded) continue;
+      try {
+        let costPage = "";
+        for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
+          const query = new URLSearchParams({ starting_at: chunk.start.toISOString(), ending_at: chunk.end.toISOString(), bucket_width: "1d", limit: "31" });
+          query.append("group_by[]", "workspace_id");
+          query.append("group_by[]", "description");
+          if (costPage) query.set("page", costPage);
+          const costs = await fetchJson<Row>(`https://api.anthropic.com/v1/organizations/cost_report?${query}`, { headers });
+          for (const bucket of costs.data ?? []) for (const [index, row] of (bucket.results ?? []).entries()) usage.push({
+            externalKey: stableKey(`anthropic-cost:${bucket.starting_at}`, row, index), externalWorkspaceId: row.workspace_id ?? null,
+            date: day(bucket.starting_at), provider: "anthropic", product, toolName: "anthropic-api",
+            costMicros: BigInt(Math.max(0, Math.round(Number(row.amount ?? 0) * 10_000))),
+            metadata: { currency: row.currency ?? "USD", costType: row.cost_type ?? null, model: row.model ?? null, workspaceId: row.workspace_id ?? null, description: row.description ?? null },
+          });
+          costPage = String(costs.next_page ?? "");
+          if (!costs.has_more || !costPage) break;
+        }
+      } catch (error) {
+        if (!String(error).includes("403") && !String(error).includes("404")) throw error;
+        costSyncSucceeded = false;
+      }
+    }
     for (const row of usage) if (row.externalUserId) members.push({ externalUserId: row.externalUserId, email: row.email, metadata: { inferredFromUsage: true } });
-    return { permissions: [product === "enterprise" ? "claude_analytics:read" : "organization_usage:read", "organization_costs:read"], members, seats: [], usage };
+    return { permissions: [product === "enterprise" ? "claude_analytics:read" : "organization_usage:read", ...(product === "api_platform" && costSyncSucceeded ? ["organization_costs:read"] : [])], members, seats: [], apiKeys, usage, costSyncSucceeded: product === "api_platform" ? costSyncSucceeded : undefined, costDataThrough: product === "api_platform" && costSyncSucceeded ? dates.end : null };
   },
 };
 

@@ -38,9 +38,25 @@ export type ProviderSeat = {
   metadata?: Record<string, unknown>;
 };
 
+export type ProviderApiKey = {
+  externalKeyId: string;
+  name?: string | null;
+  redactedHint?: string | null;
+  projectId?: string | null;
+  workspaceId?: string | null;
+  ownerExternalId?: string | null;
+  ownerEmail?: string | null;
+  principalType?: string | null;
+  status?: string;
+  metadata?: Record<string, unknown>;
+};
+
 export type ProviderUsage = {
   externalKey: string;
   externalUserId?: string | null;
+  externalApiKeyId?: string | null;
+  externalProjectId?: string | null;
+  externalWorkspaceId?: string | null;
   email?: string | null;
   date: Date;
   provider: string;
@@ -52,6 +68,7 @@ export type ProviderUsage = {
   inputTokens?: bigint;
   outputTokens?: bigint;
   cacheReadTokens?: bigint;
+  cacheWriteTokens?: bigint;
   activeSeconds?: bigint;
   suggestedLines?: bigint;
   acceptedLines?: bigint;
@@ -68,7 +85,10 @@ export type ProviderSyncData = {
   permissions?: string[];
   members: ProviderMember[];
   seats: ProviderSeat[];
+  apiKeys?: ProviderApiKey[];
   usage: ProviderUsage[];
+  costSyncSucceeded?: boolean;
+  costDataThrough?: Date | null;
 };
 
 export type AdapterContext = {

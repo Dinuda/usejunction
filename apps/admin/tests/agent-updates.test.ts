@@ -47,6 +47,17 @@ test("release manifests reject malformed versions, checksums, and oversized arti
     },
   } as const;
   assert.equal(agentReleaseManifestSchema.safeParse(base).success, true);
+  const v2 = {
+    ...base,
+    schemaVersion: 2,
+    artifacts: {
+      ...base.artifacts,
+      "windows-amd64": { url: "https://example.com/agent.exe", sha256: "b".repeat(64), size: 1024 },
+      "windows-arm64": { url: "https://example.com/agent.exe", sha256: "c".repeat(64), size: 1024 },
+    },
+  } as const;
+  assert.equal(agentReleaseManifestSchema.safeParse(v2).success, true);
+  assert.equal(agentReleaseManifestSchema.safeParse({ ...v2, artifacts: base.artifacts }).success, false);
   assert.equal(agentReleaseManifestSchema.safeParse({ ...base, version: "0.2" }).success, false);
   assert.equal(agentReleaseManifestSchema.safeParse({ ...base, version: "00.2.0" }).success, false);
   assert.equal(agentReleaseManifestSchema.safeParse({ ...base, version: "0.2.0-beta.01" }).success, false);
@@ -69,6 +80,7 @@ test("normal eligibility is deterministic and critical eligibility is immediate"
 test("artifact keys normalize supported agent platforms", () => {
   assert.equal(artifactKey("macos", "arm64"), "darwin-arm64");
   assert.equal(artifactKey("linux", "x86_64"), "linux-amd64");
+  assert.equal(artifactKey("windows", "ARM64"), "windows-arm64");
 });
 
 test("out-of-order lifecycle events never regress a deployment", () => {

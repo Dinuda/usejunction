@@ -88,11 +88,11 @@ func scanCursorDailyStats(buckets map[string]*types.DailyUsage) error {
 			continue
 		}
 		var stats struct {
-			Date                    string `json:"date"`
-			TabSuggestedLines       int    `json:"tabSuggestedLines"`
-			TabAcceptedLines        int    `json:"tabAcceptedLines"`
-			ComposerSuggestedLines  int    `json:"composerSuggestedLines"`
-			ComposerAcceptedLines   int    `json:"composerAcceptedLines"`
+			Date                   string `json:"date"`
+			TabSuggestedLines      int    `json:"tabSuggestedLines"`
+			TabAcceptedLines       int    `json:"tabAcceptedLines"`
+			ComposerSuggestedLines int    `json:"composerSuggestedLines"`
+			ComposerAcceptedLines  int    `json:"composerAcceptedLines"`
 		}
 		if json.Unmarshal([]byte(value), &stats) != nil || stats.Date == "" {
 			continue

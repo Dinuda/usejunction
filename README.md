@@ -107,12 +107,20 @@ One-liner (downloads a prebuilt binary from the control plane, or builds from so
 curl -fsSL http://localhost:3001/install.sh | sh -s -- --token <token> --url http://localhost:3001
 ```
 
+Windows 10/11 PowerShell (x64 or ARM64, no administrator shell required):
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((Invoke-RestMethod -UseBasicParsing 'http://localhost:3001/install.ps1'))) -Token '<token>' -Url 'http://localhost:3001'"
+```
+
 Teammate connect (from Team → Share connect command):
 
 ```bash
 curl -fsSL http://localhost:3001/install.sh | sh -s -- --connect <token> --url http://localhost:3001
 # opens browser to authenticate with the invited email, then enrolls
 ```
+
+The onboarding and invite screens provide a separate Windows PowerShell command. Windows installs run through a per-user Scheduled Task at logon and collect native Windows coding-tool data; WSL stores are not scanned.
 
 Or build manually:
 

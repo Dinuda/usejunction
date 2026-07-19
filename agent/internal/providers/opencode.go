@@ -4,8 +4,8 @@ import (
 	"context"
 	"os/exec"
 
-	"github.com/usejunction/agent/internal/probe"
 	"github.com/usejunction/agent/internal/platformdirs"
+	"github.com/usejunction/agent/internal/probe"
 	"github.com/usejunction/agent/internal/scan"
 	"github.com/usejunction/agent/internal/types"
 )

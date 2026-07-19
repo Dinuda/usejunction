@@ -75,7 +75,15 @@ class UseJunctionLogger:
         tool_name = metadata.get("usejunction_tool") or _header_value(headers, "x-usejunction-tool")
 
         model = kwargs.get("model") or getattr(response_obj, "model", None)
-        provider = (model or "").split("/")[0] if model else None
+        provider = litellm_params.get("custom_llm_provider") or kwargs.get("custom_llm_provider")
+        if not provider and model and "/" in model:
+            provider = model.split("/")[0]
+        if not provider and model:
+            normalized_model = str(model).lower()
+            if "claude" in normalized_model:
+                provider = "anthropic"
+            elif normalized_model.startswith(("gpt", "o1", "o3", "o4")):
+                provider = "openai"
 
         usage = getattr(response_obj, "usage", None) or {}
         if isinstance(usage, dict):

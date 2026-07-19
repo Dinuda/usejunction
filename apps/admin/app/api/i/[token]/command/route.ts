@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
-import { buildInstallCommand, getPublicAppUrl } from "@/lib/connect-command";
+import { buildInstallCommand, buildWindowsInstallCommand, getPublicAppUrl } from "@/lib/connect-command";
 import { hasVerifiedIdentity, normalizeEmail } from "@/lib/developer-identity";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
 
 /**
- * Downloads a macOS .command file that opens Terminal and runs the install/enroll one-liner.
+ * Downloads a macOS .command file by default, or a PowerShell launcher when
+ * platform=windows.
  * Re-mints a fresh enrollment token so the download is always usable after redeem.
  */
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const session = await auth();
   if (!session?.user?.id || !session.user.email) {
     return NextResponse.json({ error: "authentication required" }, { status: 401 });
@@ -58,6 +59,26 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
 
   const base = getPublicAppUrl();
   const installCommand = buildInstallCommand(enrollmentToken, base);
+  if (req.nextUrl.searchParams.get("platform") === "windows") {
+    const windowsCommand = buildWindowsInstallCommand(enrollmentToken, base);
+    const script = [
+      "$ErrorActionPreference = \"Stop\"",
+      "Write-Host \"Installing UseJunction agent...\"",
+      windowsCommand,
+      "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+      "Write-Host \"Done. You can close this window.\"",
+      "",
+    ].join("\r\n");
+    return new NextResponse(script, {
+      status: 200,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "content-disposition": 'attachment; filename="install-usejunction.ps1"',
+        "cache-control": "no-store",
+        "x-enrollment-expires-at": expiresAt.toISOString(),
+      },
+    });
+  }
   const script = [
     "#!/bin/bash",
     "set -euo pipefail",

@@ -4,26 +4,19 @@ import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Github, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import usejunctionLogo from "@/public/usejunction.png";
 import { navAnchors, navLinks, siteConfig } from "@/lib/public/config";
+import { GithubStarBadge } from "@/components/public/github-star-badge";
 
 interface MarketingTopNavProps {
   isAuthenticated: boolean;
 }
 
 export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
-  const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 48);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
 
   const scrollToAnchor = useCallback(
     (id: string) => {
@@ -77,10 +70,9 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
 
   return (
     <header
-      className="fixed inset-x-0 top-0 z-50 transition-colors duration-200"
+      className="fixed inset-x-0 top-0 z-50 w-full transition-colors duration-200"
       style={{
-        background: scrolled ? "var(--public-surface)" : "transparent",
-        borderBottom: scrolled ? "1px solid var(--public-border)" : "1px solid transparent",
+        background: "var(--public-surface)",
       }}
     >
       <div className="public-container flex h-16 items-center justify-between md:grid md:grid-cols-[1fr_auto_1fr]">
@@ -118,30 +110,18 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
         </nav>
 
         <div className="hidden h-10 items-center gap-3 md:flex md:justify-self-end">
-          {isAuthenticated ? null : (
-            <Link
-              href="/login"
-              className="inline-flex h-10 items-center text-sm leading-none text-[var(--public-muted)] transition-colors hover:text-[var(--public-fg)]"
-            >
-              Sign in
-            </Link>
-          )}
-          <a
-            href={siteConfig.githubUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="public-btn public-btn-outline"
-          >
-            <Github className="h-4 w-4" />
-            GitHub
-          </a>
+          <GithubStarBadge href={siteConfig.githubUrl} />
           {isAuthenticated ? (
-            <Link href="/dashboard" className="public-btn public-btn-primary">
+            <Link href="/dashboard" className="public-btn public-btn-yellow rounded-lg font-semibold">
               Dashboard
             </Link>
           ) : (
-            <Link href={siteConfig.signupUrl} className="public-btn public-btn-primary">
-              Get started
+            <Link
+              href="/login"
+              className="inline-flex h-10 items-center text-sm leading-none text-[var(--public-muted)] transition-colors hover:text-[var(--public-fg)]"
+              style={{ textDecoration: "underline", textUnderlineOffset: "4px" }}
+            >
+              Sign in
             </Link>
           )}
         </div>
@@ -185,30 +165,21 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
                 {link.label}
               </Link>
             ))}
-            {isAuthenticated ? null : (
-              <Link
-                href="/login"
-                className="flex min-h-11 items-center px-1 text-left text-sm"
-                onClick={() => setMobileOpen(false)}
-              >
-                Sign in
-              </Link>
-            )}
-            <a
-              href={siteConfig.githubUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="public-btn public-btn-outline mt-2 w-full text-center text-sm"
-            >
-              GitHub
-            </a>
+            <div className="mt-2 flex justify-center">
+              <GithubStarBadge href={siteConfig.githubUrl} />
+            </div>
             {isAuthenticated ? (
-              <Link href="/dashboard" className="public-btn public-btn-primary w-full text-center text-sm">
+              <Link href="/dashboard" className="public-btn public-btn-yellow w-full rounded-lg text-center text-sm font-semibold">
                 Dashboard
               </Link>
             ) : (
-              <Link href={siteConfig.signupUrl} className="public-btn public-btn-primary w-full text-center text-sm">
-                Get started
+              <Link
+                href="/login"
+                className="flex min-h-11 items-center justify-center px-1 text-sm"
+                style={{ textDecoration: "underline", textUnderlineOffset: "4px" }}
+                onClick={() => setMobileOpen(false)}
+              >
+                Sign in
               </Link>
             )}
           </nav>

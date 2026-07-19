@@ -18,10 +18,19 @@ func Run(verbose bool) error {
 		fmt.Printf("  warning: %v\n", err)
 	}
 
+	stopServices()
+	deferred, err := schedulePlatformCleanup()
+	if err != nil {
+		return err
+	}
+	if deferred {
+		fmt.Println("Scheduled Windows agent cleanup after this process exits.")
+		fmt.Println("UseJunction agent uninstalled.")
+		return nil
+	}
+
 	fmt.Println("Removing ~/.usejunction…")
 	_ = os.RemoveAll(config.ConfigDir())
-
-	stopServices()
 
 	fmt.Println("UseJunction agent uninstalled.")
 	return nil

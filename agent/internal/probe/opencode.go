@@ -7,16 +7,18 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/usejunction/agent/internal/platformdirs"
 	"github.com/usejunction/agent/internal/types"
 )
 
-func opencodeDataDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".local", "share", "opencode")
-}
-
 func opencodeAuthPath() string {
-	return filepath.Join(opencodeDataDir(), "auth.json")
+	for _, dir := range platformdirs.OpenCodeCandidates() {
+		candidate := filepath.Join(dir, "auth.json")
+		if fileExists(candidate) {
+			return candidate
+		}
+	}
+	return filepath.Join(platformdirs.OpenCodeCandidates()[0], "auth.json")
 }
 
 // OpenCodeConfigured reports whether local OpenCode auth/config is present.
@@ -24,11 +26,12 @@ func OpenCodeConfigured() bool {
 	if fileExists(opencodeAuthPath()) {
 		return true
 	}
-	if fileExists(filepath.Join(opencodeDataDir(), "account.json")) {
-		return true
+	for _, dir := range platformdirs.OpenCodeCandidates() {
+		if fileExists(filepath.Join(dir, "account.json")) || fileExists(filepath.Join(dir, "opencode.json")) {
+			return true
+		}
 	}
-	home, _ := os.UserHomeDir()
-	return fileExists(filepath.Join(home, ".config", "opencode", "opencode.json"))
+	return false
 }
 
 func OpenCodeAccountIdentity(ctx context.Context) (*types.ToolAccount, error) {

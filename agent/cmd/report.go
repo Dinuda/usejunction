@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -20,6 +21,26 @@ const (
 	heartbeatInterval  = 15 * time.Minute
 	collectionInterval = 30 * time.Minute
 )
+
+type usageRunTracker struct {
+	mu             sync.RWMutex
+	lastSuccessful time.Time
+}
+
+func (t *usageRunTracker) markSuccessful(at time.Time) {
+	t.mu.Lock()
+	if at.After(t.lastSuccessful) {
+		t.lastSuccessful = at
+	}
+	t.mu.Unlock()
+}
+
+func (t *usageRunTracker) due(now time.Time, maxAge time.Duration) bool {
+	t.mu.RLock()
+	lastSuccessful := t.lastSuccessful
+	t.mu.RUnlock()
+	return lastSuccessful.IsZero() || now.Sub(lastSuccessful) >= maxAge
+}
 
 var reportCmd = &cobra.Command{
 	Use:    "report",
@@ -46,8 +67,14 @@ var daemonCmd = &cobra.Command{
 		}
 
 		api := client.New(cfg)
+		usageRuns := &usageRunTracker{}
 		syncFn := func(ctx context.Context, refresh bool, progress localsync.ProgressFunc) (int, int, int, int, []string, error) {
-			return collectAndReportWithProgress(ctx, api, refresh, progress)
+			startedAt := time.Now()
+			tools, accounts, quotas, usage, warnings, syncErr := collectAndReportWithProgress(ctx, api, refresh, progress)
+			if syncErr == nil {
+				usageRuns.markSuccessful(startedAt)
+			}
+			return tools, accounts, quotas, usage, warnings, syncErr
 		}
 
 		go func() {
@@ -58,6 +85,9 @@ var daemonCmd = &cobra.Command{
 			}
 		}()
 
+		if err := updater.ConsumeHandoffResult(cfg, api, config.Version); err != nil && verbose {
+			fmt.Printf("[daemon] update handoff: %v\n", err)
+		}
 		if _, err := updater.ConfirmPending(cfg, api, config.Version); err != nil && verbose {
 			fmt.Printf("[daemon] update confirmation: %v\n", err)
 		}
@@ -85,12 +115,12 @@ var daemonCmd = &cobra.Command{
 		// Windows v1 intentionally collects coding telemetry/work sessions only.
 		// Do not start the foreground-window sampler even when the org enables
 		// classic Signals.
-		if runtime.GOOS != "windows" {
+		if classicSignalsSupported(runtime.GOOS) {
 			go ujsignals.NewRunner(api, cfg, verbose).Run(context.Background())
 		}
 
 		fmt.Println("Starting UseJunction daemon (Ctrl-C to stop)…")
-		if _, _, _, _, err := collectAndReport(api, true); err != nil && verbose {
+		if _, _, _, _, _, err := syncFn(cmd.Context(), true, nil); err != nil && verbose {
 			fmt.Printf("[daemon] initial collect error: %v\n", err)
 		}
 
@@ -114,6 +144,9 @@ var daemonCmd = &cobra.Command{
 						fmt.Println("Control plane requested uninstall; removing agent…")
 						return uninstall.Run(verbose)
 					}
+					if handoffErr := updater.ConsumeHandoffResult(cfg, api, config.Version); handoffErr != nil && verbose {
+						fmt.Printf("[daemon] update handoff: %v\n", handoffErr)
+					}
 					if _, confirmErr := updater.ConfirmPending(cfg, api, config.Version); confirmErr != nil && verbose {
 						fmt.Printf("[daemon] update confirmation: %v\n", confirmErr)
 					}
@@ -123,11 +156,18 @@ var daemonCmd = &cobra.Command{
 						fmt.Printf("Updated UseJunction agent; restarting service…\n")
 						return nil
 					}
+					// A scheduled collection may have failed while the control plane was
+					// unavailable. Every successful heartbeat is a chance to catch up.
+					if loopErr == nil && usageRuns.due(time.Now(), collectionInterval) {
+						_, _, _, _, _, loopErr = syncFn(cmd.Context(), true, nil)
+					}
 				}
 			case <-collectionTicker.C:
 				// Rescan every 30 minutes; usage/work uploads stay incremental
 				// (fingerprint deltas + ObservedAt watermark).
-				_, _, _, _, loopErr = collectAndReport(api, true)
+				if usageRuns.due(time.Now(), collectionInterval) {
+					_, _, _, _, _, loopErr = syncFn(cmd.Context(), true, nil)
+				}
 			case <-cmd.Context().Done():
 				return nil
 			}
@@ -136,6 +176,10 @@ var daemonCmd = &cobra.Command{
 			}
 		}
 	},
+}
+
+func classicSignalsSupported(osName string) bool {
+	return osName != "windows"
 }
 
 func runReport(cmd *cobra.Command, args []string) error {

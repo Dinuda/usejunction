@@ -46,8 +46,9 @@ function Get-AgentArchitecture {
 function Get-LatestVersion {
   try {
     $release = Invoke-RestMethod -UseBasicParsing -Uri "$Url/api/agent-releases/latest" -TimeoutSec 20
-    if ($release.version -and $release.version -match '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$') {
-      return [string]$release.version
+    $candidate = if ($release.manifest.version) { $release.manifest.version } else { $release.version }
+    if ($candidate -and $candidate -match '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$') {
+      return [string]$candidate
     }
   } catch {
     if ($Upgrade) { throw "No active agent release is available from $Url." }
@@ -225,4 +226,3 @@ Start-Sleep -Seconds 2
 Write-Host ""
 Write-Host "UseJunction installed. Admin panel: $Url"
 Write-Host "The agent will also start automatically when you sign in to Windows."
-

@@ -228,6 +228,9 @@ export function DeveloperToolInventory({
                     verdict: plan.verdict,
                   })) ?? [];
 
+                const canRemove =
+                  developer.role !== "owner" && developer.authUserId !== currentUserId;
+
                 return (
                   <li
                     key={developer.id}
@@ -251,7 +254,7 @@ export function DeveloperToolInventory({
                       ) : null}
                       <Link
                         href={`/team/${developer.id}`}
-                        className="grid min-w-0 flex-1 gap-4 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/40 focus-visible:ring-offset-2 lg:grid-cols-[minmax(18rem,1fr)_minmax(16rem,auto)] lg:items-center"
+                        className="grid min-w-0 flex-1 gap-4 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/40 focus-visible:ring-offset-2 lg:grid-cols-[minmax(18rem,1fr)_auto] lg:items-start"
                       >
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium tracking-tight transition-colors group-hover:text-foreground">
@@ -260,47 +263,61 @@ export function DeveloperToolInventory({
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">{developer.email}</p>
                           {meta ? <p className="mt-1.5 text-xs text-muted-foreground">{meta}</p> : null}
                           {rosterPlans.length ? <RosterPlanUsage plans={rosterPlans} /> : null}
+                          {developer.manualPlans.length ? (
+                            <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+                              {developer.manualPlans.map((plan) => (
+                                <span
+                                  key={plan.id}
+                                  className="inline-flex max-w-full min-w-0 items-center gap-1.5 bg-brand-yellow-pale py-1 pr-2.5 pl-1 text-xs font-medium text-brand-yellow-dark"
+                                  title={`${toolDisplayName(plan.template.toolKey ?? plan.toolName)} ${plan.planName}`}
+                                >
+                                  <ToolLogoTile
+                                    tool={plan.template.toolKey ?? plan.toolName}
+                                    size="sm"
+                                    className="size-6 border-0 shadow-none"
+                                  />
+                                  <span className="min-w-0 truncate">
+                                    {toolDisplayName(plan.template.toolKey ?? plan.toolName)} {plan.planName}
+                                    {(plan.seatCount ?? 1) > 1 ? ` ×${plan.seatCount}` : ""}
+                                  </span>
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
 
-                        <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
-                          {developer.manualPlans.map((plan) => (
-                            <span
-                              key={plan.id}
-                              className="inline-flex max-w-full min-w-0 items-center gap-1.5 bg-brand-yellow-pale py-1 pr-2.5 pl-1 text-xs font-medium text-brand-yellow-dark lg:max-w-60"
-                              title={`${toolDisplayName(plan.template.toolKey ?? plan.toolName)} ${plan.planName}`}
-                            >
-                              <ToolLogoTile
-                                tool={plan.template.toolKey ?? plan.toolName}
-                                size="sm"
-                                className="size-6 border-0 shadow-none"
-                              />
-                              <span className="min-w-0 truncate">
-                                {toolDisplayName(plan.template.toolKey ?? plan.toolName)} {plan.planName}
-                                {(plan.seatCount ?? 1) > 1 ? ` ×${plan.seatCount}` : ""}
-                              </span>
-                            </span>
-                          ))}
+                        <span
+                          aria-hidden
+                          className={cn(
+                            buttonVariants({ variant: "outline", size: "sm" }),
+                            "pointer-events-none shrink-0 self-start rounded-none transition-colors group-hover:border-foreground/25 group-hover:bg-background",
+                          )}
+                        >
+                          <BarChart3 className="transition-transform group-hover:scale-110" />
+                          See Usage
+                        </span>
+                      </Link>
+                      <div className="flex shrink-0 self-start">
+                        {canRemove ? (
+                          <MemberRemoveButton
+                            developerId={developer.id}
+                            memberName={developer.name}
+                            label="Remove"
+                            ariaLabel={`Remove ${developer.name} from team`}
+                            className="shrink-0"
+                          />
+                        ) : (
                           <span
                             aria-hidden
                             className={cn(
                               buttonVariants({ variant: "outline", size: "sm" }),
-                              "pointer-events-none rounded-none transition-colors group-hover:border-foreground/25 group-hover:bg-background",
+                              "invisible pointer-events-none rounded-none",
                             )}
                           >
-                            <BarChart3 className="transition-transform group-hover:scale-110" />
-                            See Usage
+                            Remove
                           </span>
-                        </div>
-                      </Link>
-                      {developer.role !== "owner" && developer.authUserId !== currentUserId ? (
-                        <MemberRemoveButton
-                          developerId={developer.id}
-                          memberName={developer.name}
-                          label="Remove"
-                          ariaLabel={`Remove ${developer.name} from team`}
-                          className="shrink-0"
-                        />
-                      ) : null}
+                        )}
+                      </div>
                     </div>
                   </li>
                 );

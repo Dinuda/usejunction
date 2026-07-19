@@ -7,6 +7,15 @@ import (
 	"github.com/usejunction/agent/internal/config"
 )
 
+func TestClassicSignalsAreDisabledOnWindows(t *testing.T) {
+	if classicSignalsSupported("windows") {
+		t.Fatal("Windows must not start foreground Signals collection")
+	}
+	if !classicSignalsSupported("darwin") || !classicSignalsSupported("linux") {
+		t.Fatal("existing macOS/Linux foreground Signals support changed")
+	}
+}
+
 func TestForwardOnlyWorkOptionsStartsAtPolicyEpoch(t *testing.T) {
 	cfg := &config.Config{WorkExtractionLastAt: "2025-01-01T00:00:00Z"}
 	opts, changed, err := forwardOnlyWorkOptions("2026-07-19T10:00:00Z", cfg)

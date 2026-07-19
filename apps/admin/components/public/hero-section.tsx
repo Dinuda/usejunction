@@ -1,10 +1,14 @@
 "use client";
 
+import { DotLottieReact } from "@lottiefiles/dotlottie-react";
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowRight, Github } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { DashboardMock } from "@/components/public/dashboard-mock";
+import { HeroTileBackground } from "@/components/public/hero-tile-background";
 import { siteConfig } from "@/lib/public/config";
+
+/** Display aspect for the hero Lottie (width / height). */
+const LOTTIE_AR = 850 / 950;
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -28,77 +32,95 @@ export function HeroSection() {
   const reduceMotion = useReducedMotion();
 
   return (
-    <section className="hero-atmosphere relative overflow-hidden pb-16 pt-28 sm:pb-20 sm:pt-32 lg:pb-28 lg:pt-36">
-      <div className="hero-atmosphere-dots" aria-hidden />
+    <section className="hero-atmosphere relative overflow-x-clip bg-white">
+      <HeroTileBackground />
 
-      <div className="public-container relative z-10 w-full">
-        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:gap-14 xl:gap-16">
+      <div className="relative z-10 mx-auto flex w-full max-w-screen-2xl items-center px-4 md:px-8 lg:px-10 xl:px-12">
+        <div className="grid w-full min-h-[80svh] grid-cols-1 items-center gap-10 pt-30 pt-24 md:gap-12 md:pt-24 md:pt-28 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-6 lg:pt-16 lg:pt-20">
           <motion.div
-            className="relative min-w-0"
+            className="relative isolate flex min-w-0 flex-col items-center text-center lg:max-w-lg lg:items-start lg:justify-center lg:text-left xl:max-w-xl mb-30"
             variants={reduceMotion ? undefined : container}
             initial={reduceMotion ? false : "hidden"}
             animate="show"
           >
-            <motion.p
-              variants={item}
-              className="font-mono text-xs uppercase tracking-[0.16em] text-primary"
-            >
-              AI coding observability
+            <div
+              className="pointer-events-none absolute -inset-x-6 -inset-y-10 -z-10 rounded-[2rem]"
+              style={{
+                background:
+                  "radial-gradient(ellipse 100% 90% at 30% 45%, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0.92) 55%, rgba(255,255,255,0.55) 78%, transparent 100%)",
+                boxShadow: "0 0 0 1px rgba(255,255,255,0.6)",
+              }}
+              aria-hidden
+            />
+
+            <motion.p variants={item} className="text-sm font-medium text-[#5c5e56]">
+            AI Spend Management
             </motion.p>
 
             <motion.h1
               variants={item}
-              className="mt-4 text-[2.35rem] font-bold leading-[1.05] tracking-[-0.03em] sm:text-5xl lg:text-[3.25rem] xl:text-[3.5rem]"
+              className="mt-4 max-w-xl text-[2.5rem] font-bold leading-[1.05] tracking-[-0.03em] text-[var(--public-fg)] sm:text-5xl lg:text-[3.25rem] xl:text-[3.5rem]"
             >
-              See every AI coding tool.
+              See how your team uses AI.
               <br />
-              <span className="public-headline-emphasis">Before you try to control it.</span>
+              <span className="font-semibold text-[#08a8c4]">Scale what works.</span>
             </motion.h1>
 
             <motion.p
               variants={item}
-              className="mt-6 max-w-md text-base leading-relaxed text-[var(--public-muted)] sm:text-lg sm:leading-8"
+              className="mt-6 max-w-md text-base italic leading-relaxed text-[#6b6d66] sm:text-lg sm:leading-8"
             >
-              Models, cost, plan utilization, and device health across Cursor, Claude Code,
-              Copilot, and more — open-source and self-hosted.
+              Track usage, spend, and what works—across every AI coding tool.
             </motion.p>
 
-            <motion.div variants={item} className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-              <motion.div whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
-                <Link href={siteConfig.signupUrl} className="public-btn public-btn-primary w-full sm:w-auto">
-                  Get started
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </motion.div>
-              <motion.a
-                href={siteConfig.githubUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="public-btn public-btn-outline w-full sm:w-auto"
+            <motion.div variants={item} className="mt-8 flex w-full flex-col items-center lg:items-start">
+              <motion.div
                 whileHover={reduceMotion ? undefined : { scale: 1.02 }}
                 whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+                className="inline-flex"
               >
-                <Github className="h-4 w-4" />
-                Star on GitHub
-              </motion.a>
+                <Link
+                  href={siteConfig.signupUrl}
+                  className="public-btn public-btn-teal rounded-none px-8 py-3 text-base font-semibold"
+                >
+                  Get started for free
+                  <ArrowRight className="h-5 w-5" />
+                </Link>
+              </motion.div>
+              <p className="mt-3 text-sm text-[#5c5e56]">
+                Open source · Your infrastructure · Your data
+              </p>
             </motion.div>
-
-            <motion.p variants={item} className="mt-4 text-sm text-[var(--public-muted)]">
-              <span className="text-primary">Self-hosted</span>
-              {" · "}
-              <span className="text-primary">MIT</span>
-              {" · no prompts by default"}
-            </motion.p>
           </motion.div>
 
           <motion.div
-            initial={reduceMotion ? false : { opacity: 0, y: 20 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45, delay: 0.12, ease: EASE }}
-            className="relative min-w-0 w-full"
+            transition={{ duration: 0.5, delay: 0.1, ease: EASE }}
+            className="relative flex items-center justify-center lg:justify-end lg:self-center"
+            aria-hidden
           >
-            <div className="hero-mock-frame max-h-[36rem] overflow-hidden lg:max-h-none">
-              <DashboardMock />
+            <div
+              className="relative w-full max-w-[540px] overflow-hidden sm:max-w-[580px] lg:w-full lg:max-w-[min(48vw,calc(72svh*0.9),720px)]"
+              style={{ ["--ar" as string]: LOTTIE_AR }}
+              data-asset-width="850"
+              data-asset-height="950"
+            >
+              <div
+                className="w-full opacity-100"
+                style={{ aspectRatio: "var(--ar)" }}
+                role="img"
+                aria-label="UseJunction AI coding observability overview"
+              >
+                <DotLottieReact
+                  src="/animations/hero.lottie"
+                  autoplay={reduceMotion !== true}
+                  loop
+                  renderConfig={{ autoResize: true }}
+                  className="h-full w-full"
+                  style={{ width: "100%", height: "100%" }}
+                />
+              </div>
             </div>
           </motion.div>
         </div>

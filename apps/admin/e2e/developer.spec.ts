@@ -44,5 +44,5 @@ test("developer is redirected away from owner-only calculation routes", async ({
 
 test("developer onboarding resume opens connect flow", async ({ page }) => {
   await page.goto("/onboarding?resume=1");
-  await expect(page.getByText(/e2e-laptop is live|Run this in Terminal|Connected/i).first()).toBeVisible();
+  await expect(page.getByText(/e2e-laptop is live|Connect this device|Connected/i).first()).toBeVisible();
 });

@@ -97,6 +97,10 @@ func UpdateHistoryPath() string {
 	return filepath.Join(ConfigDir(), "update-history.json")
 }
 
+func UpdateHandoffResultPath() string {
+	return filepath.Join(ConfigDir(), "update-handoff-result.json")
+}
+
 // Load reads and parses the config file. Returns an error when not enrolled.
 func Load() (*Config, error) {
 	data, err := os.ReadFile(ConfigPath())

@@ -24,6 +24,7 @@ import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-u
 import { cn } from "@/lib/utils";
 import { formatCompactNumber, formatMicrosAsCurrency } from "@/lib/format";
 import { AddSubscriptionSheet } from "./add-subscription-sheet";
+import { ApiCreditInventory } from "./api-credit-inventory";
 import { ToolLogoTile } from "./tool-brand-icon";
 import { aggregateTeamQuotas, teamQuotaSummaryLabel } from "@/lib/quotas/display";
 import { canonicalToolKey, findCatalogTool, subscriptionToolKeys } from "@/lib/tools/catalog";
@@ -33,6 +34,7 @@ import { DEFAULT_ROLLING_PERIOD, type RollingPeriod } from "@/lib/dashboard/peri
 
 const toolsViews = [
   { id: "subscriptions", label: "Subscriptions" },
+  { id: "api_credits", label: "API Credits" },
   { id: "activity", label: "Activity" },
 ] as const;
 
@@ -308,6 +310,8 @@ export function SubscriptionInventory({
             )}
           </Panel>
         </div>
+      ) : view === "api_credits" ? (
+        <ApiCreditInventory />
       ) : (
         <ActivityPanel
           data={detected}

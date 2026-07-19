@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { requireIngestAuth, getDefaultOrgId } from "@/lib/auth";
 import { invalidateAnalyticsCache } from "@/lib/analytics/query";
+import { estimateCost } from "@/lib/metrics/estimate-cost";
+
+function canonicalProvider(value: unknown, model: unknown) {
+  const raw = String(value ?? "").toLowerCase();
+  const modelName = String(model ?? "").toLowerCase();
+  if (raw.includes("anthropic") || raw === "claude" || modelName.includes("claude")) return "anthropic";
+  if (raw.includes("openai") || /^(gpt|o\d)/.test(modelName)) return "openai";
+  return raw || "unknown";
+}
 
 export async function POST(req: NextRequest) {
   const authResult = requireIngestAuth(req);
@@ -9,6 +18,13 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    const provider = canonicalProvider(body.provider, body.model);
+    const inputTokens = Math.max(0, Math.round(body.inputTokens ?? body.tokens?.input ?? 0));
+    const outputTokens = Math.max(0, Math.round(body.outputTokens ?? body.tokens?.output ?? 0));
+    const suppliedCost = Number(body.estimatedCost ?? body.cost ?? 0);
+    const estimatedCost = suppliedCost > 0
+      ? suppliedCost
+      : estimateCost(String(body.model ?? ""), inputTokens, outputTokens, 0, 0, provider);
     const orgId = body.orgId ?? getDefaultOrgId();
     const organization = await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true } });
     if (!organization) return NextResponse.json({ error: "invalid organization" }, { status: 403 });
@@ -27,12 +43,12 @@ export async function POST(req: NextRequest) {
         userId: body.userId ?? null,
         deviceId: body.deviceId ?? null,
         toolName: body.toolName ?? null,
-        provider: body.provider ?? null,
+        provider,
         model: body.model ?? null,
-        inputTokens: body.inputTokens ?? body.tokens?.input ?? 0,
-        outputTokens: body.outputTokens ?? body.tokens?.output ?? 0,
+        inputTokens,
+        outputTokens,
         totalTokens: body.totalTokens ?? body.tokens?.total ?? 0,
-        estimatedCost: body.estimatedCost ?? body.cost ?? 0,
+        estimatedCost,
         latencyMs: body.latencyMs ?? body.latency ?? 0,
         status: body.status ?? "success",
         traceId: body.traceId ?? null,
@@ -49,7 +65,7 @@ export async function POST(req: NextRequest) {
         developerId: body.userId ?? null,
         deviceId: body.deviceId ?? null,
         date: metricDate,
-        provider: String(body.provider ?? "unknown").slice(0, 64),
+        provider: provider.slice(0, 64),
         product: "gateway",
         toolName: String(body.toolName ?? "").slice(0, 64),
         model: String(body.model ?? "").slice(0, 128),
@@ -57,9 +73,10 @@ export async function POST(req: NextRequest) {
         sourceRef: record.traceId ?? record.id,
         verified: false,
         requests: 1,
-        inputTokens: BigInt(Math.max(0, Math.round(body.inputTokens ?? body.tokens?.input ?? 0))),
-        outputTokens: BigInt(Math.max(0, Math.round(body.outputTokens ?? body.tokens?.output ?? 0))),
-        costMicros: BigInt(Math.max(0, Math.round((body.estimatedCost ?? body.cost ?? 0) * 1_000_000))),
+        inputTokens: BigInt(inputTokens),
+        outputTokens: BigInt(outputTokens),
+        costMicros: BigInt(Math.max(0, Math.round(estimatedCost * 1_000_000))),
+        costKind: "estimated_api",
         dedupeKey: `gateway:${record.id}`,
         observedAt: record.createdAt,
       },

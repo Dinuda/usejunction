@@ -281,31 +281,7 @@ a {
 }
 
 .hero-atmosphere {
-  background:
-    radial-gradient(
-      ellipse 70% 55% at 78% 22%,
-      color-mix(in srgb, var(--public-accent) 11%, transparent),
-      transparent 68%
-    ),
-    radial-gradient(
-      circle at 12% 78%,
-      color-mix(in srgb, var(--public-accent) 6%, transparent),
-      transparent 52%
-    );
-}
-
-.hero-atmosphere-dots {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.45;
-  background-image: radial-gradient(
-    circle,
-    color-mix(in srgb, var(--public-fg) 14%, transparent) 1px,
-    transparent 1.5px
-  );
-  background-size: 18px 18px;
-  mask-image: radial-gradient(ellipse 70% 60% at 70% 40%, black 10%, transparent 72%);
+  background: #ffffff;
 }
 
 .hero-mock-frame {
@@ -326,6 +302,17 @@ a {
 
 .public-btn-yellow:hover {
   background: var(--brand-yellow-hover);
+  opacity: 1;
+}
+
+.public-btn-teal {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: color-mix(in srgb, var(--primary) 85%, #000000 15%);
+}
+
+.public-btn-teal:hover {
+  background: color-mix(in srgb, var(--primary) 88%, #000000 12%);
   opacity: 1;
 }
 
@@ -387,6 +374,53 @@ a {
   background: transparent;
   color: var(--public-fg);
   border-color: var(--public-border);
+}
+
+.public-github-star-badge {
+  display: inline-flex;
+  align-items: stretch;
+  height: 2.5rem;
+  border-radius: 0;
+  border: 1px solid var(--public-border);
+  background: var(--public-surface);
+  color: var(--public-fg);
+  overflow: hidden;
+  transition: border-color 0.15s, opacity 0.15s;
+  text-decoration: none;
+}
+
+.public-github-star-badge:hover {
+  opacity: 0.9;
+}
+
+.public-github-star-badge__icon {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.75rem;
+}
+
+.public-github-star-badge__divider {
+  width: 1px;
+  align-self: center;
+  height: 60%;
+  background: var(--public-border);
+}
+
+.public-github-star-badge__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.public-github-star-badge__count svg {
+  fill: var(--public-fg);
+  color: var(--public-fg);
+  opacity: 0.85;
 }
 
 .auth-shell [data-slot="input"],

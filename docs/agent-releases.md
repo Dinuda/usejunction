@@ -41,7 +41,7 @@ The build workflow:
 - validates the version string
 - fails if the release already exists
 - runs `go test ./...` in `agent/`
-- builds macOS and Linux binaries for `amd64` and `arm64`
+- builds macOS, Linux, and Windows binaries for `amd64` and `arm64`
 - injects the version with Go linker flags
 - packages macOS app bundles
 - generates `checksums.txt`
@@ -238,11 +238,13 @@ Local safety rules:
 
 ## Bootstrap and rollback
 
-`install.sh` supports three main paths:
+`install.sh` and `install.ps1` support three main paths:
 
 - enrollment with `--token`
 - teammate connect with `--connect`
 - upgrade-only bootstrap with `--upgrade`
+
+PowerShell uses the equivalent `-Token`, `-Connect`, `-Url`, and `-Upgrade` parameters. It installs `usejunction.exe` for the current user and registers the `UseJunction Agent` logon task without elevation.
 
 For upgrades, the script:
 

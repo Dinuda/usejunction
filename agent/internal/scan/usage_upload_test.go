@@ -13,6 +13,7 @@ import (
 func TestFilterUsageUploadDelta(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	// Force cache under temp home.
 	_ = os.MkdirAll(filepath.Join(dir, ".usejunction", "cache", "cost-usage"), 0700)
 	if config.CacheDir() == "" {

@@ -5,7 +5,7 @@ import type { DotLottie } from "@lottiefiles/dotlottie-react";
 import { Pause, Play, RotateCcw, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 
-const ASSET_SRC = "/icons/d78ba706-9c26-4246-8ea6-0ca5ec33b312.lottie";
+const ASSET_SRC = "/icons/d78ba706-9c26-4246-8ea6-0ca5ec33b312.lottie?v=usejunction-branded-2";
 
 export function LottieViewer() {
   const [player, setPlayer] = useState<DotLottie | null>(null);
@@ -65,7 +65,7 @@ export function LottieViewer() {
         <p className="font-mono text-xs uppercase tracking-[0.16em] text-primary">Animation lab</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">DotLottie viewer</h1>
         <p className="mt-3 text-sm leading-7 text-muted-foreground sm:text-base">
-          Preview the hero animation frame by frame, or let it run at different speeds.
+          Preview the UseJunction-branded hero animation frame by frame, or let it run at different speeds.
         </p>
       </div>
 
@@ -157,7 +157,7 @@ export function LottieViewer() {
           </select>
 
           <div className="mt-auto border-t pt-5 text-xs leading-5 text-muted-foreground">
-            Asset: <span className="font-mono">d78ba706…b312.lottie</span>
+            Asset: <span className="font-mono">UseJunction AI insights</span>
           </div>
         </aside>
       </div>

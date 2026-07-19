@@ -73,7 +73,7 @@ The collector layer is abstracted in `agent/internal/signals/`.
 Platform support today:
 
 - macOS: prototype foreground-window collector with local AppleScript/system-state probing
-- Windows: foreground window and idle-time collector using native Windows APIs
+- Windows: native coding-tool usage and work extraction; the experimental foreground collector is intentionally not started in this release
 - other platforms: no-op collector with a clear unsupported signal
 
 The sessionizer currently does the following:

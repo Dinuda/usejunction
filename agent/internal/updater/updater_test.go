@@ -80,6 +80,7 @@ func TestCompareVersions(t *testing.T) {
 func TestApplyConfirmAndRollback(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	binDir := t.TempDir()
 	executable := filepath.Join(binDir, "usejunction")
 	if err := os.WriteFile(executable, []byte("old-binary"), 0755); err != nil {
@@ -132,7 +133,9 @@ func TestApplyConfirmAndRollback(t *testing.T) {
 }
 
 func TestChecksumFailureLeavesCurrentBinary(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	binDir := t.TempDir()
 	executable := filepath.Join(binDir, "usejunction")
 	if err := os.WriteFile(executable, []byte("current"), 0755); err != nil {

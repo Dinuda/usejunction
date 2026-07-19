@@ -36,16 +36,16 @@ test("release cohort, escalation, ownership, idempotency, and confirmation", {
 
   const pendingDevice = await createDevice("pending-linux", "linux", "amd64", "0.1.0");
   const currentDevice = await createDevice("current-mac", "darwin", "arm64", version);
-  await createDevice("unsupported", "windows", "amd64", "0.1.0");
+  const windowsDevice = await createDevice("pending-windows", "windows", "amd64", "0.1.0");
   const artifacts = Object.fromEntries(
-    ["darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64"].map((key) => [key, {
+    ["darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"].map((key) => [key, {
       url: `https://example.com/${key}`,
       sha256: "a".repeat(64),
       size: 1024,
     }]),
   );
   const manifest = {
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     version,
     publishedAt: started.toISOString(),
     urgency: "normal" as const,
@@ -57,16 +57,16 @@ test("release cohort, escalation, ownership, idempotency, and confirmation", {
 
   try {
     const promoted = await promoteAgentRelease(manifest, started);
-    assert.equal(promoted.cohortSize, 2, "all compatible enrolled devices belong to the fixed cohort");
+    assert.equal(promoted.cohortSize, 3, "all compatible enrolled devices belong to the fixed cohort");
     const initial = await prisma.agentUpdateDeployment.findMany({ where: { releaseId: promoted.release.id } });
-    assert.equal(initial.length, 2);
+    assert.equal(initial.length, 3);
     assert.equal(initial.find((row) => row.deviceId === currentDevice.id)?.state, "confirmed");
 
     const postActivation = await createDevice("post-activation", "linux", "arm64", "0.1.0");
     const critical = await promoteAgentRelease({ ...manifest, urgency: "critical", rolloutHours: 0 }, escalated);
-    assert.equal(critical.cohortSize, 2);
+    assert.equal(critical.cohortSize, 3);
     const escalatedRows = await prisma.agentUpdateDeployment.findMany({ where: { releaseId: promoted.release.id } });
-    assert.equal(escalatedRows.length, 2, "critical escalation must not add post-activation devices");
+    assert.equal(escalatedRows.length, 3, "critical escalation must not add post-activation devices");
     assert.equal(escalatedRows.find((row) => row.deviceId === pendingDevice.id)?.eligibleAt.toISOString(), escalated.toISOString());
     await assert.rejects(
       promoteAgentRelease({
@@ -81,6 +81,14 @@ test("release cohort, escalation, ownership, idempotency, and confirmation", {
     const identity = { id: pendingDevice.id, orgId: org.id, os: "linux", architecture: "amd64", agentVersion: "0.1.0" };
     const directive = await updateDirectiveForDevice(identity, { now: escalated });
     assert.ok(directive);
+    const windowsDirective = await updateDirectiveForDevice({
+      id: windowsDevice.id,
+      orgId: org.id,
+      os: "windows",
+      architecture: "amd64",
+      agentVersion: "0.1.0",
+    }, { now: escalated });
+    assert.equal(windowsDirective?.artifactKey, "windows-amd64");
     await updateDirectiveForDevice(identity, { now: escalated });
     assert.equal(await prisma.agentUpdateEvent.count({ where: { deploymentId: directive.attemptId, eventType: "directive_delivered" } }), 1);
 
@@ -114,7 +122,7 @@ test("release cohort, escalation, ownership, idempotency, and confirmation", {
     assert.equal((await prisma.device.findUniqueOrThrow({ where: { id: pendingDevice.id } })).agentVersion, version);
 
     const coverage = await getAgentUpdateCoverage(org.id, version, escalated);
-    assert.equal(coverage?.metrics.total, 2);
+    assert.equal(coverage?.metrics.total, 3);
     assert.equal(coverage?.metrics.confirmed, 2);
     assert.equal(coverage?.metrics.downloaded, 1);
     const platform = await getPlatformAgentUpdateCoverage(version, escalated);

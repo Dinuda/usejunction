@@ -88,16 +88,23 @@ export function SignalsKpi({
         className,
       )}
     >
-      {action ? <div className="absolute right-3 top-0 z-10 sm:right-4">{action}</div> : null}
-      <p
+      <div
         className={cn(
-          "font-medium uppercase tracking-[0.08em] text-muted-foreground",
-          compactMobile ? "text-[0.65rem] leading-3 sm:text-xs sm:leading-4" : "text-xs leading-4",
-          action && "pr-12",
+          "flex items-center justify-between gap-2",
+          // Keep label-row height stable whether or not an action is present.
+          compactMobile ? "min-h-6 sm:min-h-8" : "min-h-8",
         )}
       >
-        {label}
-      </p>
+        <p
+          className={cn(
+            "min-w-0 font-medium uppercase tracking-[0.08em] text-muted-foreground",
+            compactMobile ? "text-[0.65rem] leading-3 sm:text-xs sm:leading-4" : "text-xs leading-4",
+          )}
+        >
+          {label}
+        </p>
+        {action ? <div className="shrink-0">{action}</div> : null}
+      </div>
       <div
         className={cn(
           // Shared value box so hero (text-4xl) and default (text-3xl) share one baseline.

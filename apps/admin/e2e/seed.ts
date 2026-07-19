@@ -135,6 +135,71 @@ async function main() {
     },
   });
 
+  const openAiConnection = await prisma.providerConnection.create({
+    data: {
+      id: "e2e-openai-connection",
+      orgId: org.id,
+      provider: "openai",
+      product: "api_platform",
+      method: "admin_api_key",
+      status: "active",
+      permissions: ["organization_usage:read", "organization_costs:read"],
+      lastSyncedAt: new Date("2026-07-16T10:00:00.000Z"),
+      lastCostSyncedAt: new Date("2026-07-15T23:59:59.000Z"),
+      costDataThrough: new Date("2026-07-15T23:59:59.000Z"),
+      createdByUserId: ownerUser.id,
+    },
+  });
+  const anthropicConnection = await prisma.providerConnection.create({
+    data: {
+      id: "e2e-anthropic-connection",
+      orgId: org.id,
+      provider: "anthropic",
+      product: "api_platform",
+      method: "admin_api_key",
+      status: "degraded",
+      permissions: ["organization_usage:read", "organization_costs:read"],
+      lastSyncedAt: new Date("2026-07-16T09:00:00.000Z"),
+      lastCostSyncedAt: new Date("2026-07-15T23:59:59.000Z"),
+      costDataThrough: new Date("2026-07-15T23:59:59.000Z"),
+      lastError: "E2E degraded connection",
+      createdByUserId: ownerUser.id,
+    },
+  });
+  await prisma.apiCreditPool.createMany({
+    data: [
+      {
+        id: "e2e-openai-pool", orgId: org.id, connectionId: openAiConnection.id, provider: "openai", product: "api_platform",
+        name: "OpenAI API credits", mode: "recurring", budgetMicros: BigInt(100_000_000), billingCadence: "monthly",
+        billingCycleAnchorDate: new Date("2026-07-01T00:00:00.000Z"), createdByUserId: ownerUser.id,
+      },
+      {
+        id: "e2e-anthropic-pool", orgId: org.id, connectionId: anthropicConnection.id, provider: "anthropic", product: "api_platform",
+        name: "Anthropic API credits", mode: "fixed", budgetMicros: BigInt(50_000_000), grantStartDate: new Date("2026-07-01T00:00:00.000Z"),
+        expiresAt: new Date("2026-09-01T00:00:00.000Z"), createdByUserId: ownerUser.id,
+      },
+    ],
+  });
+  await prisma.providerApiKey.createMany({
+    data: [
+      {
+        id: "e2e-openai-key-mapped", orgId: org.id, connectionId: openAiConnection.id, developerId: developer.id,
+        externalKeyId: "key_e2e_mapped", name: "Production backend", redactedHint: "sk-...1234", projectId: "project-production",
+        ownerEmail: developer.email, principalType: "user", mappingSource: "provider_owner",
+      },
+      {
+        id: "e2e-openai-key-unmapped", orgId: org.id, connectionId: openAiConnection.id,
+        externalKeyId: "key_e2e_unmapped", name: "Legacy service", redactedHint: "sk-...5678", projectId: "project-legacy",
+        principalType: "service_account",
+      },
+      {
+        id: "e2e-anthropic-key-unmapped", orgId: org.id, connectionId: anthropicConnection.id,
+        externalKeyId: "apikey_e2e_unmapped", name: "Claude worker", redactedHint: "...cdef", workspaceId: "workspace-ai",
+        principalType: "service_account",
+      },
+    ],
+  });
+
   await prisma.usageDaily.createMany({
     data: [
       {
@@ -142,6 +207,21 @@ async function main() {
       },
       {
         orgId: org.id, developerId: developer.id, deviceId: device.id, date: new Date("2026-07-11T00:00:00.000Z"), provider: "cursor", product: "cursor", toolName: "cursor", model: "gpt-4.1", source: "estimated", requests: 5, inputTokens: BigInt(100), outputTokens: BigInt(50), costMicros: BigInt(1_000_000), costKind: "estimated_api", dedupeKey: "e2e:cursor:2026-07-11", observedAt: now,
+      },
+      {
+        orgId: org.id, developerId: developer.id, connectionId: openAiConnection.id, date: new Date("2026-07-12T00:00:00.000Z"), provider: "openai", product: "api_platform", toolName: "openai-api", model: "gpt-5", source: "vendor_verified", verified: true, requests: 25, inputTokens: BigInt(2_000_000), outputTokens: BigInt(500_000), dedupeKey: "e2e:openai:usage:mapped", observedAt: now, metadata: { apiKeyId: "key_e2e_mapped", projectId: "project-production" },
+      },
+      {
+        orgId: org.id, connectionId: openAiConnection.id, date: new Date("2026-07-12T00:00:00.000Z"), provider: "openai", product: "api_platform", toolName: "openai-api", source: "vendor_verified", verified: true, costMicros: BigInt(12_000_000), costKind: "verified_usage", dedupeKey: "e2e:openai:cost", observedAt: now, metadata: { projectId: "project-production", lineItem: "Responses API" },
+      },
+      {
+        orgId: org.id, developerId: developer.id, date: new Date("2026-07-16T00:00:00.000Z"), provider: "openai", product: "gateway", toolName: "junction-gateway", model: "gpt-5", source: "gateway_observed", requests: 3, inputTokens: BigInt(200_000), outputTokens: BigInt(50_000), costMicros: BigInt(1_000_000), costKind: "estimated_api", dedupeKey: "e2e:openai:gateway:pending", observedAt: now,
+      },
+      {
+        orgId: org.id, connectionId: anthropicConnection.id, date: new Date("2026-07-13T00:00:00.000Z"), provider: "anthropic", product: "api_platform", toolName: "anthropic-api", model: "claude-sonnet-4", source: "vendor_verified", verified: true, requests: 12, inputTokens: BigInt(1_000_000), outputTokens: BigInt(200_000), dedupeKey: "e2e:anthropic:usage", observedAt: now, metadata: { apiKeyId: "apikey_e2e_unmapped", workspaceId: "workspace-ai" },
+      },
+      {
+        orgId: org.id, connectionId: anthropicConnection.id, date: new Date("2026-07-13T00:00:00.000Z"), provider: "anthropic", product: "api_platform", toolName: "anthropic-api", source: "vendor_verified", verified: true, costMicros: BigInt(8_000_000), costKind: "verified_usage", dedupeKey: "e2e:anthropic:cost", observedAt: now, metadata: { workspaceId: "workspace-ai", description: "Claude usage" },
       },
     ],
   });

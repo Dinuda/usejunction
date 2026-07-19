@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
  * Bump when Device (or other hot models) gain fields so a long-lived Next.js
  * process drops a stale PrismaClient after `prisma generate`.
  */
-const PRISMA_SCHEMA_REV = "security-hardening-v1";
+const PRISMA_SCHEMA_REV = "api-credit-tracking-v1";
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
@@ -44,6 +44,7 @@ export type {
   AgentUpdateEvent,
   AnalyticsQueryCache,
   AuditLog,
+  ApiCreditPool,
   AuthActionToken,
   BillingPlanTemplate,
   ConnectInvite,
@@ -63,6 +64,7 @@ export type {
   OrganizationMembership,
   PlanInterest,
   ProviderConnection,
+  ProviderApiKey,
   ProviderSyncRun,
   QuotaSnapshot,
   RateLimitBucket,

@@ -1,8 +1,9 @@
 import { prisma, type Prisma, type ProviderConnection } from "@usejunction/db";
 import { normalizeEmail } from "@/lib/developer-identity";
+import { resolveProviderApiKeyMapping } from "@/lib/integrations/api-key-mapping";
 import { getAdapter } from "@/lib/integrations/adapters";
 import { githubInstallationToken } from "@/lib/integrations/github-app";
-import type { IntegrationConfig, ProviderMember, ProviderUsage } from "@/lib/integrations/types";
+import type { IntegrationConfig, ProviderApiKey, ProviderMember, ProviderUsage } from "@/lib/integrations/types";
 import { decryptSecret } from "@/lib/security";
 import { invalidateAnalyticsCache } from "@/lib/analytics/query";
 import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/quantity";
@@ -52,6 +53,13 @@ async function upsertMember(connection: ProviderConnection, member: ProviderMemb
 }
 
 async function developerForUsage(connection: ProviderConnection, row: ProviderUsage) {
+  if (row.externalApiKeyId) {
+    const apiKey = await prisma.providerApiKey.findUnique({
+      where: { connectionId_externalKeyId: { connectionId: connection.id, externalKeyId: row.externalApiKeyId } },
+      select: { developerId: true },
+    });
+    if (apiKey?.developerId) return apiKey.developerId;
+  }
   if (row.externalUserId) {
     const identity = await prisma.externalIdentity.findUnique({
       where: { orgId_provider_externalUserId: { orgId: connection.orgId, provider: connection.provider, externalUserId: row.externalUserId } },
@@ -64,6 +72,42 @@ async function developerForUsage(connection: ProviderConnection, row: ProviderUs
     return developer?.id ?? null;
   }
   return null;
+}
+
+async function upsertApiKey(connection: ProviderConnection, key: ProviderApiKey) {
+  const existing = await prisma.providerApiKey.findUnique({
+    where: { connectionId_externalKeyId: { connectionId: connection.id, externalKeyId: key.externalKeyId } },
+  });
+  const ownerEmail = key.ownerEmail ? normalizeEmail(key.ownerEmail) : null;
+  const owner = ownerEmail
+    ? await prisma.developer.findUnique({ where: { orgId_email: { orgId: connection.orgId, email: ownerEmail } }, select: { id: true } })
+    : null;
+  const { developerId, mappingSource } = resolveProviderApiKeyMapping(existing, owner?.id ?? null);
+  return prisma.providerApiKey.upsert({
+    where: { connectionId_externalKeyId: { connectionId: connection.id, externalKeyId: key.externalKeyId } },
+    update: {
+      developerId, name: key.name ?? null, redactedHint: key.redactedHint ?? null, projectId: key.projectId ?? null,
+      workspaceId: key.workspaceId ?? null, ownerExternalId: key.ownerExternalId ?? null, ownerEmail,
+      principalType: key.principalType ?? null, status: key.status ?? "active", mappingSource,
+      metadata: json(key.metadata), lastSeenAt: new Date(),
+    },
+    create: {
+      orgId: connection.orgId, connectionId: connection.id, developerId, externalKeyId: key.externalKeyId,
+      name: key.name ?? null, redactedHint: key.redactedHint ?? null, projectId: key.projectId ?? null,
+      workspaceId: key.workspaceId ?? null, ownerExternalId: key.ownerExternalId ?? null, ownerEmail,
+      principalType: key.principalType ?? null, status: key.status ?? "active", mappingSource,
+      metadata: json(key.metadata),
+    },
+  });
+}
+
+function usageMetadata(row: ProviderUsage) {
+  return json({
+    ...(row.metadata ?? {}),
+    apiKeyId: row.externalApiKeyId ?? (row.metadata?.apiKeyId as string | undefined) ?? null,
+    projectId: row.externalProjectId ?? (row.metadata?.projectId as string | undefined) ?? null,
+    workspaceId: row.externalWorkspaceId ?? (row.metadata?.workspaceId as string | undefined) ?? null,
+  });
 }
 
 export async function validateConnection(connection: ProviderConnection) {
@@ -94,6 +138,11 @@ export async function syncConnection(connectionId: string) {
       identities.set(member.externalUserId, await upsertMember(connection, member));
     }
 
+    if (data.apiKeys) {
+      await prisma.providerApiKey.updateMany({ where: { connectionId: connection.id }, data: { status: "inactive" } });
+      for (const key of data.apiKeys) await upsertApiKey(connection, key);
+    }
+
     for (const seat of data.seats) {
       const identity = identities.get(seat.externalUserId) ?? await prisma.externalIdentity.findUnique({
         where: { orgId_provider_externalUserId: { orgId: connection.orgId, provider: connection.provider, externalUserId: seat.externalUserId } },
@@ -113,24 +162,31 @@ export async function syncConnection(connectionId: string) {
         update: {
           developerId, date: row.date, provider: row.provider, product: row.product, toolName: row.toolName ?? "", model: row.model ?? "",
           requests: row.requests ?? 0, sessions: row.sessions ?? 0, inputTokens: row.inputTokens ?? BigInt(0), outputTokens: row.outputTokens ?? BigInt(0),
-          cacheReadTokens: row.cacheReadTokens ?? BigInt(0), activeSeconds: row.activeSeconds ?? BigInt(0), suggestedLines: row.suggestedLines ?? BigInt(0),
+          cacheReadTokens: row.cacheReadTokens ?? BigInt(0), cacheWriteTokens: row.cacheWriteTokens ?? BigInt(0), activeSeconds: row.activeSeconds ?? BigInt(0), suggestedLines: row.suggestedLines ?? BigInt(0),
           acceptedLines: row.acceptedLines ?? BigInt(0), addedLines: row.addedLines ?? BigInt(0), deletedLines: row.deletedLines ?? BigInt(0),
-          commits: row.commits ?? 0, pullRequests: row.pullRequests ?? 0, costMicros: row.costMicros ?? BigInt(0), observedAt: new Date(), metadata: json(row.metadata),
+          commits: row.commits ?? 0, pullRequests: row.pullRequests ?? 0, costMicros: row.costMicros ?? BigInt(0),
+          costKind: row.costMicros && row.costMicros > BigInt(0) ? "verified_usage" : null, observedAt: new Date(), metadata: usageMetadata(row),
         },
         create: {
           orgId: connection.orgId, developerId, connectionId: connection.id, date: row.date, provider: row.provider, product: row.product,
           toolName: row.toolName ?? "", model: row.model ?? "", source: "vendor_verified", sourceRef: row.externalKey, verified: true,
           requests: row.requests ?? 0, sessions: row.sessions ?? 0, inputTokens: row.inputTokens ?? BigInt(0), outputTokens: row.outputTokens ?? BigInt(0),
-          cacheReadTokens: row.cacheReadTokens ?? BigInt(0), activeSeconds: row.activeSeconds ?? BigInt(0), suggestedLines: row.suggestedLines ?? BigInt(0),
+          cacheReadTokens: row.cacheReadTokens ?? BigInt(0), cacheWriteTokens: row.cacheWriteTokens ?? BigInt(0), activeSeconds: row.activeSeconds ?? BigInt(0), suggestedLines: row.suggestedLines ?? BigInt(0),
           acceptedLines: row.acceptedLines ?? BigInt(0), addedLines: row.addedLines ?? BigInt(0), deletedLines: row.deletedLines ?? BigInt(0),
-          commits: row.commits ?? 0, pullRequests: row.pullRequests ?? 0, costMicros: row.costMicros ?? BigInt(0), dedupeKey, metadata: json(row.metadata),
+          commits: row.commits ?? 0, pullRequests: row.pullRequests ?? 0, costMicros: row.costMicros ?? BigInt(0),
+          costKind: row.costMicros && row.costMicros > BigInt(0) ? "verified_usage" : null, dedupeKey, metadata: usageMetadata(row),
         },
       });
     }
-    const counts = { members: identities.size, seats: data.seats.length, usage: data.usage.length };
+    const counts = { members: identities.size, seats: data.seats.length, apiKeys: data.apiKeys?.length ?? 0, usage: data.usage.length };
     const now = new Date();
     await prisma.$transaction([
-      prisma.providerConnection.update({ where: { id: connection.id }, data: { status: "active", externalOrgId: data.externalOrgId ?? connection.externalOrgId, permissions: json(data.permissions ?? []), lastSyncedAt: now, nextSyncAt: new Date(now.getTime() + 15 * 60_000), leaseUntil: null, lastError: null } }),
+      prisma.providerConnection.update({ where: { id: connection.id }, data: {
+        status: "active", externalOrgId: data.externalOrgId ?? connection.externalOrgId, permissions: json(data.permissions ?? []),
+        lastSyncedAt: now, lastCostSyncedAt: data.costSyncSucceeded ? now : undefined,
+        costDataThrough: data.costSyncSucceeded ? (data.costDataThrough ?? now) : undefined,
+        nextSyncAt: new Date(now.getTime() + 15 * 60_000), leaseUntil: null, lastError: null,
+      } }),
       prisma.providerSyncRun.update({ where: { id: run.id }, data: { status: "success", finishedAt: now, counts } }),
     ]);
     await syncTeamSeatQuantityBestEffort(connection.orgId, "provider_sync.members");

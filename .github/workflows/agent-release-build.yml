@@ -9,8 +9,43 @@ permissions:
   contents: write
 
 jobs:
+  windows-test:
+    name: Windows agent tests and ARM64 build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: Test Windows agent
+        working-directory: agent
+        run: go test ./...
+      - name: Parse PowerShell installer
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path ./install.ps1),
+            [ref]$tokens,
+            [ref]$errors
+          )
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+      - name: Cross-build Windows ARM64
+        working-directory: agent
+        run: go build -o "$env:RUNNER_TEMP/usejunction-windows-arm64.exe" .
+        env:
+          CGO_ENABLED: "0"
+          GOOS: windows
+          GOARCH: arm64
+
   build:
     runs-on: macos-14
+    needs: windows-test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

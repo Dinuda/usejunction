@@ -31,7 +31,9 @@ var updateCmd = &cobra.Command{
 		}
 		api := client.New(cfg)
 		if updateRollback {
+			stopWindowsBackgroundAgent()
 			if err := updater.Rollback(cfg, api, ""); err != nil {
+				startWindowsBackgroundAgent()
 				return err
 			}
 			if err := restartBackgroundAgent(); err != nil && verbose {
@@ -62,17 +64,21 @@ var updateCmd = &cobra.Command{
 			return nil
 		}
 
+		stopWindowsBackgroundAgent()
 		updated, err := updater.Apply(cmd.Context(), cfg, updater.ApplyOptions{
 			Directive: *directive, CurrentVersion: config.Version, ControlPlaneURL: cfg.ControlPlaneURL,
 			Reporter: api, Force: updateForce,
 		})
 		if errors.Is(err, updater.ErrBlockedVersion) {
+			startWindowsBackgroundAgent()
 			return fmt.Errorf("version %s is blocked after rollback; use --force to reinstall it", directive.TargetVersion)
 		}
 		if err != nil {
+			startWindowsBackgroundAgent()
 			return err
 		}
 		if !updated {
+			startWindowsBackgroundAgent()
 			return nil
 		}
 		if err := restartBackgroundAgent(); err != nil && verbose {
@@ -81,6 +87,20 @@ var updateCmd = &cobra.Command{
 		fmt.Printf("Installed UseJunction agent v%s. The background service is restarting.\n", directive.TargetVersion)
 		return nil
 	},
+}
+
+func stopWindowsBackgroundAgent() {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	_ = exec.Command("powershell.exe", "-NoProfile", "-Command", "Stop-ScheduledTask -TaskName 'UseJunction Agent' -ErrorAction SilentlyContinue").Run()
+}
+
+func startWindowsBackgroundAgent() {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	_ = exec.Command("powershell.exe", "-NoProfile", "-Command", "Start-ScheduledTask -TaskName 'UseJunction Agent' -ErrorAction SilentlyContinue").Run()
 }
 
 func restartBackgroundAgent() error {
@@ -95,6 +115,10 @@ func restartBackgroundAgent() error {
 		return exec.Command("launchctl", "load", plist).Run()
 	case "linux":
 		return exec.CommandContext(context.Background(), "systemctl", "--user", "restart", "usejunction-agent.service").Run()
+	case "windows":
+		// The Windows updater launches a detached handoff because the running
+		// executable is locked. That handoff restarts the Scheduled Task.
+		return nil
 	default:
 		return fmt.Errorf("automatic restart is unsupported on %s", runtime.GOOS)
 	}

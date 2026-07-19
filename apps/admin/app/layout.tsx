@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   description: siteConfig.description,
   applicationName: siteConfig.name,
   keywords: [
-    "AI coding observability",
+    "For AI teams",
     "Cursor usage tracking",
     "Claude Code plan usage",
     "open source WakaTime alternative",

@@ -36,6 +36,7 @@ and push the first telemetry report.`,
 
 		if runtime.GOOS == "windows" {
 			fmt.Println("Claude OTEL env written to ~/.usejunction/claude-env.sh and claude-env.ps1")
+			fmt.Println("Initial report sent.")
 			fmt.Println(`Load Claude env in PowerShell: . "$HOME\.usejunction\claude-env.ps1"`)
 			return nil
 		}
