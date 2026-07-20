@@ -32,7 +32,7 @@ function toolPage(opts: {
         heading: "How teams roll it out",
         body: [
           "Install UseJunction, enroll devices with the local agent, and keep existing developer workflows.",
-          "Metadata only by default—prompts and responses are not stored unless you change that posture later.",
+          "Privacy first—richer work detail is optional and can be turned off per person or team.",
         ],
       },
     ],
@@ -43,7 +43,7 @@ function toolPage(opts: {
       },
       {
         question: "Is this self-hosted?",
-        answer: "Yes. UseJunction is MIT-licensed and designed to run on infrastructure you control.",
+        answer: "Yes. UseJunction is available under the UseJunction Community License and designed to run on infrastructure you control.",
       },
     ],
     relatedPaths: [
@@ -60,7 +60,7 @@ export const forCursor = toolPage({
   primaryKeyword: "Cursor usage tracking for teams",
   secondaryKeywords: ["Cursor plan usage team", "Cursor seat utilization", "Cursor cost per developer"],
   answer:
-    "UseJunction tracks Cursor usage across your engineering org: who is active, which models run, estimated cost and latency, and how seats and cycles are utilized—so you can see plan usage and waste without reading prompts.",
+    "UseJunction tracks Cursor usage across your engineering org: who is active, which models run, estimated cost and latency, and how seats and cycles are utilized—so you can see plan usage and waste with privacy-first controls.",
   extras: ["Personal vs company key signals on enrolled devices.", "Coverage gaps when Cursor is installed but the agent is unhealthy."],
 });
 

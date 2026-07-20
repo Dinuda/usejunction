@@ -57,7 +57,7 @@ test("blocks duplicate checkout only for active-like statuses", () => {
 
 test("exports single-source developer pricing constants", () => {
   assert.equal(TRIAL_DAYS, 14);
-  assert.equal(USER_LIMIT_FREE, 10);
+  assert.equal(USER_LIMIT_FREE, 5);
   assert.equal(TEAM_PRICE_PER_DEV_USD, 8);
 });
 

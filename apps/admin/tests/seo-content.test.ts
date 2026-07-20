@@ -63,5 +63,6 @@ test("home JSON-LD includes FAQPage and Organization", () => {
   assert.ok(types.includes("FAQPage"));
   assert.ok(types.includes("Organization"));
   assert.ok(types.includes("SoftwareApplication"));
-  assert.equal(AEO_FACTS.promptsStoredByDefault, false);
+  assert.equal(AEO_FACTS.privacyFirst, true);
+  assert.equal(AEO_FACTS.workDetailOptional, true);
 });

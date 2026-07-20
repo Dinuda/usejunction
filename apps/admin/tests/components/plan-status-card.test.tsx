@@ -16,8 +16,8 @@ const upgradeBilling: OrgBillingStatus = {
   planLabel: "Community",
   trialDaysLeft: null,
   subscriptionStatus: null,
-  usersUsed: 10,
-  usersLimit: 10,
+  usersUsed: 5,
+  usersLimit: 5,
   usagePercent: 100,
   canUpgrade: true,
   canManage: false,
@@ -50,7 +50,7 @@ test("upgrade opens checkout directly without an intermediate dialog", async () 
   });
 
   render(<PlanStatusCard billing={upgradeBilling} />);
-  expect(screen.getByText("10 / 10 users")).toBeTruthy();
+  expect(screen.getByText("5 / 5 users")).toBeTruthy();
   expect(screen.queryByText(/devices?/i)).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: /Upgrade to Team/i }));

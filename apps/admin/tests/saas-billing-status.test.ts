@@ -50,12 +50,12 @@ test("rejects a second active device for the same user", async () => {
 });
 
 test("counts the Community limit by active users", async () => {
-  mocks.developerCount.mockResolvedValue(10);
+  mocks.developerCount.mockResolvedValue(5);
   const { assertCanAddUser } = await import("@/lib/saas-billing/status");
 
   assert.deepEqual(
     await assertCanAddUser("org_1", { userId: "user_11", email: "new@example.com" }),
-    { allowed: false, message: "User limit reached (10). Upgrade to Team to add more users." },
+    { allowed: false, message: "User limit reached (5). Upgrade to Team to add more users." },
   );
 });
 

@@ -10,19 +10,19 @@ export const privacyPage: ContentPage = {
   primaryKeyword: "UseJunction privacy",
   secondaryKeywords: [],
   updatedAt: "2026-07-19",
-  answer: `${siteConfig.name} is designed for metadata-only observability by default. Prompts and responses are not stored by default. Self-hosted deployments keep request metadata on infrastructure you control.`,
+  answer: `${siteConfig.name} is designed privacy-first: observability second. Self-hosted deployments keep data on infrastructure you control. Richer work detail is optional and can be turned off.`,
   sections: [
     {
       heading: "What we collect (product default)",
       body: [
-        "Device and agent heartbeats, tool and model identifiers, token counts, latency, status, and estimated cost metadata.",
+        "Device and agent heartbeats, tool and model identifiers, token counts, latency, status, and estimated cost signals.",
+        "Optional Signals work context when enabled for your organization.",
         "Account data you provide when signing up for a hosted organization (email, org name, billing details as required).",
       ],
     },
     {
-      heading: "What we do not collect by default",
+      heading: "What we do not collect",
       body: [
-        "Prompt and response content.",
         "Keystrokes, screenshots, or browser surveillance.",
         "Full network interception of developer traffic.",
       ],
@@ -30,7 +30,7 @@ export const privacyPage: ContentPage = {
     {
       heading: "Self-hosted deployments",
       body: [
-        "When you self-host, telemetry stays on your systems subject to your own policies. Review the MIT-licensed source for exact behavior.",
+        "When you self-host, telemetry stays on your systems subject to your own policies. Review the source under the UseJunction Community License for exact behavior.",
       ],
     },
     {
@@ -51,12 +51,12 @@ export const termsPage: ContentPage = {
   primaryKeyword: "UseJunction terms",
   secondaryKeywords: [],
   updatedAt: "2026-07-19",
-  answer: `${siteConfig.name} software is available under the MIT license for self-hosting. Hosted Team and Enterprise services are subject to these terms and your order or subscription agreement.`,
+  answer: `${siteConfig.name} software is available under the UseJunction Community License for self-hosting. Hosted Team and Enterprise services are subject to these terms and your order or subscription agreement.`,
   sections: [
     {
       heading: "Open-source software",
       body: [
-        "The UseJunction codebase is licensed under MIT. See the LICENSE file in the repository. Self-hosting is at your own operational risk subject to that license.",
+        "The UseJunction codebase is licensed under the UseJunction Community License (Apache 2.0–based with additional commercial terms). See the LICENSE file in the repository. Self-hosting is at your own operational risk subject to that license.",
       ],
     },
     {

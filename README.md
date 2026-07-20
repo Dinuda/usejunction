@@ -222,9 +222,9 @@ scripts/        Full-stack E2E
 
 ## Privacy
 
-Metadata-only logging by default. Local scans read token counts from tool-local storage (JSONL sessions, sqlite DBs, extension task JSON) — never prompts or responses.
+Privacy first. Observability second. Local scans read usage signals from tool-local storage (JSONL sessions, sqlite DBs, extension task JSON). There is no keystroke surveillance, browser capture, or network interception.
 
-Signals collection adds a separate, opt-in activity layer for app/domain flows around AI usage. It does not collect screenshots, raw prompts, clipboard text, or full URLs, and the employee ledger shows exactly what was uploaded.
+Signals can add optional work context (including allowlisted clipped summaries when enabled). That detail can be turned off. It does not collect screenshots, raw chat transcripts, clipboard text, or full URLs, and the employee ledger shows exactly what was uploaded.
 
 ## License
 

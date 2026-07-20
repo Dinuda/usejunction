@@ -63,7 +63,7 @@ function ColoredToolIcon({ name, Icon }: { name: string; Icon: IconComponent }) 
 
 export function ToolLogosStrip() {
   return (
-    <section className="border-b border-border bg-white py-10 sm:py-12">
+    <section className="border-border bg-white py-10 sm:py-12">
       <Marquee className="[--duration:40s] [--gap:2.5rem] p-0 sm:[--gap:3.5rem]" pauseOnHover>
         {SUPPORTED_TOOLS.map((tool) => {
           const Icon = TOOL_ICONS[tool.name] ?? (Code2 as IconComponent);

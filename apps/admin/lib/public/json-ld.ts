@@ -5,7 +5,6 @@ import { absoluteUrl, getSiteUrl } from "@/lib/public/site-url";
 import {
   USER_LIMIT_FREE,
   TEAM_PRICE_PER_DEV_USD,
-  TRIAL_DAYS,
 } from "@/lib/saas-billing/entitlements";
 
 function faqEntities(faqs: ContentFaq[]) {
@@ -72,7 +71,7 @@ export function buildHomeJsonLd() {
       operatingSystem: "Web, macOS, Linux",
       description: siteConfig.description,
       url: baseUrl,
-      license: "https://opensource.org/licenses/MIT",
+      license: `${siteConfig.githubUrl}/blob/main/LICENSE`,
       featureList: OBSERVABILITY_FEATURES.map((feature) => feature.title),
       offers: [
         {
@@ -80,14 +79,14 @@ export function buildHomeJsonLd() {
           name: "Community",
           price: "0",
           priceCurrency: "USD",
-          description: `Open source / free tier up to ${USER_LIMIT_FREE} users`,
+          description: `Self-hosted under Community License, up to ${USER_LIMIT_FREE} seats free`,
         },
         {
           "@type": "Offer",
-          name: "Team",
+          name: "Managed",
           price: String(TEAM_PRICE_PER_DEV_USD),
           priceCurrency: "USD",
-          description: `Per active developer / month after ${TRIAL_DAYS}-day trial`,
+          description: "Per active developer / month — we host and run it for you",
         },
       ],
       publisher: { "@id": `${baseUrl}/#organization` },

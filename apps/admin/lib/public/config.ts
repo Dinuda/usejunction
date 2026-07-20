@@ -1,7 +1,6 @@
 import {
   USER_LIMIT_FREE,
   TEAM_PRICE_PER_DEV_USD,
-  TRIAL_DAYS,
 } from "@/lib/saas-billing/entitlements";
 
 export const siteConfig = {
@@ -18,7 +17,7 @@ export const siteConfig = {
   docsUrl: "https://github.com/Dinuda/usejunction#readme",
   changelogUrl: "https://github.com/Dinuda/usejunction/releases",
   signupUrl: "/signup",
-  license: "MIT",
+  license: "UseJunction Community License",
   /** X/Twitter handle (with @). Override via NEXT_PUBLIC_TWITTER_HANDLE. */
   twitterHandle: process.env.NEXT_PUBLIC_TWITTER_HANDLE ?? "@usejunction",
 } as const;
@@ -147,61 +146,61 @@ export const PRICING_PLANS = [
   {
     id: "community",
     name: "Community",
-    description: "Self-hosted MIT or post-trial free tier",
-    price: "$0",
-    period: "per month",
+    description: "",
+    price: "Free",
+    period: `up to ${USER_LIMIT_FREE} seats`,
     cta: { label: "Get Started", href: siteConfig.signupUrl },
     featured: false,
     features: [
-      "Self-hosted MIT license",
-      `Up to ${USER_LIMIT_FREE} users`,
+      "Community License self-host",
+      `${USER_LIMIT_FREE} seats free`,
       "Usage & cost dashboard",
       "Tool & model visibility",
-      "Community support on GitHub",
+      "GitHub community support",
     ],
-    premiumFeatures: [],
+    premiumFeatures: [] as const,
   },
   {
     id: "team",
-    name: "Team",
-    description: "For growing teams that need full coverage",
+    name: "Managed",
+    description: "Hosted by us",
     price: `$${TEAM_PRICE_PER_DEV_USD}`,
     period: "per active developer / month",
-    cta: { label: "Start free trial", href: siteConfig.signupUrl },
+    cta: { label: "Get Started", href: siteConfig.signupUrl },
     featured: true,
     badge: "Popular",
     features: [
-      `${TRIAL_DAYS}-day free trial`,
-      "One connected device per user",
+      "Hosted control plane",
+      "Multiple devices per developer",
       "Per-developer cost attribution",
-      "Latency & error rate metrics",
+      "Latency & error metrics",
       "Personal key detection",
-      "Device configuration health",
+      "Reporting with guided insights",
     ],
     premiumFeatures: [
-      "Team API keys (roadmap)",
-      "Multi-team rollup (roadmap)",
-      "Policy controls (roadmap)",
+      "Advanced Signals & work sessions",
+      "Device health",
+      "Multi-team rollup",
     ],
   },
   {
     id: "enterprise",
     name: "Enterprise",
-    description: "For organizations that need full control",
+    description: "Full control",
     price: "Custom",
     period: "contact us",
-    cta: { label: "Contact Sales", href: `${siteConfig.githubUrl}/issues` },
+    cta: { label: "Talk to us", href: "/contact?intent=enterprise" },
     featured: false,
     features: [
-      "Everything in Team",
+      "Everything in Managed",
       "Dedicated onboarding",
       "Custom retention policies",
       "Deployment assistance",
-      "Priority support channel",
+      "Priority support",
     ],
     premiumFeatures: [
-      "SSO & SAML (roadmap)",
-      "Audit log export",
+      "SSO & SAML",
+      "Audit logs",
       "SLA guarantee",
     ],
   },
@@ -209,8 +208,8 @@ export const PRICING_PLANS = [
 
 export const TRUST_FEATURES = [
   {
-    title: "Open source under MIT",
-    description: "Audit the code, fork it, and run it on infrastructure you control. No black-box telemetry.",
+    title: "Open source under Community License",
+    description: "Audit the code and run it on infrastructure you control. No black-box telemetry.",
   },
   {
     title: "Your data stays local",
@@ -228,14 +227,6 @@ export const FOOTER_COLUMNS = {
     { label: "Pricing", href: "/#pricing" },
     { label: "Changelog", href: siteConfig.changelogUrl },
     { label: "Contact", href: "/contact" },
-  ],
-  learn: [
-    { label: "Guides", href: "/guides" },
-    { label: "Plan usage & waste", href: "/guides/see-plan-usage-and-waste" },
-    { label: "Team AI coding insights", href: "/guides/see-team-ai-coding-usage" },
-    { label: "Compare WakaTime", href: "/compare/wakatime" },
-    { label: "Blog", href: "/blog" },
-    { label: "Documentation", href: siteConfig.docsUrl },
   ],
   community: [
     { label: "GitHub", href: siteConfig.githubUrl },

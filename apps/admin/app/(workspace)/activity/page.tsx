@@ -199,7 +199,7 @@ async function DeveloperActivityView({
       <Panel as="section" className="mt-10">
         <SignalsSectionHeader
           title="Your Signals ledger."
-          description="App/domain flow metadata only. No prompts, screenshots, full URLs, or clipboard text. Latest sessions."
+          description="App and domain flow for latest sessions. No screenshots, full URLs, or clipboard text."
           bordered={false}
         />
         <DataTable
@@ -355,7 +355,7 @@ export default async function ActivityPage({
         title={isDeveloper ? "Your activity." : "Activity."}
         description={
           isDeveloper
-            ? `Personal request volume, device sync updates, and your Signals ledger for ${periodLabel}. Metadata only — prompts are never stored.`
+            ? `Personal request volume, device sync updates, and your Signals ledger for ${periodLabel}. Work detail can be turned off.`
             : `Device events and tool activity for ${periodLabel}. Journey insights live under Signals.`
         }
         actions={

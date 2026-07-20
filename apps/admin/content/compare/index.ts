@@ -19,7 +19,7 @@ export const compareWakatime: ContentPage = {
     { feature: "Plan / seat utilization", usejunction: "Yes — cycle views", other: "No" },
     { feature: "Cost & latency attribution", usejunction: "Yes", other: "No" },
     { feature: "Hours by project/language", usejunction: "No", other: "Yes" },
-    { feature: "Self-hosted open source", usejunction: "MIT self-host", other: "Primarily SaaS plugins" },
+    { feature: "Self-hosted open source", usejunction: "Community License self-host", other: "Primarily SaaS plugins" },
     { feature: "Prompt storage", usejunction: "Not by default", other: "N/A (not LLM telemetry)" },
   ],
   sections: [
@@ -83,7 +83,7 @@ export const compareHelicone: ContentPage = {
     {
       question: "Do I need a gateway to use UseJunction?",
       answer:
-        "No. Start with the local agent and metadata collection. Gateway-style control is optional roadmap after you have context.",
+        "No. Start with the local agent and usage signals. Gateway-style control is optional roadmap after you have context.",
     },
   ],
   relatedPaths: ["/compare/portkey", "/compare/langfuse", "/guides/see-team-ai-coding-usage"],
@@ -105,7 +105,7 @@ export const comparePortkey: ContentPage = {
   compareRows: [
     { feature: "Control vs visibility first", usejunction: "Visibility before control", other: "Gateway control plane" },
     { feature: "Coding-tool fleet", usejunction: "Native focus", other: "If traffic is gated" },
-    { feature: "Open-source self-host coding ops", usejunction: "MIT product focus", other: "Different product shape" },
+    { feature: "Open-source self-host coding ops", usejunction: "Community License product focus", other: "Different product shape" },
   ],
   sections: [
     {

@@ -218,7 +218,7 @@ export function OnboardingExperience() {
             }}
           />
           <p className="font-mono text-[0.65rem] text-muted-foreground">
-            Metadata only · expires in 15 minutes
+            Enrollment code · expires in 15 minutes
           </p>
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-1">
             {isFounder ? (

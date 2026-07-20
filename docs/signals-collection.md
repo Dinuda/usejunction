@@ -115,7 +115,8 @@ Signals is designed to be transparent:
 
 - the admin can see the collection policy
 - the employee can see the uploaded ledger
-- work allowlists clipped asks/summaries; classic journeys remain metadata-only
+- work allowlists clipped asks/summaries when work extraction is on; classic journeys stay at app/domain flow level
+- richer work detail is optional and can be turned off
 - the ingest layer rejects forbidden raw-content fields
 
 The intended privacy posture is:

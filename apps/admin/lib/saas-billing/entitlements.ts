@@ -5,7 +5,7 @@
 export type SaasPlan = "trial" | "community" | "team" | "enterprise";
 
 export const TRIAL_DAYS = 14;
-export const USER_LIMIT_FREE = 10;
+export const USER_LIMIT_FREE = 5;
 export const TEAM_PRICE_PER_DEV_USD = 8;
 
 export type OrgBillingFields = {

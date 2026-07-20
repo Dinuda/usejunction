@@ -67,7 +67,7 @@ export function AuthShell({
             <div className="mt-7 min-w-0 sm:mt-8">{children}</div>
           </div>
         </div>
-        <p className="font-mono text-[0.68rem] text-muted-foreground">Open source · self-hosted · MIT licensed</p>
+        <p className="font-mono text-[0.68rem] text-muted-foreground">Open source · self-hosted · Community License</p>
         {footer && <div className="mt-3 text-xs text-muted-foreground">{footer}</div>}
       </section>
       <aside
@@ -109,7 +109,7 @@ export function AuthFrame({
             <div className="mt-8">{children}</div>
           </div>
         </main>
-        <p className="font-mono text-[0.68rem] text-muted-foreground">Open source · self-hosted · MIT licensed</p>
+        <p className="font-mono text-[0.68rem] text-muted-foreground">Open source · self-hosted · Community License</p>
       </div>
     </div>
   );

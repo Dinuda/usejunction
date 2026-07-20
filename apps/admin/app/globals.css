@@ -6,6 +6,7 @@
 
 @theme inline {
   --font-sans: var(--font-dm-sans);
+  --font-display: var(--font-figtree);
   --font-mono: var(--font-jetbrains-mono);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -303,6 +304,33 @@ a {
 .public-btn-yellow:hover {
   background: var(--brand-yellow-hover);
   opacity: 1;
+}
+
+/* Unlayered so it wins over `a { color: inherit }` on inverted (teal) surfaces */
+.public-btn-on-teal {
+  background: #ffffff;
+  color: #08758a;
+  border-color: #ffffff;
+}
+
+.public-btn-on-teal:hover {
+  background: color-mix(in srgb, #ffffff 90%, #08758a 10%);
+  opacity: 1;
+}
+
+.pricing-card-managed {
+  border-color: #9fd4df;
+}
+
+@media (min-width: 1024px) {
+  /* Fixed heights so Community === Enterprise, Managed taller */
+  .pricing-card-side {
+    height: 36.5rem;
+  }
+
+  .pricing-card-managed {
+    height: 42.5rem;
+  }
 }
 
 .public-btn-teal {

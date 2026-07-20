@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { DM_Sans, JetBrains_Mono } from "next/font/google";
+import { DM_Sans, Figtree, JetBrains_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { siteConfig } from "@/lib/public/config";
 import { getSiteUrl } from "@/lib/public/site-url";
@@ -8,6 +8,11 @@ import "./globals.css";
 const dmSans = DM_Sans({
   subsets: ["latin"],
   variable: "--font-dm-sans",
+});
+
+const figtree = Figtree({
+  subsets: ["latin"],
+  variable: "--font-figtree",
 });
 
 const jetbrainsMono = JetBrains_Mono({
@@ -65,7 +70,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${dmSans.variable} ${jetbrainsMono.variable}`}>
+      <body className={`${dmSans.variable} ${figtree.variable} ${jetbrainsMono.variable}`}>
         <TooltipProvider>{children}</TooltipProvider>
       </body>
     </html>

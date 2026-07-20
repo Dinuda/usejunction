@@ -17,7 +17,7 @@ export const guideSeePlanUsage: ContentPage = {
   ],
   updatedAt: "2026-07-19",
   answer:
-    "UseJunction shows your team’s AI coding plan usage and seat waste by combining enrolled-device coverage with subscription cycle utilization. You compare purchased seats and quotas against verified usage so engineering and finance leads can see who is near limits, who is idle, and where spend is concentrated—without reading prompts.",
+    "UseJunction shows your team’s AI coding plan usage and seat waste by combining enrolled-device coverage with subscription cycle utilization. You compare purchased seats and quotas against verified usage so engineering and finance leads can see who is near limits, who is idle, and where spend is concentrated.",
   sections: [
     {
       heading: "Who this is for",
@@ -38,7 +38,7 @@ export const guideSeePlanUsage: ContentPage = {
     {
       heading: "How it works",
       body: [
-        "Developers enroll a lightweight local agent. UseJunction collects metadata (tool, model, tokens, latency, status)—prompts and responses are not stored by default.",
+        "Developers enroll a lightweight local agent. UseJunction reports usage signals (tool, model, tokens, latency, status). Richer work detail is optional and can be turned off.",
         "The dashboard rolls usage into subscription cycles so you can judge intentionality before renewal, not only from vendor admin consoles.",
       ],
     },
@@ -57,9 +57,9 @@ export const guideSeePlanUsage: ContentPage = {
         "Yes. With devices enrolled, UseJunction attributes Cursor-related usage and helps you compare seats and cycle utilization across the org—not only in Cursor’s own admin view.",
     },
     {
-      question: "Does this read my developers’ prompts?",
+      question: "Does this watch developers’ work?",
       answer:
-        "No. Metadata-only by default: tools, models, tokens, latency, cost estimates, and device health. Prompts and responses are not stored by default.",
+        "Privacy first, observability second. There is no keystroke surveillance, browser capture, or network interception. Work summaries and person-level detail can be turned off per person or team.",
     },
     {
       question: "How do I spot wasted seats?",
@@ -101,7 +101,7 @@ export const guideSeeTeamUsage: ContentPage = {
   ],
   updatedAt: "2026-07-19",
   answer:
-    "UseJunction is open-source observability for AI coding tools. Enroll devices and you get org-wide insights: which tools and models developers use, estimated cost and latency, configuration health, and optional Signals work sessions—metadata only, without reading prompts or keystroke surveillance.",
+    "UseJunction is open-source observability for AI coding tools. Enroll devices and you get org-wide insights: which tools and models developers use, estimated cost and latency, configuration health, and optional Signals work sessions—privacy first, with no keystroke surveillance.",
   sections: [
     {
       heading: "Team coding insights, for the AI era",
@@ -116,14 +116,14 @@ export const guideSeeTeamUsage: ContentPage = {
         "Adoption and coverage: active developers, last seen, enrollment gaps.",
         "Spend and performance: tokens, estimated cost, latency, and failures by person, tool, and model.",
         "Configuration health: personal vs company keys, local runtimes, and quota pressure.",
-        "Signals (when enabled): how AI sits in real work sessions without storing prompt content by default.",
+        "Signals (when enabled): how AI sits in real work sessions. Detail level is configurable and can be turned off.",
       ],
     },
     {
       heading: "Privacy posture",
       body: [
-        "No network interception, browser capture, or MDM enforcement. Observation via a local agent reporting metadata to your admin.",
-        "Self-host under MIT so data stays on infrastructure you control.",
+        "No network interception, browser capture, or MDM enforcement. Observation via a local agent reporting to your admin.",
+        "Self-host under the UseJunction Community License so data stays on infrastructure you control. Privacy first; richer work detail stays optional.",
       ],
     },
   ],
@@ -162,7 +162,7 @@ export const guideWakatimeAdjacent: ContentPage = {
   ],
   updatedAt: "2026-07-19",
   answer:
-    "If you searched for an open-source WakaTime alternative because you need team coding insights in the AI era, UseJunction is the better fit for AI tool observability—not a drop-in time tracker. It shows which AI coding tools your team uses, plan and seat utilization, cost and latency, and device health, self-hosted under MIT, without storing prompts by default.",
+    "If you searched for an open-source WakaTime alternative because you need team coding insights in the AI era, UseJunction is the better fit for AI tool observability—not a drop-in time tracker. It shows which AI coding tools your team uses, plan and seat utilization, cost and latency, and device health, self-hosted under the UseJunction Community License, with privacy-first controls over work detail.",
   sections: [
     {
       heading: "Honest positioning",
@@ -176,7 +176,7 @@ export const guideWakatimeAdjacent: ContentPage = {
       body: [
         "You want open-source, self-hosted observability for AI coding tools.",
         "You need plan usage, seat intentionality, and personal-key detection.",
-        "You want metadata-only insights and Signals-style work context without reading content.",
+        "You want privacy-first Signals-style work context with controls over how much detail is visible.",
       ],
     },
     {
@@ -195,7 +195,7 @@ export const guideWakatimeAdjacent: ContentPage = {
     {
       question: "Can I self-host it?",
       answer:
-        "Yes. UseJunction is MIT-licensed and designed to run on your infrastructure.",
+        "Yes. UseJunction is available under the UseJunction Community License and designed to run on your infrastructure.",
     },
   ],
   relatedPaths: ["/compare/wakatime", "/guides/see-team-ai-coding-usage", "/guides/see-plan-usage-and-waste"],
@@ -233,7 +233,7 @@ export const guidePersonalKeys: ContentPage = {
     {
       question: "Does detection require a proxy?",
       answer:
-        "UseJunction observes via a local agent and metadata—not by intercepting all network traffic like a mandatory corporate proxy.",
+        "UseJunction observes via a local agent—not by intercepting all network traffic like a mandatory corporate proxy.",
     },
   ],
   relatedPaths: ["/guides/see-team-ai-coding-usage", "/for/cursor", "/compare/helicone"],

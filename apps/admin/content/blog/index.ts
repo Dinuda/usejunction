@@ -26,7 +26,7 @@ export const blogVisibilityBeforeControl: ContentPage = {
         "Org-wide adoption and coverage.",
         "Spend and performance by person, tool, and model.",
         "Configuration health and plan cycle utilization.",
-        "Metadata-only defaults so privacy-conscious teams can adopt.",
+        "Privacy-first defaults so teams can adopt without keystroke or browser surveillance.",
       ],
     },
   ],
