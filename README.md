@@ -6,7 +6,7 @@ Open-source observability for AI coding tools. Track usage, cost, latency, plan/
 
 ## Quick start
 
-### Full Docker (recommended)
+### Full Docker
 
 Run the entire stack in Docker — admin on **:3001** (host; configurable via `ADMIN_HOST_PORT`), Langfuse on **:3000**, LiteLLM on **:4000**.
 
