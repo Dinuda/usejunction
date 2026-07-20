@@ -136,7 +136,6 @@ export default async function TeamPage({
 
       <DeveloperToolInventory
         showSummary={false}
-        currentUserId={userId}
         initialDevelopers={initial.developers}
         initialSubscriptions={initial.subscriptions}
         initialPlanUsage={initial.planUsage}

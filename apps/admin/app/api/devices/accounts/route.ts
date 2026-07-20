@@ -7,6 +7,7 @@ import {
 import { findDeviceByBearerToken } from "@/lib/auth";
 import { limitedJson } from "@/lib/security/http";
 import { syncDetectedPlansForDevice } from "@/lib/tools/sync-detected";
+import { logServerError } from "@/lib/errors/public";
 
 export async function POST(req: NextRequest) {
   const started = Date.now();
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
           accounts: reported,
         });
       } catch (syncError) {
-        console.error("[devices/accounts] plan sync failed", syncError);
+        logServerError("devices/accounts", syncError, { phase: "plan sync" });
       }
     }
 
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ upserted });
   } catch (e) {
-    console.error("[devices/accounts]", e);
+    logServerError("devices/accounts", e);
     return NextResponse.json({ error: "accounts upsert failed" }, { status: 500 });
   }
 }

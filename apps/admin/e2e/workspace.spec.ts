@@ -220,7 +220,7 @@ test("team roster lists seeded members and opens invite dialog", async ({ page }
   await page.goto("/team");
   await expect(page.getByRole("heading", { name: "Team", exact: true, level: 1 })).toBeVisible();
   await expect(page.getByText("E2E Developer").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Remove E2E Developer from team" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Edit E2E Developer" })).toBeVisible();
   await expect(page.getByText("Off", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "Invite teammates" }).click();
   await expect(page.getByRole("heading", { name: "Invite teammates." })).toBeVisible();

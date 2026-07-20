@@ -3,6 +3,7 @@ import { getSubscription, updateSubscriptionItem } from "@lemonsqueezy/lemonsque
 import { ensureLemonSqueezyConfigured } from "@/lib/saas-billing/lemonsqueezy-setup";
 import { activeSeatQuantity } from "@/lib/saas-billing/seats";
 import { audit } from "@/lib/rbac";
+import { logServerError } from "@/lib/errors/public";
 
 const SYNCABLE_TEAM_STATUSES = new Set(["active", "on_trial"]);
 const MAX_CONVERGENCE_ATTEMPTS = 3;
@@ -101,7 +102,7 @@ export async function syncTeamSeatQuantityBestEffort(orgId: string, source: stri
   try {
     return await syncTeamSeatQuantity(orgId);
   } catch (error) {
-    console.error(`[billing/seat-sync] ${source}`, orgId, error);
+    logServerError("billing/seat-sync", error, { source, orgId });
     try {
       await audit({
         orgId,
@@ -115,7 +116,7 @@ export async function syncTeamSeatQuantityBestEffort(orgId: string, source: stri
         },
       });
     } catch (auditError) {
-      console.error("[billing/seat-sync] failure audit failed", orgId, auditError);
+      logServerError("billing/seat-sync", auditError, { phase: "failure audit", orgId });
     }
     return null;
   }

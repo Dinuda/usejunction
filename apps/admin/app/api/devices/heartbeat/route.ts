@@ -8,6 +8,7 @@ import { updateDirectiveForHeartbeat } from "@/lib/agent-updates";
 import { revokeDeviceAuth } from "@/lib/devices/decommission";
 import { encryptSecret, hashOpaqueToken } from "@/lib/security";
 import { limitedJson } from "@/lib/security/http";
+import { logServerError } from "@/lib/errors/public";
 
 export async function POST(req: NextRequest) {
   const started = Date.now();
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
         agentVersion: typeof body.agentVersion === "string" ? body.agentVersion : device.agentVersion,
       });
     } catch (error) {
-      console.error("[devices/heartbeat-update]", error);
+      logServerError("devices/heartbeat-update", error);
     }
 
     const hostname =
@@ -156,7 +157,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, deviceId: device.id, update });
   } catch (e) {
-    console.error("[devices/heartbeat]", e);
+    logServerError("devices/heartbeat", e);
     return NextResponse.json({ error: "heartbeat failed" }, { status: 500 });
   }
 }

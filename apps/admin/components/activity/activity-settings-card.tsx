@@ -20,7 +20,7 @@ type ToggleRowProps = {
 
 function ToggleRow({ title, description, enabled, pending, onToggle }: ToggleRowProps) {
   return (
-    <div className="flex flex-col gap-4 border-b border-border/70 py-6 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0 space-y-2">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-base font-semibold tracking-tight">{title}</h2>
@@ -95,20 +95,22 @@ export function ActivitySettingsCard({ initialSettings }: { initialSettings: Org
         </Alert>
       ) : null}
 
-      <ToggleRow
-        title="Period and cycle filters"
-        description="Lets teammates switch current/previous billing cycles and rolling ranges on My activity."
-        enabled={settings.teamPeriodControlsEnabled}
-        pending={pending}
-        onToggle={(teamPeriodControlsEnabled) => save({ teamPeriodControlsEnabled })}
-      />
-      <ToggleRow
-        title="Device activity feed"
-        description="Lets teammates see machine exchanges, returned data, and observed activity for their device."
-        enabled={settings.teamDeviceActivityEnabled}
-        pending={pending}
-        onToggle={(teamDeviceActivityEnabled) => save({ teamDeviceActivityEnabled })}
-      />
+      <div className="mt-6 space-y-8">
+        <ToggleRow
+          title="Period and cycle filters"
+          description="Lets teammates switch current/previous billing cycles and rolling ranges on My activity."
+          enabled={settings.teamPeriodControlsEnabled}
+          pending={pending}
+          onToggle={(teamPeriodControlsEnabled) => save({ teamPeriodControlsEnabled })}
+        />
+        <ToggleRow
+          title="Device activity feed"
+          description="Lets teammates see machine exchanges, returned data, and observed activity for their device."
+          enabled={settings.teamDeviceActivityEnabled}
+          pending={pending}
+          onToggle={(teamDeviceActivityEnabled) => save({ teamDeviceActivityEnabled })}
+        />
+      </div>
     </Panel>
   );
 }

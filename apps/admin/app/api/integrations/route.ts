@@ -5,6 +5,7 @@ import { getAdapter, supportedIntegrations } from "@/lib/integrations/adapters";
 import type { IntegrationConfig } from "@/lib/integrations/types";
 import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { credentialFingerprint, encryptSecret } from "@/lib/security";
+import { logServerError } from "@/lib/errors/public";
 
 const methods = ["oauth", "admin_api_key", "service_account", "otel", "gateway", "invoice_import", "admin_confirmed", "device_observed"] as const;
 const observedProducts: Record<string, string> = { cursor: "teams", openai: "api_platform", anthropic: "api_platform" };
@@ -55,13 +56,13 @@ export async function POST(req: NextRequest) {
     try {
       adapter = getAdapter(provider, product);
     } catch (error) {
-      console.error("[integrations] unsupported adapter", error);
+      logServerError("integrations", error, { phase: "unsupported adapter" });
       return NextResponse.json({ error: "unsupported integration" }, { status: 422 });
     }
     try {
       validation = await adapter.validate({ credential: credential!, config: { ...config, product } as IntegrationConfig, initialSync: true, now: new Date() });
     } catch (error) {
-      console.error("[integrations] credential validation failed", error);
+      logServerError("integrations", error, { phase: "credential validation" });
       return NextResponse.json({ error: "provider credential validation failed" }, { status: 422 });
     }
   }

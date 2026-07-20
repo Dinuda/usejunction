@@ -3,6 +3,7 @@ import { findDeviceByBearerToken } from "@/lib/auth";
 import { isAgentCompatibleForWorkExtraction } from "@/lib/agent-updates/contracts";
 import { deviceWorkExtractionStartedAt } from "@/lib/signals/collection-window";
 import { getEffectiveSignalsPolicy } from "@/lib/signals/service";
+import { logServerError } from "@/lib/errors/public";
 
 export async function GET(req: NextRequest) {
   try {
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (e) {
-    console.error("[devices/signals-policy]", e);
+    logServerError("devices/signals-policy", e);
     return NextResponse.json({ error: "signals policy failed" }, { status: 500 });
   }
 }

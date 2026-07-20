@@ -5,6 +5,7 @@ import { appUrl, sendAuthEmail } from "@/lib/auth-actions";
 import { normalizeEmail } from "@/lib/developer-identity";
 import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
+import { logServerError } from "@/lib/errors/public";
 
 const schema = z.object({
   email: z.string().email().optional(),
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
       await sendAuthEmail({ to: email, subject: "Join your UseJunction workspace", url });
     } catch (cause) {
       status = "email_failed";
-      console.error("[organizations/invites] email failed", cause);
+      logServerError("organizations/invites", cause);
       error = "Unable to send invitation email";
     }
     await audit({ orgId: auth.orgId, actorType: "user", actorId: auth.userId, action: "invite.created", targetType: "invite", targetId: invite.id, metadata: { email, role: invite.role, status } });

@@ -3,6 +3,7 @@ import { prisma } from "@usejunction/db";
 import { audit, requireOrgRole } from "@/lib/rbac";
 import { serializeBigInts } from "@/lib/billing/validation";
 import { deriveSubscription, listSubscriptions, subscriptionInputSchema } from "@/lib/tools/subscriptions";
+import { logServerError } from "@/lib/errors/public";
 
 function inputError(error: unknown) {
   const message = error instanceof Error ? error.message : "INVALID_SUBSCRIPTION";
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
   try {
     return NextResponse.json(serializeBigInts({ subscriptions: await listSubscriptions(auth.orgId) }));
   } catch (error) {
-    console.error("GET /api/tools/subscriptions", error);
+    logServerError("tools/subscriptions", error);
     return NextResponse.json({ error: "could not load subscriptions" }, { status: 500 });
   }
 }

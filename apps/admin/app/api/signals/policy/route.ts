@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
-import { accelerateOrgAgentRollout, getWorkExtractionReadiness } from "@/lib/agent-updates";
+import { accelerateOrgAgentRollout } from "@/lib/agent-updates";
 import { audit, requireOrgRole, rolesFor } from "@/lib/rbac";
 import {
   SIGNALS_COLLECTION_MODE,
@@ -64,9 +64,6 @@ export async function PATCH(req: NextRequest) {
   const agentRollout = turningWorkExtractionOn
     ? await accelerateOrgAgentRollout(auth.orgId)
     : null;
-  const readiness = policy.workExtractionEnabled
-    ? await getWorkExtractionReadiness(auth.orgId)
-    : null;
 
   await audit({
     orgId: auth.orgId,
@@ -89,6 +86,5 @@ export async function PATCH(req: NextRequest) {
   return NextResponse.json({
     policy: await getOrgSignalsPolicy(auth.orgId),
     agentRollout,
-    readiness,
   });
 }

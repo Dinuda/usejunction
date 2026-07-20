@@ -74,36 +74,28 @@ export function SignalsKpi({
   compactMobile?: boolean;
   className?: string;
 }) {
-  return (
-    <div
-      className={cn(
-        "relative flex h-full flex-col justify-start",
-        compactMobile ? "min-h-24 py-3 sm:min-h-32 sm:py-5" : "min-h-32 py-5",
-        accent
-          ? cn(
-              "w-full border-l-2 border-brand-yellow-dark bg-brand-yellow-pale",
-              compactMobile ? "px-3 sm:px-5" : "px-5",
-            )
-          : null,
-        className,
-      )}
-    >
+  const content = (
+    <>
       <div
         className={cn(
-          "flex items-center justify-between gap-2",
-          // Keep label-row height stable whether or not an action is present.
-          compactMobile ? "min-h-6 sm:min-h-8" : "min-h-8",
+          "relative flex items-center",
+          compactMobile ? "h-6 sm:h-8" : "h-8",
         )}
       >
         <p
           className={cn(
             "min-w-0 font-medium uppercase tracking-[0.08em] text-muted-foreground",
             compactMobile ? "text-[0.65rem] leading-3 sm:text-xs sm:leading-4" : "text-xs leading-4",
+            action ? "pr-10" : null,
           )}
         >
           {label}
         </p>
-        {action ? <div className="shrink-0">{action}</div> : null}
+        {action ? (
+          <div className="absolute inset-y-0 right-2 flex items-center justify-center">
+            {action}
+          </div>
+        ) : null}
       </div>
       <div
         className={cn(
@@ -132,6 +124,31 @@ export function SignalsKpi({
         </div>
       ) : null}
       {footer ? <div className="mt-2">{footer}</div> : null}
+    </>
+  );
+
+  return (
+    <div
+      className={cn(
+        "relative flex h-full flex-col justify-start",
+        compactMobile ? "min-h-24 py-3 sm:min-h-32 sm:py-5" : "min-h-32 py-5",
+        !accent && className,
+      )}
+    >
+      {accent ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 border-l-2 border-brand-yellow-dark bg-brand-yellow-pale"
+        />
+      ) : null}
+      <div
+        className={cn(
+          "relative flex h-full flex-col justify-start",
+          accent && cn(compactMobile ? "px-3 sm:px-5" : "px-5", className),
+        )}
+      >
+        {content}
+      </div>
     </div>
   );
 }

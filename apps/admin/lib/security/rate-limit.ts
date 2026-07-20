@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { clientIp } from "./http";
+import { logServerError } from "@/lib/errors/public";
 
 type RateLimitOptions = {
   key: string;
@@ -29,7 +30,7 @@ export async function enforceRateLimit(req: Request, options: RateLimitOptions):
     }
     return true;
   } catch (error) {
-    console.error("[rate-limit]", error);
+    logServerError("rate-limit", error);
     return true;
   }
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
-import { agentReleaseManifestSchema, isAgentCompatibleForWorkExtraction, summarizeWorkExtractionReadiness, WORK_EXTRACTION_MIN_AGENT_VERSION } from "../lib/agent-updates/contracts";
+import { agentReleaseManifestSchema, isAgentCompatibleForWorkExtraction, WORK_EXTRACTION_MIN_AGENT_VERSION } from "../lib/agent-updates/contracts";
 import { requireAgentReleaseOps } from "../lib/agent-updates/ops-auth";
 import {
   artifactKey,
@@ -10,24 +10,12 @@ import {
   rolloutEligibility,
 } from "../lib/agent-updates/service";
 
-test("work extraction readiness summarizes compatible vs outdated devices", () => {
-  const readiness = summarizeWorkExtractionReadiness(
-    [
-      { agentVersion: "0.3.1" },
-      { agentVersion: "0.1.0", updating: true },
-      { agentVersion: "0.2.0" },
-    ],
-    { activeReleaseVersion: "0.3.1" },
-  );
-  assert.equal(readiness.minAgentVersion, WORK_EXTRACTION_MIN_AGENT_VERSION);
-  assert.equal(readiness.total, 3);
-  assert.equal(readiness.compatible, 1);
-  assert.equal(readiness.needsUpdate, 2);
-  assert.equal(readiness.updating, 1);
-  assert.equal(readiness.activeReleaseVersion, "0.3.1");
+test("work extraction compatibility gates on minimum agent version", () => {
+  assert.equal(WORK_EXTRACTION_MIN_AGENT_VERSION, "0.3.1");
   assert.equal(isAgentCompatibleForWorkExtraction("0.3.1"), true);
   assert.equal(isAgentCompatibleForWorkExtraction("0.3.0"), false);
   assert.equal(isAgentCompatibleForWorkExtraction("0.2.0"), false);
+  assert.equal(isAgentCompatibleForWorkExtraction("0.4.0"), true);
 });
 
 test("release manifests reject malformed versions, checksums, and oversized artifacts", () => {

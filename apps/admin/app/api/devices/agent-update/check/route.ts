@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateDirectiveForDevice } from "@/lib/agent-updates";
 import { findDeviceByBearerToken } from "@/lib/auth";
+import { logServerError } from "@/lib/errors/public";
 
 export async function POST(req: NextRequest) {
   const device = await findDeviceByBearerToken(req, {
@@ -11,7 +12,7 @@ export async function POST(req: NextRequest) {
     const update = await updateDirectiveForDevice(device, { bypassEligibility: true });
     return NextResponse.json({ ok: true, update });
   } catch (error) {
-    console.error("[devices/agent-update/check]", error);
+    logServerError("devices/agent-update/check", error);
     return NextResponse.json({ error: "update check failed" }, { status: 500 });
   }
 }

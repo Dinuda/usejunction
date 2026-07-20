@@ -8,6 +8,7 @@ import {
 } from "./detected-cycle";
 import { canonicalToolKey, findCatalogPlan, findCatalogTool } from "./catalog";
 import { deriveSubscription } from "./subscriptions";
+import { logServerError } from "@/lib/errors/public";
 
 const DEFAULT_PLAN_KEYS: Record<string, string> = {
   "chatgpt-codex": "free",
@@ -451,7 +452,7 @@ export async function syncDetectedPlansForDevice(input: {
       });
       assigned += 1;
     } catch (error) {
-      console.error("[sync-detected]", toolKey, error);
+      logServerError("sync-detected", error, { toolKey });
     }
   }
 
@@ -583,7 +584,7 @@ export async function repairDetectedPlanCycles(orgId?: string) {
       });
       updated += 1;
     } catch (error) {
-      console.error("[repair-detected-cycles]", template.toolKey, error);
+      logServerError("repair-detected-cycles", error, { toolKey: template.toolKey });
     }
   }
   return { scanned: templates.length, updated };

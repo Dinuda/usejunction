@@ -6,6 +6,7 @@ import {
 } from "@/lib/activity/record-device-activity-event";
 import { findDeviceByBearerToken } from "@/lib/auth";
 import { limitedJson } from "@/lib/security/http";
+import { logServerError } from "@/lib/errors/public";
 
 export async function POST(req: NextRequest) {
   const started = Date.now();
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ upserted });
   } catch (e) {
-    console.error("[devices/local-models]", e);
+    logServerError("devices/local-models", e);
     return NextResponse.json({ error: "local-models upsert failed" }, { status: 500 });
   }
 }

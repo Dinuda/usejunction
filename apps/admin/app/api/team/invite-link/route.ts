@@ -4,8 +4,10 @@ import { prisma } from "@usejunction/db";
 import { sendTeamInviteEmail } from "@/lib/auth-actions";
 import { buildTeamInviteLinkUrl, getPublicAppUrl } from "@/lib/connect-command";
 import { normalizeEmail } from "@/lib/developer-identity";
+import { notifyTeamSeatsAdded } from "@/lib/notifications/slack";
 import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
+import { logServerError } from "@/lib/errors/public";
 
 const TEAM_INVITE_TTL_DAYS = 7;
 
@@ -123,6 +125,7 @@ export async function PUT(req: NextRequest) {
 
   const { link } = await ensureLink(auth.orgId, auth.userId, false);
   const emails = [...new Set(parsed.data.emails.map(normalizeEmail))];
+  const existingEmails = new Set(link.allowlist.map((row) => row.email));
   const inviteUrl = serializeLink({ ...link, allowlist: link.allowlist }).url;
   const organizationName = await orgName(auth.orgId);
   const added = [];
@@ -169,7 +172,7 @@ export async function PUT(req: NextRequest) {
       await sendTeamInviteEmail({ to: email, organizationName, inviteUrl });
       emailResults.push({ email, status: "sent" });
     } catch (cause) {
-      console.error("[team/invite-link] email failed", cause);
+      logServerError("team/invite-link", cause);
       emailResults.push({
         email,
         status: "email_failed",
@@ -183,6 +186,16 @@ export async function PUT(req: NextRequest) {
     select: { email: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });
+
+  const newlyAddedEmails = emails.filter((email) => !existingEmails.has(email));
+  if (newlyAddedEmails.length > 0) {
+    notifyTeamSeatsAdded({
+      organizationName,
+      orgId: auth.orgId,
+      actorEmail: auth.email,
+      emails: newlyAddedEmails,
+    });
+  }
 
   return NextResponse.json({
     added,
@@ -235,7 +248,7 @@ export async function PATCH(req: NextRequest) {
       await sendTeamInviteEmail({ to: email, organizationName, inviteUrl });
       emailResults.push({ email, status: "sent" });
     } catch (cause) {
-      console.error("[team/invite-link] email failed", cause);
+      logServerError("team/invite-link", cause);
       emailResults.push({
         email,
         status: "email_failed",

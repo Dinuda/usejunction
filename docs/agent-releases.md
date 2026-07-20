@@ -393,7 +393,7 @@ Some user-facing features require a minimum agent version. Work extraction is th
 
 Ops still must promote the forward-only work extraction release (`agent-v0.3.1` or later) before devices can download a compatible binary. Enabling the setting cannot invent artifacts.
 
-Settings shows a readiness strip (compatible vs needs update) and links to Team → Agent update coverage.
+Release progress is measured only via Team → Agent update coverage (fixed cohort metrics), not a separate Settings readiness strip.
 
 ## Phase 2 reserve: classic Signals + browser extension
 
@@ -401,7 +401,7 @@ Classic app/domain journeys and browser-extension domain enrichment are reserved
 
 - Placeholder min version: `0.4.0` (`CLASSIC_SIGNALS_MIN_AGENT_VERSION` on the control plane)
 - Policy flag remains `SignalsPolicy.enabled` (independent of work extraction)
-- When that release ships: gate effective classic collection on `enabled && agentVersion >= min`, call `accelerateOrgAgentRollout` on enable, and show a readiness strip mirroring work extraction
+- When that release ships: gate effective classic collection on `enabled && agentVersion >= min`, call `accelerateOrgAgentRollout` on enable, and surface rollout progress via Team → Agent update coverage
 - Browser extension: keep the session model stable; implement `BrowserContextProvider` via native messaging (today: `NoopBrowserContextProvider`). Extension install is separate from agent OTA; if a native-messaging host must live in the agent, ship it as a normal agent release (same promote/heartbeat updater)
 - Product UI until then: Overview / Journeys / Tools are demoted or marked “later update” when classic is off
 

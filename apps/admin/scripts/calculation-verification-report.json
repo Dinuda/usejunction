@@ -1,0 +1,3075 @@
+{
+  "generatedAt": "2026-07-20T15:54:03.124Z",
+  "asOf": "2026-07-16T12:00:00.000Z",
+  "fixture": {
+    "asOf": "2026-07-16T12:00:00.000Z",
+    "orgSlug": "e2e-calculation-fixture",
+    "orgId": "cmrtejoqz00009k9smirlykj3",
+    "developers": 2,
+    "devices": 1,
+    "usageRows": [
+      {
+        "date": "2026-07-13",
+        "developerId": null,
+        "tool": "anthropic-api",
+        "provider": "anthropic",
+        "source": "vendor_verified",
+        "requests": 0,
+        "tokens": 0,
+        "cost": 8,
+        "costKind": "verified_usage"
+      },
+      {
+        "date": "2026-07-13",
+        "developerId": null,
+        "tool": "anthropic-api",
+        "provider": "anthropic",
+        "source": "vendor_verified",
+        "requests": 12,
+        "tokens": 1200000,
+        "cost": 0,
+        "costKind": null
+      },
+      {
+        "date": "2026-07-10",
+        "developerId": "e2e-developer",
+        "tool": "cursor",
+        "provider": "cursor",
+        "source": "vendor_verified",
+        "requests": 10,
+        "tokens": 1500000,
+        "cost": 5,
+        "costKind": "verified_usage"
+      },
+      {
+        "date": "2026-07-11",
+        "developerId": "e2e-developer",
+        "tool": "cursor",
+        "provider": "cursor",
+        "source": "estimated",
+        "requests": 5,
+        "tokens": 150,
+        "cost": 1,
+        "costKind": "estimated_api"
+      },
+      {
+        "date": "2026-07-12",
+        "developerId": null,
+        "tool": "openai-api",
+        "provider": "openai",
+        "source": "vendor_verified",
+        "requests": 0,
+        "tokens": 0,
+        "cost": 12,
+        "costKind": "verified_usage"
+      },
+      {
+        "date": "2026-07-16",
+        "developerId": "e2e-developer",
+        "tool": "junction-gateway",
+        "provider": "openai",
+        "source": "gateway_observed",
+        "requests": 3,
+        "tokens": 250000,
+        "cost": 1,
+        "costKind": "estimated_api"
+      },
+      {
+        "date": "2026-07-12",
+        "developerId": "e2e-developer",
+        "tool": "openai-api",
+        "provider": "openai",
+        "source": "vendor_verified",
+        "requests": 25,
+        "tokens": 2500000,
+        "cost": 0,
+        "costKind": null
+      }
+    ],
+    "subscriptions": [
+      {
+        "name": "Cursor Pro",
+        "toolKey": "cursor",
+        "seatCapacity": 2,
+        "assignedSeats": 1,
+        "availableSeats": 1,
+        "cycleSeatDollars": 20,
+        "estimatedCycleDollars": 40,
+        "cycleStart": "2026-07-01",
+        "cycleEnd": "2026-07-31"
+      }
+    ]
+  },
+  "summary": {
+    "totalChecks": 211,
+    "passed": 211,
+    "failed": 0,
+    "skippedNull": 0,
+    "views": [
+      "current_cycles",
+      "previous_cycles",
+      "last_30_days",
+      "last_14_days",
+      "last_7_days",
+      "custom_2026-07-01_2026-07-16"
+    ],
+    "surfaces": [
+      "/tools subscriptions",
+      "/dashboard",
+      "/activity",
+      "/tools activity",
+      "/tools/cursor",
+      "/team",
+      "/team/e2e-developer",
+      "/team plan-usage",
+      "/signals",
+      "/signals/activity",
+      "/dashboard (developer)",
+      "/activity (developer)"
+    ]
+  },
+  "failures": [],
+  "checks": [
+    {
+      "surface": "/tools subscriptions",
+      "view": "all",
+      "metric": "cycleCommitment$",
+      "expected": 40,
+      "actual": 40,
+      "ok": true
+    },
+    {
+      "surface": "/tools subscriptions",
+      "view": "all",
+      "metric": "purchasedSeats",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/tools subscriptions",
+      "view": "all",
+      "metric": "assignedSeats",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/tools subscriptions",
+      "view": "all",
+      "metric": "availableSeats",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "current_cycles",
+      "metric": "period.from",
+      "expected": "2026-07-01",
+      "actual": "2026-07-01",
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "current_cycles",
+      "metric": "period.to",
+      "expected": "2026-07-31",
+      "actual": "2026-07-31",
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "current_cycles",
+      "metric": "kpis.verifiedUsageCost",
+      "expected": 25,
+      "actual": 25,
+      "ok": true,
+      "note": "org-wide"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "current_cycles",
+      "metric": "kpis.estimatedApiCost",
+      "expected": 2,
+      "actual": 2,
+      "ok": true,
+      "note": "org-wide"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "current_cycles",
+      "metric": "kpis.tokens",
+      "expected": 5450000,
+      "actual": 5450000,
+      "ok": true,
+      "note": "org-wide input+output"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "current_cycles",
+      "metric": "kpis.actualSpend$",
+      "expected": 40,
+      "actual": 40,
+      "ok": true,
+      "note": "full cycle seatCapacity×price"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "current_cycles",
+      "metric": "cursor.cycleSpend$",
+      "expected": 40,
+      "actual": 40,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "current_cycles",
+      "metric": "cursor.verified$",
+      "expected": 5,
+      "actual": 5,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "current_cycles",
+      "metric": "cursor.estimated$",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "current_cycles",
+      "metric": "cursor.modelCalls",
+      "expected": 10,
+      "actual": 10,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "current_cycles",
+      "metric": "modelCalls",
+      "expected": 50,
+      "actual": 50,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "current_cycles",
+      "metric": "verifiedUsageCost",
+      "expected": 25,
+      "actual": 25,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "current_cycles",
+      "metric": "estimatedApiCost",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "current_cycles",
+      "metric": "tokens",
+      "expected": 5450000,
+      "actual": 5450000,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "current_cycles",
+      "metric": "cursor.requests",
+      "expected": 10,
+      "actual": 10,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "current_cycles",
+      "metric": "cursor.cost$",
+      "expected": 6,
+      "actual": 6,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "current_cycles",
+      "metric": "cursor.tokens",
+      "expected": 1500000,
+      "actual": 1500000,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "current_cycles",
+      "metric": "usageCost$",
+      "expected": 6,
+      "actual": 6,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "current_cycles",
+      "metric": "requests",
+      "expected": 10,
+      "actual": 10,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "current_cycles",
+      "metric": "tokens",
+      "expected": 1500000,
+      "actual": 1500000,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "current_cycles",
+      "metric": "seatsPurchased",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "current_cycles",
+      "metric": "seatsAssigned",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "current_cycles",
+      "metric": "devices",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/team",
+      "view": "current_cycles",
+      "metric": "memberCount",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/team",
+      "view": "current_cycles",
+      "metric": "e2e-developer.requests",
+      "expected": 38,
+      "actual": 38,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "current_cycles",
+      "metric": "verified$",
+      "expected": 5,
+      "actual": 5,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "current_cycles",
+      "metric": "estimated$",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "current_cycles",
+      "metric": "requests",
+      "expected": 38,
+      "actual": 38,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "current_cycles",
+      "metric": "tokens",
+      "expected": 4250000,
+      "actual": 4250000,
+      "ok": true
+    },
+    {
+      "surface": "/team plan-usage",
+      "view": "current_cycles",
+      "metric": "subscriptionCount",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/team plan-usage",
+      "view": "current_cycles",
+      "metric": "developersWithAssignments",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/signals",
+      "view": "current_cycles",
+      "metric": "enabled",
+      "expected": false,
+      "actual": false,
+      "ok": true
+    },
+    {
+      "surface": "/signals/activity",
+      "view": "current_cycles",
+      "metric": "enabled",
+      "expected": false,
+      "actual": false,
+      "ok": true
+    },
+    {
+      "surface": "/signals",
+      "view": "current_cycles",
+      "metric": "sessions",
+      "expected": 0,
+      "actual": 0,
+      "ok": true,
+      "note": "work extraction off"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "previous_cycles",
+      "metric": "period.from",
+      "expected": "2026-06-01",
+      "actual": "2026-06-01",
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "previous_cycles",
+      "metric": "period.to",
+      "expected": "2026-06-30",
+      "actual": "2026-06-30",
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "previous_cycles",
+      "metric": "kpis.verifiedUsageCost",
+      "expected": 0,
+      "actual": 0,
+      "ok": true,
+      "note": "org-wide"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "previous_cycles",
+      "metric": "kpis.estimatedApiCost",
+      "expected": 0,
+      "actual": 0,
+      "ok": true,
+      "note": "org-wide"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "previous_cycles",
+      "metric": "kpis.tokens",
+      "expected": 0,
+      "actual": 0,
+      "ok": true,
+      "note": "org-wide input+output"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "previous_cycles",
+      "metric": "kpis.actualSpend$",
+      "expected": 40,
+      "actual": 40,
+      "ok": true,
+      "note": "full cycle seatCapacity×price"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "previous_cycles",
+      "metric": "cursor.cycleSpend$",
+      "expected": 40,
+      "actual": 40,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "previous_cycles",
+      "metric": "cursor.verified$",
+      "expected": 0,
+      "actual": 0,
+      "ok": true,
+      "note": "no June usage in seed"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "previous_cycles",
+      "metric": "cursor.modelCalls",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "previous_cycles",
+      "metric": "modelCalls",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "previous_cycles",
+      "metric": "verifiedUsageCost",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "previous_cycles",
+      "metric": "estimatedApiCost",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "previous_cycles",
+      "metric": "tokens",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "previous_cycles",
+      "metric": "cursor.requests",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "previous_cycles",
+      "metric": "cursor.cost$",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "previous_cycles",
+      "metric": "cursor.tokens",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "previous_cycles",
+      "metric": "usageCost$",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "previous_cycles",
+      "metric": "requests",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "previous_cycles",
+      "metric": "tokens",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "previous_cycles",
+      "metric": "seatsPurchased",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "previous_cycles",
+      "metric": "seatsAssigned",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "previous_cycles",
+      "metric": "devices",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/team",
+      "view": "previous_cycles",
+      "metric": "memberCount",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/team",
+      "view": "previous_cycles",
+      "metric": "e2e-developer.requests",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "previous_cycles",
+      "metric": "verified$",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "previous_cycles",
+      "metric": "estimated$",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "previous_cycles",
+      "metric": "requests",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "previous_cycles",
+      "metric": "tokens",
+      "expected": 0,
+      "actual": 0,
+      "ok": true
+    },
+    {
+      "surface": "/team plan-usage",
+      "view": "previous_cycles",
+      "metric": "subscriptionCount",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/team plan-usage",
+      "view": "previous_cycles",
+      "metric": "developersWithAssignments",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/signals",
+      "view": "previous_cycles",
+      "metric": "enabled",
+      "expected": false,
+      "actual": false,
+      "ok": true
+    },
+    {
+      "surface": "/signals/activity",
+      "view": "previous_cycles",
+      "metric": "enabled",
+      "expected": false,
+      "actual": false,
+      "ok": true
+    },
+    {
+      "surface": "/signals",
+      "view": "previous_cycles",
+      "metric": "sessions",
+      "expected": 0,
+      "actual": 0,
+      "ok": true,
+      "note": "work extraction off"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_30_days",
+      "metric": "period.from",
+      "expected": "2026-06-17",
+      "actual": "2026-06-17",
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_30_days",
+      "metric": "period.to",
+      "expected": "2026-07-16",
+      "actual": "2026-07-16",
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_30_days",
+      "metric": "kpis.verifiedUsageCost",
+      "expected": 25,
+      "actual": 25,
+      "ok": true,
+      "note": "org-wide"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_30_days",
+      "metric": "kpis.estimatedApiCost",
+      "expected": 2,
+      "actual": 2,
+      "ok": true,
+      "note": "org-wide"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_30_days",
+      "metric": "kpis.tokens",
+      "expected": 5450000,
+      "actual": 5450000,
+      "ok": true,
+      "note": "org-wide input+output"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_30_days",
+      "metric": "kpis.actualSpend$",
+      "expected": 39.31,
+      "actual": 39.31,
+      "ok": true,
+      "note": "overlap-prorated seat commitment"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_30_days",
+      "metric": "cursor.cycleSpend$",
+      "expected": 39.31,
+      "actual": 39.31,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_30_days",
+      "metric": "cursor.verified$",
+      "expected": 5,
+      "actual": 5,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_30_days",
+      "metric": "cursor.estimated$",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_30_days",
+      "metric": "cursor.modelCalls",
+      "expected": 10,
+      "actual": 10,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "last_30_days",
+      "metric": "modelCalls",
+      "expected": 50,
+      "actual": 50,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "last_30_days",
+      "metric": "verifiedUsageCost",
+      "expected": 25,
+      "actual": 25,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "last_30_days",
+      "metric": "estimatedApiCost",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "last_30_days",
+      "metric": "tokens",
+      "expected": 5450000,
+      "actual": 5450000,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "last_30_days",
+      "metric": "cursor.requests",
+      "expected": 10,
+      "actual": 10,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "last_30_days",
+      "metric": "cursor.cost$",
+      "expected": 6,
+      "actual": 6,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "last_30_days",
+      "metric": "cursor.tokens",
+      "expected": 1500000,
+      "actual": 1500000,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_30_days",
+      "metric": "usageCost$",
+      "expected": 6,
+      "actual": 6,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_30_days",
+      "metric": "requests",
+      "expected": 10,
+      "actual": 10,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_30_days",
+      "metric": "tokens",
+      "expected": 1500000,
+      "actual": 1500000,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_30_days",
+      "metric": "seatsPurchased",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_30_days",
+      "metric": "seatsAssigned",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_30_days",
+      "metric": "devices",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/team",
+      "view": "last_30_days",
+      "metric": "memberCount",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/team",
+      "view": "last_30_days",
+      "metric": "e2e-developer.requests",
+      "expected": 38,
+      "actual": 38,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "last_30_days",
+      "metric": "verified$",
+      "expected": 5,
+      "actual": 5,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "last_30_days",
+      "metric": "estimated$",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "last_30_days",
+      "metric": "requests",
+      "expected": 38,
+      "actual": 38,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "last_30_days",
+      "metric": "tokens",
+      "expected": 4250000,
+      "actual": 4250000,
+      "ok": true
+    },
+    {
+      "surface": "/team plan-usage",
+      "view": "last_30_days",
+      "metric": "subscriptionCount",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/team plan-usage",
+      "view": "last_30_days",
+      "metric": "developersWithAssignments",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/signals",
+      "view": "last_30_days",
+      "metric": "enabled",
+      "expected": false,
+      "actual": false,
+      "ok": true
+    },
+    {
+      "surface": "/signals/activity",
+      "view": "last_30_days",
+      "metric": "enabled",
+      "expected": false,
+      "actual": false,
+      "ok": true
+    },
+    {
+      "surface": "/signals",
+      "view": "last_30_days",
+      "metric": "sessions",
+      "expected": 0,
+      "actual": 0,
+      "ok": true,
+      "note": "work extraction off"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_14_days",
+      "metric": "period.from",
+      "expected": "2026-07-03",
+      "actual": "2026-07-03",
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_14_days",
+      "metric": "period.to",
+      "expected": "2026-07-16",
+      "actual": "2026-07-16",
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_14_days",
+      "metric": "kpis.verifiedUsageCost",
+      "expected": 25,
+      "actual": 25,
+      "ok": true,
+      "note": "org-wide"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_14_days",
+      "metric": "kpis.estimatedApiCost",
+      "expected": 2,
+      "actual": 2,
+      "ok": true,
+      "note": "org-wide"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_14_days",
+      "metric": "kpis.tokens",
+      "expected": 5450000,
+      "actual": 5450000,
+      "ok": true,
+      "note": "org-wide input+output"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_14_days",
+      "metric": "kpis.actualSpend$",
+      "expected": 18.06,
+      "actual": 18.06,
+      "ok": true,
+      "note": "overlap-prorated seat commitment"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_14_days",
+      "metric": "cursor.cycleSpend$",
+      "expected": 18.06,
+      "actual": 18.06,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_14_days",
+      "metric": "cursor.verified$",
+      "expected": 5,
+      "actual": 5,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_14_days",
+      "metric": "cursor.estimated$",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_14_days",
+      "metric": "cursor.modelCalls",
+      "expected": 10,
+      "actual": 10,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "last_14_days",
+      "metric": "modelCalls",
+      "expected": 50,
+      "actual": 50,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "last_14_days",
+      "metric": "verifiedUsageCost",
+      "expected": 25,
+      "actual": 25,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "last_14_days",
+      "metric": "estimatedApiCost",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "last_14_days",
+      "metric": "tokens",
+      "expected": 5450000,
+      "actual": 5450000,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "last_14_days",
+      "metric": "cursor.requests",
+      "expected": 10,
+      "actual": 10,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "last_14_days",
+      "metric": "cursor.cost$",
+      "expected": 6,
+      "actual": 6,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "last_14_days",
+      "metric": "cursor.tokens",
+      "expected": 1500000,
+      "actual": 1500000,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_14_days",
+      "metric": "usageCost$",
+      "expected": 6,
+      "actual": 6,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_14_days",
+      "metric": "requests",
+      "expected": 10,
+      "actual": 10,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_14_days",
+      "metric": "tokens",
+      "expected": 1500000,
+      "actual": 1500000,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_14_days",
+      "metric": "seatsPurchased",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_14_days",
+      "metric": "seatsAssigned",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_14_days",
+      "metric": "devices",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/team",
+      "view": "last_14_days",
+      "metric": "memberCount",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/team",
+      "view": "last_14_days",
+      "metric": "e2e-developer.requests",
+      "expected": 38,
+      "actual": 38,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "last_14_days",
+      "metric": "verified$",
+      "expected": 5,
+      "actual": 5,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "last_14_days",
+      "metric": "estimated$",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "last_14_days",
+      "metric": "requests",
+      "expected": 38,
+      "actual": 38,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "last_14_days",
+      "metric": "tokens",
+      "expected": 4250000,
+      "actual": 4250000,
+      "ok": true
+    },
+    {
+      "surface": "/team plan-usage",
+      "view": "last_14_days",
+      "metric": "subscriptionCount",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/team plan-usage",
+      "view": "last_14_days",
+      "metric": "developersWithAssignments",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/signals",
+      "view": "last_14_days",
+      "metric": "enabled",
+      "expected": false,
+      "actual": false,
+      "ok": true
+    },
+    {
+      "surface": "/signals/activity",
+      "view": "last_14_days",
+      "metric": "enabled",
+      "expected": false,
+      "actual": false,
+      "ok": true
+    },
+    {
+      "surface": "/signals",
+      "view": "last_14_days",
+      "metric": "sessions",
+      "expected": 0,
+      "actual": 0,
+      "ok": true,
+      "note": "work extraction off"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_7_days",
+      "metric": "period.from",
+      "expected": "2026-07-10",
+      "actual": "2026-07-10",
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_7_days",
+      "metric": "period.to",
+      "expected": "2026-07-16",
+      "actual": "2026-07-16",
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_7_days",
+      "metric": "kpis.verifiedUsageCost",
+      "expected": 25,
+      "actual": 25,
+      "ok": true,
+      "note": "org-wide"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_7_days",
+      "metric": "kpis.estimatedApiCost",
+      "expected": 2,
+      "actual": 2,
+      "ok": true,
+      "note": "org-wide"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_7_days",
+      "metric": "kpis.tokens",
+      "expected": 5450000,
+      "actual": 5450000,
+      "ok": true,
+      "note": "org-wide input+output"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_7_days",
+      "metric": "kpis.actualSpend$",
+      "expected": 9.03,
+      "actual": 9.03,
+      "ok": true,
+      "note": "overlap-prorated seat commitment"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_7_days",
+      "metric": "cursor.cycleSpend$",
+      "expected": 9.03,
+      "actual": 9.03,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_7_days",
+      "metric": "cursor.verified$",
+      "expected": 5,
+      "actual": 5,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_7_days",
+      "metric": "cursor.estimated$",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "last_7_days",
+      "metric": "cursor.modelCalls",
+      "expected": 10,
+      "actual": 10,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "last_7_days",
+      "metric": "modelCalls",
+      "expected": 50,
+      "actual": 50,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "last_7_days",
+      "metric": "verifiedUsageCost",
+      "expected": 25,
+      "actual": 25,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "last_7_days",
+      "metric": "estimatedApiCost",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "last_7_days",
+      "metric": "tokens",
+      "expected": 5450000,
+      "actual": 5450000,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "last_7_days",
+      "metric": "cursor.requests",
+      "expected": 10,
+      "actual": 10,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "last_7_days",
+      "metric": "cursor.cost$",
+      "expected": 6,
+      "actual": 6,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "last_7_days",
+      "metric": "cursor.tokens",
+      "expected": 1500000,
+      "actual": 1500000,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_7_days",
+      "metric": "usageCost$",
+      "expected": 6,
+      "actual": 6,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_7_days",
+      "metric": "requests",
+      "expected": 10,
+      "actual": 10,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_7_days",
+      "metric": "tokens",
+      "expected": 1500000,
+      "actual": 1500000,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_7_days",
+      "metric": "seatsPurchased",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_7_days",
+      "metric": "seatsAssigned",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "last_7_days",
+      "metric": "devices",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/team",
+      "view": "last_7_days",
+      "metric": "memberCount",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/team",
+      "view": "last_7_days",
+      "metric": "e2e-developer.requests",
+      "expected": 38,
+      "actual": 38,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "last_7_days",
+      "metric": "verified$",
+      "expected": 5,
+      "actual": 5,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "last_7_days",
+      "metric": "estimated$",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "last_7_days",
+      "metric": "requests",
+      "expected": 38,
+      "actual": 38,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "last_7_days",
+      "metric": "tokens",
+      "expected": 4250000,
+      "actual": 4250000,
+      "ok": true
+    },
+    {
+      "surface": "/team plan-usage",
+      "view": "last_7_days",
+      "metric": "subscriptionCount",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/team plan-usage",
+      "view": "last_7_days",
+      "metric": "developersWithAssignments",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/signals",
+      "view": "last_7_days",
+      "metric": "enabled",
+      "expected": false,
+      "actual": false,
+      "ok": true
+    },
+    {
+      "surface": "/signals/activity",
+      "view": "last_7_days",
+      "metric": "enabled",
+      "expected": false,
+      "actual": false,
+      "ok": true
+    },
+    {
+      "surface": "/signals",
+      "view": "last_7_days",
+      "metric": "sessions",
+      "expected": 0,
+      "actual": 0,
+      "ok": true,
+      "note": "work extraction off"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "period.from",
+      "expected": "2026-07-01",
+      "actual": "2026-07-01",
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "period.to",
+      "expected": "2026-07-16",
+      "actual": "2026-07-16",
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "kpis.verifiedUsageCost",
+      "expected": 25,
+      "actual": 25,
+      "ok": true,
+      "note": "org-wide"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "kpis.estimatedApiCost",
+      "expected": 2,
+      "actual": 2,
+      "ok": true,
+      "note": "org-wide"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "kpis.tokens",
+      "expected": 5450000,
+      "actual": 5450000,
+      "ok": true,
+      "note": "org-wide input+output"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "kpis.actualSpend$",
+      "expected": 20.65,
+      "actual": 20.65,
+      "ok": true,
+      "note": "overlap-prorated seat commitment"
+    },
+    {
+      "surface": "/dashboard",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "cursor.cycleSpend$",
+      "expected": 20.65,
+      "actual": 20.65,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "cursor.verified$",
+      "expected": 5,
+      "actual": 5,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "cursor.estimated$",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "cursor.modelCalls",
+      "expected": 10,
+      "actual": 10,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "modelCalls",
+      "expected": 50,
+      "actual": 50,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "verifiedUsageCost",
+      "expected": 25,
+      "actual": 25,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "estimatedApiCost",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/activity",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "tokens",
+      "expected": 5450000,
+      "actual": 5450000,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "cursor.requests",
+      "expected": 10,
+      "actual": 10,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "cursor.cost$",
+      "expected": 6,
+      "actual": 6,
+      "ok": true
+    },
+    {
+      "surface": "/tools activity",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "cursor.tokens",
+      "expected": 1500000,
+      "actual": 1500000,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "usageCost$",
+      "expected": 6,
+      "actual": 6,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "requests",
+      "expected": 10,
+      "actual": 10,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "tokens",
+      "expected": 1500000,
+      "actual": 1500000,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "seatsPurchased",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "seatsAssigned",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/tools/cursor",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "devices",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/team",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "memberCount",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/team",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "e2e-developer.requests",
+      "expected": 38,
+      "actual": 38,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "verified$",
+      "expected": 5,
+      "actual": 5,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "estimated$",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "requests",
+      "expected": 38,
+      "actual": 38,
+      "ok": true
+    },
+    {
+      "surface": "/team/e2e-developer",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "tokens",
+      "expected": 4250000,
+      "actual": 4250000,
+      "ok": true
+    },
+    {
+      "surface": "/team plan-usage",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "subscriptionCount",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/team plan-usage",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "developersWithAssignments",
+      "expected": 1,
+      "actual": 1,
+      "ok": true
+    },
+    {
+      "surface": "/signals",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "enabled",
+      "expected": false,
+      "actual": false,
+      "ok": true
+    },
+    {
+      "surface": "/signals/activity",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "enabled",
+      "expected": false,
+      "actual": false,
+      "ok": true
+    },
+    {
+      "surface": "/signals",
+      "view": "custom_2026-07-01_2026-07-16",
+      "metric": "sessions",
+      "expected": 0,
+      "actual": 0,
+      "ok": true,
+      "note": "work extraction off"
+    },
+    {
+      "surface": "/dashboard (developer)",
+      "view": "last_30_days",
+      "metric": "requests",
+      "expected": 38,
+      "actual": 38,
+      "ok": true
+    },
+    {
+      "surface": "/dashboard (developer)",
+      "view": "last_30_days",
+      "metric": "verified$",
+      "expected": 5,
+      "actual": 5,
+      "ok": true
+    },
+    {
+      "surface": "/activity (developer)",
+      "view": "last_30_days",
+      "metric": "estimated$",
+      "expected": 2,
+      "actual": 2,
+      "ok": true
+    },
+    {
+      "surface": "/activity (developer)",
+      "view": "last_30_days",
+      "metric": "tokens",
+      "expected": 4250000,
+      "actual": 4250000,
+      "ok": true
+    }
+  ],
+  "pageSnapshots": [
+    {
+      "view": "current_cycles",
+      "window": {
+        "from": "2026-07-01",
+        "to": "2026-07-31"
+      },
+      "independent": {
+        "org": {
+          "requests": 50,
+          "tokens": 5450000,
+          "verified": 25,
+          "estimated": 2,
+          "actualSpend": 0,
+          "totalUsage": 27
+        },
+        "cursor": {
+          "requests": 10,
+          "tokens": 1500000,
+          "verified": 5,
+          "estimated": 1,
+          "actualSpend": 0,
+          "totalUsage": 6
+        },
+        "member": {
+          "requests": 38,
+          "tokens": 4250000,
+          "verified": 5,
+          "estimated": 2,
+          "actualSpend": 0,
+          "totalUsage": 7
+        }
+      },
+      "dashboard": {
+        "cycleView": "current_cycles",
+        "period": {
+          "from": "2026-07-01T00:00:00.000Z",
+          "to": "2026-07-31T00:00:00.000Z",
+          "previousFrom": "2026-06-01T00:00:00.000Z",
+          "previousTo": "2026-06-30T00:00:00.000Z"
+        },
+        "kpis": {
+          "commitment": 40,
+          "verified": 25,
+          "estimated": 2,
+          "tokens": 5450000
+        },
+        "coverage": {
+          "developers": 2,
+          "activeDevelopers": 1,
+          "devices": 1,
+          "configuredTools": 1,
+          "trackedTools": 1
+        },
+        "subscriptionCycles": [
+          {
+            "id": "cursor",
+            "toolName": "cursor",
+            "toolKey": "cursor",
+            "planNames": [
+              "Cursor Pro"
+            ],
+            "planCount": 1,
+            "cycleSpend": 40,
+            "verifiedUsageCost": 5,
+            "estimatedApiCost": 1,
+            "modelCalls": 10,
+            "windowFrom": "2026-07-01",
+            "windowTo": "2026-07-31",
+            "spendSharePercent": 100,
+            "utilizationPercent": 80,
+            "utilizationDisplayPercent": 80,
+            "verdictCode": "HEALTHY",
+            "billingCycle": {
+              "cycleStart": "2026-07-01",
+              "cycleEnd": "2026-08-01",
+              "nextRenewalDate": "2026-08-01",
+              "elapsedPercent": 0.5161290322580645,
+              "remainingDays": 16,
+              "totalDays": 31
+            }
+          }
+        ],
+        "tools": [
+          {
+            "name": "anthropic-api",
+            "requests": 12,
+            "cost": 8,
+            "activeDevelopers": 0
+          },
+          {
+            "name": "cursor",
+            "requests": 10,
+            "cost": 6,
+            "activeDevelopers": 1
+          },
+          {
+            "name": "junction-gateway",
+            "requests": 3,
+            "cost": 1,
+            "activeDevelopers": 1
+          },
+          {
+            "name": "openai-api",
+            "requests": 25,
+            "cost": 12,
+            "activeDevelopers": 1
+          }
+        ],
+        "hasActivity": true,
+        "observation": {
+          "rangeDays": 31,
+          "daysWithActivity": 4,
+          "firstActivityDate": "2026-07-10",
+          "partialWindow": true
+        }
+      },
+      "activity": {
+        "modelCalls": 50,
+        "verified": 25,
+        "estimated": 2,
+        "tokens": 5450000,
+        "byTool": [
+          {
+            "toolName": "anthropic-api",
+            "requests": 12,
+            "tokens": 1200000,
+            "cost": 8
+          },
+          {
+            "toolName": "cursor",
+            "requests": 10,
+            "tokens": 1500000,
+            "cost": 6
+          },
+          {
+            "toolName": "junction-gateway",
+            "requests": 3,
+            "tokens": 250000,
+            "cost": 1
+          },
+          {
+            "toolName": "openai-api",
+            "requests": 25,
+            "tokens": 2500000,
+            "cost": 12
+          }
+        ]
+      },
+      "toolsDetected": [
+        {
+          "name": "openai-api",
+          "requests": 25,
+          "cost": 12,
+          "tokens": 2500000,
+          "installedOn": 0
+        },
+        {
+          "name": "anthropic-api",
+          "requests": 12,
+          "cost": 8,
+          "tokens": 1200000,
+          "installedOn": 0
+        },
+        {
+          "name": "cursor",
+          "requests": 10,
+          "cost": 6,
+          "tokens": 1500000,
+          "installedOn": 1
+        },
+        {
+          "name": "junction-gateway",
+          "requests": 3,
+          "cost": 1,
+          "tokens": 250000,
+          "installedOn": 0
+        }
+      ],
+      "toolCursor": {
+        "usageCost": 6,
+        "requests": 10,
+        "tokens": 1500000,
+        "devices": 1,
+        "people": 1,
+        "seatsPurchased": 2,
+        "seatsAssigned": 1
+      },
+      "team": {
+        "members": [
+          {
+            "id": "e2e-developer",
+            "name": "E2E Developer",
+            "requests": 38,
+            "cost": 7
+          },
+          {
+            "id": "e2e-owner",
+            "name": "E2E Owner",
+            "requests": 0,
+            "cost": 0
+          }
+        ]
+      },
+      "member": {
+        "verified": 5,
+        "estimated": 2,
+        "requests": 38,
+        "tokens": 4250000
+      },
+      "signals": {
+        "overviewEnabled": false,
+        "activityEnabled": false
+      }
+    },
+    {
+      "view": "previous_cycles",
+      "window": {
+        "from": "2026-06-01",
+        "to": "2026-06-30"
+      },
+      "independent": {
+        "org": {
+          "requests": 0,
+          "tokens": 0,
+          "verified": 0,
+          "estimated": 0,
+          "actualSpend": 0,
+          "totalUsage": 0
+        },
+        "cursor": {
+          "requests": 0,
+          "tokens": 0,
+          "verified": 0,
+          "estimated": 0,
+          "actualSpend": 0,
+          "totalUsage": 0
+        },
+        "member": {
+          "requests": 0,
+          "tokens": 0,
+          "verified": 0,
+          "estimated": 0,
+          "actualSpend": 0,
+          "totalUsage": 0
+        }
+      },
+      "dashboard": {
+        "cycleView": "previous_cycles",
+        "period": {
+          "from": "2026-06-01T00:00:00.000Z",
+          "to": "2026-06-30T00:00:00.000Z",
+          "previousFrom": "2026-05-01T00:00:00.000Z",
+          "previousTo": "2026-05-31T00:00:00.000Z"
+        },
+        "kpis": {
+          "commitment": 40,
+          "verified": 0,
+          "estimated": 0,
+          "tokens": 0
+        },
+        "coverage": {
+          "developers": 2,
+          "activeDevelopers": 0,
+          "devices": 1,
+          "configuredTools": 1,
+          "trackedTools": 1
+        },
+        "subscriptionCycles": [
+          {
+            "id": "cursor",
+            "toolName": "cursor",
+            "toolKey": "cursor",
+            "planNames": [
+              "Cursor Pro"
+            ],
+            "planCount": 1,
+            "cycleSpend": 40,
+            "verifiedUsageCost": 0,
+            "estimatedApiCost": 0,
+            "modelCalls": 0,
+            "windowFrom": "2026-06-01",
+            "windowTo": "2026-06-30",
+            "spendSharePercent": 100,
+            "utilizationPercent": 0,
+            "utilizationDisplayPercent": 0,
+            "verdictCode": null,
+            "billingCycle": {
+              "cycleStart": "2026-06-01",
+              "cycleEnd": "2026-07-01",
+              "nextRenewalDate": "2026-07-01",
+              "elapsedPercent": 1,
+              "remainingDays": 0,
+              "totalDays": 30
+            }
+          }
+        ],
+        "tools": [
+          {
+            "name": "cursor",
+            "requests": 0,
+            "cost": 0,
+            "activeDevelopers": 0
+          }
+        ],
+        "hasActivity": true,
+        "observation": {
+          "rangeDays": 30,
+          "daysWithActivity": 0,
+          "firstActivityDate": null,
+          "partialWindow": false
+        }
+      },
+      "activity": {
+        "modelCalls": 0,
+        "verified": 0,
+        "estimated": 0,
+        "tokens": 0,
+        "byTool": []
+      },
+      "toolsDetected": [
+        {
+          "name": "cursor",
+          "requests": 0,
+          "cost": 0,
+          "tokens": 0,
+          "installedOn": 1
+        }
+      ],
+      "toolCursor": {
+        "usageCost": 0,
+        "requests": 0,
+        "tokens": 0,
+        "devices": 1,
+        "people": 1,
+        "seatsPurchased": 2,
+        "seatsAssigned": 1
+      },
+      "team": {
+        "members": [
+          {
+            "id": "e2e-developer",
+            "name": "E2E Developer",
+            "requests": 0,
+            "cost": 0
+          },
+          {
+            "id": "e2e-owner",
+            "name": "E2E Owner",
+            "requests": 0,
+            "cost": 0
+          }
+        ]
+      },
+      "member": {
+        "verified": 0,
+        "estimated": 0,
+        "requests": 0,
+        "tokens": 0
+      },
+      "signals": {
+        "overviewEnabled": false,
+        "activityEnabled": false
+      }
+    },
+    {
+      "view": "last_30_days",
+      "window": {
+        "from": "2026-06-17",
+        "to": "2026-07-16"
+      },
+      "independent": {
+        "org": {
+          "requests": 50,
+          "tokens": 5450000,
+          "verified": 25,
+          "estimated": 2,
+          "actualSpend": 0,
+          "totalUsage": 27
+        },
+        "cursor": {
+          "requests": 10,
+          "tokens": 1500000,
+          "verified": 5,
+          "estimated": 1,
+          "actualSpend": 0,
+          "totalUsage": 6
+        },
+        "member": {
+          "requests": 38,
+          "tokens": 4250000,
+          "verified": 5,
+          "estimated": 2,
+          "actualSpend": 0,
+          "totalUsage": 7
+        }
+      },
+      "dashboard": {
+        "cycleView": "last_30_days",
+        "period": {
+          "from": "2026-06-17T00:00:00.000Z",
+          "to": "2026-07-16T00:00:00.000Z",
+          "previousFrom": "2026-05-18T00:00:00.000Z",
+          "previousTo": "2026-06-16T00:00:00.000Z"
+        },
+        "kpis": {
+          "commitment": 39.311828000000006,
+          "verified": 25,
+          "estimated": 2,
+          "tokens": 5450000
+        },
+        "coverage": {
+          "developers": 2,
+          "activeDevelopers": 1,
+          "devices": 1,
+          "configuredTools": 1,
+          "trackedTools": 1
+        },
+        "subscriptionCycles": [
+          {
+            "id": "cursor",
+            "toolName": "cursor",
+            "toolKey": "cursor",
+            "planNames": [
+              "Cursor Pro"
+            ],
+            "planCount": 1,
+            "cycleSpend": 39.311828000000006,
+            "verifiedUsageCost": 5,
+            "estimatedApiCost": 1,
+            "modelCalls": 10,
+            "windowFrom": "2026-06-17",
+            "windowTo": "2026-07-16",
+            "spendSharePercent": 100,
+            "utilizationPercent": 80,
+            "utilizationDisplayPercent": 80,
+            "verdictCode": "HEALTHY",
+            "billingCycle": {
+              "cycleStart": "2026-06-01",
+              "cycleEnd": "2026-07-01",
+              "nextRenewalDate": "2026-07-01",
+              "elapsedPercent": 0.5666666666666667,
+              "remainingDays": 14,
+              "totalDays": 30
+            }
+          }
+        ],
+        "tools": [
+          {
+            "name": "anthropic-api",
+            "requests": 12,
+            "cost": 8,
+            "activeDevelopers": 0
+          },
+          {
+            "name": "cursor",
+            "requests": 10,
+            "cost": 6,
+            "activeDevelopers": 1
+          },
+          {
+            "name": "junction-gateway",
+            "requests": 3,
+            "cost": 1,
+            "activeDevelopers": 1
+          },
+          {
+            "name": "openai-api",
+            "requests": 25,
+            "cost": 12,
+            "activeDevelopers": 1
+          }
+        ],
+        "hasActivity": true,
+        "observation": {
+          "rangeDays": 30,
+          "daysWithActivity": 4,
+          "firstActivityDate": "2026-07-10",
+          "partialWindow": true
+        }
+      },
+      "activity": {
+        "modelCalls": 50,
+        "verified": 25,
+        "estimated": 2,
+        "tokens": 5450000,
+        "byTool": [
+          {
+            "toolName": "anthropic-api",
+            "requests": 12,
+            "tokens": 1200000,
+            "cost": 8
+          },
+          {
+            "toolName": "cursor",
+            "requests": 10,
+            "tokens": 1500000,
+            "cost": 6
+          },
+          {
+            "toolName": "junction-gateway",
+            "requests": 3,
+            "tokens": 250000,
+            "cost": 1
+          },
+          {
+            "toolName": "openai-api",
+            "requests": 25,
+            "tokens": 2500000,
+            "cost": 12
+          }
+        ]
+      },
+      "toolsDetected": [
+        {
+          "name": "openai-api",
+          "requests": 25,
+          "cost": 12,
+          "tokens": 2500000,
+          "installedOn": 0
+        },
+        {
+          "name": "anthropic-api",
+          "requests": 12,
+          "cost": 8,
+          "tokens": 1200000,
+          "installedOn": 0
+        },
+        {
+          "name": "cursor",
+          "requests": 10,
+          "cost": 6,
+          "tokens": 1500000,
+          "installedOn": 1
+        },
+        {
+          "name": "junction-gateway",
+          "requests": 3,
+          "cost": 1,
+          "tokens": 250000,
+          "installedOn": 0
+        }
+      ],
+      "toolCursor": {
+        "usageCost": 6,
+        "requests": 10,
+        "tokens": 1500000,
+        "devices": 1,
+        "people": 1,
+        "seatsPurchased": 2,
+        "seatsAssigned": 1
+      },
+      "team": {
+        "members": [
+          {
+            "id": "e2e-developer",
+            "name": "E2E Developer",
+            "requests": 38,
+            "cost": 7
+          },
+          {
+            "id": "e2e-owner",
+            "name": "E2E Owner",
+            "requests": 0,
+            "cost": 0
+          }
+        ]
+      },
+      "member": {
+        "verified": 5,
+        "estimated": 2,
+        "requests": 38,
+        "tokens": 4250000
+      },
+      "signals": {
+        "overviewEnabled": false,
+        "activityEnabled": false
+      }
+    },
+    {
+      "view": "last_14_days",
+      "window": {
+        "from": "2026-07-03",
+        "to": "2026-07-16"
+      },
+      "independent": {
+        "org": {
+          "requests": 50,
+          "tokens": 5450000,
+          "verified": 25,
+          "estimated": 2,
+          "actualSpend": 0,
+          "totalUsage": 27
+        },
+        "cursor": {
+          "requests": 10,
+          "tokens": 1500000,
+          "verified": 5,
+          "estimated": 1,
+          "actualSpend": 0,
+          "totalUsage": 6
+        },
+        "member": {
+          "requests": 38,
+          "tokens": 4250000,
+          "verified": 5,
+          "estimated": 2,
+          "actualSpend": 0,
+          "totalUsage": 7
+        }
+      },
+      "dashboard": {
+        "cycleView": "last_30_days",
+        "period": {
+          "from": "2026-07-03T00:00:00.000Z",
+          "to": "2026-07-16T00:00:00.000Z",
+          "previousFrom": "2026-06-19T00:00:00.000Z",
+          "previousTo": "2026-07-02T00:00:00.000Z"
+        },
+        "kpis": {
+          "commitment": 18.064516,
+          "verified": 25,
+          "estimated": 2,
+          "tokens": 5450000
+        },
+        "coverage": {
+          "developers": 2,
+          "activeDevelopers": 1,
+          "devices": 1,
+          "configuredTools": 1,
+          "trackedTools": 1
+        },
+        "subscriptionCycles": [
+          {
+            "id": "cursor",
+            "toolName": "cursor",
+            "toolKey": "cursor",
+            "planNames": [
+              "Cursor Pro"
+            ],
+            "planCount": 1,
+            "cycleSpend": 18.064516,
+            "verifiedUsageCost": 5,
+            "estimatedApiCost": 1,
+            "modelCalls": 10,
+            "windowFrom": "2026-07-03",
+            "windowTo": "2026-07-16",
+            "spendSharePercent": 100,
+            "utilizationPercent": 80,
+            "utilizationDisplayPercent": 80,
+            "verdictCode": "HEALTHY",
+            "billingCycle": {
+              "cycleStart": "2026-07-01",
+              "cycleEnd": "2026-08-01",
+              "nextRenewalDate": "2026-08-01",
+              "elapsedPercent": 0.0967741935483871,
+              "remainingDays": 29,
+              "totalDays": 31
+            }
+          }
+        ],
+        "tools": [
+          {
+            "name": "anthropic-api",
+            "requests": 12,
+            "cost": 8,
+            "activeDevelopers": 0
+          },
+          {
+            "name": "cursor",
+            "requests": 10,
+            "cost": 6,
+            "activeDevelopers": 1
+          },
+          {
+            "name": "junction-gateway",
+            "requests": 3,
+            "cost": 1,
+            "activeDevelopers": 1
+          },
+          {
+            "name": "openai-api",
+            "requests": 25,
+            "cost": 12,
+            "activeDevelopers": 1
+          }
+        ],
+        "hasActivity": true,
+        "observation": {
+          "rangeDays": 14,
+          "daysWithActivity": 4,
+          "firstActivityDate": "2026-07-10",
+          "partialWindow": true
+        }
+      },
+      "activity": {
+        "modelCalls": 50,
+        "verified": 25,
+        "estimated": 2,
+        "tokens": 5450000,
+        "byTool": [
+          {
+            "toolName": "anthropic-api",
+            "requests": 12,
+            "tokens": 1200000,
+            "cost": 8
+          },
+          {
+            "toolName": "cursor",
+            "requests": 10,
+            "tokens": 1500000,
+            "cost": 6
+          },
+          {
+            "toolName": "junction-gateway",
+            "requests": 3,
+            "tokens": 250000,
+            "cost": 1
+          },
+          {
+            "toolName": "openai-api",
+            "requests": 25,
+            "tokens": 2500000,
+            "cost": 12
+          }
+        ]
+      },
+      "toolsDetected": [
+        {
+          "name": "openai-api",
+          "requests": 25,
+          "cost": 12,
+          "tokens": 2500000,
+          "installedOn": 0
+        },
+        {
+          "name": "anthropic-api",
+          "requests": 12,
+          "cost": 8,
+          "tokens": 1200000,
+          "installedOn": 0
+        },
+        {
+          "name": "cursor",
+          "requests": 10,
+          "cost": 6,
+          "tokens": 1500000,
+          "installedOn": 1
+        },
+        {
+          "name": "junction-gateway",
+          "requests": 3,
+          "cost": 1,
+          "tokens": 250000,
+          "installedOn": 0
+        }
+      ],
+      "toolCursor": {
+        "usageCost": 6,
+        "requests": 10,
+        "tokens": 1500000,
+        "devices": 1,
+        "people": 1,
+        "seatsPurchased": 2,
+        "seatsAssigned": 1
+      },
+      "team": {
+        "members": [
+          {
+            "id": "e2e-developer",
+            "name": "E2E Developer",
+            "requests": 38,
+            "cost": 7
+          },
+          {
+            "id": "e2e-owner",
+            "name": "E2E Owner",
+            "requests": 0,
+            "cost": 0
+          }
+        ]
+      },
+      "member": {
+        "verified": 5,
+        "estimated": 2,
+        "requests": 38,
+        "tokens": 4250000
+      },
+      "signals": {
+        "overviewEnabled": false,
+        "activityEnabled": false
+      }
+    },
+    {
+      "view": "last_7_days",
+      "window": {
+        "from": "2026-07-10",
+        "to": "2026-07-16"
+      },
+      "independent": {
+        "org": {
+          "requests": 50,
+          "tokens": 5450000,
+          "verified": 25,
+          "estimated": 2,
+          "actualSpend": 0,
+          "totalUsage": 27
+        },
+        "cursor": {
+          "requests": 10,
+          "tokens": 1500000,
+          "verified": 5,
+          "estimated": 1,
+          "actualSpend": 0,
+          "totalUsage": 6
+        },
+        "member": {
+          "requests": 38,
+          "tokens": 4250000,
+          "verified": 5,
+          "estimated": 2,
+          "actualSpend": 0,
+          "totalUsage": 7
+        }
+      },
+      "dashboard": {
+        "cycleView": "last_30_days",
+        "period": {
+          "from": "2026-07-10T00:00:00.000Z",
+          "to": "2026-07-16T00:00:00.000Z",
+          "previousFrom": "2026-07-03T00:00:00.000Z",
+          "previousTo": "2026-07-09T00:00:00.000Z"
+        },
+        "kpis": {
+          "commitment": 9.032258,
+          "verified": 25,
+          "estimated": 2,
+          "tokens": 5450000
+        },
+        "coverage": {
+          "developers": 2,
+          "activeDevelopers": 1,
+          "devices": 1,
+          "configuredTools": 1,
+          "trackedTools": 1
+        },
+        "subscriptionCycles": [
+          {
+            "id": "cursor",
+            "toolName": "cursor",
+            "toolKey": "cursor",
+            "planNames": [
+              "Cursor Pro"
+            ],
+            "planCount": 1,
+            "cycleSpend": 9.032258,
+            "verifiedUsageCost": 5,
+            "estimatedApiCost": 1,
+            "modelCalls": 10,
+            "windowFrom": "2026-07-10",
+            "windowTo": "2026-07-16",
+            "spendSharePercent": 100,
+            "utilizationPercent": 80,
+            "utilizationDisplayPercent": 80,
+            "verdictCode": "HEALTHY",
+            "billingCycle": {
+              "cycleStart": "2026-07-01",
+              "cycleEnd": "2026-08-01",
+              "nextRenewalDate": "2026-08-01",
+              "elapsedPercent": 0.3225806451612903,
+              "remainingDays": 22,
+              "totalDays": 31
+            }
+          }
+        ],
+        "tools": [
+          {
+            "name": "anthropic-api",
+            "requests": 12,
+            "cost": 8,
+            "activeDevelopers": 0
+          },
+          {
+            "name": "cursor",
+            "requests": 10,
+            "cost": 6,
+            "activeDevelopers": 1
+          },
+          {
+            "name": "junction-gateway",
+            "requests": 3,
+            "cost": 1,
+            "activeDevelopers": 1
+          },
+          {
+            "name": "openai-api",
+            "requests": 25,
+            "cost": 12,
+            "activeDevelopers": 1
+          }
+        ],
+        "hasActivity": true,
+        "observation": {
+          "rangeDays": 7,
+          "daysWithActivity": 4,
+          "firstActivityDate": "2026-07-10",
+          "partialWindow": true
+        }
+      },
+      "activity": {
+        "modelCalls": 50,
+        "verified": 25,
+        "estimated": 2,
+        "tokens": 5450000,
+        "byTool": [
+          {
+            "toolName": "anthropic-api",
+            "requests": 12,
+            "tokens": 1200000,
+            "cost": 8
+          },
+          {
+            "toolName": "cursor",
+            "requests": 10,
+            "tokens": 1500000,
+            "cost": 6
+          },
+          {
+            "toolName": "junction-gateway",
+            "requests": 3,
+            "tokens": 250000,
+            "cost": 1
+          },
+          {
+            "toolName": "openai-api",
+            "requests": 25,
+            "tokens": 2500000,
+            "cost": 12
+          }
+        ]
+      },
+      "toolsDetected": [
+        {
+          "name": "openai-api",
+          "requests": 25,
+          "cost": 12,
+          "tokens": 2500000,
+          "installedOn": 0
+        },
+        {
+          "name": "anthropic-api",
+          "requests": 12,
+          "cost": 8,
+          "tokens": 1200000,
+          "installedOn": 0
+        },
+        {
+          "name": "cursor",
+          "requests": 10,
+          "cost": 6,
+          "tokens": 1500000,
+          "installedOn": 1
+        },
+        {
+          "name": "junction-gateway",
+          "requests": 3,
+          "cost": 1,
+          "tokens": 250000,
+          "installedOn": 0
+        }
+      ],
+      "toolCursor": {
+        "usageCost": 6,
+        "requests": 10,
+        "tokens": 1500000,
+        "devices": 1,
+        "people": 1,
+        "seatsPurchased": 2,
+        "seatsAssigned": 1
+      },
+      "team": {
+        "members": [
+          {
+            "id": "e2e-developer",
+            "name": "E2E Developer",
+            "requests": 38,
+            "cost": 7
+          },
+          {
+            "id": "e2e-owner",
+            "name": "E2E Owner",
+            "requests": 0,
+            "cost": 0
+          }
+        ]
+      },
+      "member": {
+        "verified": 5,
+        "estimated": 2,
+        "requests": 38,
+        "tokens": 4250000
+      },
+      "signals": {
+        "overviewEnabled": false,
+        "activityEnabled": false
+      }
+    },
+    {
+      "view": "custom_2026-07-01_2026-07-16",
+      "window": {
+        "from": "2026-07-01",
+        "to": "2026-07-16"
+      },
+      "independent": {
+        "org": {
+          "requests": 50,
+          "tokens": 5450000,
+          "verified": 25,
+          "estimated": 2,
+          "actualSpend": 0,
+          "totalUsage": 27
+        },
+        "cursor": {
+          "requests": 10,
+          "tokens": 1500000,
+          "verified": 5,
+          "estimated": 1,
+          "actualSpend": 0,
+          "totalUsage": 6
+        },
+        "member": {
+          "requests": 38,
+          "tokens": 4250000,
+          "verified": 5,
+          "estimated": 2,
+          "actualSpend": 0,
+          "totalUsage": 7
+        }
+      },
+      "dashboard": {
+        "cycleView": "last_30_days",
+        "period": {
+          "from": "2026-07-01T00:00:00.000Z",
+          "to": "2026-07-16T00:00:00.000Z",
+          "previousFrom": "2026-06-15T00:00:00.000Z",
+          "previousTo": "2026-06-30T00:00:00.000Z"
+        },
+        "kpis": {
+          "commitment": 20.645161,
+          "verified": 25,
+          "estimated": 2,
+          "tokens": 5450000
+        },
+        "coverage": {
+          "developers": 2,
+          "activeDevelopers": 1,
+          "devices": 1,
+          "configuredTools": 1,
+          "trackedTools": 1
+        },
+        "subscriptionCycles": [
+          {
+            "id": "cursor",
+            "toolName": "cursor",
+            "toolKey": "cursor",
+            "planNames": [
+              "Cursor Pro"
+            ],
+            "planCount": 1,
+            "cycleSpend": 20.645161,
+            "verifiedUsageCost": 5,
+            "estimatedApiCost": 1,
+            "modelCalls": 10,
+            "windowFrom": "2026-07-01",
+            "windowTo": "2026-07-16",
+            "spendSharePercent": 100,
+            "utilizationPercent": 80,
+            "utilizationDisplayPercent": 80,
+            "verdictCode": "HEALTHY",
+            "billingCycle": {
+              "cycleStart": "2026-07-01",
+              "cycleEnd": "2026-08-01",
+              "nextRenewalDate": "2026-08-01",
+              "elapsedPercent": 0.03225806451612903,
+              "remainingDays": 31,
+              "totalDays": 31
+            }
+          }
+        ],
+        "tools": [
+          {
+            "name": "anthropic-api",
+            "requests": 12,
+            "cost": 8,
+            "activeDevelopers": 0
+          },
+          {
+            "name": "cursor",
+            "requests": 10,
+            "cost": 6,
+            "activeDevelopers": 1
+          },
+          {
+            "name": "junction-gateway",
+            "requests": 3,
+            "cost": 1,
+            "activeDevelopers": 1
+          },
+          {
+            "name": "openai-api",
+            "requests": 25,
+            "cost": 12,
+            "activeDevelopers": 1
+          }
+        ],
+        "hasActivity": true,
+        "observation": {
+          "rangeDays": 16,
+          "daysWithActivity": 4,
+          "firstActivityDate": "2026-07-10",
+          "partialWindow": true
+        }
+      },
+      "activity": {
+        "modelCalls": 50,
+        "verified": 25,
+        "estimated": 2,
+        "tokens": 5450000,
+        "byTool": [
+          {
+            "toolName": "anthropic-api",
+            "requests": 12,
+            "tokens": 1200000,
+            "cost": 8
+          },
+          {
+            "toolName": "cursor",
+            "requests": 10,
+            "tokens": 1500000,
+            "cost": 6
+          },
+          {
+            "toolName": "junction-gateway",
+            "requests": 3,
+            "tokens": 250000,
+            "cost": 1
+          },
+          {
+            "toolName": "openai-api",
+            "requests": 25,
+            "tokens": 2500000,
+            "cost": 12
+          }
+        ]
+      },
+      "toolsDetected": [
+        {
+          "name": "openai-api",
+          "requests": 25,
+          "cost": 12,
+          "tokens": 2500000,
+          "installedOn": 0
+        },
+        {
+          "name": "anthropic-api",
+          "requests": 12,
+          "cost": 8,
+          "tokens": 1200000,
+          "installedOn": 0
+        },
+        {
+          "name": "cursor",
+          "requests": 10,
+          "cost": 6,
+          "tokens": 1500000,
+          "installedOn": 1
+        },
+        {
+          "name": "junction-gateway",
+          "requests": 3,
+          "cost": 1,
+          "tokens": 250000,
+          "installedOn": 0
+        }
+      ],
+      "toolCursor": {
+        "usageCost": 6,
+        "requests": 10,
+        "tokens": 1500000,
+        "devices": 1,
+        "people": 1,
+        "seatsPurchased": 2,
+        "seatsAssigned": 1
+      },
+      "team": {
+        "members": [
+          {
+            "id": "e2e-developer",
+            "name": "E2E Developer",
+            "requests": 38,
+            "cost": 7
+          },
+          {
+            "id": "e2e-owner",
+            "name": "E2E Owner",
+            "requests": 0,
+            "cost": 0
+          }
+        ]
+      },
+      "member": {
+        "verified": 5,
+        "estimated": 2,
+        "requests": 38,
+        "tokens": 4250000
+      },
+      "signals": {
+        "overviewEnabled": false,
+        "activityEnabled": false
+      }
+    }
+  ]
+}

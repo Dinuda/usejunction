@@ -6,8 +6,6 @@ import {
   type AgentUpdateDirective,
   type AgentUpdateEventType,
   compareAgentVersions,
-  summarizeWorkExtractionReadiness,
-  WORK_EXTRACTION_MIN_AGENT_VERSION,
 } from "./contracts";
 
 type DeviceIdentity = {
@@ -516,43 +514,4 @@ export async function accelerateOrgAgentRollout(
     reason: "ok",
     targetVersion: release.version,
   };
-}
-
-export async function getWorkExtractionReadiness(orgId: string) {
-  const [devices, activeRelease] = await Promise.all([
-    prisma.device.findMany({
-      where: { orgId, decommissionedAt: null },
-      select: { id: true, agentVersion: true },
-    }),
-    prisma.agentRelease.findFirst({
-      where: { status: "active" },
-      orderBy: { rolloutStartedAt: "desc" },
-      select: { id: true, version: true },
-    }),
-  ]);
-
-  const updatingIds = new Set<string>();
-  if (activeRelease) {
-    const rows = await prisma.agentUpdateDeployment.findMany({
-      where: {
-        orgId,
-        releaseId: activeRelease.id,
-        confirmedAt: null,
-        state: { in: [...acceleratingStates] },
-      },
-      select: { deviceId: true },
-    });
-    for (const row of rows) updatingIds.add(row.deviceId);
-  }
-
-  return summarizeWorkExtractionReadiness(
-    devices.map((device) => ({
-      agentVersion: device.agentVersion,
-      updating: updatingIds.has(device.id),
-    })),
-    {
-      minAgentVersion: WORK_EXTRACTION_MIN_AGENT_VERSION,
-      activeReleaseVersion: activeRelease?.version ?? null,
-    },
-  );
 }

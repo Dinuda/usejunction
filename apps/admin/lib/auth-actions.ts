@@ -3,6 +3,7 @@ import { Resend } from "resend";
 import { prisma } from "@usejunction/db";
 import { getPublicAppUrl } from "@/lib/public-url";
 import { credentialFingerprint } from "@/lib/security";
+import { logServerError } from "@/lib/errors/public";
 
 export function hashActionToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -62,7 +63,7 @@ export async function sendAuthEmail({
   });
 
   if (error) {
-    console.error("[auth email] Resend error:", error);
+    logServerError("auth email", error);
     throw new Error("Unable to send email");
   }
 

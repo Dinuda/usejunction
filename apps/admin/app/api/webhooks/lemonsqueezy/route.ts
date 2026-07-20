@@ -9,6 +9,7 @@ import {
 } from "@/lib/saas-billing/lemonsqueezy";
 import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/quantity";
 import { audit } from "@/lib/rbac";
+import { logServerError, logServerWarn } from "@/lib/errors/public";
 
 type WebhookPayload = {
   meta: {
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
     eventName === "subscription_cancelled";
 
   if (!orgId) {
-    console.warn("[webhooks/lemonsqueezy] missing org_id for", eventName);
+    logServerWarn("webhooks/lemonsqueezy", `missing org_id for ${eventName}`);
     if (eventName === "subscription_created") {
       return NextResponse.json({ error: "missing org_id in custom_data" }, { status: 400 });
     }
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest) {
       });
     }
   } catch (error) {
-    console.error("[webhooks/lemonsqueezy]", eventName, error);
+    logServerError("webhooks/lemonsqueezy", error, { eventName });
     return NextResponse.json({ error: "webhook processing failed" }, { status: 500 });
   }
 

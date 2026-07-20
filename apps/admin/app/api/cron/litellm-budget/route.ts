@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logServerError } from "@/lib/errors/public";
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization");
@@ -29,13 +30,13 @@ export async function POST(req: NextRequest) {
 
     if (!res.ok) {
       const text = await res.text();
-      console.error("[cron/litellm-budget] reset failed:", res.status, text);
+      logServerError("cron/litellm-budget", `reset failed: ${res.status}`, { text });
       return NextResponse.json({ ok: false, status: res.status }, { status: 502 });
     }
 
     return NextResponse.json({ ok: true, resetAt: new Date().toISOString() });
   } catch (e) {
-    console.error("[cron/litellm-budget]", e);
+    logServerError("cron/litellm-budget", e);
     return NextResponse.json({ error: "cron failed" }, { status: 500 });
   }
 }

@@ -236,7 +236,7 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
               lastAccountSyncAt={data.sync.lastAccountSyncAt}
             />
           </div>
-          <div className="grid items-start gap-8 sm:grid-cols-3">
+          <div className="grid items-start gap-y-8 sm:grid-cols-3">
             <Kpi
               label="Price per 1M tokens"
               value={formatPricePerMillionTokens(usageCost, tokens)}
@@ -426,7 +426,7 @@ export default async function DashboardPage({
         </div>
       ) : data ? (
         <>
-          <div className="grid grid-cols-2 items-stretch gap-x-3 gap-y-5 sm:gap-x-6 sm:gap-y-8 xl:grid-cols-4">
+          <div className="grid grid-cols-2 items-stretch gap-y-5 sm:gap-y-8 xl:grid-cols-4">
             <Kpi
               label="Subscription commitment"
               value={formatUsd(data.kpis.actualSpend.value)}

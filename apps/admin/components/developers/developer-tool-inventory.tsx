@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BarChart3, ChevronDown, ChevronUp, Users } from "lucide-react";
+import { BarChart3, ChevronDown, ChevronUp, SquarePen, Users } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
@@ -14,7 +14,6 @@ import { Panel } from "@/components/panel";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { RosterPlanUsage, type RosterPlanUsagePlan } from "@/components/developers/roster-plan-usage";
 import { SubscriptionChoices } from "@/components/developers/member-plans-panel";
-import { MemberRemoveButton } from "@/components/developers/member-remove-button";
 import { formatCompactNumber } from "@/lib/format";
 import type { PlanUsageDeveloperRow } from "@/lib/insights/contracts/plan-usage.v1";
 import { toolDisplayName } from "@/lib/tools/catalog";
@@ -71,14 +70,12 @@ function planUsageMap(rows: PlanUsageDeveloperRow[]) {
 
 export function DeveloperToolInventory({
   showSummary = true,
-  currentUserId,
   initialDevelopers,
   initialSubscriptions,
   initialPlanUsage,
   periodSuffix = "30d",
 }: {
   showSummary?: boolean;
-  currentUserId?: string;
   initialDevelopers: Developer[];
   initialSubscriptions: Subscription[];
   initialPlanUsage: PlanUsageDeveloperRow[];
@@ -228,9 +225,6 @@ export function DeveloperToolInventory({
                     verdict: plan.verdict,
                   })) ?? [];
 
-                const canRemove =
-                  developer.role !== "owner" && developer.authUserId !== currentUserId;
-
                 return (
                   <li
                     key={developer.id}
@@ -297,27 +291,16 @@ export function DeveloperToolInventory({
                           See Usage
                         </span>
                       </Link>
-                      <div className="flex shrink-0 self-start">
-                        {canRemove ? (
-                          <MemberRemoveButton
-                            developerId={developer.id}
-                            memberName={developer.name}
-                            label="Remove"
-                            ariaLabel={`Remove ${developer.name} from team`}
-                            className="shrink-0"
-                          />
-                        ) : (
-                          <span
-                            aria-hidden
-                            className={cn(
-                              buttonVariants({ variant: "outline", size: "sm" }),
-                              "invisible pointer-events-none rounded-none",
-                            )}
-                          >
-                            Remove
-                          </span>
-                        )}
-                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 self-start rounded-none px-2.5"
+                        asChild
+                      >
+                        <Link href={`/team/${developer.id}`} aria-label={`Edit ${developer.name}`}>
+                          <SquarePen className="size-4" />
+                        </Link>
+                      </Button>
                     </div>
                   </li>
                 );

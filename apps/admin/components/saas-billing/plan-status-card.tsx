@@ -1,7 +1,7 @@
 "use client";
 
-import { ArrowRight, Loader2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
+import { ArrowRight, Loader2, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useBillingNavigation } from "@/components/saas-billing/use-billing-navigation";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ import type { OrgBillingStatus } from "@/lib/saas-billing/status";
 
 type PlanStatusCardProps = {
   billing: OrgBillingStatus;
+  onNavigate?: () => void;
 };
 
 export function shouldShowSidebarPlanCard(billing: OrgBillingStatus) {
@@ -19,15 +20,24 @@ export function shouldShowSidebarPlanCard(billing: OrgBillingStatus) {
   return billing.subscriptionStatus === "cancelled" || billing.subscriptionStatus === "paused";
 }
 
-export function ActivePlanBadge({ billing }: PlanStatusCardProps) {
+export function ActivePlanBadge({ billing, onNavigate }: PlanStatusCardProps) {
   return (
-    <Badge
-      variant="outline"
+    <div
+      className="mb-2 flex w-full items-stretch rounded-none border border-border/80 bg-muted/30"
       aria-label={`Current plan: ${billing.planLabel}`}
-      className="w-fit rounded-full border-brand-orange/25 bg-brand-orange-pale px-2.5 py-1 text-[0.65rem] uppercase tracking-[0.08em] text-brand-orange-dark"
     >
-      {billing.planLabel} plan
-    </Badge>
+      <Link
+        href="/settings#settings-billing"
+        className="flex shrink-0 items-center justify-center border-r border-border/80 px-2.5 py-2 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+        aria-label="Billing settings"
+        onClick={onNavigate}
+      >
+        <Settings className="size-3.5" aria-hidden="true" />
+      </Link>
+      <div className="flex flex-1 items-center px-3 py-2 text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">
+        {billing.planLabel} plan
+      </div>
+    </div>
   );
 }
 

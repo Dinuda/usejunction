@@ -7,6 +7,7 @@ import { getPublicAppUrl } from "@/lib/public-url";
 import { hashOpaqueToken } from "@/lib/security";
 import { limitedJson } from "@/lib/security/http";
 import { enforceRateLimit } from "@/lib/security/rate-limit";
+import { logServerError } from "@/lib/errors/public";
 
 export async function POST(req: NextRequest) {
   try {
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (e) {
-    console.error("[enroll]", e);
+    logServerError("enroll", e);
     return NextResponse.json({ error: "enrollment failed" }, { status: 500 });
   }
 }

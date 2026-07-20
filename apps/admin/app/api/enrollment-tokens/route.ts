@@ -3,6 +3,7 @@ import { prisma } from "@usejunction/db";
 import { hashToken, generateEnrollmentToken } from "@/lib/auth";
 import { requireOrgRole, rolesFor } from "@/lib/rbac";
 import { assertCanEnrollDevice } from "@/lib/saas-billing/status";
+import { logServerError } from "@/lib/errors/public";
 
 export async function POST(req: NextRequest) {
   const auth = await requireOrgRole(req, rolesFor("settings_billing"));
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
       expiresAt: expiresAt.toISOString(),
     });
   } catch (e) {
-    console.error("[enrollment-tokens]", e);
+    logServerError("enrollment-tokens", e);
     return NextResponse.json({ error: "failed to create token" }, { status: 500 });
   }
 }
@@ -64,7 +65,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ tokens });
   } catch (e) {
-    console.error("[enrollment-tokens GET]", e);
+    logServerError("enrollment-tokens", e);
     return NextResponse.json({ error: "failed to list tokens" }, { status: 500 });
   }
 }

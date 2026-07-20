@@ -263,7 +263,7 @@ export function ToolProviderDetail({
         <SignalsKpi
           label={`Usage cost (${periodSuffix})`}
           accent
-          className="sm:border-l sm:border-border sm:pl-8"
+          className="sm:pl-8"
           value={formatUsd(data.kpis.usageCost)}
           sub={`${data.kpis.requests.toLocaleString()} requests · verified + estimated · ${periodLabel}`}
         />

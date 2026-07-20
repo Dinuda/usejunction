@@ -10,6 +10,7 @@ import { limitedJson } from "@/lib/security/http";
 import { CALCULATION_VERSION } from "@/lib/metrics/source-priority";
 import { shouldPreserveProductivityRequests } from "@/lib/metrics/local-usage-inventory";
 import { invalidateAnalyticsCache } from "@/lib/analytics/query";
+import { logServerError } from "@/lib/errors/public";
 
 type UsageRow = {
   date: string;
@@ -336,7 +337,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ upserted });
   } catch (e) {
-    console.error("[ingest/local-usage]", e);
+    logServerError("ingest/local-usage", e);
     return NextResponse.json({ error: "local-usage ingest failed" }, { status: 500 });
   }
 }

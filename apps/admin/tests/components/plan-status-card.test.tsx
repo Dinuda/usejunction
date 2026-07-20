@@ -112,6 +112,9 @@ test("active paid plans use a compact footer badge", () => {
   render(<ActivePlanBadge billing={teamBilling} />);
   expect(screen.getByText("Team plan")).toBeTruthy();
   expect(screen.getByLabelText("Current plan: Team")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Billing settings" }).getAttribute("href")).toBe(
+    "/settings#settings-billing",
+  );
 });
 
 test("Team card surfaces a confirmed quantity mismatch", () => {

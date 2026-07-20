@@ -17,6 +17,7 @@ import {
   isObservedAtEligible,
 } from "@/lib/signals/collection-window";
 import { enforceSignalsRetention, getEffectiveSignalsPolicy } from "@/lib/signals/service";
+import { logServerError } from "@/lib/errors/public";
 
 function asDate(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -525,7 +526,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ upserted, skipped, beforeCollectionStartSkipped });
   } catch (e) {
-    console.error("[ingest/work-sessions]", e);
+    logServerError("ingest/work-sessions", e);
     return NextResponse.json({ error: "work sessions ingest failed" }, { status: 500 });
   }
 }

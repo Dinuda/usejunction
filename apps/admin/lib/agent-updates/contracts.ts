@@ -115,15 +115,6 @@ export const WORK_EXTRACTION_MIN_AGENT_VERSION = "0.3.1";
  */
 export const CLASSIC_SIGNALS_MIN_AGENT_VERSION = "0.4.0";
 
-export type WorkExtractionDeviceReadiness = {
-  total: number;
-  compatible: number;
-  needsUpdate: number;
-  updating: number;
-  minAgentVersion: string;
-  activeReleaseVersion: string | null;
-};
-
 export function isAgentCompatibleForWorkExtraction(agentVersion: string, minVersion = WORK_EXTRACTION_MIN_AGENT_VERSION) {
   const comparison = compareAgentVersions(agentVersion, minVersion);
   return comparison !== null && comparison >= 0;
@@ -133,32 +124,6 @@ export function isAgentCompatibleForWorkExtraction(agentVersion: string, minVers
 export function isAgentCompatibleForClassicSignals(agentVersion: string, minVersion = CLASSIC_SIGNALS_MIN_AGENT_VERSION) {
   const comparison = compareAgentVersions(agentVersion, minVersion);
   return comparison !== null && comparison >= 0;
-}
-
-export function summarizeWorkExtractionReadiness(
-  devices: Array<{ agentVersion: string; updating?: boolean }>,
-  opts: {
-    minAgentVersion?: string;
-    activeReleaseVersion?: string | null;
-  } = {},
-): WorkExtractionDeviceReadiness {
-  const minAgentVersion = opts.minAgentVersion ?? WORK_EXTRACTION_MIN_AGENT_VERSION;
-  let compatible = 0;
-  let needsUpdate = 0;
-  let updating = 0;
-  for (const device of devices) {
-    if (device.updating) updating += 1;
-    if (isAgentCompatibleForWorkExtraction(device.agentVersion, minAgentVersion)) compatible += 1;
-    else needsUpdate += 1;
-  }
-  return {
-    total: devices.length,
-    compatible,
-    needsUpdate,
-    updating,
-    minAgentVersion,
-    activeReleaseVersion: opts.activeReleaseVersion ?? null,
-  };
 }
 
 export function compareAgentVersions(left: string, right: string) {

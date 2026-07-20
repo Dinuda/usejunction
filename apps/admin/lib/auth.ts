@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma, prisma } from "@usejunction/db";
 import { getWorkspaceContext } from "@/lib/workspace-context";
+import { logServerError } from "@/lib/errors/public";
 
 export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -56,7 +57,7 @@ export async function findDeviceByTokenValue<T extends Prisma.DeviceFindFirstArg
   const id = (device as { id?: string } | null)?.id;
   if (id) {
     void backfillLegacyDeviceTokenHash(id, token, tokenHash).catch((error) => {
-      console.error("[device-auth/backfill]", error);
+      logServerError("device-auth/backfill", error);
     });
   }
   return device;

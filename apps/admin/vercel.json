@@ -1,0 +1,3 @@
+{
+  "buildCommand": "pnpm --filter @usejunction/db generate && next build"
+}

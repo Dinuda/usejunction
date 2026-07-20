@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { agentReleaseManifestSchema, promoteAgentRelease } from "@/lib/agent-updates";
 import { requireAgentReleaseOps } from "@/lib/agent-updates/ops-auth";
+import { logServerError } from "@/lib/errors/public";
 
 export async function POST(req: NextRequest) {
   const auth = requireAgentReleaseOps(req);
@@ -17,7 +18,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof Error && error.message === "RELEASE_ARTIFACTS_IMMUTABLE") {
       return NextResponse.json({ error: "release artifacts are immutable; publish a newer version" }, { status: 409 });
     }
-    console.error("[agent-release/promote]", error);
+    logServerError("agent-release/promote", error);
     return NextResponse.json({ error: "release promotion failed" }, { status: 500 });
   }
 }
