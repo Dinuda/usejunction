@@ -31,10 +31,8 @@ export const navAnchors = [
   { id: "pricing", label: "Pricing" },
 ] as const;
 
-export const navLinks = [
-  { href: "/guides", label: "Guides" },
-  { href: "/compare", label: "Compare" },
-] as const;
+/** Extra page links (Guides, Compare, etc.) — re-add when those sections ship in nav. */
+export const navLinks = [] as const;
 
 export const SUPPORTED_TOOLS = [
   { name: "Codex", initials: "CX" },

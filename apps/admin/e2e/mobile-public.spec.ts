@@ -44,8 +44,8 @@ test("public mobile navigation opens, navigates, and closes", async ({ page }) =
   await menuButton.click();
   const navigation = page.getByRole("navigation", { name: "Mobile navigation" });
   await expect(navigation).toBeVisible();
-  await navigation.getByRole("link", { name: "Guides", exact: true }).click();
-  await expect(page).toHaveURL(/\/guides$/);
+  await navigation.getByRole("button", { name: "Pricing", exact: true }).click();
+  await expect(page.locator("#pricing")).toBeInViewport();
   await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toHaveCount(0);
 });
 

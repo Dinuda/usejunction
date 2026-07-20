@@ -87,16 +87,7 @@ export function HeroSection() {
               Track usage, spend, and what works—across every AI coding tool.
             </motion.p>
 
-            {/* Mobile: animation sits between subtitle and CTA */}
-            <motion.div
-              variants={item}
-              className="mt-8 w-full max-w-[min(100%,340px)] lg:hidden"
-              aria-hidden
-            >
-              <HeroLottie reduceMotion={reduceMotion === true} />
-            </motion.div>
-
-            <motion.div variants={item} className="mt-10 flex w-full flex-col items-center lg:items-start">
+            <motion.div variants={item} className="mt-8 flex w-full flex-col items-center lg:items-start">
               <motion.div
                 whileHover={reduceMotion ? undefined : { scale: 1.02 }}
                 whileTap={reduceMotion ? undefined : { scale: 0.98 }}
@@ -113,6 +104,15 @@ export function HeroSection() {
               <p className="mt-3 text-sm text-[#5c5e56]">
                 Open source · Your infrastructure · Your data
               </p>
+            </motion.div>
+
+            {/* Mobile: animation below CTA */}
+            <motion.div
+              variants={item}
+              className="mt-10 w-full max-w-[min(100%,340px)] lg:hidden"
+              aria-hidden
+            >
+              <HeroLottie reduceMotion={reduceMotion === true} />
             </motion.div>
           </motion.div>
 

@@ -112,15 +112,11 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
         <div className="hidden h-10 items-center gap-3 md:flex md:justify-self-end">
           <GithubStarBadge href={siteConfig.githubUrl} />
           {isAuthenticated ? (
-            <Link href="/dashboard" className="public-btn public-btn-yellow rounded-lg font-semibold">
+            <Link href="/dashboard" className="public-btn public-btn-yellow rounded-none font-semibold">
               Dashboard
             </Link>
           ) : (
-            <Link
-              href="/login"
-              className="inline-flex h-10 items-center text-sm leading-none text-[var(--public-muted)] transition-colors hover:text-[var(--public-fg)]"
-              style={{ textDecoration: "underline", textUnderlineOffset: "4px" }}
-            >
+            <Link href="/login" className="public-btn public-btn-yellow rounded-none font-semibold">
               Sign in
             </Link>
           )}
@@ -169,14 +165,13 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
               <GithubStarBadge href={siteConfig.githubUrl} />
             </div>
             {isAuthenticated ? (
-              <Link href="/dashboard" className="public-btn public-btn-yellow w-full rounded-lg text-center text-sm font-semibold">
+              <Link href="/dashboard" className="public-btn public-btn-yellow w-full rounded-none text-center text-sm font-semibold">
                 Dashboard
               </Link>
             ) : (
               <Link
                 href="/login"
-                className="flex min-h-11 items-center justify-center px-1 text-sm"
-                style={{ textDecoration: "underline", textUnderlineOffset: "4px" }}
+                className="public-btn public-btn-yellow mt-1 w-full rounded-none text-center text-sm font-semibold"
                 onClick={() => setMobileOpen(false)}
               >
                 Sign in
