@@ -297,7 +297,7 @@ func TestCursorUsageSummarySnapshots(t *testing.T) {
 			t.Fatalf("missing window %s in %+v", want, snaps)
 		}
 	}
-	if byType["bonus"].CreditsRemaining == nil || *byType["bonus"].CreditsRemaining != 100 {
+	if byType["bonus"].CreditsRemaining == nil || *byType["bonus"].CreditsRemaining != 1 {
 		t.Fatalf("bonus = %+v", byType["bonus"])
 	}
 }

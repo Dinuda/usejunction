@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Sans, Figtree, JetBrains_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { siteConfig } from "@/lib/public/config";
+import { siteOgImage } from "@/lib/public/seo-metadata";
 import { getSiteUrl } from "@/lib/public/site-url";
 import "./globals.css";
 
@@ -46,6 +47,7 @@ export const metadata: Metadata = {
     siteName: siteConfig.name,
     title: siteConfig.seoTitle,
     description: siteConfig.description,
+    images: [siteOgImage],
   },
   twitter: {
     card: "summary_large_image",
@@ -53,6 +55,7 @@ export const metadata: Metadata = {
     creator: siteConfig.twitterHandle,
     title: siteConfig.seoTitle,
     description: siteConfig.description,
+    images: [siteOgImage.url],
   },
   verification: {
     google: process.env.GOOGLE_SITE_VERIFICATION || undefined,

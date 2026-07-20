@@ -407,7 +407,7 @@ func cursorUsageSummarySnapshots(summary cursorUsageSummary, source string) []ty
 		if plan.Breakdown != nil && plan.Breakdown.Bonus > 0 {
 			snapshots = append(snapshots, types.QuotaSnapshot{
 				ToolName: "cursor", WindowType: "bonus",
-				CreditsRemaining: floatPtr(float64(plan.Breakdown.Bonus)),
+				CreditsRemaining: floatPtr(float64(plan.Breakdown.Bonus) / 100),
 				ResetAt:          resetAt, Source: source,
 			})
 		}

@@ -30,6 +30,8 @@ jobs:
       - name: Validate input
         shell: bash
         run: '[[ "${{ inputs.version }}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]'
+      - uses: actions/checkout@v4
+        if: inputs.action == 'promote'
       - name: Download immutable candidate
         if: inputs.action == 'promote'
         shell: bash
@@ -40,21 +42,18 @@ jobs:
           test -f release/checksums.txt
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Set approved rollout mode
+      - name: Set approved rollout mode and re-sign manifest
         if: inputs.action == 'promote'
         shell: bash
         run: |
-          node - <<'NODE'
-          const fs = require("fs");
-          const path = "release/manifest.json";
-          const manifest = JSON.parse(fs.readFileSync(path, "utf8"));
-          manifest.urgency = "${{ inputs.urgency }}";
-          manifest.rolloutHours = manifest.urgency === "critical" ? 0 : 24;
-          fs.writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
-          NODE
+          node scripts/sign-agent-release-manifest.js release/manifest.json "${{ inputs.urgency }}"
           gh release edit "agent-v${{ inputs.version }}" --draft=false --latest
+          # Keep GitHub Release manifest in sync with the promoted, re-signed copy.
+          gh release upload "agent-v${{ inputs.version }}" release/manifest.json --clobber
         env:
           GH_TOKEN: ${{ github.token }}
+          AGENT_UPDATE_SIGNING_KEY_ID: ${{ secrets.AGENT_UPDATE_SIGNING_KEY_ID }}
+          AGENT_UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.AGENT_UPDATE_SIGNING_PRIVATE_KEY }}
       - name: Activate release and snapshot cohort
         if: inputs.action == 'promote'
         run: |

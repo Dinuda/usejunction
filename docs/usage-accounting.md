@@ -3,6 +3,7 @@
 Canonical semantics for requests, tokens, cost, sources, and model visibility across UseJunction.
 
 For the runtime query architecture that executes this contract, see [Central Analytics Engine](central-analytics-engine.md).
+For verifying page KPIs against this contract, see [Calculation verification suite](calculation-verification.md).
 
 ## Requests
 

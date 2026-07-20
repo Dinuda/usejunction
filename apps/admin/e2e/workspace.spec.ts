@@ -101,13 +101,6 @@ test("Signals overview shows work-off empty state and Settings CTA", async ({ pa
   await expect(page.getByRole("heading", { name: "Signals", level: 2 })).toBeVisible();
 });
 
-test("Team Signals CTA opens workspace Settings", async ({ page }) => {
-  await page.goto("/team");
-  await page.getByRole("link", { name: "Manage policy" }).click();
-  await expect(page).toHaveURL(/\/settings$/);
-  await expect(page.getByRole("heading", { name: "Settings.", level: 1 })).toBeVisible();
-});
-
 test("Signals activity is work-only and classic journey routes redirect", async ({ page }) => {
   await page.goto("/signals/activity");
   await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();

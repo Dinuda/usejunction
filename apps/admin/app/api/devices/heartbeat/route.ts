@@ -4,7 +4,7 @@ import {
   recordDeviceActivityEvent,
 } from "@/lib/activity/record-device-activity-event";
 import { findDeviceByBearerToken } from "@/lib/auth";
-import { updateDirectiveForHeartbeat } from "@/lib/agent-updates";
+import { updateDirectiveForHeartbeat, normalizeAgentVersion } from "@/lib/agent-updates";
 import { revokeDeviceAuth } from "@/lib/devices/decommission";
 import { encryptSecret, hashOpaqueToken } from "@/lib/security";
 import { limitedJson } from "@/lib/security/http";
@@ -62,6 +62,8 @@ export async function POST(req: NextRequest) {
       typeof body.localSyncToken === "string" && body.localSyncToken.length >= 16
         ? body.localSyncToken.slice(0, 256)
         : undefined;
+    const reportedAgentVersion =
+      typeof body.agentVersion === "string" ? normalizeAgentVersion(body.agentVersion) : undefined;
 
     await prisma.$transaction(async (tx) => {
       // Only one agent can own a loopback sync port — drop stale claims so the
@@ -84,7 +86,7 @@ export async function POST(req: NextRequest) {
         where: { id: device.id },
         data: {
           lastSeenAt: new Date(),
-          ...(body.agentVersion ? { agentVersion: String(body.agentVersion).slice(0, 64) } : {}),
+          ...(reportedAgentVersion ? { agentVersion: reportedAgentVersion } : {}),
           ...(body.os ? { os: String(body.os).slice(0, 64) } : {}),
           ...(body.architecture ? { architecture: String(body.architecture).slice(0, 64) } : {}),
           ...(body.hostname ? { hostname: String(body.hostname).slice(0, 255) } : {}),
@@ -106,7 +108,7 @@ export async function POST(req: NextRequest) {
         orgId: device.orgId,
         os: typeof body.os === "string" ? body.os : device.os,
         architecture: typeof body.architecture === "string" ? body.architecture : device.architecture,
-        agentVersion: typeof body.agentVersion === "string" ? body.agentVersion : device.agentVersion,
+        agentVersion: reportedAgentVersion ?? device.agentVersion,
       });
     } catch (error) {
       logServerError("devices/heartbeat-update", error);
@@ -114,8 +116,7 @@ export async function POST(req: NextRequest) {
 
     const hostname =
       typeof body.hostname === "string" ? body.hostname.slice(0, 255) : device.hostname;
-    const agentVersion =
-      typeof body.agentVersion === "string" ? body.agentVersion.slice(0, 64) : device.agentVersion;
+    const agentVersion = reportedAgentVersion ?? device.agentVersion;
     const hasUpdate = Boolean(update);
 
     await recordDeviceActivityEvent({
@@ -145,7 +146,9 @@ export async function POST(req: NextRequest) {
           ? {
               update: {
                 version:
-                  "version" in update && typeof update.version === "string" ? update.version : null,
+                  "targetVersion" in update && typeof update.targetVersion === "string"
+                    ? update.targetVersion
+                    : null,
                 urgency:
                   "urgency" in update && typeof update.urgency === "string" ? update.urgency : null,
               },

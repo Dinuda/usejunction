@@ -14,6 +14,8 @@
     "test:integration": "vitest run tests/*.integration.test.ts tests/analytics-query.test.ts",
     "test:coverage": "vitest run --coverage",
     "e2e:seed": "dotenv -e ../../.env -- tsx e2e/seed.ts",
+    "verify:calcs": "dotenv -e ../../.env -- tsx --tsconfig tsconfig.json scripts/verify-calculation-run.ts",
+    "verify:calcs:local": "dotenv -e .env -- tsx --tsconfig tsconfig.json scripts/verify-local-data-run.ts",
     "test:e2e": "playwright test",
     "test:all": "pnpm test && pnpm e2e:seed && pnpm test:e2e"
   },

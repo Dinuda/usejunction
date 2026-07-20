@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { UseJunctionHomeContent } from "@/components/public/use-junction-home-content";
 import { siteConfig } from "@/lib/public/config";
+import { siteOgImage } from "@/lib/public/seo-metadata";
 import { absoluteUrl } from "@/lib/public/site-url";
 
 export const metadata: Metadata = {
@@ -16,11 +17,13 @@ export const metadata: Metadata = {
     siteName: siteConfig.name,
     type: "website",
     locale: "en_US",
+    images: [siteOgImage],
   },
   twitter: {
     card: "summary_large_image",
     title: siteConfig.seoTitle,
     description: siteConfig.description,
+    images: [siteOgImage.url],
   },
 };
 

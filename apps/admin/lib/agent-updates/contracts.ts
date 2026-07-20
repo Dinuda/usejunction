@@ -160,3 +160,13 @@ export function compareAgentVersions(left: string, right: string) {
   }
   return 0;
 }
+
+/**
+ * Coerce device-reported versions into a comparable semver. Invalid values become
+ * `0.0.0` so OTA directives are still offered instead of permanently withheld.
+ */
+export function normalizeAgentVersion(value: unknown, fallback = "0.0.0") {
+  const raw = String(value ?? fallback).trim().replace(/^v/i, "").slice(0, 64);
+  if (!raw) return fallback;
+  return compareAgentVersions(raw, fallback) === null ? fallback : raw;
+}
