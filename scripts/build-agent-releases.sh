@@ -92,10 +92,13 @@ cat "${OUT}/checksums.txt"
   fi
 )
 
-node - "$OUT" "$VERSION" "$URGENCY" <<'NODE'
+# Prefer the Actions repo (owner/name); fall back for local builds.
+GITHUB_RELEASE_REPO="${GITHUB_REPOSITORY:-Dinuda/usejunction}"
+
+node - "$OUT" "$VERSION" "$URGENCY" "$GITHUB_RELEASE_REPO" <<'NODE'
 const fs = require("fs");
 const path = require("path");
-const [out, version, urgency] = process.argv.slice(2);
+const [out, version, urgency, githubRepo] = process.argv.slice(2);
 const checksums = new Map(
   fs.readFileSync(path.join(out, "checksums.txt"), "utf8")
     .trim().split(/\n+/).map((line) => {
@@ -109,7 +112,7 @@ for (const key of ["darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64",
   const file = path.join(out, name);
   if (!checksums.has(name) || !fs.existsSync(file)) throw new Error(`missing ${name}`);
   artifacts[key] = {
-    url: `https://github.com/usejunction/usejunction/releases/download/agent-v${version}/${name}`,
+    url: `https://github.com/${githubRepo}/releases/download/agent-v${version}/${name}`,
     sha256: checksums.get(name),
     size: fs.statSync(file).size,
   };

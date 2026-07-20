@@ -159,7 +159,7 @@ try {
   $bases = @()
   if ($env:USEJUNCTION_DOWNLOAD_BASE) { $bases += $env:USEJUNCTION_DOWNLOAD_BASE.TrimEnd('/') }
   $bases += "$Url/releases/download/v$Version"
-  $bases += "https://github.com/usejunction/usejunction/releases/download/agent-v$Version"
+  $bases += "https://github.com/Dinuda/usejunction/releases/download/agent-v$Version"
   $downloaded = $false
   foreach ($base in $bases) {
     try {
