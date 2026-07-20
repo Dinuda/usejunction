@@ -46,6 +46,8 @@ jobs:
   build:
     runs-on: macos-14
     needs: windows-test
+    # Signing keys live on the agent-production environment (not repo secrets).
+    environment: agent-production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
