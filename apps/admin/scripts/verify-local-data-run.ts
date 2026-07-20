@@ -123,7 +123,7 @@ function independentOrgUsage(rows: RawRow[], from: Date, to: Date) {
     if (isProductivityRow(row)) continue;
     const source = normalizeSource(row.source);
     if (!isObservedSource(source)) continue;
-    if (row.requests <= 0 && row.inputTokens <= 0n && row.outputTokens <= 0n) continue;
+    if (row.requests <= 0 && row.inputTokens <= BigInt(0) && row.outputTokens <= BigInt(0)) continue;
     const key = [
       isoDay(row.date),
       row.developerId ?? "",
@@ -138,12 +138,12 @@ function independentOrgUsage(rows: RawRow[], from: Date, to: Date) {
   }
 
   let requests = 0;
-  let tokens = 0n;
+  let tokens = BigInt(0);
   for (const row of scoped) {
     if (isProductivityRow(row)) continue;
     const source = normalizeSource(row.source);
     if (!isObservedSource(source)) continue;
-    if (row.requests <= 0 && row.inputTokens <= 0n && row.outputTokens <= 0n) continue;
+    if (row.requests <= 0 && row.inputTokens <= BigInt(0) && row.outputTokens <= BigInt(0)) continue;
     const key = [
       isoDay(row.date),
       row.developerId ?? "",
@@ -160,17 +160,17 @@ function independentOrgUsage(rows: RawRow[], from: Date, to: Date) {
   // Cost: all positive-cost rows at the best priority for (date, provider) are summed.
   const costBest = new Map<string, number>();
   for (const row of scoped) {
-    if (row.costMicros <= 0n) continue;
+    if (row.costMicros <= BigInt(0)) continue;
     const key = `${isoDay(row.date)}|${row.provider}`;
     const priority = costPriority(normalizeSource(row.source));
     const prev = costBest.get(key);
     if (prev === undefined || priority < prev) costBest.set(key, priority);
   }
 
-  let verified = 0n;
-  let estimated = 0n;
+  let verified = BigInt(0);
+  let estimated = BigInt(0);
   for (const row of scoped) {
-    if (row.costMicros <= 0n) continue;
+    if (row.costMicros <= BigInt(0)) continue;
     const source = normalizeSource(row.source);
     const key = `${isoDay(row.date)}|${row.provider}`;
     if (costPriority(source) !== costBest.get(key)) continue;
@@ -211,7 +211,7 @@ function independentCommitment(
   reportWindow: { from: Date; to: Date },
 ) {
   const toExclusive = new Date(reportWindow.to.getTime() + DAY_MS);
-  let total = 0n;
+  let total = BigInt(0);
   for (const plan of plans) {
     const fullSpend = plan.cycleSeatMicros * BigInt(plan.seatCapacity);
     if (view !== "last_30_days") {

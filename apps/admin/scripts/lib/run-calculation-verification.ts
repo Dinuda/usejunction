@@ -122,7 +122,7 @@ function independentOrgUsage(rows: RawRow[], from: Date, to: Date) {
 
   const costGroups = new Map<string, RawRow>();
   for (const row of scoped) {
-    if (row.costMicros <= 0n) continue;
+    if (row.costMicros <= BigInt(0)) continue;
     const key = `${isoDay(row.date)}|${row.provider}`;
     const prev = costGroups.get(key);
     if (!prev || costPriority(normalizeSource(row.source)) < costPriority(normalizeSource(prev.source))) {
@@ -131,15 +131,15 @@ function independentOrgUsage(rows: RawRow[], from: Date, to: Date) {
   }
 
   let requests = 0;
-  let tokens = 0n;
+  let tokens = BigInt(0);
   for (const row of activityGroups.values()) {
     requests += row.requests;
     tokens += row.inputTokens + row.outputTokens;
   }
 
-  let verified = 0n;
-  let estimated = 0n;
-  let actualSpend = 0n;
+  let verified = BigInt(0);
+  let estimated = BigInt(0);
+  let actualSpend = BigInt(0);
   for (const row of costGroups.values()) {
     const kind =
       row.costKind ??
@@ -191,7 +191,7 @@ function independentCommitment(
   reportWindow: { from: Date; to: Date },
 ) {
   const toExclusive = new Date(reportWindow.to.getTime() + DAY_MS);
-  let total = 0n;
+  let total = BigInt(0);
   for (const plan of plans) {
     const fullSpend = plan.cycleSeatMicros * BigInt(plan.seatCapacity);
     if (view !== "last_30_days") {
