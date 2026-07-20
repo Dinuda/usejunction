@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { claimDueConnections, syncConnection } from "@/lib/integrations/sync";
+import { logServerError } from "@/lib/errors/public";
 
 export async function POST(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
@@ -12,7 +13,7 @@ export async function POST(req: NextRequest) {
     try {
       results.push({ id, ok: true, counts: await syncConnection(id) });
     } catch (error) {
-      console.error("[cron/provider-sync]", id, error);
+      logServerError("cron/provider-sync", error, { id });
       results.push({ id, ok: false, error: "sync failed" });
     }
   }

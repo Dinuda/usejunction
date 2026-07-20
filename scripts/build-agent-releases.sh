@@ -24,10 +24,18 @@ if [[ "$URGENCY" != "normal" && "$URGENCY" != "critical" ]]; then
 fi
 OUT="${ROOT}/apps/admin/public/releases/download/v${VERSION}"
 AGENT_DIR="${ROOT}/agent"
-LDFLAGS="-s -w -X github.com/usejunction/agent/internal/config.Version=${VERSION}"
-if [[ -n "${AGENT_UPDATE_TRUSTED_KEYS:-}" ]]; then
-  LDFLAGS="${LDFLAGS} -X github.com/usejunction/agent/internal/updater.TrustedUpdateSigningKeys=${AGENT_UPDATE_TRUSTED_KEYS}"
+
+if [[ -z "${AGENT_UPDATE_TRUSTED_KEYS:-}" ]]; then
+  echo "AGENT_UPDATE_TRUSTED_KEYS is required (keyId:base64urlPublicKey[,...]) so release binaries can verify OTA manifests." >&2
+  exit 1
 fi
+if [[ -z "${AGENT_UPDATE_SIGNING_KEY_ID:-}" || -z "${AGENT_UPDATE_SIGNING_PRIVATE_KEY:-}" ]]; then
+  echo "AGENT_UPDATE_SIGNING_KEY_ID and AGENT_UPDATE_SIGNING_PRIVATE_KEY are required to sign release manifests." >&2
+  exit 1
+fi
+
+LDFLAGS="-s -w -X github.com/usejunction/agent/internal/config.Version=${VERSION}"
+LDFLAGS="${LDFLAGS} -X github.com/usejunction/agent/internal/updater.TrustedUpdateSigningKeys=${AGENT_UPDATE_TRUSTED_KEYS}"
 
 mkdir -p "$OUT"
 rm -f "${OUT}"/usejunction-* "${OUT}/checksums.txt"
@@ -87,7 +95,6 @@ cat "${OUT}/checksums.txt"
 node - "$OUT" "$VERSION" "$URGENCY" <<'NODE'
 const fs = require("fs");
 const path = require("path");
-const crypto = require("crypto");
 const [out, version, urgency] = process.argv.slice(2);
 const checksums = new Map(
   fs.readFileSync(path.join(out, "checksums.txt"), "utf8")
@@ -115,21 +122,8 @@ const manifest = {
   rolloutHours: urgency === "critical" ? 0 : 24,
   artifacts,
 };
-const signingKeyId = process.env.AGENT_UPDATE_SIGNING_KEY_ID;
-const signingPrivateKey = process.env.AGENT_UPDATE_SIGNING_PRIVATE_KEY;
-if (signingKeyId && signingPrivateKey) {
-  const normalized = signingPrivateKey.trim();
-  const seed = /^[a-f0-9]{64}$/i.test(normalized)
-    ? Buffer.from(normalized, "hex")
-    : Buffer.from(normalized.replace(/-/g, "+").replace(/_/g, "/"), "base64");
-  if (seed.length !== 32) throw new Error("AGENT_UPDATE_SIGNING_PRIVATE_KEY must be a 32-byte Ed25519 private seed");
-  const pkcs8Prefix = Buffer.from("302e020100300506032b657004220420", "hex");
-  const privateKey = crypto.createPrivateKey({ key: Buffer.concat([pkcs8Prefix, seed]), format: "der", type: "pkcs8" });
-  manifest.signingKeyId = signingKeyId;
-  const payload = Buffer.from(JSON.stringify(manifest));
-  manifest.signature = crypto.sign(null, payload, privateKey).toString("base64url");
-}
 fs.writeFileSync(path.join(out, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 NODE
 
-echo "Wrote release manifest: ${OUT}/manifest.json"
+node "${ROOT}/scripts/sign-agent-release-manifest.js" "${OUT}/manifest.json"
+echo "Wrote signed release manifest: ${OUT}/manifest.json"

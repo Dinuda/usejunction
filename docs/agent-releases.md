@@ -41,11 +41,12 @@ The build workflow:
 - validates the version string
 - fails if the release already exists
 - runs `go test ./...` in `agent/`
+- requires signing secrets (`AGENT_UPDATE_TRUSTED_KEYS`, `AGENT_UPDATE_SIGNING_KEY_ID`, `AGENT_UPDATE_SIGNING_PRIVATE_KEY`)
 - builds macOS, Linux, and Windows binaries for `amd64` and `arm64`
-- injects the version with Go linker flags
+- injects the version and trusted public keys with Go linker flags
 - packages macOS app bundles
 - generates `checksums.txt`
-- writes a `manifest.json`
+- writes and **signs** a `manifest.json`
 - publishes a draft GitHub Release
 
 Important behavior:
@@ -53,7 +54,9 @@ Important behavior:
 - a merge to the default branch does not create a release
 - a tag alone does not activate rollout
 - the candidate artifacts are immutable
+- unsigned manifests are rejected (build fails closed without signing secrets)
 - if the tag must be corrected, the fix is a new version, not a tag rewrite
+- **bootstrap caveat:** agents built before trusted keys were embedded cannot verify signed OTA manifests. Those devices must take one `install.sh --upgrade` (or reinstall) onto a key-bearing build; subsequent OTAs then work
 
 ### 2. Rollout trigger
 
@@ -67,6 +70,7 @@ The promotion workflow:
 - downloads the immutable candidate from GitHub Releases
 - rewrites the manifest urgency to `normal` or `critical`
 - sets rollout hours to `24` for normal or `0` for critical
+- **re-signs** the manifest after urgency mutation (`scripts/sign-agent-release-manifest.js`)
 - publishes the GitHub Release as non-draft
 - calls the authenticated control-plane promotion endpoint
 
@@ -101,7 +105,7 @@ The public and internal routes intentionally differ:
 
 ## Promotion behavior
 
-Promotion creates or reuses an `agentRelease` record and snapshots the eligible fleet into `agentUpdateDeployment` rows.
+Promotion creates or reuses an `agentRelease` record and snapshots the eligible fleet into `agentUpdateDeployment` rows with `cohortMember = true`.
 
 Each rollout snapshot includes every compatible device enrolled at the moment promotion starts.
 
@@ -109,10 +113,12 @@ The snapshot uses the device’s current recorded OS, architecture, and agent ve
 
 Devices already on the target version or a newer version are marked confirmed immediately.
 
+Devices enrolled later (or whose OS/arch becomes known after promote) still receive OTA: heartbeat/enroll calls `ensureActiveReleaseDeployment`, which creates a row with `cohortMember = false` and immediate eligibility. Those devices are excluded from coverage denominators.
+
 If the same version is promoted again:
 
 - artifacts must match exactly
-- the manifest may update urgency
+- the manifest may update urgency (control workflow **re-signs** after rewriting urgency/rolloutHours)
 - the release remains immutable with respect to binary content
 - the historical cohort does not expand to include devices that enrolled later
 
@@ -218,13 +224,14 @@ The Go agent updater is responsible for the local mechanics of:
 
 - checking whether a newer version exists
 - downloading the artifact
+- verifying the signed manifest and trusted key id
 - verifying the size limit
 - verifying the SHA-256 checksum
 - writing pending-update state before replacement
 - replacing the binary atomically
 - preserving the previous binary as `.previous`
 - reporting lifecycle milestones back to the control plane
-- restarting the service
+- explicitly restarting the background service (launchctl/systemctl; Windows handoff)
 - confirming the restart
 
 Local safety rules:
@@ -264,11 +271,11 @@ That restores the retained binary, restarts the service, and reports rollback co
 
 ## Coverage model
 
-Coverage is defined against the release-time cohort.
+Coverage is defined against the release-time cohort (`cohortMember = true`).
 
 That denominator includes every compatible device enrolled when the release activated.
 
-Devices enrolled after activation are excluded from that historical denominator, although they still receive the current version normally.
+Devices enrolled after activation (or attached after OS/arch correction) still receive update directives via non-cohort deployment rows, but they are excluded from coverage percentages.
 
 Per release, the control plane tracks:
 
@@ -393,7 +400,7 @@ Some user-facing features require a minimum agent version. Work extraction is th
 
 Ops still must promote the forward-only work extraction release (`agent-v0.3.1` or later) before devices can download a compatible binary. Enabling the setting cannot invent artifacts.
 
-Settings shows a readiness strip (compatible vs needs update) and links to Team → Agent update coverage.
+Release progress is measured only via Team → Agent update coverage (fixed cohort metrics), not a separate Settings readiness strip.
 
 ## Phase 2 reserve: classic Signals + browser extension
 
@@ -401,7 +408,7 @@ Classic app/domain journeys and browser-extension domain enrichment are reserved
 
 - Placeholder min version: `0.4.0` (`CLASSIC_SIGNALS_MIN_AGENT_VERSION` on the control plane)
 - Policy flag remains `SignalsPolicy.enabled` (independent of work extraction)
-- When that release ships: gate effective classic collection on `enabled && agentVersion >= min`, call `accelerateOrgAgentRollout` on enable, and show a readiness strip mirroring work extraction
+- When that release ships: gate effective classic collection on `enabled && agentVersion >= min`, call `accelerateOrgAgentRollout` on enable, and surface rollout progress via Team → Agent update coverage
 - Browser extension: keep the session model stable; implement `BrowserContextProvider` via native messaging (today: `NoopBrowserContextProvider`). Extension install is separate from agent OTA; if a native-messaging host must live in the agent, ship it as a normal agent release (same promote/heartbeat updater)
 - Product UI until then: Overview / Journeys / Tools are demoted or marked “later update” when classic is off
 

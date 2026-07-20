@@ -3,6 +3,7 @@ import { prisma } from "@usejunction/db";
 import { requireIngestAuth, getDefaultOrgId } from "@/lib/auth";
 import { invalidateAnalyticsCache } from "@/lib/analytics/query";
 import { estimateCost } from "@/lib/metrics/estimate-cost";
+import { logServerError } from "@/lib/errors/public";
 
 function canonicalProvider(value: unknown, model: unknown) {
   const raw = String(value ?? "").toLowerCase();
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ id: record.id });
   } catch (e) {
-    console.error("[ingest/request]", e);
+    logServerError("ingest/request", e);
     return NextResponse.json({ error: "ingest failed" }, { status: 500 });
   }
 }

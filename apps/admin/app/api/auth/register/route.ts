@@ -3,8 +3,10 @@ import { hash } from "bcryptjs";
 import { prisma } from "@usejunction/db";
 import { appUrl, createAuthActionToken, safeAuthNextPath, sendAuthEmail } from "@/lib/auth-actions";
 import { ensureOwnerWorkspace } from "@/lib/ensure-workspace";
+import { notifyUserSignedUp } from "@/lib/notifications/slack";
 import { limitedJson } from "@/lib/security/http";
 import { enforceRateLimit } from "@/lib/security/rate-limit";
+import { logServerError } from "@/lib/errors/public";
 
 const MAX_PASSWORD_BYTES = 256;
 
@@ -35,6 +37,7 @@ export async function POST(request: NextRequest) {
     let user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       user = await prisma.user.create({ data: { name, email, passwordHash: await hash(password, 12) } });
+      notifyUserSignedUp({ email, name, method: "email" });
       if (intent) await prisma.planInterest.create({ data: { plan: intent, email, name, userId: user.id } });
       // Invitees join an existing org on redeem — don't create a personal workspace first.
       if (!joiningViaInvite) {
@@ -60,7 +63,7 @@ export async function POST(request: NextRequest) {
       needsVerification: true,
     });
   } catch (error) {
-    console.error("[auth/register]", error);
+    logServerError("auth/register", error);
     return NextResponse.json({ error: "Unable to create your account right now." }, { status: 500 });
   }
 }

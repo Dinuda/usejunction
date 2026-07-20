@@ -10,6 +10,7 @@ import {
 import { normalizeEmail } from "@/lib/developer-identity";
 import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
+import { logServerError } from "@/lib/errors/public";
 
 const schema = z
   .object({
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
     try {
       results.push({ status: "ok" as const, ...(await createConnectInviteForEmail({ orgId: auth.orgId, userId: auth.userId, email })) });
     } catch (cause) {
-      console.error("[team/connect-invite]", cause);
+      logServerError("team/connect-invite", cause);
       results.push({
         status: "error" as const,
         email,

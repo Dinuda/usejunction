@@ -2,6 +2,8 @@
 
 This is the discovery pass for calculation and filter testing. It records what each workspace page/tab displays, where the value is calculated, and the edge cases that should become unit or frontend tests. It intentionally does not implement tests yet.
 
+For running golden / local **calculation verification** (page KPIs reconciled against raw data), see [Calculation verification suite](calculation-verification.md).
+
 ## Workspace surface map
 
 | Surface | Roles | Tabs / views | User-controlled filters |

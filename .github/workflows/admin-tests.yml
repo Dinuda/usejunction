@@ -90,6 +90,7 @@ jobs:
       RUN_AGENT_UPDATE_DB_TESTS: "1"
       E2E_OWNER_EMAIL: owner@example.com
       E2E_OWNER_PASSWORD: e2e-password
+      RUN_CALC_VERIFICATION_TESTS: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -103,8 +104,17 @@ jobs:
       - run: pnpm --filter @usejunction/db generate
       - run: pnpm --filter @usejunction/db exec prisma migrate deploy
       - run: pnpm --filter @usejunction/admin e2e:seed
+      - run: pnpm --filter @usejunction/admin verify:calcs
+      - run: pnpm --filter @usejunction/admin exec vitest run tests/calculation-verification.integration.test.ts
       - run: pnpm --filter @usejunction/admin exec playwright install --with-deps chromium
       - run: pnpm --filter @usejunction/admin test:e2e
+      - name: Upload calculation verification report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calculation-verification-report
+          path: apps/admin/scripts/calculation-verification-report.json
+          if-no-files-found: ignore
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4

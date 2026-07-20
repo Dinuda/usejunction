@@ -105,8 +105,9 @@ export function BillingSettingsCard({ billing, members }: BillingSettingsCardPro
   return (
     <Panel
       as="section"
+      id="settings-billing"
       padded={false}
-      className="overflow-hidden"
+      className="overflow-hidden scroll-mt-20"
       aria-labelledby="billing-settings-heading"
     >
       <div className="flex flex-col gap-4 border-b border-border/70 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
@@ -153,7 +154,7 @@ export function BillingSettingsCard({ billing, members }: BillingSettingsCardPro
         ) : null}
       </div>
 
-      <div className="border-b border-border/70 p-5 sm:p-6">
+      <div className="p-5 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm text-muted-foreground">Current plan</p>
@@ -188,53 +189,54 @@ export function BillingSettingsCard({ billing, members }: BillingSettingsCardPro
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
-      </div>
 
-      <div className="p-5 sm:p-6">
-        <div className="flex items-center justify-between gap-4">
-          <h3 className="text-sm font-semibold">
-            {pricing.rosterTitle} <span className="font-normal text-muted-foreground">({billing.usersUsed})</span>
-          </h3>
-          <Link
-            href="/team"
-            className="inline-flex min-h-10 items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
-          >
-            Manage users
-            <ChevronRight className="size-4" aria-hidden="true" />
-          </Link>
-        </div>
-
-        {members.length ? (
-          <div
-            className="uj-scrollbar mt-3 max-h-72 overflow-y-auto border-y border-border/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            role="region"
-            aria-label="Scrollable member list"
-            tabIndex={0}
-          >
-            <ul className="divide-y divide-border/70">
-              {members.map((member) => (
-                <li key={member.id} className="flex items-center justify-between gap-4 py-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <Avatar>
-                      <AvatarFallback>{memberInitials(member.name, member.email)}</AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{member.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">{member.email}</p>
-                    </div>
-                  </div>
-                  <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
-                    {pricing.memberRate}
-                  </span>
-                </li>
-              ))}
-            </ul>
+        <div className="mt-8">
+          <div className="flex items-center justify-between gap-4">
+            <h3 className="text-sm font-semibold">
+              {pricing.rosterTitle}{" "}
+              <span className="font-normal text-muted-foreground">({billing.usersUsed})</span>
+            </h3>
+            <Link
+              href="/team"
+              className="inline-flex min-h-10 items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Manage users
+              <ChevronRight className="size-4" aria-hidden="true" />
+            </Link>
           </div>
-        ) : (
-          <p className="mt-3 border-y border-border/70 py-4 text-sm text-muted-foreground">
-            No active users in this workspace.
-          </p>
-        )}
+
+          {members.length ? (
+            <div
+              className="uj-scrollbar mt-3 max-h-72 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              role="region"
+              aria-label="Scrollable member list"
+              tabIndex={0}
+            >
+              <ul className="divide-y divide-border/70">
+                {members.map((member) => (
+                  <li key={member.id} className="flex items-center justify-between gap-4 py-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar>
+                        <AvatarFallback>{memberInitials(member.name, member.email)}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{member.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{member.email}</p>
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
+                      {pricing.memberRate}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="mt-3 py-2 text-sm text-muted-foreground">
+              No active users in this workspace.
+            </p>
+          )}
+        </div>
       </div>
 
       {billing.seatSyncPending && billing.billingSeatQuantity !== null ? (

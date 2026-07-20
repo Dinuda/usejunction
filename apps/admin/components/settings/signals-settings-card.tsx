@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { ArrowUpRight, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -14,42 +14,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { WorkExtractionDeviceReadiness } from "@/lib/agent-updates/contracts";
 import type { AccelerateOrgAgentRolloutResult } from "@/lib/agent-updates/service";
 import type { EffectiveSignalsPolicy } from "@/lib/signals/service";
 import { Panel } from "@/components/panel";
+import { SignalsMark } from "@/components/signals/signals-mark";
 import { cn } from "@/lib/utils";
 import { userFacingError } from "@/lib/errors/user-facing";
 
 export function SignalsSettingsCard({
   initialPolicy,
-  initialReadiness = null,
 }: {
   initialPolicy: EffectiveSignalsPolicy;
-  initialReadiness?: WorkExtractionDeviceReadiness | null;
 }) {
   const [policy, setPolicy] = useState(initialPolicy);
-  const [readiness, setReadiness] = useState<WorkExtractionDeviceReadiness | null>(initialReadiness);
   const [rolloutNote, setRolloutNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [workConfirmOpen, setWorkConfirmOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-
-  useEffect(() => {
-    if (!policy.workExtractionEnabled) return;
-    let cancelled = false;
-    void fetch("/api/signals/work-extraction-readiness")
-      .then(async (response) => {
-        const body = (await response.json().catch(() => ({}))) as {
-          readiness?: WorkExtractionDeviceReadiness;
-        };
-        if (!cancelled && response.ok && body.readiness) setReadiness(body.readiness);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [policy.workExtractionEnabled]);
 
   function rolloutMessage(result: AccelerateOrgAgentRolloutResult | null | undefined) {
     if (!result) return null;
@@ -77,15 +58,12 @@ export function SignalsSettingsCard({
         error?: string;
         policy?: EffectiveSignalsPolicy;
         agentRollout?: AccelerateOrgAgentRolloutResult | null;
-        readiness?: WorkExtractionDeviceReadiness | null;
       };
       if (!response.ok || !body.policy) {
         setError(userFacingError(body.error, "Could not update Signals"));
         return;
       }
       setPolicy(body.policy);
-      if (body.readiness) setReadiness(body.readiness);
-      else if (!body.policy.workExtractionEnabled) setReadiness(null);
       const note = rolloutMessage(body.agentRollout);
       if (note) setRolloutNote(note);
       setWorkConfirmOpen(false);
@@ -96,7 +74,10 @@ export function SignalsSettingsCard({
     <>
       <Panel as="section" className="sm:p-6">
         <div className="mb-2">
-          <h2 className="text-lg font-semibold tracking-tight">Signals</h2>
+          <h2 className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+            <SignalsMark className="size-5" />
+            Signals
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Structured work from local AI coding tools (Cursor, Claude, Codex). Fine-tune retention
             and exclusions under{" "}
@@ -120,7 +101,7 @@ export function SignalsSettingsCard({
           </Alert>
         ) : null}
 
-        <div className="flex flex-col gap-4 border-t border-border/70 py-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-3">
               <h3 className="text-base font-semibold tracking-tight">Work extraction</h3>
@@ -168,35 +149,6 @@ export function SignalsSettingsCard({
             )}
           </div>
         </div>
-
-        {policy.workExtractionEnabled && readiness ? (
-          <div className="border-t border-border/70 pt-6">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0 space-y-1">
-                <h4 className="text-sm font-semibold tracking-tight">Team agent status</h4>
-                <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                  {readiness.compatible} of {readiness.total} devices on agent{" "}
-                  {readiness.minAgentVersion}+
-                  {readiness.needsUpdate
-                    ? ` · ${readiness.needsUpdate} still need an update`
-                    : " · all compatible"}
-                  {readiness.updating ? ` · ${readiness.updating} updating` : ""}
-                  {readiness.activeReleaseVersion
-                    ? ` · active release ${readiness.activeReleaseVersion}`
-                    : " · no active release"}
-                  .
-                </p>
-              </div>
-              <Link
-                href="/team"
-                className="inline-flex items-center text-sm underline underline-offset-2 hover:text-foreground"
-              >
-                Agent update coverage
-                <ArrowUpRight className="ml-0.5 size-3.5" />
-              </Link>
-            </div>
-          </div>
-        ) : null}
       </Panel>
 
       <Dialog open={workConfirmOpen} onOpenChange={setWorkConfirmOpen}>

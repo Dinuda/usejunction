@@ -3,6 +3,7 @@ import { z } from "zod";
 import { audit, requireOrgRole } from "@/lib/rbac";
 import { serializeBigInts } from "@/lib/billing/validation";
 import { applyDetectedPlanForDeveloper } from "@/lib/tools/sync-detected";
+import { logServerError } from "@/lib/errors/public";
 
 const bodySchema = z.object({
   developerId: z.string().trim().min(1),
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ too
     };
     const mapped = labels[message];
     if (mapped) return NextResponse.json({ error: mapped.error }, { status: mapped.status });
-    console.error("POST /api/tools/[toolKey]/apply-detected", error);
+    logServerError("tools/apply-detected", error);
     return NextResponse.json({ error: "could not apply detected plan" }, { status: 500 });
   }
 }

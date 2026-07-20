@@ -6,6 +6,11 @@ import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { compare } from "bcryptjs";
 import { prisma } from "@usejunction/db";
+import {
+  isRecentSignup,
+  notifyUserLoggedIn,
+  notifyUserSignedUp,
+} from "@/lib/notifications/slack";
 import authConfig from "./auth.config";
 
 const MAX_PASSWORD_BYTES = 256;
@@ -110,6 +115,32 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.image = token.picture ? String(token.picture) : null;
       }
       return session;
+    },
+  },
+  events: {
+    async createUser({ user }) {
+      if (!user.email) return;
+      notifyUserSignedUp({
+        email: user.email,
+        name: user.name,
+        method: "oauth",
+      });
+    },
+    async signIn({ user, account }) {
+      if (!user.email || !user.id) return;
+
+      const dbUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { createdAt: true, email: true, name: true },
+      });
+      if (!dbUser) return;
+      if (isRecentSignup(dbUser.createdAt)) return;
+
+      notifyUserLoggedIn({
+        email: dbUser.email,
+        name: dbUser.name,
+        provider: account?.provider ?? "credentials",
+      });
     },
   },
 });

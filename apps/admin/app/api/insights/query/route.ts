@@ -3,6 +3,7 @@ import { prisma } from "@usejunction/db";
 import { ZodError } from "zod";
 import { executeUsageQuery, type AnalyticsScope } from "@/lib/analytics/query";
 import { requireOrgRole, rolesFor } from "@/lib/rbac";
+import { logServerError } from "@/lib/errors/public";
 
 export async function POST(req: NextRequest) {
   const auth = await requireOrgRole(req, rolesFor("self_view"));
@@ -38,10 +39,10 @@ export async function POST(req: NextRequest) {
       error.message.startsWith("Query window") ||
       error.message.startsWith("orderBy field")
     )) {
-      console.error("[insights/query] invalid query", error);
+      logServerError("insights/query", error, { kind: "invalid query" });
       return NextResponse.json({ error: "invalid query" }, { status: 400 });
     }
-    console.error("[insights/query]", error);
+    logServerError("insights/query", error);
     return NextResponse.json({ error: "query failed" }, { status: 500 });
   }
 }

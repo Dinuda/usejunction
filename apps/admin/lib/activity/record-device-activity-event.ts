@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from "@usejunction/db";
+import { logServerError } from "@/lib/errors/public";
 
 export const DEVICE_ACTIVITY_RETENTION_DAYS = 30;
 export const DEVICE_ACTIVITY_JSON_CAP_BYTES = 32_768;
@@ -124,7 +125,7 @@ export async function recordDeviceActivityEvent(input: RecordDeviceActivityEvent
       },
     });
   } catch (error) {
-    console.error("[device-activity] record failed", error);
+    logServerError("device-activity", error);
   }
 }
 

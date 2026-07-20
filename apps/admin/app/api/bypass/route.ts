@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { usageDayFilter, usageWindowDays } from "@/lib/metrics/date-range";
 import { requireOrgRole, rolesFor } from "@/lib/rbac";
+import { logServerError } from "@/lib/errors/public";
 
 export async function GET(req: NextRequest) {
   const auth = await requireOrgRole(req, rolesFor("settings_billing"));
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ suspects, period: "30d" });
   } catch (e) {
-    console.error("[bypass]", e);
+    logServerError("bypass", e);
     return NextResponse.json({ error: "failed" }, { status: 500 });
   }
 }

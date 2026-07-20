@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -201,7 +202,12 @@ func trustedSigningKeys() map[string]ed25519.PublicKey {
 }
 
 func signedManifestBytes(manifest client.AgentReleaseManifest) ([]byte, error) {
-	return json.Marshal(signedManifestPayload{
+	// Match Node JSON.stringify: do not escape &, <, > so artifact URLs with
+	// query strings verify against signatures produced by sign-agent-release-manifest.js.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(signedManifestPayload{
 		SchemaVersion: manifest.SchemaVersion,
 		Version:       manifest.Version,
 		PublishedAt:   manifest.PublishedAt,
@@ -209,7 +215,10 @@ func signedManifestBytes(manifest client.AgentReleaseManifest) ([]byte, error) {
 		RolloutHours:  manifest.RolloutHours,
 		Artifacts:     manifest.Artifacts,
 		SigningKeyID:  manifest.SigningKeyID,
-	})
+	}); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }
 
 func verifyDirectiveSignature(directive client.AgentUpdateDirective) error {
@@ -541,11 +550,11 @@ func report(reporter Reporter, directive client.AgentUpdateDirective, currentVer
 }
 
 func newEventID() string {
-	var bytes [16]byte
-	if _, err := rand.Read(bytes[:]); err != nil {
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
 		return fmt.Sprintf("event-%d", time.Now().UnixNano())
 	}
-	return hex.EncodeToString(bytes[:])
+	return hex.EncodeToString(buf[:])
 }
 
 func writeJSON(path string, value any) error {

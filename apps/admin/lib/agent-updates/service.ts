@@ -6,8 +6,6 @@ import {
   type AgentUpdateDirective,
   type AgentUpdateEventType,
   compareAgentVersions,
-  summarizeWorkExtractionReadiness,
-  WORK_EXTRACTION_MIN_AGENT_VERSION,
 } from "./contracts";
 
 type DeviceIdentity = {
@@ -78,7 +76,9 @@ export async function promoteAgentRelease(input: unknown, now: Date = new Date()
           data: { eligibleAt: now },
         });
       }
-      const cohortSize = await tx.agentUpdateDeployment.count({ where: { releaseId: release.id } });
+      const cohortSize = await tx.agentUpdateDeployment.count({
+        where: { releaseId: release.id, cohortMember: true },
+      });
       return { release, cohortSize };
     }
 
@@ -109,6 +109,7 @@ export async function promoteAgentRelease(input: unknown, now: Date = new Date()
         sourceVersion: device.agentVersion,
         targetVersion: manifest.version,
         eligibleAt: rolloutEligibility(device.id, manifest.version, now, rolloutHours),
+        cohortMember: true,
         state: confirmed ? "confirmed" : "pending",
         confirmedAt: confirmed ? now : null,
         lastEventAt: confirmed ? now : null,
@@ -119,6 +120,57 @@ export async function promoteAgentRelease(input: unknown, now: Date = new Date()
     }
     return { release, cohortSize: cohort.length };
   });
+}
+
+/**
+ * Attach a device to the active release when it was enrolled after promote, or
+ * when OS/arch was corrected after an earlier skip. Late rows are not cohort
+ * members so coverage denominators stay fixed at promote time.
+ */
+export async function ensureActiveReleaseDeployment(
+  device: DeviceIdentity,
+  now: Date = new Date(),
+) {
+  const release = await prisma.agentRelease.findFirst({
+    where: { status: "active" },
+    orderBy: { rolloutStartedAt: "desc" },
+  });
+  if (!release) return null;
+
+  const existing = await prisma.agentUpdateDeployment.findUnique({
+    where: { releaseId_deviceId: { releaseId: release.id, deviceId: device.id } },
+  });
+  if (existing) return existing;
+
+  const parsed = agentReleaseManifestSchema.safeParse(release.manifest);
+  if (!parsed.success) return null;
+  if (!parsed.data.artifacts[artifactKey(device.os, device.architecture)]) return null;
+
+  const comparison = compareAgentVersions(device.agentVersion, release.version);
+  const confirmed = comparison !== null && comparison >= 0;
+  try {
+    return await prisma.agentUpdateDeployment.create({
+      data: {
+        releaseId: release.id,
+        orgId: device.orgId,
+        deviceId: device.id,
+        sourceVersion: device.agentVersion,
+        targetVersion: release.version,
+        eligibleAt: now,
+        cohortMember: false,
+        state: confirmed ? "confirmed" : "pending",
+        confirmedAt: confirmed ? now : null,
+        lastEventAt: confirmed ? now : null,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return prisma.agentUpdateDeployment.findUnique({
+        where: { releaseId_deviceId: { releaseId: release.id, deviceId: device.id } },
+      });
+    }
+    throw error;
+  }
 }
 
 export async function pauseAgentRelease(version: string) {
@@ -162,6 +214,7 @@ export async function updateDirectiveForDevice(
 ): Promise<AgentUpdateDirective | null> {
   const now = options.now ?? new Date();
   await confirmFromHeartbeat(device, device.agentVersion, now);
+  await ensureActiveReleaseDeployment(device, now);
   const deployment = await prisma.agentUpdateDeployment.findFirst({
     where: {
       deviceId: device.id,
@@ -377,7 +430,8 @@ export async function getAgentUpdateCoverage(orgId?: string, version?: string, n
       device: { select: { id: true, hostname: true, os: true, architecture: true, agentVersion: true, lastSeenAt: true, user: { select: { name: true, email: true } } } },
     },
   });
-  const metrics = calculateCoverageMetrics(deployments.map((row) => ({
+  const cohortRows = deployments.filter((row) => row.cohortMember);
+  const metrics = calculateCoverageMetrics(cohortRows.map((row) => ({
     eligibleAt: row.eligibleAt,
     directiveDeliveredAt: row.directiveDeliveredAt,
     downloadedAt: row.downloadedAt,
@@ -389,6 +443,7 @@ export async function getAgentUpdateCoverage(orgId?: string, version?: string, n
     metrics,
     devices: deployments.map((row) => ({
       attemptId: row.id,
+      cohortMember: row.cohortMember,
       organization: row.organization,
       device: { ...row.device, lastSeenAt: row.device.lastSeenAt.toISOString() },
       sourceVersion: row.sourceVersion,
@@ -414,6 +469,7 @@ export async function getPlatformAgentUpdateCoverage(version: string, now: Date 
   if (!coverage) return null;
 
   type Row = (typeof coverage.devices)[number];
+  const cohortDevices = coverage.devices.filter((row) => row.cohortMember);
   const addMilestone = (milestones: Record<string, number>, row: Row) => {
     if (row.eligibleAt <= now.toISOString()) milestones.eligible = (milestones.eligible ?? 0) + 1;
     if (row.directiveDeliveredAt) milestones.directiveDelivered = (milestones.directiveDelivered ?? 0) + 1;
@@ -437,7 +493,7 @@ export async function getPlatformAgentUpdateCoverage(version: string, now: Date 
   };
 
   const organizations = new Map<string, { organizationId: string; name: string; total: number; states: Record<string, number>; milestones: Record<string, number> }>();
-  for (const row of coverage.devices) {
+  for (const row of cohortDevices) {
     const group = organizations.get(row.organization.id) ?? {
       organizationId: row.organization.id,
       name: row.organization.name,
@@ -455,10 +511,10 @@ export async function getPlatformAgentUpdateCoverage(version: string, now: Date 
     release: coverage.release,
     metrics: coverage.metrics,
     organizations: [...organizations.values()],
-    operatingSystems: summarize(coverage.devices, (row) => row.device.os),
-    architectures: summarize(coverage.devices, (row) => row.device.architecture),
-    installedVersions: summarize(coverage.devices, (row) => row.device.agentVersion),
-    lifecycleStates: summarize(coverage.devices, (row) => row.state),
+    operatingSystems: summarize(cohortDevices, (row) => row.device.os),
+    architectures: summarize(cohortDevices, (row) => row.device.architecture),
+    installedVersions: summarize(cohortDevices, (row) => row.device.agentVersion),
+    lifecycleStates: summarize(cohortDevices, (row) => row.state),
   };
 }
 
@@ -516,43 +572,4 @@ export async function accelerateOrgAgentRollout(
     reason: "ok",
     targetVersion: release.version,
   };
-}
-
-export async function getWorkExtractionReadiness(orgId: string) {
-  const [devices, activeRelease] = await Promise.all([
-    prisma.device.findMany({
-      where: { orgId, decommissionedAt: null },
-      select: { id: true, agentVersion: true },
-    }),
-    prisma.agentRelease.findFirst({
-      where: { status: "active" },
-      orderBy: { rolloutStartedAt: "desc" },
-      select: { id: true, version: true },
-    }),
-  ]);
-
-  const updatingIds = new Set<string>();
-  if (activeRelease) {
-    const rows = await prisma.agentUpdateDeployment.findMany({
-      where: {
-        orgId,
-        releaseId: activeRelease.id,
-        confirmedAt: null,
-        state: { in: [...acceleratingStates] },
-      },
-      select: { deviceId: true },
-    });
-    for (const row of rows) updatingIds.add(row.deviceId);
-  }
-
-  return summarizeWorkExtractionReadiness(
-    devices.map((device) => ({
-      agentVersion: device.agentVersion,
-      updating: updatingIds.has(device.id),
-    })),
-    {
-      minAgentVersion: WORK_EXTRACTION_MIN_AGENT_VERSION,
-      activeReleaseVersion: activeRelease?.version ?? null,
-    },
-  );
 }

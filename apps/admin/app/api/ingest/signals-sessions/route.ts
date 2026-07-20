@@ -13,6 +13,7 @@ import {
   type SignalsSessionInput,
 } from "@/lib/signals/contracts";
 import { enforceSignalsRetention, getEffectiveSignalsPolicy } from "@/lib/signals/service";
+import { logServerError } from "@/lib/errors/public";
 
 function asDate(value: string): Date | null {
   const date = new Date(value);
@@ -202,7 +203,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ upserted, skipped });
   } catch (e) {
-    console.error("[ingest/signals-sessions]", e);
+    logServerError("ingest/signals-sessions", e);
     return NextResponse.json({ error: "signals ingest failed" }, { status: 500 });
   }
 }

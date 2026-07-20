@@ -94,7 +94,7 @@ function AppSidebar({
   const { setOpenMobile } = useSidebar();
 
   return (
-    <Sidebar collapsible="offcanvas" variant="sidebar" className="border-r">
+    <Sidebar collapsible="offcanvas" variant="sidebar">
       <SidebarHeader className="h-14 justify-center border-b px-4 py-0">
         <Link
           href="/dashboard"
@@ -105,7 +105,7 @@ function AppSidebar({
         </Link>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
+        <SidebarGroup className="pt-5">
           <SidebarGroupContent>
             <SidebarMenu>
               {nav.map(([href, label, Icon]) => {
@@ -137,7 +137,7 @@ function AppSidebar({
           {shouldShowSidebarPlanCard(billing) ? (
             <PlanStatusCard billing={billing} />
           ) : (
-            <ActivePlanBadge billing={billing} />
+            <ActivePlanBadge billing={billing} onNavigate={() => setOpenMobile(false)} />
           )}
         </SidebarFooter>
       )}
@@ -164,7 +164,7 @@ export function WorkspaceShell({
     >
       <AppSidebar active={pathname} role={role} billing={billing} />
       <SidebarInset className="h-dvh min-h-0 min-w-0 overflow-y-auto overscroll-contain">
-        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-2 border-b bg-background/95 px-3 backdrop-blur-sm sm:gap-4 sm:px-6 lg:px-8">
+        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-2 border-none bg-white px-3 backdrop-blur-sm sm:gap-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-3">
             <SidebarTrigger className="-ml-1 size-11 shrink-0 md:hidden" />
             <Link

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { syncTeamSeatQuantity } from "@/lib/saas-billing/quantity";
+import { logServerError } from "@/lib/errors/public";
 
 function authorized(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
         result: await syncTeamSeatQuantity(organization.id, { verifyRemote: true }),
       });
     } catch (error) {
-      console.error("[cron/billing-seat-sync]", organization.id, error);
+      logServerError("cron/billing-seat-sync", error, { orgId: organization.id });
       results.push({ orgId: organization.id, ok: false, error: "sync failed" });
     }
   }

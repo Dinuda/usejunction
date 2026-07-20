@@ -4,7 +4,6 @@ import { PageHeader } from "@/components/page-header";
 import { BillingSettingsCard } from "@/components/settings/billing-settings-card";
 import { SignalsSettingsCard } from "@/components/settings/signals-settings-card";
 import { WorkspaceSettingsCard } from "@/components/settings/workspace-settings-card";
-import { getWorkExtractionReadiness } from "@/lib/agent-updates";
 import { getOrgActivitySettings } from "@/lib/activity/service";
 import { getOrgSignalsPolicy } from "@/lib/signals/service";
 import { getOrgBillingStatus } from "@/lib/saas-billing/status";
@@ -26,9 +25,6 @@ export default async function SettingsPage() {
       orderBy: [{ name: "asc" }, { email: "asc" }],
     }),
   ]);
-  const readiness = signalsPolicy.workExtractionEnabled
-    ? await getWorkExtractionReadiness(orgId)
-    : null;
 
   return (
     <div className="mx-auto w-full max-w-6xl">
@@ -45,7 +41,7 @@ export default async function SettingsPage() {
           initialColor={current?.color ?? null}
         />
         <BillingSettingsCard billing={billing} members={billingMembers} />
-        <SignalsSettingsCard initialPolicy={signalsPolicy} initialReadiness={readiness} />
+        <SignalsSettingsCard initialPolicy={signalsPolicy} />
         <ActivitySettingsCard initialSettings={settings} />
       </div>
     </div>

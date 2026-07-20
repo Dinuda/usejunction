@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { requireOrgRole, rolesFor } from "@/lib/rbac";
 import { decryptSecret } from "@/lib/security";
+import { logServerError } from "@/lib/errors/public";
 
 /**
  * Returns the current user's local agent sync endpoint + token so the browser
@@ -69,7 +70,7 @@ export async function GET(req: NextRequest) {
       lastAccountSyncAt: device.lastAccountSyncAt?.toISOString() ?? null,
     });
   } catch (e) {
-    console.error("[me/local-sync]", e);
+    logServerError("me/local-sync", e);
     return NextResponse.json({ error: "failed" }, { status: 500 });
   }
 }

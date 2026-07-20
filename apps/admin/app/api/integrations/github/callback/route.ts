@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma, type Prisma } from "@usejunction/db";
 import { getGitHubInstallation, verifyGitHubState } from "@/lib/integrations/github-app";
 import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
+import { logServerError } from "@/lib/errors/public";
 
 export async function GET(req: NextRequest) {
   const auth = await requireOrgRole(req, rolesFor("settings_billing"));
@@ -13,7 +14,7 @@ export async function GET(req: NextRequest) {
   try {
     state = verifyGitHubState(stateValue);
   } catch (error) {
-    console.error("[integrations/github/callback]", error);
+    logServerError("integrations/github/callback", error);
     return NextResponse.json({ error: "invalid GitHub connection state" }, { status: 400 });
   }
   if (state.userId !== auth.userId || state.orgId !== auth.orgId) return NextResponse.json({ error: "GitHub connection state does not match the signed-in administrator" }, { status: 403 });

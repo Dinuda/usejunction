@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { agentUpdateEventSchema, recordAgentUpdateEvent } from "@/lib/agent-updates";
 import { findDeviceByBearerToken } from "@/lib/auth";
 import { limitedJson } from "@/lib/security/http";
+import { logServerError } from "@/lib/errors/public";
 
 export async function POST(req: NextRequest) {
   const device = await findDeviceByBearerToken(req, {
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof Error && error.message === "UPDATE_ATTEMPT_NOT_FOUND") {
       return NextResponse.json({ error: "update attempt not found" }, { status: 404 });
     }
-    console.error("[devices/agent-update]", error);
+    logServerError("devices/agent-update", error);
     return NextResponse.json({ error: "update event failed" }, { status: 500 });
   }
 }

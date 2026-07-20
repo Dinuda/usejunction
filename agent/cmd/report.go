@@ -85,10 +85,10 @@ var daemonCmd = &cobra.Command{
 			}
 		}()
 
-		if err := updater.ConsumeHandoffResult(cfg, api, config.Version); err != nil && verbose {
+		if err := updater.ConsumeHandoffResult(cfg, api, config.Version); err != nil {
 			fmt.Printf("[daemon] update handoff: %v\n", err)
 		}
-		if _, err := updater.ConfirmPending(cfg, api, config.Version); err != nil && verbose {
+		if _, err := updater.ConfirmPending(cfg, api, config.Version); err != nil {
 			fmt.Printf("[daemon] update confirmation: %v\n", err)
 		}
 
@@ -105,11 +105,12 @@ var daemonCmd = &cobra.Command{
 			fmt.Println("Control plane requested uninstall; removing agent…")
 			return uninstall.Run(verbose)
 		} else if updated, updateErr := applyUpdate(cmd.Context(), cfg, api, response.Update); updateErr != nil {
-			if verbose {
-				fmt.Printf("[daemon] automatic update: %v\n", updateErr)
-			}
+			fmt.Printf("[daemon] automatic update: %v\n", updateErr)
 		} else if updated {
 			fmt.Printf("Updated UseJunction agent; restarting service…\n")
+			if restartErr := restartBackgroundAgent(); restartErr != nil {
+				fmt.Printf("[daemon] update installed; restart warning: %v\n", restartErr)
+			}
 			return nil
 		}
 		// Windows v1 intentionally collects coding telemetry/work sessions only.
@@ -144,16 +145,23 @@ var daemonCmd = &cobra.Command{
 						fmt.Println("Control plane requested uninstall; removing agent…")
 						return uninstall.Run(verbose)
 					}
-					if handoffErr := updater.ConsumeHandoffResult(cfg, api, config.Version); handoffErr != nil && verbose {
+					if handoffErr := updater.ConsumeHandoffResult(cfg, api, config.Version); handoffErr != nil {
 						fmt.Printf("[daemon] update handoff: %v\n", handoffErr)
 					}
-					if _, confirmErr := updater.ConfirmPending(cfg, api, config.Version); confirmErr != nil && verbose {
+					if _, confirmErr := updater.ConfirmPending(cfg, api, config.Version); confirmErr != nil {
 						fmt.Printf("[daemon] update confirmation: %v\n", confirmErr)
 					}
 					var updated bool
 					updated, loopErr = applyUpdate(cmd.Context(), cfg, api, response.Update)
+					if loopErr != nil {
+						fmt.Printf("[daemon] automatic update: %v\n", loopErr)
+						loopErr = nil
+					}
 					if updated {
 						fmt.Printf("Updated UseJunction agent; restarting service…\n")
+						if restartErr := restartBackgroundAgent(); restartErr != nil {
+							fmt.Printf("[daemon] update installed; restart warning: %v\n", restartErr)
+						}
 						return nil
 					}
 					// A scheduled collection may have failed while the control plane was

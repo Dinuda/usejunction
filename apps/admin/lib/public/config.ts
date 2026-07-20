@@ -32,7 +32,7 @@ export const navAnchors = [
 ] as const;
 
 /** Extra page links (Guides, Compare, etc.) — re-add when those sections ship in nav. */
-export const navLinks = [] as const;
+export const navLinks: ReadonlyArray<{ href: string; label: string }> = [];
 
 export const SUPPORTED_TOOLS = [
   { name: "Codex", initials: "CX" },

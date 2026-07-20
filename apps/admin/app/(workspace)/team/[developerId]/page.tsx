@@ -68,7 +68,7 @@ export default async function MemberOverviewPage({
 
   return (
     <>
-      <div className="grid items-stretch gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid items-stretch gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
         <SignalsKpi
           label="Verified usage"
           value={formatUsd(verified)}

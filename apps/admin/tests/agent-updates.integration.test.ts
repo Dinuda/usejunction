@@ -65,8 +65,10 @@ test("release cohort, escalation, ownership, idempotency, and confirmation", {
     const postActivation = await createDevice("post-activation", "linux", "arm64", "0.1.0");
     const critical = await promoteAgentRelease({ ...manifest, urgency: "critical", rolloutHours: 0 }, escalated);
     assert.equal(critical.cohortSize, 3);
-    const escalatedRows = await prisma.agentUpdateDeployment.findMany({ where: { releaseId: promoted.release.id } });
-    assert.equal(escalatedRows.length, 3, "critical escalation must not add post-activation devices");
+    const escalatedRows = await prisma.agentUpdateDeployment.findMany({
+      where: { releaseId: promoted.release.id, cohortMember: true },
+    });
+    assert.equal(escalatedRows.length, 3, "critical escalation must not add post-activation devices to cohort");
     assert.equal(escalatedRows.find((row) => row.deviceId === pendingDevice.id)?.eligibleAt.toISOString(), escalated.toISOString());
     await assert.rejects(
       promoteAgentRelease({
@@ -76,6 +78,46 @@ test("release cohort, escalation, ownership, idempotency, and confirmation", {
         artifacts: { ...artifacts, "linux-amd64": { ...artifacts["linux-amd64"], sha256: "b".repeat(64) } },
       }, escalated),
       /RELEASE_ARTIFACTS_IMMUTABLE/,
+    );
+
+    const lateIdentity = {
+      id: postActivation.id,
+      orgId: org.id,
+      os: "linux",
+      architecture: "arm64",
+      agentVersion: "0.1.0",
+    };
+    const lateDirective = await updateDirectiveForDevice(lateIdentity, { now: escalated });
+    assert.ok(lateDirective, "late-enrolled devices still receive OTA via non-cohort deployment");
+    const lateRow = await prisma.agentUpdateDeployment.findUniqueOrThrow({
+      where: { releaseId_deviceId: { releaseId: promoted.release.id, deviceId: postActivation.id } },
+    });
+    assert.equal(lateRow.cohortMember, false);
+
+    const unknownArchDevice = await createDevice("unknown-arch", "unknown", "unknown", "0.1.0");
+    assert.equal(
+      await updateDirectiveForDevice({
+        id: unknownArchDevice.id,
+        orgId: org.id,
+        os: "unknown",
+        architecture: "unknown",
+        agentVersion: "0.1.0",
+      }, { now: escalated }),
+      null,
+    );
+    const correctedDirective = await updateDirectiveForDevice({
+      id: unknownArchDevice.id,
+      orgId: org.id,
+      os: "linux",
+      architecture: "amd64",
+      agentVersion: "0.1.0",
+    }, { now: escalated });
+    assert.ok(correctedDirective, "OS/arch correction backfills a non-cohort deployment");
+    assert.equal(
+      (await prisma.agentUpdateDeployment.findUniqueOrThrow({
+        where: { releaseId_deviceId: { releaseId: promoted.release.id, deviceId: unknownArchDevice.id } },
+      })).cohortMember,
+      false,
     );
 
     const identity = { id: pendingDevice.id, orgId: org.id, os: "linux", architecture: "amd64", agentVersion: "0.1.0" };
@@ -122,10 +164,13 @@ test("release cohort, escalation, ownership, idempotency, and confirmation", {
     assert.equal((await prisma.device.findUniqueOrThrow({ where: { id: pendingDevice.id } })).agentVersion, version);
 
     const coverage = await getAgentUpdateCoverage(org.id, version, escalated);
-    assert.equal(coverage?.metrics.total, 3);
+    assert.equal(coverage?.metrics.total, 3, "coverage denominator stays fixed to cohort members");
     assert.equal(coverage?.metrics.confirmed, 2);
     assert.equal(coverage?.metrics.downloaded, 1);
+    assert.equal(coverage?.devices.filter((row) => row.cohortMember).length, 3);
+    assert.ok(coverage?.devices.some((row) => !row.cohortMember));
     const platform = await getPlatformAgentUpdateCoverage(version, escalated);
+    assert.equal(platform?.organizations.find((row) => row.organizationId === org.id)?.total, 3);
     assert.equal(platform?.organizations.find((row) => row.organizationId === org.id)?.milestones.downloaded, 1);
     assert.equal(platform?.organizations.find((row) => row.organizationId === org.id)?.milestones.confirmed, 2);
     assert.equal("devices" in (platform ?? {}), false, "platform metrics must not expose device rows");

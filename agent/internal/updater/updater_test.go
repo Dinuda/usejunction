@@ -7,10 +7,13 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/usejunction/agent/internal/client"
@@ -157,6 +160,73 @@ func TestChecksumFailureLeavesCurrentBinary(t *testing.T) {
 	assertFileContents(t, executable, []byte("current"))
 	if _, err := os.Stat(executable + ".previous"); !os.IsNotExist(err) {
 		t.Fatalf("backup unexpectedly exists: %v", err)
+	}
+}
+
+func TestNodeCompatibleManifestSignature(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "manifest.json")
+	artifactURL := "https://example.com/usejunction-linux-amd64?arch=amd64&os=linux"
+	sha := strings.Repeat("ab", 32)
+	unsigned := map[string]any{
+		"schemaVersion": 2,
+		"version":       "0.3.1",
+		"publishedAt":   "2026-07-19T00:00:00.000Z",
+		"urgency":       "normal",
+		"rolloutHours":  24,
+		"artifacts": map[string]any{
+			"darwin-amd64":  map[string]any{"url": artifactURL, "sha256": sha, "size": 1024},
+			"darwin-arm64":  map[string]any{"url": artifactURL, "sha256": sha, "size": 1024},
+			"linux-amd64":   map[string]any{"url": artifactURL, "sha256": sha, "size": 1024},
+			"linux-arm64":   map[string]any{"url": artifactURL, "sha256": sha, "size": 1024},
+			"windows-amd64": map[string]any{"url": artifactURL, "sha256": sha, "size": 1024},
+			"windows-arm64": map[string]any{"url": artifactURL, "sha256": sha, "size": 1024},
+		},
+	}
+	raw, err := json.Marshal(unsigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	root := filepath.Join("..", "..", "..")
+	script := filepath.Join(root, "scripts", "sign-agent-release-manifest.js")
+	if _, err := os.Stat(script); err != nil {
+		t.Skip("sign script not available from test working directory")
+	}
+	cmd := exec.Command("node", script, manifestPath, "critical")
+	cmd.Env = append(os.Environ(),
+		"AGENT_UPDATE_SIGNING_KEY_ID=test",
+		"AGENT_UPDATE_SIGNING_PRIVATE_KEY="+hex.EncodeToString(testSigningPrivate.Seed()),
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("node sign failed: %v\n%s", err, out)
+	}
+
+	var signed client.AgentReleaseManifest
+	body, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(body, &signed); err != nil {
+		t.Fatal(err)
+	}
+	if signed.Urgency != "critical" || signed.RolloutHours != 0 {
+		t.Fatalf("urgency rewrite = %+v", signed)
+	}
+	directive := client.AgentUpdateDirective{
+		TargetVersion: signed.Version,
+		Urgency:       signed.Urgency,
+		ArtifactURL:   artifactURL,
+		ArtifactKey:   "linux-amd64",
+		SHA256:        sha,
+		Size:          1024,
+		Manifest:      signed,
+	}
+	if err := verifyDirectiveSignature(directive); err != nil {
+		t.Fatalf("verifyDirectiveSignature: %v", err)
 	}
 }
 

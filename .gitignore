@@ -14,6 +14,8 @@ apps/admin/public/releases/
 apps/admin/e2e/.auth/
 apps/admin/playwright-report/
 apps/admin/test-results/
+apps/admin/scripts/*-verification-report.json
 packages/db/prisma/migrations/**/migration_lock.toml
 .vercel
 .env*.local
+apps/admin/.env.prod

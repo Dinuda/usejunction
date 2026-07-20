@@ -196,6 +196,9 @@ model AgentUpdateDeployment {
   sourceVersion        String    @map("source_version")
   targetVersion        String    @map("target_version")
   eligibleAt           DateTime  @map("eligible_at")
+  /// True for devices snapshotted at promote time. Late joiners get rows with false
+  /// so they still receive OTA without changing the fixed coverage denominator.
+  cohortMember         Boolean   @default(true) @map("cohort_member")
   state                String    @default("pending")
   directiveDeliveredAt DateTime? @map("directive_delivered_at")
   downloadStartedAt    DateTime? @map("download_started_at")
@@ -219,6 +222,7 @@ model AgentUpdateDeployment {
   @@unique([releaseId, deviceId])
   @@index([orgId, releaseId, state])
   @@index([deviceId, createdAt])
+  @@index([releaseId, cohortMember])
   @@map("agent_update_deployments")
 }
 

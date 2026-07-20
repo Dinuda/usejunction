@@ -5,6 +5,7 @@ import { getAdapter } from "@/lib/integrations/adapters";
 import type { IntegrationConfig } from "@/lib/integrations/types";
 import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { credentialFingerprint, encryptSecret } from "@/lib/security";
+import { logServerError } from "@/lib/errors/public";
 
 const schema = z.object({ credential: z.string().min(8).max(20_000) });
 
@@ -24,7 +25,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       now: new Date(),
     });
   } catch (error) {
-    console.error("[integrations] credential validation failed", error);
+    logServerError("integrations", error, { phase: "credential validation" });
     return NextResponse.json({ error: "provider credential validation failed" }, { status: 422 });
   }
   const updated = await prisma.providerConnection.update({
