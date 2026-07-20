@@ -2,6 +2,8 @@
 
 This document is the canonical guide for how UseJunction ships agent updates, how those updates reach devices, how coverage is measured, and how to work on the system in development.
 
+For hosting the control plane on Vercel (env vars, DB migrations, crons), see [production-deployment.md](./production-deployment.md).
+
 The key design goal is that release creation and release activation are separate events.
 
 - Tagging creates an immutable candidate.
@@ -83,6 +85,142 @@ This is the point where the release becomes active for enrolled devices.
 | Candidate build | `git push origin agent-vX.Y.Z` | Draft candidate release + immutable artifacts |
 | Promotion | `workflow_dispatch` with `action=promote` | Active rollout + fleet snapshot |
 | Pause | `workflow_dispatch` with `action=pause` | Stop issuing new directives |
+
+**A normal `git push` / merge to `main` does not update devices.** Only tag + promote does. Web app deploys are separate (Vercel); see [production-deployment.md](./production-deployment.md).
+
+## Production secrets setup
+
+One-time configuration for signing and promote. Do this before the first `agent-v*` tag.
+
+### 1. Generate an Ed25519 signing keypair
+
+```bash
+SEED=$(openssl rand -hex 32)
+KEY_ID="prod-1"
+SEED="$SEED" KEY_ID="$KEY_ID" node <<'EOF'
+const crypto = require("crypto");
+const seed = Buffer.from(process.env.SEED, "hex");
+const pkcs8 = Buffer.concat([
+  Buffer.from("302e020100300506032b657004220420", "hex"),
+  seed,
+]);
+const privateKey = crypto.createPrivateKey({ key: pkcs8, format: "der", type: "pkcs8" });
+const publicKey = crypto.createPublicKey(privateKey);
+const spki = publicKey.export({ type: "spki", format: "der" });
+const pub = spki.subarray(-32).toString("base64url");
+console.log("AGENT_UPDATE_SIGNING_PRIVATE_KEY=" + process.env.SEED);
+console.log("AGENT_UPDATE_SIGNING_KEY_ID=" + process.env.KEY_ID);
+console.log("AGENT_UPDATE_TRUSTED_KEYS=" + process.env.KEY_ID + ":" + pub);
+EOF
+
+openssl rand -base64 32   # AGENT_RELEASE_OPERATIONS_TOKEN
+```
+
+Store the values in a password manager. Never commit them. If a private key is pasted into chat or logs, rotate it.
+
+Keep `KEY_ID` stable across releases unless you intentionally rotate keys. `AGENT_UPDATE_TRUSTED_KEYS` is a comma-separated list of `keyId:base64urlPublicKey` (usually one entry).
+
+### 2. GitHub repository secrets (Actions → Secrets)
+
+Used by `.github/workflows/agent-release-build.yml` (and re-sign on promote):
+
+```bash
+gh secret set AGENT_UPDATE_SIGNING_KEY_ID -b 'prod-1'
+gh secret set AGENT_UPDATE_SIGNING_PRIVATE_KEY -b '<hex seed>'
+gh secret set AGENT_UPDATE_TRUSTED_KEYS -b 'prod-1:<base64url public key>'
+```
+
+### 3. GitHub Environment `agent-production`
+
+Create the environment (Settings → Environments, or API). Optionally enable **Required reviewers** so promote needs approval.
+
+```bash
+gh api -X PUT repos/<owner>/<repo>/environments/agent-production
+
+gh secret set CONTROL_PLANE_URL \
+  --env agent-production \
+  -b 'https://usejunction.dev'
+
+gh secret set AGENT_RELEASE_OPERATIONS_TOKEN \
+  --env agent-production \
+  -b '<same token as Vercel>'
+```
+
+`.github/workflows/agent-release-control.yml` runs with `environment: agent-production` and calls:
+
+- `POST $CONTROL_PLANE_URL/api/internal/agent-releases/promote`
+- `POST $CONTROL_PLANE_URL/api/internal/agent-releases/pause`
+
+### 4. Vercel Production
+
+Set the **same** `AGENT_RELEASE_OPERATIONS_TOKEN` on the `admin` project so the control plane accepts promote/pause. See [production-deployment.md](./production-deployment.md).
+
+### Verify
+
+```bash
+gh secret list
+gh secret list --env agent-production
+```
+
+## How to ship a production agent release
+
+### Candidate (immutable build)
+
+1. Ensure the commit you want is on the branch you will tag (usually `main`).
+2. Choose a new semver that has never been tagged. Match or bump `agent/internal/config/config.go` `Version` as appropriate.
+3. Tag and push:
+
+```bash
+git tag agent-v0.3.1
+git push origin agent-v0.3.1
+```
+
+4. Wait for **Agent release candidate** to finish (`gh run watch` or the Actions UI). It creates a **draft** GitHub Release. Devices are not updated yet.
+
+Do not rewrite tags. If the build is wrong, ship `agent-v0.3.2` (or the next version).
+
+### Promote (activate fleet rollout)
+
+**GitHub UI**
+
+1. Actions → **Agent release control** → **Run workflow**
+2. Inputs:
+   - `action`: `promote`
+   - `version`: `0.3.1` (no `agent-v` prefix)
+   - `urgency`: `normal` (24h staggered rollout) or `critical` (immediate)
+3. Approve the `agent-production` environment gate if configured.
+
+**CLI**
+
+```bash
+gh workflow run agent-release-control.yml \
+  -f action=promote \
+  -f version=0.3.1 \
+  -f urgency=normal
+```
+
+### Pause
+
+```bash
+gh workflow run agent-release-control.yml \
+  -f action=pause \
+  -f version=0.3.1 \
+  -f urgency=normal
+```
+
+(`urgency` is unused for pause but required by the workflow inputs.)
+
+### After promote
+
+- Enrolled devices receive directives on heartbeat / update check.
+- Coverage: `GET /api/agent-releases/:version/coverage` (org) or internal aggregate.
+- Devices built **before** trusted signing keys were embedded need one manual bootstrap:
+
+```bash
+curl -fsSL https://usejunction.dev/install.sh | sh -s -- --upgrade --url https://usejunction.dev
+```
+
+Subsequent OTAs then verify signed manifests normally.
 
 ## Control plane API surface
 

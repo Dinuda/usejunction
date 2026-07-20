@@ -58,7 +58,7 @@ export function buildHomeJsonLd() {
       name: siteConfig.name,
       url: baseUrl,
       description: siteConfig.tagline,
-      logo: absoluteUrl("/favicon.svg"),
+      logo: absoluteUrl("/icons/icon-192.png"),
       email: "hello@usejunction.dev",
       sameAs: [siteConfig.githubUrl, twitterUrl],
     },

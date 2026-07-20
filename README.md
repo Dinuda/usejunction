@@ -188,6 +188,8 @@ Existing `0.1.0` installations need one final updater bootstrap after the first 
 curl -fsSL <control-plane>/install.sh | sh -s -- --upgrade --url <control-plane>
 ```
 
+Hosted production (Vercel, env vars, migrations, crons) is documented in [Production deployment](docs/production-deployment.md).
+
 Agent release operations, triggers, rollout behavior, and fleet coverage are documented in [Controlled Agent Releases](docs/agent-releases.md).
 
 ### Release development

@@ -31,10 +31,12 @@ function isPublicPath(pathname: string): boolean {
     pathname.startsWith("/blog") ||
     pathname.startsWith("/join") ||
     pathname.startsWith("/connect-invite") ||
+    pathname.startsWith("/auth/") ||
     pathname.startsWith("/i/") ||
     pathname.startsWith("/verify") ||
     pathname.startsWith("/forgot") ||
     pathname.startsWith("/reset") ||
+
     pathname.startsWith("/releases/") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/contact") ||
@@ -64,6 +66,7 @@ export default {
   trustHost: process.env.AUTH_TRUST_HOST === "true" || process.env.NODE_ENV !== "production",
   pages: {
     signIn: "/login",
+    error: "/auth/error",
   },
   session: {
     strategy: "jwt",
