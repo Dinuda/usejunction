@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "vitest";
-import { buildDailyReportEmail } from "@/lib/email/daily-report";
+import { buildDailyReportEmail, buildReportEmailText, reportsEmailFrom } from "@/lib/email/daily-report";
 import { buildEmailColumnChartHtml } from "@/lib/email/daily-report-html";
 import { buildDailyReportPdfHtml, buildPdfAreaChartSvg } from "@/lib/email/daily-report-pdf";
 import type { DailyReportPayload } from "@/lib/reports/daily-report";
@@ -100,6 +100,32 @@ describe("daily report email", () => {
     assert.match(built.html, /Sent Sundays at 19:00/);
     assert.match(built.html, /This week/);
     assert.doesNotMatch(built.url, /scope=you/);
+  });
+});
+
+describe("daily report send email", () => {
+  test("uses plain text body with attachment notice", () => {
+    const text = buildReportEmailText({
+      report,
+      recipientName: "Dinuda",
+      settingsUrl: "https://app.usejunction.com/settings",
+    });
+    assert.match(text, /^Hi Dinuda,/);
+    assert.match(text, /attached as a PDF/);
+    assert.match(text, /Manage email reports: https:\/\/app\.usejunction\.com\/settings/);
+    assert.doesNotMatch(text, /<html/i);
+    assert.doesNotMatch(text, /Open today's report/);
+  });
+
+  test("reports sender uses configured address", () => {
+    const prev = process.env.REPORTS_EMAIL_FROM;
+    process.env.REPORTS_EMAIL_FROM = "UseJunction <reporting@usejunction.dev>";
+    try {
+      assert.equal(reportsEmailFrom(), "UseJunction <reporting@usejunction.dev>");
+    } finally {
+      if (prev) process.env.REPORTS_EMAIL_FROM = prev;
+      else delete process.env.REPORTS_EMAIL_FROM;
+    }
   });
 });
 

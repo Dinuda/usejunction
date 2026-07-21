@@ -42,7 +42,7 @@ See [production-deployment.md](./production-deployment.md#cron-jobs) for env var
 
 - Admin app running (`pnpm --filter @usejunction/admin dev`, often `http://localhost:3001`)
 - `DATABASE_URL` set; migrations applied (`pnpm --filter @usejunction/db exec prisma migrate deploy`)
-- For real email: `RESEND_API_KEY` (and optionally `AUTH_EMAIL_FROM`) in `apps/admin/.env`
+- For real email: `RESEND_API_KEY` (and optionally `REPORTS_EMAIL_FROM`, e.g. `UseJunction <reporting@usejunction.dev>`) in `apps/admin/.env`
 - User has `time_zone` set (visit the app once, or Settings → Email reports)
 - Daily report prefs enabled (default on)
 - Linked developer row for personal reports; owner/admin for workspace report
