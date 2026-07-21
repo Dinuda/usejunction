@@ -13,9 +13,9 @@ import { useRawQuery } from "@/lib/api/client";
 
 const ERROR_COPY: Record<string, { title: string; description: string; detail: string }> = {
   Configuration: {
-    title: "Sign-in isn’t available.",
-    description: "There’s a problem with the authentication configuration.",
-    detail: "Check the server logs for more information, or try again later.",
+    title: "Sign-in was interrupted.",
+    description: "We couldn’t finish signing you in right now.",
+    detail: "Try again in a moment. New Google, GitHub, or Microsoft accounts are created automatically on first sign-in.",
   },
   AccessDenied: {
     title: "Access denied.",

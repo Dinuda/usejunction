@@ -132,6 +132,6 @@ export async function POST(req: NextRequest) {
       }
     }
   }
-  if (accepted > 0) await invalidateAnalyticsCache(authContext.orgId);
+  if (accepted > 0) await invalidateAnalyticsCache(authContext.orgId, { dirtyDates: [new Date()] });
   return NextResponse.json({ partialSuccess: { accepted, discarded } });
 }

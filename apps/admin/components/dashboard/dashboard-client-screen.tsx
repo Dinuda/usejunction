@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -9,6 +10,7 @@ import { CycleUtilizationBar } from "@/components/dashboard/cycle-utilization-ba
 import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
 import { DashboardSetupPanel } from "@/components/dashboard/setup-panel";
+import { AudienceScopeSwitcher } from "@/components/audience-scope-switcher";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/panel";
 import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
@@ -17,6 +19,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
+import type { AudienceScope } from "@/lib/audience-scope";
 import {
   verdictHint,
   verdictLabel,
@@ -40,7 +43,8 @@ import type { OrgOverviewV1 } from "@/lib/insights";
 import type { getMeOverview } from "@/lib/queries/me/overview";
 import type { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
 import { useAppQuery } from "@/lib/api/client";
-import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
+import { AppPageError } from "@/components/app-data-state";
+import { DashboardCrunchingState } from "@/components/dashboard/dashboard-crunching-state";
 
 const AiCodingPanel = dynamic(() => import("@/components/dashboard/ai-coding-panel").then((mod) => mod.AiCodingPanel), { ssr: false });
 const CoverageChart = dynamic(() => import("@/components/dashboard/coverage-chart").then((mod) => mod.CoverageChart), { ssr: false });
@@ -207,7 +211,13 @@ function cycleWindowLabel(row: OrgOverviewV1["subscriptionCycles"][number], view
   return `${formatShortDate(row.billingCycle.cycleStart)} – ${formatShortDate(row.billingCycle.cycleEnd)}`;
 }
 
-function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>> }) {
+function PersonalHome({
+  data,
+  audienceSwitcher,
+}: {
+  data: Awaited<ReturnType<typeof getMeOverview>>;
+  audienceSwitcher?: ReactNode;
+}) {
   const usage = data.usage30d;
   const tokens = Number(BigInt(usage.inputTokens) + BigInt(usage.outputTokens));
   const usageCost = usage.verifiedUsageCost + usage.estimatedApiCost;
@@ -221,7 +231,9 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
           className="mb-0"
           title={`Hey ${firstName}.`}
           description="Your device, tools, and last 30 days of traffic."
-        />
+        >
+          {audienceSwitcher}
+        </PageHeader>
       </div>
 
       {!data.developer.devices.length ? (
@@ -323,9 +335,19 @@ function PersonalHome({ data }: { data: Awaited<ReturnType<typeof getMeOverview>
 }
 
 type DashboardPayload =
-  | { kind: "personal"; personal: Awaited<ReturnType<typeof getMeOverview>> }
+  | {
+      kind: "personal";
+      scope: AudienceScope;
+      canSwitchAudience: boolean;
+      youUnlinked?: boolean;
+      personal: Awaited<ReturnType<typeof getMeOverview>> | null;
+      needsPersonalConnect?: boolean;
+      syncContext?: Awaited<ReturnType<typeof getLocalSyncContext>>;
+    }
   | {
       kind: "organization";
+      scope: AudienceScope;
+      canSwitchAudience: boolean;
       cycleView: CycleView;
       rollingPeriod: RollingPeriod;
       overview: OrgOverviewV1 | null;
@@ -341,9 +363,38 @@ export default function DashboardPage() {
     ["app", "dashboard", queryString],
     `/api/app/dashboard${queryString ? `?${queryString}` : ""}`,
   );
-  if (query.isPending) return <AppPageSkeleton />;
+  // Pending without cached data: plain skeleton first; crunching copy only after 1.5s.
+  if (query.isPending && !query.data) return <DashboardCrunchingState />;
   if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
-  if (query.data.kind === "personal") return <PersonalHome data={query.data.personal} />;
+
+  const switcher = query.data.canSwitchAudience ? <AudienceScopeSwitcher /> : null;
+
+  if (query.data.kind === "personal") {
+    if (query.data.youUnlinked || !query.data.personal) {
+      return (
+        <>
+          <ConnectMachineBanner show={query.data.needsPersonalConnect ?? true} />
+          <PageHeader
+            title="Your numbers."
+            description="Link a developer profile and connect a machine to see personal usage here."
+          >
+            {switcher}
+          </PageHeader>
+          {query.data.syncContext ? (
+            <div className="mb-8">
+              <LocalSyncPanel
+                lastSeenAt={query.data.syncContext.lastSeenAt}
+                lastUsageSyncAt={query.data.syncContext.lastUsageSyncAt}
+                lastAccountSyncAt={query.data.syncContext.lastAccountSyncAt}
+              />
+            </div>
+          ) : null}
+          <DashboardSetupPanel canInvite={false} />
+        </>
+      );
+    }
+    return <PersonalHome data={query.data.personal} audienceSwitcher={switcher} />;
+  }
 
   const { cycleView, rollingPeriod, error, needsPersonalConnect, syncContext } = query.data;
   const data = query.data.overview;
@@ -361,7 +412,9 @@ export default function DashboardPage() {
         }
         actions={!empty && data ? <CycleViewPicker view={cycleView} period={rollingPeriod} /> : null}
         mobileActionsInline
-      />
+      >
+        {switcher}
+      </PageHeader>
 
       {syncContext ? (
         <div className="mb-8">

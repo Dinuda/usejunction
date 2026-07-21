@@ -4,6 +4,14 @@
     {
       "path": "/api/cron/usage-daily-refresh",
       "schedule": "15 0 * * *"
+    },
+    {
+      "path": "/api/cron/materialize-org-day-snapshots",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/daily-report-send",
+      "schedule": "5 * * * *"
     }
   ]
 }

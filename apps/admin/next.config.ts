@@ -11,10 +11,15 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../.."),
+  serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core", "playwright"],
   outputFileTracingIncludes: {
     "/*": [
       "./node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/**/*",
       "./node_modules/.pnpm/@prisma+client*/node_modules/@prisma/client/**/*",
+    ],
+    "/api/cron/daily-report-send": [
+      "./node_modules/.pnpm/@sparticuz+chromium*/node_modules/@sparticuz/chromium/**/*",
+      "./public/usejunction.png",
     ],
   },
   transpilePackages: ["@usejunction/db"],

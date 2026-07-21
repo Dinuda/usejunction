@@ -41,4 +41,8 @@ Full contract, surfaces, views, pass criteria, and triage: [Calculation verifica
 
 CI runs `verify:calcs` and `tests/calculation-verification.integration.test.ts` in the GitHub Actions `e2e` job after `e2e:seed` (see [calculation-verification.md](calculation-verification.md#ci-github-actions)).
 
+## Daily report cron (local)
+
+Manual trigger and troubleshooting (`due: 0`, Resend, idempotency): [daily-reports.md](./daily-reports.md#run-the-report-job-locally).
+
 Coverage is reported for the broader billing, metrics, quota, Signals, and period-preference surfaces. The 90% statements/lines/functions and 85% branch gates are applied per file to the calculation modules listed in `apps/admin/vitest.config.ts`; service adapters and broad UI/insight code remain report-only until they have deterministic fixtures.

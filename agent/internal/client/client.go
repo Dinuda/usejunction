@@ -91,6 +91,8 @@ type HeartbeatPayload struct {
 	AgentVersion   string `json:"agentVersion"`
 	LocalEndpoint  string `json:"localEndpoint,omitempty"`
 	LocalSyncToken string `json:"localSyncToken,omitempty"`
+	// TimeZone is the machine IANA timezone when known (e.g. Asia/Colombo).
+	TimeZone string `json:"timeZone,omitempty"`
 }
 
 type AgentUpdateDirective struct {

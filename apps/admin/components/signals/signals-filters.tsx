@@ -38,7 +38,7 @@ function buildHref(
   fields: { showTeam: boolean; showTool: boolean; showPerson: boolean },
 ) {
   const params = new URLSearchParams();
-  for (const key of ["view", "days", "from", "to"] as const) {
+  for (const key of ["view", "days", "from", "to", "scope"] as const) {
     const value = searchParams.get(key);
     if (value) params.set(key, value);
   }

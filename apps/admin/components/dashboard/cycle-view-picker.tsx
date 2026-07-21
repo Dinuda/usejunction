@@ -37,7 +37,19 @@ import {
   type RollingPeriod,
   type RollingPeriodPrefs,
 } from "@/lib/dashboard/period-prefs";
+import { copyAudienceScope } from "@/lib/audience-scope";
 import { cn } from "@/lib/utils";
+
+function cycleViewHref(basePath: string, view: Exclude<CycleView, "last_30_days">) {
+  const params = new URLSearchParams({ view });
+  if (typeof window !== "undefined") copyAudienceScope(params, window.location.search);
+  return `${basePath}?${params.toString()}`;
+}
+
+function periodHref(period: RollingPeriod, basePath: string) {
+  const preserve = typeof window !== "undefined" ? window.location.search : "";
+  return rollingPeriodHref(period, basePath, preserve);
+}
 
 type CycleView = "current_cycles" | "previous_cycles" | "last_30_days";
 
@@ -91,7 +103,7 @@ export function CycleViewPicker({
     if (hasExplicitPeriod) return;
     const stored = readRollingPeriodPrefs().active;
     if (periodsEqual(stored, DEFAULT_ROLLING_PERIOD)) return;
-    router.replace(rollingPeriodHref(stored, basePath));
+    router.replace(periodHref(stored, basePath));
   }, [basePath, router, view]);
 
   const rollingLabel = rollingPeriodLabel(prefs.active);
@@ -99,7 +111,7 @@ export function CycleViewPicker({
   function applyPeriod(next: RollingPeriod) {
     const updated = setActiveRollingPeriod(next);
     setPrefs(updated);
-    router.push(rollingPeriodHref(next, basePath));
+    router.push(periodHref(next, basePath));
   }
 
   function deleteSaved(item: CustomRollingPeriod, event: MouseEvent) {
@@ -108,7 +120,7 @@ export function CycleViewPicker({
     const updated = removeSavedRollingPeriod(item.id);
     setPrefs(updated);
     if (periodsEqual(period, item)) {
-      router.push(rollingPeriodHref(DEFAULT_ROLLING_PERIOD, basePath));
+      router.push(periodHref(DEFAULT_ROLLING_PERIOD, basePath));
     }
   }
 
@@ -217,7 +229,7 @@ export function CycleViewPicker({
               <DropdownMenuItem
                 key={value}
                 className="rounded-none"
-                onSelect={() => router.push(`${basePath}?view=${value}`)}
+                onSelect={() => router.push(cycleViewHref(basePath, value))}
               >
                 <span className="flex-1">{cycleViewLabels[value]}</span>
                 {view === value ? <Check className="size-3.5 text-foreground" aria-hidden /> : null}
@@ -233,7 +245,7 @@ export function CycleViewPicker({
         {(["current_cycles", "previous_cycles"] as const).map((value) => (
           <Button key={value} asChild size="sm" variant="ghost" className="shrink-0">
             <Link
-              href={`${basePath}?view=${value}`}
+              href={cycleViewHref(basePath, value)}
               className={cn(
                 "h-8 rounded-none px-3 text-xs font-semibold",
                 view === value

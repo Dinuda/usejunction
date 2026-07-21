@@ -113,7 +113,7 @@ export async function executeUsageQuery(
     const previous = await tx.analyticsQueryCache.findUnique({ where: { key }, select: { expiresAt: true } });
 
     if (!options.bypassCache && bytes <= MAX_CACHE_BYTES) {
-      await tx.analyticsQueryCache.deleteMany({ where: { expiresAt: { lte: now } } });
+      await tx.analyticsQueryCache.deleteMany({ where: { orgId: scope.orgId, expiresAt: { lte: now } } });
       await tx.analyticsQueryCache.upsert({
         where: { key },
         create: {

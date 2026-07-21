@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@usejunction/db";
 import { requireAppPrincipal } from "@/lib/api/app-auth";
 import { appData, timingHeader } from "@/lib/api/app-response";
+import { parseAudienceScope } from "@/lib/audience-scope";
 import { parseRollingPeriodFromSearch, type RollingPeriod } from "@/lib/dashboard/period-prefs";
 import { parseCycleView, type CycleView } from "@/lib/dashboard/cycle-view";
 import { getMeOverview } from "@/lib/queries/me/overview";
 import { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
+import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 import { getOrgOverview, overviewInputFromBounds, overviewInputFromRange } from "@/lib/insights";
 
@@ -28,19 +29,45 @@ export async function GET(request: NextRequest) {
     from: query.get("from") ?? undefined,
     to: query.get("to") ?? undefined,
   });
+  const canSwitchAudience = principal.role === "owner" || principal.role === "admin";
+  const scope = canSwitchAudience ? parseAudienceScope(query.get("scope")) : "team";
 
   if (principal.role === "user") {
     const personal = await getMeOverview(principal.orgId, principal.userId, principal.role);
     const loaded = performance.now();
     return appData(
-      { kind: "personal" as const, personal },
+      { kind: "personal" as const, scope: "you" as const, canSwitchAudience: false, personal },
       { serverTiming: timingHeader({ auth: authenticated - started, data: loaded - authenticated, total: loaded - started }) },
     );
   }
 
-  // Start all independent reads immediately; the old page waited for the
-  // analytics model before beginning the developer and local-sync reads.
-  const [overviewResult, myDeveloper, syncContext] = await Promise.all([
+  // Owner/admin You: personal metrics for the linked developer.
+  if (canSwitchAudience && scope === "you") {
+    const [linkedId, syncContext] = await Promise.all([
+      resolveLinkedDeveloperId(principal.orgId, principal.userId),
+      getLocalSyncContext(principal.orgId, principal.userId),
+    ]);
+    const personal = linkedId
+      ? await getMeOverview(principal.orgId, principal.userId, principal.role)
+      : null;
+    const loaded = performance.now();
+    return appData(
+      {
+        kind: "personal" as const,
+        scope: "you" as const,
+        canSwitchAudience: true,
+        youUnlinked: !linkedId,
+        personal,
+        needsPersonalConnect: !syncContext || syncContext.deviceCount === 0,
+        syncContext,
+      },
+      { serverTiming: timingHeader({ auth: authenticated - started, data: loaded - authenticated, total: loaded - started }) },
+    );
+  }
+
+  // Overview + sync context in parallel. Sync context already loads the
+  // developer/devices row used for the connect banner — avoid a duplicate findFirst.
+  const [overviewResult, syncContext] = await Promise.all([
     getOrgOverview(
       {
         orgId: principal.orgId,
@@ -51,10 +78,6 @@ export async function GET(request: NextRequest) {
       },
       overviewInputForView(cycleView, rollingPeriod),
     ).then((envelope) => ({ data: envelope.data, error: null as string | null })).catch(() => ({ data: null, error: "Could not load dashboard." })),
-    prisma.developer.findFirst({
-      where: { orgId: principal.orgId, authUserId: principal.userId },
-      select: { id: true, _count: { select: { devices: true } } },
-    }),
     getLocalSyncContext(principal.orgId, principal.userId),
   ]);
   const loaded = performance.now();
@@ -62,11 +85,13 @@ export async function GET(request: NextRequest) {
   return appData(
     {
       kind: "organization" as const,
+      scope: "team" as const,
+      canSwitchAudience,
       cycleView,
       rollingPeriod,
       overview: overviewResult.data,
       error: overviewResult.error,
-      needsPersonalConnect: !myDeveloper || myDeveloper._count.devices === 0,
+      needsPersonalConnect: !syncContext || syncContext.deviceCount === 0,
       syncContext,
     },
     { serverTiming: timingHeader({ auth: authenticated - started, data: loaded - authenticated, total: loaded - started }) },

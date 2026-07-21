@@ -29,17 +29,30 @@ export const getWorkspaceContext = cache(async (): Promise<WorkspaceContext | nu
   // The legacy cookie is only a migration hint. It is never trusted without
   // the same indexed membership check used for a JWT-selected workspace.
   const candidateOrgId = cookieOrgId ?? session.user.orgId;
-  const membership = candidateOrgId
+  const membershipSelect = {
+    role: true,
+    orgId: true,
+    onboardingCompletedAt: true,
+    organization: { select: { id: true, name: true, color: true } },
+  } as const;
+
+  let membership = candidateOrgId
     ? await prisma.organizationMembership.findUnique({
       where: { userId_orgId: { userId: session.user.id, orgId: candidateOrgId } },
-      select: {
-        role: true,
-        orgId: true,
-        onboardingCompletedAt: true,
-        organization: { select: { id: true, name: true, color: true } },
-      },
+      select: membershipSelect,
     })
     : null;
+
+  // OAuth sign-in creates a JWT before onboarding creates a workspace. After
+  // ensureOwnerWorkspace runs, resolve membership from the DB even when the
+  // JWT still has a null orgId (same fallback as resolveOrgId).
+  if (!membership) {
+    membership = await prisma.organizationMembership.findFirst({
+      where: { userId: session.user.id },
+      orderBy: { createdAt: "desc" },
+      select: membershipSelect,
+    });
+  }
 
   const organizations = membership ? [{
     id: membership.organization.id,

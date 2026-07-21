@@ -75,6 +75,11 @@ export async function POST(req: NextRequest) {
       await prisma.toolInstallation.deleteMany({ where: { deviceId: device.id } });
     }
 
+    await prisma.device.update({
+      where: { id: device.id },
+      data: { lastSeenAt: new Date() },
+    });
+
     const toolNames = uniqueStrings(reportedNames);
     await recordDeviceActivityEvent({
       orgId: device.orgId,

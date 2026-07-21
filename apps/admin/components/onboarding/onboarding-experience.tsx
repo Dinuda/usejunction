@@ -15,6 +15,7 @@ import { canManageSettings } from "@/lib/rbac/permissions";
 type OnboardingStatus = {
   configured: boolean;
   role?: string | null;
+  onboardingCompletedAt?: string | null;
   organization?: { name: string; slug: string };
   developer?: {
     devices: Array<{
@@ -121,13 +122,36 @@ export function OnboardingExperience() {
     }
     let next = response.ok ? await response.json() as OnboardingStatus : null;
     if (next && !next.configured) {
-      const create = await fetch("/api/onboarding", { method: "POST", headers: { "content-type": "application/json", "x-requested-with": "usejunction-web" }, body: "{}" });
+      const create = await fetch("/api/onboarding", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-requested-with": "usejunction-web" },
+        body: "{}",
+      });
       if (create.status === 401) {
         window.location.href = "/login?from=/onboarding";
         return;
       }
+      if (create.ok) {
+        const created = await create.json().catch(() => null) as { orgId?: string } | null;
+        if (created?.orgId) {
+          // Put orgId into the JWT so enroll / requireOrgRole work immediately.
+          await fetch("/api/me/workspace", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+              "content-type": "application/json",
+              "x-requested-with": "usejunction-web",
+            },
+            body: JSON.stringify({ orgId: created.orgId }),
+          });
+        }
+      }
       response = await fetch("/api/onboarding", { cache: "no-store" });
       next = response.ok ? await response.json() as OnboardingStatus : null;
+    }
+    if (next?.onboardingCompletedAt) {
+      window.location.href = "/dashboard";
+      return;
     }
     if (next) setStatus(next);
     setLoading(false);

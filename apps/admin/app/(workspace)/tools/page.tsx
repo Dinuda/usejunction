@@ -177,6 +177,7 @@ export default function ToolsPage() {
             lastAccountSyncAt: personal.sync.lastAccountSyncAt,
             hasLocalEndpoint: personal.sync.hasLocalEndpoint,
             needsPlanSync: personal.sync.needsPlanSync,
+            deviceCount: personal.developer.devices.length,
           }}
         />
       );

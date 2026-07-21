@@ -32,4 +32,5 @@ test("attention only includes actionable health and plan alerts", () => {
     ["health-0", "plan-plan-1"],
   );
   assert.equal(items.some((item) => /offline|online|active|inactive/i.test(item.title)), false);
+  assert.equal(items[1]?.detail, "Likely to hit the cap before renewal");
 });

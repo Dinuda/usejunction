@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   membershipFindFirst: vi.fn(),
   membershipFindUnique: vi.fn(),
   membershipFindMany: vi.fn(),
+  deviceAggregate: vi.fn(),
+  toolInstallationCount: vi.fn(),
   legacyOrgId: null as string | null,
 }));
 
@@ -30,12 +32,23 @@ vi.mock("@usejunction/db", () => ({
       findUnique: mocks.membershipFindUnique,
       findMany: mocks.membershipFindMany,
     },
+    device: {
+      aggregate: mocks.deviceAggregate,
+    },
+    toolInstallation: {
+      count: mocks.toolInstallationCount,
+    },
   },
 }));
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.legacyOrgId = null;
+  mocks.deviceAggregate.mockResolvedValue({
+    _count: { id: 0 },
+    _max: { lastSeenAt: null, lastUsageSyncAt: null, lastAccountSyncAt: null },
+  });
+  mocks.toolInstallationCount.mockResolvedValue(0);
   mocks.auth.mockResolvedValue({
     user: {
       id: "user-1",
@@ -120,8 +133,38 @@ describe("workspace context API", () => {
     expect(payload.data.current).toMatchObject({ id: "org-1", role: "owner" });
     expect(payload.data.billing.usersUsed).toBe(2);
     expect(payload.data.sessionWorkspaceSyncRequired).toBe(false);
+    expect(payload.data.sync).toMatchObject({
+      deviceCount: 0,
+      toolCount: 0,
+      watermark: "0|0|||",
+    });
     expect(response.headers.get("cache-control")).toContain("no-store");
     expect(response.headers.get("server-timing")).toContain("membership");
+  });
+
+  it("exposes a sync watermark from device and tool facts", async () => {
+    mocks.membershipFindMany.mockResolvedValue([org("org-1", "One")]);
+    mocks.deviceAggregate.mockResolvedValue({
+      _count: { id: 1 },
+      _max: {
+        lastSeenAt: new Date("2026-07-21T12:00:00.000Z"),
+        lastUsageSyncAt: new Date("2026-07-21T12:05:00.000Z"),
+        lastAccountSyncAt: null,
+      },
+    });
+    mocks.toolInstallationCount.mockResolvedValue(3);
+    const { GET } = await import("@/app/api/app/workspace-context/route");
+    const response = await GET(new NextRequest("https://usejunction.dev/api/app/workspace-context"));
+    const payload = await response.json();
+
+    expect(payload.data.sync).toEqual({
+      deviceCount: 1,
+      toolCount: 3,
+      lastSeenAt: "2026-07-21T12:00:00.000Z",
+      lastUsageSyncAt: "2026-07-21T12:05:00.000Z",
+      lastAccountSyncAt: null,
+      watermark: "1|3|2026-07-21T12:00:00.000Z|2026-07-21T12:05:00.000Z|",
+    });
   });
 
   it("never selects a tampered legacy cookie outside the user's memberships", async () => {

@@ -1,7 +1,8 @@
 "use client";
 
+import type { ReactNode } from "react";
+import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
-import dynamic from "next/dynamic";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { MobileDataCard, MobileDataField, MobileDataList } from "@/components/ui/mobile-data";
 import {
@@ -12,20 +13,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { ReactNode } from "react";
 import { ActivityPageHeader } from "@/components/activity/activity-page-header";
+import { AudienceScopeSwitcher } from "@/components/audience-scope-switcher";
 import { Panel } from "@/components/panel";
 import { DeviceActivityFeed } from "@/components/activity/device-activity-feed";
+import { SentReportsSection } from "@/components/activity/sent-reports-section";
 import { UsageBreakdownList } from "@/components/activity/usage-breakdown-list";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
 import { MetricPeriodFilter } from "@/components/dashboard/metric-period-filter";
 import { FlowPath, SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
-import {
-  type CycleView,
-} from "@/lib/dashboard/cycle-view";
-import {
-  type RollingPeriod,
-} from "@/lib/dashboard/period-prefs";
+import { type CycleView } from "@/lib/dashboard/cycle-view";
+import { type RollingPeriod } from "@/lib/dashboard/period-prefs";
+import type { AudienceScope } from "@/lib/audience-scope";
 import type { getDeviceActivityFeed } from "@/lib/queries/activity/device-activity";
 import type { getDashboardUsage } from "@/lib/queries/dashboard/usage";
 import type { getMeOverview } from "@/lib/queries/me/overview";
@@ -34,8 +33,41 @@ import type { getPersonalSignalsLedger } from "@/lib/signals/read";
 import type { OrgActivitySettings } from "@/lib/activity/contracts";
 import { useAppQuery } from "@/lib/api/client";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
+import { DashboardSetupPanel } from "@/components/dashboard/setup-panel";
 
-const AiCodingPanel = dynamic(() => import("@/components/dashboard/ai-coding-panel").then((mod) => mod.AiCodingPanel), { ssr: false });
+type DeviceFeed = Awaited<ReturnType<typeof getDeviceActivityFeed>>;
+type MeOverview = Awaited<ReturnType<typeof getMeOverview>>;
+type OrgUsage = Awaited<ReturnType<typeof getDashboardUsage>>;
+type SignalsLedger = Awaited<ReturnType<typeof getPersonalSignalsLedger>>;
+
+type BreakdownRow = {
+  key: string;
+  toolName: string | null;
+  model?: string | null;
+  requests: number;
+  cost: number;
+  metaExtra: string | null;
+};
+
+/** Normalized activity surface — Team and You share the same chrome. */
+type ActivityViewModel = {
+  scope: AudienceScope;
+  periodLabel: string;
+  kpis: {
+    requests: number;
+    sessions: number;
+    tokens: number;
+    tools: number;
+    toolsSub: string;
+  };
+  tools: BreakdownRow[];
+  models: BreakdownRow[];
+  deviceFeed: DeviceFeed;
+  showDeveloperOnFeed: boolean;
+  sync?: MeOverview["sync"] | null;
+  signalsLedger?: SignalsLedger;
+  showDeviceFeed: boolean;
+};
 
 function duration(seconds: number) {
   if (seconds < 60) return `${seconds}s`;
@@ -104,225 +136,265 @@ function DataTable({
   );
 }
 
-function DeveloperActivityView({
-  periodLabel,
-  settings,
-  personal,
-  signalsLedger,
-  deviceFeed,
-}: {
-  settings: OrgActivitySettings;
-  periodLabel: string;
-  personal: Awaited<ReturnType<typeof getMeOverview>>;
-  signalsLedger: Awaited<ReturnType<typeof getPersonalSignalsLedger>>;
-  deviceFeed: Awaited<ReturnType<typeof getDeviceActivityFeed>>;
-}) {
+function fromPersonal(
+  personal: MeOverview,
+  signalsLedger: SignalsLedger,
+  deviceFeed: DeviceFeed,
+  showDeviceFeed: boolean,
+  periodLabel: string,
+): ActivityViewModel {
   const tokens = Number(BigInt(personal.usage30d.inputTokens) + BigInt(personal.usage30d.outputTokens));
+  const tools = [...personal.toolsUsage30d].sort((a, b) => b.requests - a.requests || b.tokens - a.tokens);
+  const models = [...personal.modelUsage30d]
+    .filter((row) => row.metricKind !== "productivity")
+    .sort((a, b) => b.requests - a.requests);
 
-  return (
-    <>
-      <div className="mb-10">
-        <LocalSyncPanel
-          lastSeenAt={personal.sync.lastSeenAt}
-          lastUsageSyncAt={personal.sync.lastUsageSyncAt}
-          lastAccountSyncAt={personal.sync.lastAccountSyncAt}
-        />
-      </div>
-
-      <div className="mb-10 grid gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
-        <SignalsKpi
-          label="Requests"
-          hero
-          className="pl-5"
-          value={formatCompactNumber(personal.usage30d.requests)}
-          sub={periodLabel}
-        />
-        <SignalsKpi
-          label="Sessions"
-          className="sm:border-l sm:border-border sm:pl-8"
-          value={formatCompactNumber(personal.usage30d.sessions)}
-        />
-        <SignalsKpi
-          label="Tokens"
-          className="xl:border-l xl:border-border xl:pl-8"
-          value={formatCompactNumber(tokens)}
-          sub="input + output"
-        />
-        <SignalsKpi
-          label="Tools"
-          className="sm:border-l sm:border-border sm:pl-8"
-          value={formatCompactNumber(personal.toolsUsage30d.length)}
-          sub="detected on your device"
-        />
-      </div>
-
-      <AiCodingPanel metrics={personal.aiCoding30d} models={personal.modelUsage30d} />
-
-      <Panel as="section" className="mt-10">
-        <SignalsSectionHeader title="By tool." description="Tools detected on your device." bordered={false} />
-        <UsageBreakdownList
-          valueMode="requests"
-          countNoun="tools"
-          empty="No tools detected yet."
-          rows={personal.toolsUsage30d.map((tool) => {
-            const metaParts = [tool.tokens > 0 ? `${formatCompactNumber(tool.tokens)} tokens` : null].filter(Boolean);
-            return {
-              key: tool.toolName,
-              toolName: tool.toolName,
-              requests: tool.requests,
-              cost: tool.cost,
-              metaExtra: metaParts.length ? metaParts.join(" · ") : null,
-            };
-          })}
-        />
-      </Panel>
-
-      {settings.teamDeviceActivityEnabled ? <DeviceActivityFeed feed={deviceFeed} /> : null}
-
-      <Panel as="section" className="mt-10">
-        <SignalsSectionHeader
-          title="Your Signals ledger."
-          description="App and domain flow for latest sessions. No screenshots, full URLs, or clipboard text."
-          bordered={false}
-        />
-        <DataTable
-          headers={["Flow", "Time", "Duration", "Device", "Confidence"]}
-          empty="No Signals sessions uploaded yet."
-          rows={signalsLedger.map((session) => [
-            <FlowPath
-              flow={[
-                session.domainBefore ?? session.appBefore ?? "unknown",
-                session.aiTool,
-                session.domainAfter ?? session.appAfter ?? "unknown",
-              ].join(" -> ")}
-            />,
-            <span className="text-muted-foreground">{new Date(session.startedAt).toLocaleString()}</span>,
-            <span className="tabular-nums">{duration(session.durationSeconds)}</span>,
-            <span>{session.device.hostname}</span>,
-            <span className="tabular-nums text-muted-foreground">{Math.round(session.confidence * 100)}%</span>,
-          ])}
-        />
-      </Panel>
-    </>
-  );
+  return {
+    scope: "you",
+    periodLabel,
+    kpis: {
+      requests: personal.usage30d.requests,
+      sessions: personal.usage30d.sessions,
+      tokens,
+      tools: tools.length,
+      toolsSub: "with traffic this period",
+    },
+    tools: tools.map((tool) => ({
+      key: tool.toolName,
+      toolName: tool.toolName,
+      requests: tool.requests,
+      cost: tool.cost,
+      metaExtra: tool.tokens > 0 ? `${formatCompactNumber(tool.tokens)} tokens` : null,
+    })),
+    models: models.map((row) => ({
+      key: `${row.toolName}-${row.model}-${row.source}`,
+      toolName: row.toolName,
+      model: row.model,
+      requests: row.requests,
+      cost: row.cost,
+      metaExtra: null,
+    })),
+    deviceFeed,
+    showDeveloperOnFeed: false,
+    sync: personal.sync,
+    signalsLedger,
+    showDeviceFeed,
+  };
 }
 
-function AdminActivityView({
-  periodLabel,
-  usage,
-  feed,
-}: {
-  periodLabel: string;
-  usage: Awaited<ReturnType<typeof getDashboardUsage>>;
-  feed: Awaited<ReturnType<typeof getDeviceActivityFeed>>;
-}) {
-  const totalTokens = usage.kpis.inputTokens + usage.kpis.outputTokens;
-  const totalRequests = usage.kpis.modelCalls;
+function fromOrganization(usage: OrgUsage, deviceFeed: DeviceFeed, periodLabel: string): ActivityViewModel {
+  const tools = [...usage.byTool].sort((a, b) => b.requests - a.requests || b.tokens - a.tokens);
   const models = [...usage.byModel].sort(
     (a, b) => b.requests - a.requests || b.tokens - a.tokens || (a.model ?? "").localeCompare(b.model ?? ""),
   );
-  const tools = [...usage.byTool].sort((a, b) => b.requests - a.requests || b.tokens - a.tokens);
+  return {
+    scope: "team",
+    periodLabel,
+    kpis: {
+      requests: usage.kpis.modelCalls,
+      sessions: usage.kpis.sessions,
+      tokens: usage.kpis.inputTokens + usage.kpis.outputTokens,
+      tools: tools.length,
+      toolsSub: "with traffic this period",
+    },
+    tools: tools.map((row) => ({
+      key: row.toolName ?? "unknown",
+      toolName: row.toolName,
+      requests: row.requests,
+      cost: row.cost,
+      metaExtra: row.tokens > 0 ? `${formatCompactNumber(row.tokens)} tokens` : null,
+    })),
+    models: models.map((row) => ({
+      key: `${row.toolName}-${row.model}-${row.source}`,
+      toolName: row.toolName,
+      model: row.model,
+      requests: row.requests,
+      cost: row.cost,
+      metaExtra: row.tokens > 0 ? `${formatCompactNumber(row.tokens)} tokens` : null,
+    })),
+    deviceFeed,
+    showDeveloperOnFeed: true,
+    showDeviceFeed: true,
+  };
+}
+
+function SharedActivityView({ view }: { view: ActivityViewModel }) {
+  const isYou = view.scope === "you";
 
   return (
     <>
+      {isYou && view.sync ? (
+        <div className="mb-10">
+          <LocalSyncPanel
+            lastSeenAt={view.sync.lastSeenAt}
+            lastUsageSyncAt={view.sync.lastUsageSyncAt}
+            lastAccountSyncAt={view.sync.lastAccountSyncAt}
+          />
+        </div>
+      ) : null}
+
       <div className="mb-10 grid gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
         <SignalsKpi
           label="Requests"
           hero
           className="pl-5"
-          value={formatCompactNumber(totalRequests)}
-          sub={periodLabel}
+          value={formatCompactNumber(view.kpis.requests)}
+          sub={view.periodLabel}
         />
         <SignalsKpi
           label="Sessions"
           className="sm:border-l sm:border-border sm:pl-8"
-          value={formatCompactNumber(usage.kpis.sessions)}
-          sub={periodLabel}
+          value={formatCompactNumber(view.kpis.sessions)}
+          sub={view.periodLabel}
         />
         <SignalsKpi
           label="Tokens"
           className="xl:border-l xl:border-border xl:pl-8"
-          value={formatCompactNumber(totalTokens)}
+          value={formatCompactNumber(view.kpis.tokens)}
           sub="input + output"
         />
         <SignalsKpi
           label="Tools"
           className="sm:border-l sm:border-border sm:pl-8"
-          value={formatCompactNumber(tools.length)}
-          sub="with traffic this period"
+          value={formatCompactNumber(view.kpis.tools)}
+          sub={view.kpis.toolsSub}
         />
       </div>
 
-      <DeviceActivityFeed feed={feed} showDeveloper />
+      {view.showDeviceFeed ? (
+        <DeviceActivityFeed feed={view.deviceFeed} showDeveloper={view.showDeveloperOnFeed} />
+      ) : null}
+
+      <SentReportsSection audience={view.scope} />
 
       <div className="mt-10 grid gap-6 lg:grid-cols-2">
         <Panel as="section">
           <SignalsSectionHeader
             title="By tool."
-            description="Request volume by detected tool."
+            description={isYou ? "Request volume by tool on your devices." : "Request volume by detected tool."}
             bordered={false}
           />
           <UsageBreakdownList
             valueMode="requests"
             countNoun="tools"
-            empty="No tool traffic yet."
-            rows={tools.map((row) => ({
-              key: row.toolName ?? "unknown",
-              toolName: row.toolName,
-              requests: row.requests,
-              cost: row.cost,
-              metaExtra: row.tokens > 0 ? `${formatCompactNumber(row.tokens)} tokens` : null,
-            }))}
+            empty={isYou ? "No tools detected yet." : "No tool traffic yet."}
+            rows={view.tools}
           />
         </Panel>
 
         <Panel as="section">
           <SignalsSectionHeader
             title="By model."
-            description={`Request volume by model · ${models.length} total.`}
+            description={`Request volume by model · ${view.models.length} total.`}
             bordered={false}
           />
           <UsageBreakdownList
             valueMode="requests"
             countNoun="models"
             empty="No model traffic yet."
-            rows={models.map((row) => ({
-              key: `${row.toolName}-${row.model}-${row.source}`,
-              toolName: row.toolName,
-              model: row.model,
-              requests: row.requests,
-              cost: row.cost,
-              metaExtra: row.tokens > 0 ? `${formatCompactNumber(row.tokens)} tokens` : null,
-            }))}
+            rows={view.models}
           />
         </Panel>
       </div>
+
+      {isYou && view.signalsLedger ? (
+        <Panel as="section" className="mt-10">
+          <SignalsSectionHeader
+            title="Your Signals ledger."
+            description="App and domain flow for latest sessions. No screenshots, full URLs, or clipboard text."
+            bordered={false}
+          />
+          <DataTable
+            headers={["Flow", "Time", "Duration", "Device", "Confidence"]}
+            empty="No Signals sessions uploaded yet."
+            rows={view.signalsLedger.map((session) => [
+              <FlowPath
+                flow={[
+                  session.domainBefore ?? session.appBefore ?? "unknown",
+                  session.aiTool,
+                  session.domainAfter ?? session.appAfter ?? "unknown",
+                ].join(" -> ")}
+              />,
+              <span className="text-muted-foreground">{new Date(session.startedAt).toLocaleString()}</span>,
+              <span className="tabular-nums">{duration(session.durationSeconds)}</span>,
+              <span>{session.device.hostname}</span>,
+              <span className="tabular-nums text-muted-foreground">{Math.round(session.confidence * 100)}%</span>,
+            ])}
+          />
+        </Panel>
+      ) : null}
     </>
   );
 }
 
 type ActivityPayload =
-  | { kind: "personal"; settings: OrgActivitySettings; allowPeriodControls: boolean; cycleView: CycleView; rollingPeriod: RollingPeriod; periodLabel: string; personal: Awaited<ReturnType<typeof getMeOverview>>; signalsLedger: Awaited<ReturnType<typeof getPersonalSignalsLedger>>; deviceFeed: Awaited<ReturnType<typeof getDeviceActivityFeed>> }
-  | { kind: "organization"; allowPeriodControls: boolean; cycleView: CycleView; rollingPeriod: RollingPeriod; periodLabel: string; usage: Awaited<ReturnType<typeof getDashboardUsage>>; deviceFeed: Awaited<ReturnType<typeof getDeviceActivityFeed>> };
+  | {
+      kind: "personal";
+      scope: AudienceScope;
+      canSwitchAudience: boolean;
+      youUnlinked?: boolean;
+      settings: OrgActivitySettings;
+      allowPeriodControls: boolean;
+      cycleView: CycleView;
+      rollingPeriod: RollingPeriod;
+      periodLabel: string;
+      personal: MeOverview | null;
+      signalsLedger: SignalsLedger;
+      deviceFeed: DeviceFeed;
+    }
+  | {
+      kind: "organization";
+      scope: AudienceScope;
+      canSwitchAudience: boolean;
+      allowPeriodControls: boolean;
+      cycleView: CycleView;
+      rollingPeriod: RollingPeriod;
+      periodLabel: string;
+      usage: OrgUsage;
+      deviceFeed: DeviceFeed;
+    };
 
 export default function ActivityPage() {
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
-  const query = useAppQuery<ActivityPayload>(["app", "activity", queryString], `/api/app/activity${queryString ? `?${queryString}` : ""}`);
+  const query = useAppQuery<ActivityPayload>(
+    ["app", "activity", queryString],
+    `/api/app/activity${queryString ? `?${queryString}` : ""}`,
+  );
+
+  const payload = query.data;
+  const periodLabel = payload?.periodLabel ?? "";
+  const view: ActivityViewModel | null = useMemo(() => {
+    if (!payload) return null;
+    if (payload.kind === "personal") {
+      if (payload.youUnlinked || !payload.personal) return null;
+      return fromPersonal(
+        payload.personal,
+        payload.signalsLedger,
+        payload.deviceFeed,
+        payload.settings.teamDeviceActivityEnabled,
+        payload.periodLabel,
+      );
+    }
+    return fromOrganization(payload.usage, payload.deviceFeed, payload.periodLabel);
+  }, [payload]);
+
   if (query.isPending) return <AppPageSkeleton />;
   if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
-  const payload = query.data;
-  const isDeveloper = payload.kind === "personal";
-  const { allowPeriodControls: allowDeveloperPeriodControls, cycleView, rollingPeriod, periodLabel } = payload;
+  if (!payload) return <AppPageSkeleton />;
+
+  const isYou = payload.kind === "personal";
+  const { allowPeriodControls: allowDeveloperPeriodControls, cycleView, rollingPeriod } = payload;
+  const switcher = payload.canSwitchAudience ? <AudienceScopeSwitcher /> : null;
 
   return (
     <>
       <ActivityPageHeader
-        title={isDeveloper ? "Your activity." : "Activity."}
+        title={isYou ? "Your activity." : "Activity."}
         description={
-          isDeveloper
-            ? `Personal request volume, device sync updates, and your Signals ledger for ${periodLabel}. Work detail can be turned off.`
-            : `Device events and tool activity for ${periodLabel}. Journey insights live under Signals.`
+          isYou
+            ? `Your request volume, tools, models, and reports for ${periodLabel}.`
+            : `Team request volume, tools, models, and reports for ${periodLabel}.`
         }
         actions={
           allowDeveloperPeriodControls ? (
@@ -335,10 +407,13 @@ export default function ActivityPage() {
           ) : undefined
         }
       />
+      {switcher ? <div className="mb-8">{switcher}</div> : null}
 
-      {payload.kind === "personal"
-        ? <DeveloperActivityView settings={payload.settings} periodLabel={periodLabel} personal={payload.personal} signalsLedger={payload.signalsLedger} deviceFeed={payload.deviceFeed} />
-        : <AdminActivityView periodLabel={periodLabel} usage={payload.usage} feed={payload.deviceFeed} />}
+      {payload.kind === "personal" && (payload.youUnlinked || !payload.personal) ? (
+        <DashboardSetupPanel canInvite={false} />
+      ) : view ? (
+        <SharedActivityView view={view} />
+      ) : null}
     </>
   );
 }

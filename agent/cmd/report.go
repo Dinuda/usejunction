@@ -12,6 +12,7 @@ import (
 	"github.com/usejunction/agent/internal/client"
 	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/localsync"
+	"github.com/usejunction/agent/internal/platformdirs"
 	ujsignals "github.com/usejunction/agent/internal/signals"
 	"github.com/usejunction/agent/internal/uninstall"
 	"github.com/usejunction/agent/internal/updater"
@@ -250,6 +251,7 @@ func heartbeat(api *client.APIClient) (*client.HeartbeatResponse, error) {
 		AgentVersion:   config.Version,
 		LocalEndpoint:  cfg.LocalSyncURL(),
 		LocalSyncToken: cfg.LocalSyncToken,
+		TimeZone:       platformdirs.LocalIANATimeZone(),
 	})
 }
 

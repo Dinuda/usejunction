@@ -1,4 +1,5 @@
 import { prisma } from "@usejunction/db";
+import { toolDisplayName } from "@/lib/tools/catalog";
 
 export interface ConfigHealthIssue {
   severity: "warning" | "error";
@@ -92,7 +93,7 @@ export async function getDashboardConfigHealth(orgId: string): Promise<Dashboard
     if ((q.usedPercent ?? 0) > 85) {
       issues.push({
         severity: (q.usedPercent ?? 0) > 95 ? "error" : "warning",
-        message: `${q.toolName} quota at ${q.usedPercent?.toFixed(0)}%`,
+        message: `${toolDisplayName(q.toolName)} quota at ${q.usedPercent?.toFixed(0)}%`,
         context: formatUserDeviceContext(q.device?.user, q.device),
       });
     }

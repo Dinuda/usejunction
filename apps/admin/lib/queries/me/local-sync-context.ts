@@ -7,6 +7,8 @@ export type LocalSyncContext = {
   lastAccountSyncAt: string | null;
   hasLocalEndpoint: boolean;
   needsPlanSync: boolean;
+  /** Active (non-decommissioned) devices for the current developer. */
+  deviceCount: number;
 };
 
 function catalogToolDetectedWithoutPlan(input: {
@@ -139,6 +141,7 @@ export async function getLocalSyncPanelContext(
     lastAccountSyncAt: summary.lastAccountSyncAt,
     hasLocalEndpoint: summary.hasLocalEndpoint,
     needsPlanSync: summary.personalNeedsPlanSync,
+    deviceCount: developer.devices.length,
   };
 }
 
@@ -154,5 +157,6 @@ export async function getLocalSyncContext(orgId: string, authUserId: string): Pr
     lastAccountSyncAt: summary.lastAccountSyncAt,
     hasLocalEndpoint: summary.hasLocalEndpoint,
     needsPlanSync: summary.personalNeedsPlanSync || orgWideNeedsPlanSync,
+    deviceCount: developer.devices.length,
   };
 }

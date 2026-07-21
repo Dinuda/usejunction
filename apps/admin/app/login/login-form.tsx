@@ -15,6 +15,7 @@ const LOGIN_ERROR_COPY: Record<string, string> = {
   OAuthCallbackError: "We couldn’t complete sign-in. Try again or use another sign-in method.",
   OAuthSignin: "We couldn’t start sign-in. Try again or use another sign-in method.",
   OAuthSignInError: "We couldn’t start sign-in. Try again or use another sign-in method.",
+  Configuration: "We couldn’t finish signing you in. Try again in a moment — new accounts are created automatically on first sign-in.",
   AccessDenied: "This account is not allowed to sign in. Use another account or contact your administrator.",
   CredentialsSignin: "The email or password is incorrect. Check your details and try again.",
   invalid_verification: "This verification link is invalid. Request a new one and try again.",
@@ -25,6 +26,12 @@ export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const from = searchParams.get("from") ?? "/dashboard";
+  // Avoid flashing /dashboard for first-time OAuth users: land on a server
+  // continue page that sends them to onboarding when no workspace exists.
+  const oauthCallbackUrl =
+    from === "/dashboard" || from === "/"
+      ? `/auth/continue?from=${encodeURIComponent(from)}`
+      : from;
   const authError = searchParams.get("error");
   const authErrorCopy = authError ? LOGIN_ERROR_COPY[authError] : undefined;
   const verified = searchParams.get("verified") === "1";
@@ -61,7 +68,7 @@ export function LoginForm() {
           </AlertDescription>
         </Alert>
       )}
-      <OAuthProviderButtons callbackUrl={from} showEmailDivider />
+      <OAuthProviderButtons callbackUrl={oauthCallbackUrl} showEmailDivider />
       <form onSubmit={handleSubmit} className="space-y-4" aria-busy={loading}>
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>

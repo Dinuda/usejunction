@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +23,18 @@ export function AppPageSkeleton() {
 }
 
 export function AppPageError({ error, retry }: { error: AppApiError; retry: () => void }) {
+  const router = useRouter();
+
+  useEffect(() => {
+    if (error.code === "WORKSPACE_REQUIRED") {
+      router.replace("/onboarding");
+    }
+  }, [error.code, router]);
+
+  if (error.code === "WORKSPACE_REQUIRED") {
+    return <AppPageSkeleton />;
+  }
+
   return (
     <Alert variant="destructive">
       <AlertDescription className="flex flex-wrap items-center gap-3">

@@ -12,7 +12,11 @@ import { userFacingError } from "@/lib/errors/user-facing";
 export function SignupForm() {
   const params = useSearchParams();
   const intent = params.get("intent") === "team" ? "team" : "community";
-  const from = params.get("from") || "/dashboard";
+  const from = params.get("from") || "/onboarding";
+  const oauthCallbackUrl =
+    from === "/dashboard" || from === "/" || from === "/onboarding"
+      ? "/onboarding"
+      : from;
   const emailPrefill = params.get("email") ?? "";
   const joiningInvite =
     from.startsWith("/i/") || from.startsWith("/join/") || from.startsWith("/connect-invite/");
@@ -67,7 +71,7 @@ export function SignupForm() {
           </AlertDescription>
         </Alert>
       )}
-      <OAuthProviderButtons callbackUrl={from} showEmailDivider />
+      <OAuthProviderButtons callbackUrl={oauthCallbackUrl} showEmailDivider />
       <form onSubmit={submit} className="space-y-4" aria-busy={loading}>
         <div className="space-y-2">
           <Label htmlFor="name">Full name</Label>

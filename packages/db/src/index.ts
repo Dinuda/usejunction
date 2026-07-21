@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
  * Bump when Device (or other hot models) gain fields so a long-lived Next.js
  * process drops a stale PrismaClient after `prisma generate`.
  */
-const PRISMA_SCHEMA_REV = "org-usage-day-snapshots-v1";
+const PRISMA_SCHEMA_REV = "daily-report-prefs-v1";
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
@@ -52,6 +52,7 @@ export type {
   AuthActionToken,
   BillingPlanTemplate,
   ConnectInvite,
+  DailyReportDelivery,
   Developer,
   DeveloperPlanAssignment,
   DeveloperToolClaim,
@@ -87,5 +88,6 @@ export type {
   ToolInstallation,
   UsageDaily,
   User,
+  UserNotificationPreference,
   VerificationToken,
 } from "@prisma/client";

@@ -1,5 +1,5 @@
 import type { PlanVerdict } from "@/lib/quotas/plan-utilization-policy";
-import { verdictLabel } from "@/lib/quotas/plan-utilization-policy";
+import { verdictHint, verdictLabel } from "@/lib/quotas/plan-utilization-policy";
 
 export type AttentionItem = {
   id: string;
@@ -41,7 +41,7 @@ export function buildAttentionItems(input: {
       id: `plan-${row.id}`,
       severity: row.verdict.severity === "critical" ? "error" : "warning",
       title: `${row.name} · ${verdictLabel(row.verdict.code)}`,
-      detail: row.verdict.reasons.join(", "),
+      detail: verdictHint(row.verdict.code) ?? "",
       href: "/team",
     });
   }

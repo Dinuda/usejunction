@@ -1,7 +1,11 @@
 import { prisma } from "@usejunction/db";
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
-import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
+import {
+  ensureOrgUsageDaySnapshots,
+  readOrgUsageFromSnapshots,
+  type SnapshotToolDay,
+} from "@/lib/analytics/snapshots";
 import {
   filterCycleCodingSubscriptions,
   microsToDollars,
@@ -16,7 +20,6 @@ import {
   usageWindowDays,
   utcDateOnly,
 } from "@/lib/metrics/date-range";
-import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
 import {
   assertInsightRoles,
   makeInsightEnvelope,
@@ -30,7 +33,7 @@ import { rollupSubscriptionCyclesByTool, enrichSubscriptionCyclesWithUtilization
 import { readDeviceCoverage } from "@/lib/insights/readers/devices";
 import { getDashboardConfigHealth } from "@/lib/queries/dashboard/config-health";
 import { reportWindowForCycleOffset } from "@/lib/dashboard/cycle-view";
-import { isCodingTool, toolUsageNames } from "@/lib/tools/catalog";
+import { isCodingTool, toolDisplayName, toolUsageNames } from "@/lib/tools/catalog";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { fillOverviewTrend } from "@/lib/insights/policies/overview-trend";
 
@@ -46,57 +49,25 @@ async function readOverviewUsage(
   orgId: string,
   window: MetricWindow,
   includeTools: boolean,
-  filters: { toolNames?: string[] } = {},
+  filters: { toolNames?: string[]; ensure?: boolean } = {},
 ) {
-  const [summary, costs, trend, tools] = await Promise.all([
-    readUsageMetrics({
-      orgId,
-      window,
-      measures: ["requests", "inputTokens", "outputTokens"],
-      filters,
-      limit: 1,
-    }),
-    readUsageMetrics({ orgId, window, measures: ["costMicros"], dimensions: ["source", "costKind"], filters }),
-    readUsageMetrics({ orgId, window, measures: ["requests", "costMicros"], dimensions: ["day"], filters }),
-    includeTools
-      ? readUsageMetrics({
-          orgId,
-          window,
-          measures: ["requests", "costMicros", "activeDevelopers"],
-          dimensions: ["tool"],
-          filters,
-        })
-      : Promise.resolve(null),
-  ]);
-
-  const costSummary = summarizeCanonicalCosts(
-    costs.data.rows.map((row) => ({
-      costMicros: metricNumber(row, "costMicros"),
-      costKind: dimension(row, "costKind"),
-    })),
-  );
-
-  const summaryRow = summary.data.rows[0];
+  const snapshot = await readOrgUsageFromSnapshots(orgId, window, {
+    includeTools,
+    toolNames: filters.toolNames,
+    ensure: filters.ensure,
+  });
   return {
-    dataThrough: summary.dataThrough ? new Date(summary.dataThrough) : null,
-    kpis: {
-      modelCalls: metricNumber(summaryRow, "requests"),
-      tokens: metricNumber(summaryRow, "inputTokens") + metricNumber(summaryRow, "outputTokens"),
-      verifiedUsageCost: costSummary.verifiedUsageCost,
-      estimatedApiCost: costSummary.estimatedApiCost,
-      partialData: false,
-    },
-    trend: trend.data.rows.map((row) => ({
-      date: dimension(row, "day"),
-      modelCalls: metricNumber(row, "requests"),
-      cost: metricNumber(row, "costMicros") / 1_000_000,
+    dataThrough: snapshot.dataThrough,
+    kpis: snapshot.kpis,
+    trend: snapshot.trend,
+    tools: snapshot.tools.map((tool) => ({
+      toolName: tool.toolName || "unknown",
+      modelCalls: tool.requests,
+      cost: tool.cost,
+      activeDevelopers: tool.activeDevelopers,
     })),
-    tools: tools?.data.rows.map((row) => ({
-      toolName: dimension(row, "tool") || "unknown",
-      modelCalls: metricNumber(row, "requests"),
-      cost: metricNumber(row, "costMicros") / 1_000_000,
-      activeDevelopers: metricNumber(row, "activeDevelopers"),
-    })) ?? [],
+    activeDevelopers: snapshot.activeDevelopers,
+    toolDays: snapshot.toolDays,
   };
 }
 
@@ -218,11 +189,17 @@ function buildSubscriptionSlices(input: {
   return slices;
 }
 
-async function readAllocatedCycleUsage(orgId: string, slices: SubscriptionSlice[], view: CycleView) {
+async function readAllocatedCycleUsage(
+  slices: SubscriptionSlice[],
+  view: CycleView,
+  toolDays: SnapshotToolDay[],
+) {
   const usageBySlice = new Map<string, { modelCalls: number; verifiedUsageCost: number; estimatedApiCost: number }>();
   for (const slice of slices) {
     usageBySlice.set(slice.id, { modelCalls: 0, verifiedUsageCost: 0, estimatedApiCost: 0 });
   }
+
+  const toolNameSet = (names: string[]) => new Set(names);
 
   if (view !== "last_30_days") {
     const groups = new Map<string, { slices: SubscriptionSlice[]; totalSeats: number; toolNames: string[]; from: Date; to: Date }>();
@@ -239,22 +216,29 @@ async function readAllocatedCycleUsage(orgId: string, slices: SubscriptionSlice[
       group.totalSeats += Math.max(1, slice.seatCount);
       groups.set(key, group);
     }
-    await Promise.all(Array.from(groups.values()).map(async (group) => {
-      const usage = await readOverviewUsage(
-        orgId,
-        toMetricWindow(group.from, group.to),
-        false,
-        { toolNames: group.toolNames },
-      );
+    for (const group of groups.values()) {
+      const names = toolNameSet(group.toolNames);
+      const fromKey = isoDay(group.from);
+      const toKey = isoDay(group.to);
+      let modelCalls = 0;
+      let verifiedUsageCost = 0;
+      let estimatedApiCost = 0;
+      for (const day of toolDays) {
+        if (!names.has(day.toolName)) continue;
+        if (day.date < fromKey || day.date > toKey) continue;
+        modelCalls += day.requests;
+        verifiedUsageCost += day.verifiedUsageCost;
+        estimatedApiCost += day.estimatedApiCost;
+      }
       for (const slice of group.slices) {
         const share = Math.max(1, slice.seatCount) / Math.max(1, group.totalSeats);
         usageBySlice.set(slice.id, {
-          modelCalls: usage.kpis.modelCalls * share,
-          verifiedUsageCost: usage.kpis.verifiedUsageCost * share,
-          estimatedApiCost: usage.kpis.estimatedApiCost * share,
+          modelCalls: modelCalls * share,
+          verifiedUsageCost: verifiedUsageCost * share,
+          estimatedApiCost: estimatedApiCost * share,
         });
       }
-    }));
+    }
     return usageBySlice;
   }
 
@@ -266,44 +250,17 @@ async function readAllocatedCycleUsage(orgId: string, slices: SubscriptionSlice[
     groups.set(key, group);
   }
 
-  await Promise.all(Array.from(groups.values()).map(async (group) => {
+  for (const group of groups.values()) {
+    const names = toolNameSet(group.toolNames);
     const toolSlices = group.slices;
-    const from = new Date(Math.min(...toolSlices.map((slice) => slice.windowFrom.getTime())));
-    const to = new Date(Math.max(...toolSlices.map((slice) => slice.windowTo.getTime())));
-    const [requests, costs] = await Promise.all([
-      readUsageMetrics({
-        orgId,
-        window: toMetricWindow(from, to),
-        measures: ["requests"],
-        dimensions: ["day"],
-        filters: { toolNames: group.toolNames },
-      }),
-      readUsageMetrics({
-        orgId,
-        window: toMetricWindow(from, to),
-        measures: ["costMicros"],
-        dimensions: ["day", "source", "costKind"],
-        filters: { toolNames: group.toolNames },
-      }),
-    ]);
-
     const daily = new Map<string, { modelCalls: number; verifiedUsageCost: number; estimatedApiCost: number }>();
-    for (const row of requests.data.rows) {
-      const day = dimension(row, "day");
-      const existing = daily.get(day) ?? { modelCalls: 0, verifiedUsageCost: 0, estimatedApiCost: 0 };
-      existing.modelCalls += metricNumber(row, "requests");
-      daily.set(day, existing);
-    }
-    for (const row of costs.data.rows) {
-      const day = dimension(row, "day");
-      const existing = daily.get(day) ?? { modelCalls: 0, verifiedUsageCost: 0, estimatedApiCost: 0 };
-      const summary = summarizeCanonicalCosts([{
-        costMicros: metricNumber(row, "costMicros"),
-        costKind: dimension(row, "costKind"),
-      }]);
-      existing.verifiedUsageCost += summary.verifiedUsageCost;
-      existing.estimatedApiCost += summary.estimatedApiCost;
-      daily.set(day, existing);
+    for (const day of toolDays) {
+      if (!names.has(day.toolName)) continue;
+      const existing = daily.get(day.date) ?? { modelCalls: 0, verifiedUsageCost: 0, estimatedApiCost: 0 };
+      existing.modelCalls += day.requests;
+      existing.verifiedUsageCost += day.verifiedUsageCost;
+      existing.estimatedApiCost += day.estimatedApiCost;
+      daily.set(day.date, existing);
     }
 
     for (const [day, usage] of daily) {
@@ -319,7 +276,7 @@ async function readAllocatedCycleUsage(orgId: string, slices: SubscriptionSlice[
         usageBySlice.set(slice.id, current);
       }
     }
-  }));
+  }
   return usageBySlice;
 }
 
@@ -372,10 +329,16 @@ export async function getOrgOverview(
     previousTo: usageInclusiveEnd(previousWindow.to),
     previousToExclusive: usageExclusiveEnd(previousWindow.to),
   };
+
+  // Seal stubs (and fail-safe rematerialize if snaps were wiped) for the union
+  // window once — never two parallel ensures that each touch ~30 days.
+  const ensureFrom = new Date(Math.min(reportWindow.from.getTime(), previousWindow.from.getTime()));
+  const ensureTo = new Date(Math.max(reportWindow.to.getTime(), previousWindow.to.getTime()));
+  await ensureOrgUsageDaySnapshots(orgId, ensureFrom, ensureTo);
+
   const [
     currentUsage,
     previousUsage,
-    activeUsage,
     failures,
     totalDevelopers,
     deviceCoverage,
@@ -385,14 +348,8 @@ export async function getOrgOverview(
     detectedInstallations,
     planUsage,
   ] = await Promise.all([
-    readOverviewUsage(orgId, reportWindow, true),
-    readOverviewUsage(orgId, previousWindow, false),
-    readUsageMetrics({
-      orgId,
-      window: reportWindow,
-      measures: ["activeDevelopers"],
-      limit: 1,
-    }),
+    readOverviewUsage(orgId, reportWindow, true, { ensure: false }),
+    readOverviewUsage(orgId, previousWindow, false, { ensure: false }),
     prisma.$queryRaw<
       Array<{
         id: string;
@@ -437,7 +394,26 @@ export async function getOrgOverview(
     now: context.now,
     last30: { from: dates.from, toExclusive: dates.toExclusive },
   });
-  const allocatedUsage = await readAllocatedCycleUsage(orgId, subscriptionSlices, cycleView);
+
+  // Allocation may need tool-day rows outside the report window (billing cycle views).
+  let allocationToolDays = currentUsage.toolDays;
+  if (subscriptionSlices.length > 0) {
+    const allocFrom = new Date(Math.min(
+      ...subscriptionSlices.map((slice) => slice.windowFrom.getTime()),
+      reportWindow.from.getTime(),
+    ));
+    const allocTo = new Date(Math.max(
+      ...subscriptionSlices.map((slice) => slice.windowTo.getTime()),
+      reportWindow.to.getTime(),
+    ));
+    if (allocFrom.getTime() < reportWindow.from.getTime() || allocTo.getTime() > reportWindow.to.getTime()) {
+      await ensureOrgUsageDaySnapshots(orgId, allocFrom, allocTo);
+      const expanded = await readOverviewUsage(orgId, toMetricWindow(allocFrom, allocTo), true, { ensure: false });
+      allocationToolDays = expanded.toolDays;
+    }
+  }
+
+  const allocatedUsage = await readAllocatedCycleUsage(subscriptionSlices, cycleView, allocationToolDays);
   const cycleCommitment = subscriptionSlices.reduce(
     (sum, slice) => sum + microsToDollars(slice.spendMicros),
     0,
@@ -467,7 +443,7 @@ export async function getOrgOverview(
     healthIssues: health.issues,
     planVerdicts: planUsage.data.subscriptions.map((row) => ({
       id: row.planTemplateId,
-      name: `${row.toolName} ${row.planName}`,
+      name: `${toolDisplayName(row.toolName)} ${row.planName}`,
       verdict: row.verdict,
     })),
   });
@@ -573,7 +549,7 @@ export async function getOrgOverview(
     tools: mergedTools,
     coverage: {
       developers: totalDevelopers,
-      activeDevelopers: metricNumber(activeUsage.data.rows[0], "activeDevelopers"),
+      activeDevelopers: currentUsage.activeDevelopers,
       devices: deviceCoverage.devices,
       configuredTools,
       trackedTools,

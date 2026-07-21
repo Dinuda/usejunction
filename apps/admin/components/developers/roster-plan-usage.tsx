@@ -27,7 +27,7 @@ const VERDICT_RANK: Record<PlanVerdictCode, number> = {
   HEALTHY: 0,
 };
 
-function aggregateUsage(plans: RosterPlanUsagePlan[]) {
+export function aggregateRosterPlanUsage(plans: RosterPlanUsagePlan[]) {
   const withSignal = plans.filter((plan) => plan.primaryRatio != null);
   const avgRatio =
     withSignal.length > 0
@@ -45,7 +45,7 @@ function aggregateUsage(plans: RosterPlanUsagePlan[]) {
 export function RosterPlanUsage({ plans }: { plans: RosterPlanUsagePlan[] }) {
   if (!plans.length) return null;
 
-  const { avgRatio, verdict, withSignal } = aggregateUsage(plans);
+  const { avgRatio, verdict, withSignal } = aggregateRosterPlanUsage(plans);
   const avgPercent = avgRatio != null ? avgRatio * 100 : null;
   const meterLabel =
     avgPercent != null

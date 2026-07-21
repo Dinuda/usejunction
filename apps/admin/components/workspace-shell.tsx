@@ -56,12 +56,14 @@ const managerNav: NavItem[] = [
   ["/signals", "Signals", SignalsMark],
   ["/tools", "Tools", Wrench],
   ["/activity", "Activity", Activity],
+  ["/settings", "Settings", Settings],
 ];
 
 const userNav: NavItem[] = [
   ["/dashboard", "Home", Home],
   ["/tools", "My tools", Wrench],
   ["/activity", "My activity", Activity],
+  ["/settings", "Settings", Settings],
 ];
 
 function navForRole(role: OrganizationRole | null) {

@@ -48,6 +48,15 @@ test("mobile dashboard uses the compact header, period picker, and KPI grid", as
   await expect(page.getByRole("link", { name: "UseJunction dashboard" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
 
+  const audience = page.getByRole("tablist", { name: "Audience" });
+  await expect(audience).toBeVisible();
+  await audience.getByRole("tab", { name: "You" }).click();
+  await expect(page).toHaveURL(/scope=you/);
+  await expectNoPageOverflow(page);
+  await audience.getByRole("tab", { name: "Team" }).click();
+  await expect(page).not.toHaveURL(/scope=you/);
+  await expectNoPageOverflow(page);
+
   const periodPicker = page.getByRole("button", { name: "Choose reporting period" });
   await expect(periodPicker).toBeVisible();
   await periodPicker.click();

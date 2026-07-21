@@ -66,7 +66,10 @@ export async function POST(req: NextRequest) {
         where: { id: deviceId },
         data: { lastUsageSyncAt: new Date(), lastSeenAt: new Date() },
       });
-      await invalidateAnalyticsCache(orgId);
+      const dirtyDates = rows
+        .map((row) => (typeof row.date === "string" ? row.date.slice(0, 10) : null))
+        .filter((value): value is string => Boolean(value));
+      await invalidateAnalyticsCache(orgId, { dirtyDates: dirtyDates.length ? dirtyDates : [new Date()] });
     }
 
     const tools = uniqueStrings(sample.map((row) => row.toolName).concat(rows.map((row) => row.toolName)));

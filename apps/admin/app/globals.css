@@ -479,3 +479,28 @@ a {
   --sidebar-border: #404732;
   --sidebar-ring: #08758a;
 }
+
+/* Quiet arc used while first-visit dashboard snapshots materialize. */
+.dashboard-crunch-arc {
+  display: block;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 9999px;
+  border: 1.5px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+  border-top-color: color-mix(in oklab, var(--foreground) 72%, transparent);
+  animation: dashboard-crunch-spin 0.85s linear infinite;
+}
+
+@keyframes dashboard-crunch-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-crunch-arc {
+    animation: none;
+    border-color: color-mix(in oklab, var(--foreground) 35%, transparent);
+    opacity: 0.7;
+  }
+}

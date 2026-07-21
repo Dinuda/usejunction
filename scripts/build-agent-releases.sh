@@ -61,9 +61,9 @@ for target in "${targets[@]}"; do
   if [[ "$os" == "darwin" && "$(uname -s)" == "Darwin" ]]; then
     app_zip="${name}.app.zip"
     echo "  ${app_zip}"
-    bash "${ROOT}/scripts/package-macos-app.sh" "${OUT}/${name}" "${OUT}/UseJunction Agent.app" "$VERSION"
-    (cd "$OUT" && ditto -c -k --sequesterRsrc --keepParent "UseJunction Agent.app" "${app_zip}")
-    rm -rf "${OUT}/UseJunction Agent.app"
+    bash "${ROOT}/scripts/package-macos-app.sh" "${OUT}/${name}" "${OUT}/UseJunction.app" "$VERSION"
+    (cd "$OUT" && ditto -c -k --sequesterRsrc --keepParent "UseJunction.app" "${app_zip}")
+    rm -rf "${OUT}/UseJunction.app"
   fi
 done
 

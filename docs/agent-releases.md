@@ -557,7 +557,7 @@ A tiny macOS menu bar UI may ship in a later agent release. It is **not** requir
 Contract when that release ships:
 
 - **macOS-only companion.** Linux stays headless. No Windows agent path.
-- **Daemon remains launchd-owned.** `~/Library/LaunchAgents/com.usejunction.agent.plist` continues to run `…/UseJunction Agent.app/Contents/MacOS/usejunction daemon`. The menu bar does not own KeepAlive or collection.
+- **Daemon remains launchd-owned.** `~/Library/LaunchAgents/com.usejunction.agent.plist` continues to run `…/UseJunction.app/Contents/MacOS/usejunction daemon`. The menu bar does not own KeepAlive or collection.
 - **Tray talks to existing local APIs.** Status and “Sync now” use loopback localsync HTTP (`127.0.0.1`, default port from config) plus `~/.usejunction/config.json` (token/port). No new IPC channel.
 - **Bundle layout.** Optional second binary at `Contents/MacOS/UseJunctionMenu` beside `usejunction`. Packaging already accepts `USEJUNCTION_MENU_BINARY` or a 4th arg to `scripts/package-macos-app.sh` when that binary exists.
 - **Delivery via auto-update, not reinstall.** Existing enrolled Macs should get the tray from a normal agent release. The first menu-bar-bearing release must:

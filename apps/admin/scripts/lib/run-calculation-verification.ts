@@ -376,9 +376,9 @@ export async function runCalculationVerification(
     checks.push(
       check("/dashboard", view.label, "period.from", isoDay(reportWindow.from), d.period.from),
       check("/dashboard", view.label, "period.to", isoDay(reportWindow.to), d.period.to),
-      check("/dashboard", view.label, "kpis.verifiedUsageCost", indep.verified, d.kpis.verifiedUsageCost.value, "org-wide"),
-      check("/dashboard", view.label, "kpis.estimatedApiCost", indep.estimated, d.kpis.estimatedApiCost.value, "org-wide"),
-      check("/dashboard", view.label, "kpis.tokens", indep.tokens, d.kpis.tokens.value, "org-wide input+output"),
+      check("/dashboard", view.label, "kpis.verifiedUsageCost", indep.verified, d.kpis.verifiedUsageCost.value, "org-wide scope=team"),
+      check("/dashboard", view.label, "kpis.estimatedApiCost", indep.estimated, d.kpis.estimatedApiCost.value, "org-wide scope=team"),
+      check("/dashboard", view.label, "kpis.tokens", indep.tokens, d.kpis.tokens.value, "org-wide input+output scope=team"),
       check(
         "/dashboard",
         view.label,
@@ -407,11 +407,29 @@ export async function runCalculationVerification(
 
     const activity = await getDashboardUsage(org.id, reportWindow);
     checks.push(
-      check("/activity", view.label, "modelCalls", indep.requests, activity.kpis.modelCalls),
-      check("/activity", view.label, "verifiedUsageCost", indep.verified, activity.kpis.verifiedUsageCost),
-      check("/activity", view.label, "estimatedApiCost", indep.estimated, activity.kpis.estimatedApiCost),
-      check("/activity", view.label, "tokens", indep.tokens, activity.kpis.inputTokens + activity.kpis.outputTokens),
+      check("/activity", view.label, "modelCalls", indep.requests, activity.kpis.modelCalls, "scope=team"),
+      check("/activity", view.label, "verifiedUsageCost", indep.verified, activity.kpis.verifiedUsageCost, "scope=team"),
+      check("/activity", view.label, "estimatedApiCost", indep.estimated, activity.kpis.estimatedApiCost, "scope=team"),
+      check("/activity", view.label, "tokens", indep.tokens, activity.kpis.inputTokens + activity.kpis.outputTokens, "scope=team"),
     );
+
+    // Owner/admin You scope: metrics for the owner's linked developer (may be zero in fixture).
+    const ownerIndep = independentDeveloperUsage(rawRows, owner.id, reportWindow.from, reportWindow.to);
+    if (owner.authUserId) {
+      const ownerMe = await getMeOverview(org.id, owner.authUserId, "owner", { reportWindow });
+      checks.push(
+        check("/dashboard scope=you", view.label, "requests", ownerIndep.requests, ownerMe.usage30d.requests),
+        check("/dashboard scope=you", view.label, "verified$", ownerIndep.verified, ownerMe.usage30d.verifiedUsageCost),
+        check("/activity scope=you", view.label, "estimated$", ownerIndep.estimated, ownerMe.usage30d.estimatedApiCost),
+        check(
+          "/activity scope=you",
+          view.label,
+          "tokens",
+          ownerIndep.tokens,
+          Number(ownerMe.usage30d.inputTokens) + Number(ownerMe.usage30d.outputTokens),
+        ),
+      );
+    }
 
     const tools = await getDashboardTools(org.id, reportWindow);
     const cursorTool = tools.tools.find((t) => t.toolName === "cursor");
@@ -473,9 +491,25 @@ export async function runCalculationVerification(
           ? (workOverview.data as { sessions: unknown[] }).sessions.length
           : 0;
     checks.push(
-      check("/signals", view.label, "enabled", false, workOverviewEnabled),
-      check("/signals/activity", view.label, "enabled", false, workActivityEnabled),
-      check("/signals", view.label, "sessions", 0, workSessions, "work extraction off"),
+      check("/signals", view.label, "enabled", false, workOverviewEnabled, "scope=team"),
+      check("/signals/activity", view.label, "enabled", false, workActivityEnabled, "scope=team"),
+      check("/signals", view.label, "sessions", 0, workSessions, "work extraction off scope=team"),
+    );
+
+    const workYouOverview = await getWorkOverview(context, { ...workFilters, developerId: owner.id });
+    const workYouActivity = await getWorkActivity(context, { ...workFilters, developerId: owner.id, limit: 50 });
+    const workYouEnabled = Boolean((workYouOverview.data as { enabled?: boolean }).enabled);
+    const workYouSessions =
+      typeof (workYouOverview.data as { sessions?: unknown }).sessions === "number"
+        ? (workYouOverview.data as { sessions: number }).sessions
+        : Array.isArray((workYouOverview.data as { sessions?: unknown[] }).sessions)
+          ? (workYouOverview.data as { sessions: unknown[] }).sessions.length
+          : 0;
+    const workYouActivityEnabled = Boolean((workYouActivity.data as { enabled?: boolean }).enabled);
+    checks.push(
+      check("/signals scope=you", view.label, "enabled", false, workYouEnabled, "owner self filter"),
+      check("/signals/activity scope=you", view.label, "enabled", false, workYouActivityEnabled, "owner self filter"),
+      check("/signals scope=you", view.label, "sessions", 0, workYouSessions, "owner has no work sessions in fixture"),
     );
 
     pageSnapshots.push({

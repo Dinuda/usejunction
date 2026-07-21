@@ -40,7 +40,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   }
   await prisma.providerConnection.update({ where: { id }, data: { status: "active", lastSyncedAt: new Date(), lastError: null } });
-  await invalidateAnalyticsCache(auth.orgId);
+  await invalidateAnalyticsCache(auth.orgId, {
+    dirtyDates: parsed.data.rows.map((row) => row.date),
+  });
   await audit({ orgId: auth.orgId, actorType: "user", actorId: auth.userId, action: "integration.invoice_imported", targetType: "provider_connection", targetId: id, metadata: { rows: parsed.data.rows.length } });
   return NextResponse.json({ imported: parsed.data.rows.length });
 }

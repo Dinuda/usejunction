@@ -32,6 +32,7 @@ import {
   setActiveRollingPeriod,
   type RollingPeriod,
 } from "@/lib/dashboard/period-prefs";
+import { copyAudienceScope } from "@/lib/audience-scope";
 import { cn } from "@/lib/utils";
 
 function todayIso() {
@@ -45,7 +46,14 @@ function daysAgoIso(days: number) {
 }
 
 function cycleHref(view: Exclude<CycleView, "last_30_days">, basePath: string) {
-  return `${basePath}?view=${view}`;
+  const params = new URLSearchParams({ view });
+  if (typeof window !== "undefined") copyAudienceScope(params, window.location.search);
+  return `${basePath}?${params.toString()}`;
+}
+
+function periodHref(period: RollingPeriod, basePath: string) {
+  const preserve = typeof window !== "undefined" ? window.location.search : "";
+  return rollingPeriodHref(period, basePath, preserve);
 }
 
 /** Filter for time-scoped metrics: subscription cycles + rolling date ranges. */
@@ -85,7 +93,7 @@ export function MetricPeriodFilter({
 
   function applyPeriod(next: RollingPeriod) {
     setPrefsPeriod(setActiveRollingPeriod(next).active);
-    go(rollingPeriodHref(next, basePath));
+    go(periodHref(next, basePath));
   }
 
   function applyCustom() {

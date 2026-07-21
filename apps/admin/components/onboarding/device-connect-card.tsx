@@ -59,6 +59,34 @@ export function DeviceConnectCard({
 
   const generateToken = useCallback(async () => {
     setError(null);
+    // Ensure a workspace exists and the JWT carries orgId before enroll.
+    // OAuth users can reach Connect with a null session orgId even after
+    // ensureOwnerWorkspace has run.
+    const bootstrap = await fetch("/api/onboarding", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", "x-requested-with": "usejunction-web" },
+      body: "{}",
+    });
+    if (bootstrap.status === 401) {
+      window.location.href = "/login?from=/onboarding";
+      return;
+    }
+    if (bootstrap.ok) {
+      const created = await bootstrap.json().catch(() => null) as { orgId?: string } | null;
+      if (created?.orgId) {
+        await fetch("/api/me/workspace", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "content-type": "application/json",
+            "x-requested-with": "usejunction-web",
+          },
+          body: JSON.stringify({ orgId: created.orgId }),
+        });
+      }
+    }
+
     const response = await fetch("/api/me/enrollment-token", { method: "POST" });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {

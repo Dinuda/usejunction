@@ -7,6 +7,35 @@ import { ACTIVE_ORG_COOKIE } from "@/lib/require-organization";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
 import { computeOrgBillingStatus } from "@/lib/saas-billing/status";
 
+function latestIso(...values: Array<Date | null | undefined>): string | null {
+  let latest: Date | null = null;
+  for (const value of values) {
+    if (!value) continue;
+    if (!latest || value > latest) latest = value;
+  }
+  return latest?.toISOString() ?? null;
+}
+
+/**
+ * Compact token that advances whenever agent ingest lands new device/tool/usage
+ * facts. The workspace layout watches this to invalidate stale page caches.
+ */
+export function buildSyncWatermark(input: {
+  deviceCount: number;
+  toolCount: number;
+  lastSeenAt: string | null;
+  lastUsageSyncAt: string | null;
+  lastAccountSyncAt: string | null;
+}): string {
+  return [
+    input.deviceCount,
+    input.toolCount,
+    input.lastSeenAt ?? "",
+    input.lastUsageSyncAt ?? "",
+    input.lastAccountSyncAt ?? "",
+  ].join("|");
+}
+
 export async function GET(_request: NextRequest) {
   const started = performance.now();
   const session = await auth();
@@ -67,6 +96,50 @@ export async function GET(_request: NextRequest) {
       role,
     )
     : null;
+
+  let sync = {
+    deviceCount: 0,
+    toolCount: 0,
+    lastSeenAt: null as string | null,
+    lastUsageSyncAt: null as string | null,
+    lastAccountSyncAt: null as string | null,
+    watermark: "0|0|||",
+  };
+
+  if (current) {
+    const [deviceAgg, toolCount] = await Promise.all([
+      prisma.device.aggregate({
+        where: { orgId: current.orgId, decommissionedAt: null },
+        _count: { id: true },
+        _max: {
+          lastSeenAt: true,
+          lastUsageSyncAt: true,
+          lastAccountSyncAt: true,
+        },
+      }),
+      prisma.toolInstallation.count({
+        where: { orgId: current.orgId, detected: true },
+      }),
+    ]);
+    const lastSeenAt = latestIso(deviceAgg._max.lastSeenAt);
+    const lastUsageSyncAt = latestIso(deviceAgg._max.lastUsageSyncAt);
+    const lastAccountSyncAt = latestIso(deviceAgg._max.lastAccountSyncAt);
+    sync = {
+      deviceCount: deviceAgg._count.id,
+      toolCount,
+      lastSeenAt,
+      lastUsageSyncAt,
+      lastAccountSyncAt,
+      watermark: buildSyncWatermark({
+        deviceCount: deviceAgg._count.id,
+        toolCount,
+        lastSeenAt,
+        lastUsageSyncAt,
+        lastAccountSyncAt,
+      }),
+    };
+  }
+
   const prepared = performance.now();
 
   return appData(
@@ -87,6 +160,7 @@ export async function GET(_request: NextRequest) {
         }
         : null,
       billing,
+      sync,
       sessionWorkspaceSyncRequired: Boolean(
         current && (current.orgId !== session.user.orgId || legacyOrgId !== null),
       ),

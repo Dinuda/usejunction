@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   attachRepositoryIds,
   buildUsageDedupeKey,
+  collapseLocalUsageRows,
   inferCostKind,
   inferMetricKind,
   normalizeCanonicalSource,
@@ -108,10 +109,40 @@ describe("local-usage-batch normalize", () => {
     expect(attached[0].repositoryId).toBe("repo-123");
     expect(attached[0].dedupeKey).toContain(":repo-123");
   });
+
+  it("collapses duplicate local unique keys with last-write-wins", () => {
+    const normalized = normalizeLocalUsageRows(
+      [
+        { date: "2026-07-21", toolName: "codex", model: "gpt", inputTokens: 10, outputTokens: 1, requests: 1 },
+        { date: "2026-07-21", toolName: "codex", model: "gpt", inputTokens: 99, outputTokens: 9, requests: 4 },
+        { date: "2026-07-21", toolName: "codex", model: "other", inputTokens: 5, requests: 1 },
+      ],
+      { deviceId: "device-1" },
+    );
+    const collapsed = collapseLocalUsageRows(normalized);
+    expect(collapsed).toHaveLength(2);
+    const gpt = collapsed.find((row) => row.model === "gpt");
+    expect(gpt?.inputTokens).toBe(99);
+    expect(gpt?.outputTokens).toBe(9);
+    expect(gpt?.requests).toBe(4);
+  });
+
+  it("keeps distinct sources for the same device/date/tool/model", () => {
+    const normalized = normalizeLocalUsageRows(
+      [
+        { date: "2026-07-21", toolName: "cursor", model: "composer-2.5", inputTokens: 10, source: "local_scan" },
+        { date: "2026-07-21", toolName: "cursor", model: "composer-2.5", inputTokens: 20, source: "cursor_local" },
+      ],
+      { deviceId: "device-1" },
+    );
+    const collapsed = collapseLocalUsageRows(normalized);
+    expect(collapsed).toHaveLength(2);
+    expect(collapsed.map((row) => row.source).sort()).toEqual(["cursor_local", "local_scan"]);
+  });
 });
 
 describe("local-usage-batch ingest", () => {
-  it("bulk upserts idempotently", { skip: !process.env.DATABASE_URL }, async () => {
+  it("bulk upserts idempotently", { skip: !process.env.DATABASE_URL, timeout: 30_000 }, async () => {
     const { prisma } = await import("@usejunction/db");
     const { ingestLocalUsageBatch } = await import("@/lib/ingest/local-usage-batch");
     const suffix = Date.now();
@@ -167,6 +198,133 @@ describe("local-usage-batch ingest", () => {
       });
       expect(updated?.source).toBe("device_observed");
       expect(updated?.inputTokens).toBe(BigInt(105));
+    } finally {
+      await prisma.usageDaily.deleteMany({ where: { orgId } });
+      await prisma.localUsageAggregate.deleteMany({ where: { orgId } });
+      await prisma.device.deleteMany({ where: { orgId } });
+      await prisma.developer.deleteMany({ where: { orgId } });
+      await prisma.organization.delete({ where: { id: orgId } });
+    }
+  });
+
+  it("accepts duplicate keys in one request without throwing", { skip: !process.env.DATABASE_URL, timeout: 30_000 }, async () => {
+    const { prisma } = await import("@usejunction/db");
+    const { ingestLocalUsageBatch } = await import("@/lib/ingest/local-usage-batch");
+    const suffix = Date.now();
+    const orgId = `bulk_dup_${suffix}`;
+    const userId = `bulk_dup_dev_${suffix}`;
+    const deviceId = `bulk_dup_device_${suffix}`;
+
+    await prisma.organization.create({ data: { id: orgId, name: "Bulk Dup", slug: orgId } });
+    await prisma.developer.create({
+      data: { id: userId, orgId, name: "Bulk Dup", email: `bulk_dup_${suffix}@example.com`, role: "user" },
+    });
+    await prisma.device.create({
+      data: {
+        id: deviceId,
+        orgId,
+        userId,
+        hostname: "test",
+        os: "darwin",
+        architecture: "arm64",
+        agentVersion: "0.0.0",
+        deviceToken: `tok_dup_${suffix}`,
+      },
+    });
+
+    try {
+      const result = await ingestLocalUsageBatch({
+        orgId,
+        userId,
+        deviceId,
+        rows: [
+          { date: "2026-07-21", toolName: "codex", model: "gpt", inputTokens: 10, requests: 1, source: "local_scan" },
+          { date: "2026-07-21", toolName: "codex", model: "gpt", inputTokens: 55, requests: 3, source: "local_scan" },
+          { date: "2026-07-21", toolName: "codex", model: "gpt", inputTokens: 55, requests: 3, source: "local_scan" },
+        ],
+      });
+      expect(result.upserted).toBe(1);
+      expect(await prisma.usageDaily.count({ where: { orgId } })).toBe(1);
+      expect(await prisma.localUsageAggregate.count({ where: { orgId } })).toBe(1);
+      const row = await prisma.usageDaily.findFirst({ where: { orgId }, select: { inputTokens: true, requests: true } });
+      expect(row?.inputTokens).toBe(BigInt(55));
+      expect(row?.requests).toBe(3);
+    } finally {
+      await prisma.usageDaily.deleteMany({ where: { orgId } });
+      await prisma.localUsageAggregate.deleteMany({ where: { orgId } });
+      await prisma.device.deleteMany({ where: { orgId } });
+      await prisma.developer.deleteMany({ where: { orgId } });
+      await prisma.organization.delete({ where: { id: orgId } });
+    }
+  });
+
+  it("allows same device/date/tool/model under different sources", { skip: !process.env.DATABASE_URL, timeout: 30_000 }, async () => {
+    const { prisma } = await import("@usejunction/db");
+    const { ingestLocalUsageBatch } = await import("@/lib/ingest/local-usage-batch");
+    const suffix = Date.now();
+    const orgId = `bulk_src_${suffix}`;
+    const userId = `bulk_src_dev_${suffix}`;
+    const deviceId = `bulk_src_device_${suffix}`;
+
+    await prisma.organization.create({ data: { id: orgId, name: "Bulk Src", slug: orgId } });
+    await prisma.developer.create({
+      data: { id: userId, orgId, name: "Bulk Src", email: `bulk_src_${suffix}@example.com`, role: "user" },
+    });
+    await prisma.device.create({
+      data: {
+        id: deviceId,
+        orgId,
+        userId,
+        hostname: "test",
+        os: "darwin",
+        architecture: "arm64",
+        agentVersion: "0.0.0",
+        deviceToken: `tok_src_${suffix}`,
+      },
+    });
+
+    try {
+      await ingestLocalUsageBatch({
+        orgId,
+        userId,
+        deviceId,
+        rows: [
+          {
+            date: "2026-07-21",
+            toolName: "cursor",
+            model: "composer-2.5",
+            inputTokens: 10,
+            requests: 1,
+            source: "local_scan",
+          },
+        ],
+      });
+      const second = await ingestLocalUsageBatch({
+        orgId,
+        userId,
+        deviceId,
+        rows: [
+          {
+            date: "2026-07-21",
+            toolName: "cursor",
+            model: "composer-2.5",
+            inputTokens: 20,
+            requests: 2,
+            source: "cursor_local",
+          },
+          {
+            date: "2026-07-21",
+            toolName: "cursor",
+            model: "composer-2.5",
+            inputTokens: 30,
+            requests: 3,
+            source: "local_scan",
+          },
+        ],
+      });
+      expect(second.upserted).toBe(2);
+      expect(await prisma.localUsageAggregate.count({ where: { orgId } })).toBe(2);
+      expect(await prisma.usageDaily.count({ where: { orgId } })).toBe(2);
     } finally {
       await prisma.usageDaily.deleteMany({ where: { orgId } });
       await prisma.localUsageAggregate.deleteMany({ where: { orgId } });

@@ -86,6 +86,71 @@ test("owner chrome exposes nav, active-plan badge, and workspace switcher", asyn
   await expect(page.getByRole("combobox", { name: "Workspace" })).toBeVisible();
 });
 
+test("owner Team | You switcher scopes Dashboard, Activity, and Signals", async ({ page }) => {
+  await page.goto("/dashboard");
+  const audience = page.getByRole("tablist", { name: "Audience" });
+  await expect(audience).toBeVisible();
+  await expect(audience.getByRole("tab", { name: "Team" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Spend, traffic, coverage." })).toBeVisible();
+
+  await audience.getByRole("tab", { name: "You" }).click();
+  await expect(page).toHaveURL(/scope=you/);
+  await expect(page.getByText(/Your device, tools, and last 30 days of traffic\.|Link a developer profile/i)).toBeVisible();
+
+  await audience.getByRole("tab", { name: "Team" }).click();
+  await expect(page).not.toHaveURL(/scope=you/);
+  await expect(page.getByRole("heading", { name: "Spend, traffic, coverage." })).toBeVisible();
+
+  await page.goto("/activity");
+  const activityAudience = page.getByRole("tablist", { name: "Audience" });
+  await expect(activityAudience.getByRole("tab", { name: "Team" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Activity." })).toBeVisible();
+  await activityAudience.getByRole("tab", { name: "You" }).click();
+  await expect(page).toHaveURL(/\/activity\?.*scope=you/);
+  await expect(page.getByRole("heading", { name: "Your activity." })).toBeVisible();
+
+  await page.goto("/signals");
+  const signalsAudience = page.getByRole("tablist", { name: "Audience" });
+  await expect(signalsAudience).toBeVisible();
+  await signalsAudience.getByRole("tab", { name: "You" }).click();
+  await expect(page).toHaveURL(/\/signals\?.*scope=you/);
+  await expect(page.getByText(/Your coding-tool work sessions|Link a developer profile/i)).toBeVisible();
+
+  await page.getByRole("navigation", { name: "Signals sections" }).getByRole("link", { name: "Activity" }).click();
+  await expect(page).toHaveURL(/\/signals\/activity/);
+  await expect(page).toHaveURL(/scope=you/);
+  await expect(page.getByRole("tablist", { name: "Audience" }).getByRole("tab", { name: "You" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  // Person filter is Team-only.
+  await expect(page.getByText("Person", { exact: true })).toHaveCount(0);
+
+  await page.goto("/signals/settings");
+  await expect(page.getByRole("tablist", { name: "Audience" })).toHaveCount(0);
+});
+
+test("owner Activity Team|You share layout and Reports section", async ({ page }) => {
+  await page.goto("/activity");
+  await expect(page.getByRole("heading", { name: "Activity." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Reports." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "By tool." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "By model." })).toBeVisible();
+
+  const audience = page.getByRole("tablist", { name: "Audience" });
+  await audience.getByRole("tab", { name: "You" }).click();
+  await expect(page).toHaveURL(/scope=you/);
+  await expect(page.getByRole("heading", { name: "Your activity." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Reports." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "By tool." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "By model." })).toBeVisible();
+
+  await page.goto("/reports/daily?scope=you&date=2026-07-21");
+  await expect(page).toHaveURL(/\/activity/);
+  await expect(page).toHaveURL(/scope=you/);
+  await expect(page).toHaveURL(/#reports/);
+});
+
 test("dashboard exposes seeded calculation output and all period controls", async ({ page }) => {
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "Spend, traffic, coverage." })).toBeVisible();

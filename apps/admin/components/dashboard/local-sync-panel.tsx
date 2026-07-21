@@ -225,6 +225,11 @@ export function LocalSyncPanel({
       }
       setStatus("ok");
       setDetail(formatSyncDetail({ warnings: body.warnings }));
+      await fetch("/api/app/dashboard/refresh-snapshots", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "x-requested-with": "usejunction-web" },
+      }).catch(() => null);
       await invalidateAppData();
       startTransition(() => router.refresh());
     } catch (cause) {
@@ -281,6 +286,11 @@ export function LocalSyncPanel({
       }
       setStatus("ok");
       setDetail(formatSyncDetail({ warnings: body.warnings }));
+      await fetch("/api/app/dashboard/refresh-snapshots", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "x-requested-with": "usejunction-web" },
+      }).catch(() => null);
       await invalidateAppData();
       startTransition(() => router.refresh());
       return;

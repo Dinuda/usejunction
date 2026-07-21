@@ -190,7 +190,11 @@ export async function syncConnection(connectionId: string) {
       prisma.providerSyncRun.update({ where: { id: run.id }, data: { status: "success", finishedAt: now, counts } }),
     ]);
     await syncTeamSeatQuantityBestEffort(connection.orgId, "provider_sync.members");
-    if (data.usage.length > 0) await invalidateAnalyticsCache(connection.orgId);
+    if (data.usage.length > 0) {
+      await invalidateAnalyticsCache(connection.orgId, {
+        dirtyDates: data.usage.map((row) => row.date).filter(Boolean),
+      });
+    }
     return counts;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

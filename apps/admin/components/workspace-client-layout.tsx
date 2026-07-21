@@ -6,9 +6,19 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { WorkspaceShell } from "@/components/workspace-shell";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
+import { TimezoneReporter } from "@/components/timezone-reporter";
 import { useAppQuery } from "@/lib/api/client";
 import type { OrgBillingStatus } from "@/lib/saas-billing/status";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
+
+type WorkspaceSyncState = {
+  deviceCount: number;
+  toolCount: number;
+  lastSeenAt: string | null;
+  lastUsageSyncAt: string | null;
+  lastAccountSyncAt: string | null;
+  watermark: string;
+};
 
 type WorkspaceContext = {
   organizations: Array<{ id: string; name: string; color: string | null; role: OrganizationRole }>;
@@ -20,6 +30,7 @@ type WorkspaceContext = {
     onboardingCompleted: boolean;
   } | null;
   billing: OrgBillingStatus | null;
+  sync?: WorkspaceSyncState;
   sessionWorkspaceSyncRequired: boolean;
 };
 
@@ -42,7 +53,9 @@ function activePageData(pathname: string, queryString: string): { queryKey: read
   if (page) {
     return { queryKey: [...page.queryKey, queryString], url: `${page.url}${suffix}` };
   }
-  if (pathname === "/settings") return { queryKey: ["app", "settings"], url: "/api/app/settings" };
+  if (pathname === "/settings") {
+    return { queryKey: ["app", "notification-preferences"], url: "/api/app/me/notification-preferences" };
+  }
   if (pathname === "/signals/settings") return { queryKey: ["app", "signals", "settings"], url: "/api/app/signals/settings" };
   return null;
 }
@@ -53,21 +66,42 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
   const { data: session, status: sessionStatus } = useSession();
   const pathname = usePathname();
   const queryString = useSearchParams().toString();
+  const awaitingFirstUsage = useRef(false);
+  const awaitingSince = useRef<number | null>(null);
+  const lastWatermark = useRef<string | null>(null);
   const contextQuery = useAppQuery<WorkspaceContext>(
     ["app", "workspace-context"],
     "/api/app/workspace-context",
+    {
+      // Poll while a device is connected but usage has not landed yet so Team /
+      // Tools / Activity do not keep empty responses after the first agent sync.
+      refetchInterval: (query) => {
+        const data = query.state.data;
+        if (!data?.current?.onboardingCompleted) return false;
+        const syncState = data.sync;
+        if (!syncState) return false;
+        const waiting =
+          (syncState.deviceCount > 0 && !syncState.lastUsageSyncAt) || awaitingFirstUsage.current;
+        if (!waiting) return false;
+        if (awaitingSince.current && Date.now() - awaitingSince.current > 3 * 60_000) return false;
+        return 5_000;
+      },
+    },
   );
   const syncStarted = useRef(false);
   const [syncFailed, setSyncFailed] = useState(false);
 
   const pageData = useMemo(() => activePageData(pathname, queryString), [pathname, queryString]);
+  const workspaceReady = Boolean(
+    contextQuery.data?.current?.onboardingCompleted,
+  );
   // Keep one active observer for page data in the layout. The screen uses the
   // same key, so it adopts this in-flight request instead of racing a second
   // fetch after its client bundle mounts.
   useAppQuery<unknown>(
     pageData?.queryKey ?? ["app", "page-data-idle"],
     pageData?.url ?? "/api/app/workspace-context",
-    { enabled: Boolean(pageData) },
+    { enabled: Boolean(pageData && workspaceReady) },
   );
 
   useEffect(() => {
@@ -78,7 +112,8 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
   }, [pathname, queryClient, queryString, router, sessionStatus]);
 
   useEffect(() => {
-    if (contextQuery.data?.current && !contextQuery.data.current.onboardingCompleted) {
+    if (!contextQuery.data) return;
+    if (!contextQuery.data.current || !contextQuery.data.current.onboardingCompleted) {
       router.replace("/onboarding");
     }
   }, [contextQuery.data, router]);
@@ -105,6 +140,28 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
     });
   }, [contextQuery.data, queryClient]);
 
+  useEffect(() => {
+    const syncState = contextQuery.data?.sync;
+    if (!syncState) return;
+
+    if (syncState.deviceCount > 0 && !syncState.lastUsageSyncAt) {
+      awaitingFirstUsage.current = true;
+      if (awaitingSince.current === null) awaitingSince.current = Date.now();
+    } else if (syncState.lastUsageSyncAt) {
+      awaitingFirstUsage.current = false;
+      awaitingSince.current = null;
+    }
+
+    if (lastWatermark.current === null) {
+      lastWatermark.current = syncState.watermark;
+      return;
+    }
+    if (lastWatermark.current === syncState.watermark) return;
+    lastWatermark.current = syncState.watermark;
+    // Agent ingest advanced — drop stale Team/Tools/Activity empties.
+    void queryClient.invalidateQueries({ queryKey: ["app"] });
+  }, [contextQuery.data?.sync, queryClient]);
+
   const context = contextQuery.data;
   const current = context?.current ?? null;
   const migrationPending = Boolean(context?.sessionWorkspaceSyncRequired && current && !syncFailed);
@@ -119,6 +176,7 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
       image={session?.user?.image}
       billing={context?.billing ?? null}
     >
+      <TimezoneReporter />
       {migrationPending ? <AppPageSkeleton /> : (
         <div className="space-y-4">
           {contextQuery.error ? (

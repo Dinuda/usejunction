@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
         observedAt: record.createdAt,
       },
     });
-    await invalidateAnalyticsCache(orgId);
+    await invalidateAnalyticsCache(orgId, { dirtyDates: [record.createdAt] });
 
     return NextResponse.json({ id: record.id });
   } catch (e) {

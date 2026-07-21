@@ -21,7 +21,11 @@ export function SignalsPageHeader({
       title={title}
       description={description}
       eyebrow={eyebrow}
-      actions={<SignalsHubNav />}
+      actions={
+        <Suspense fallback={null}>
+          <SignalsHubNav />
+        </Suspense>
+      }
     >
       {children ? <Suspense fallback={null}>{children}</Suspense> : null}
     </PageHeader>

@@ -6,8 +6,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 AGENT_SRC="${ROOT}/agent"
 INSTALL_DIR="${HOME}/.usejunction/bin"
-APP_NAME="UseJunction Agent"
+APP_NAME="UseJunction"
 APP_DIR="${HOME}/.usejunction/${APP_NAME}.app"
+LEGACY_APP_DIR="${HOME}/.usejunction/UseJunction Agent.app"
 CONFIG_PATH="${HOME}/.usejunction/config.json"
 LOCK_FILE="${TMPDIR:-/tmp}/usejunction-dev-agent-reinstall.lock"
 LOCK_DIR="${LOCK_FILE}.d"
@@ -134,10 +135,15 @@ install_macos() {
     echo "Missing packaging script: ${PACKAGE_SCRIPT}" >&2
     exit 1
   fi
-  # Stage as a real .app path so package-macos-app.sh naming stays clean.
   local staged_app="${HOME}/.usejunction/${APP_NAME}.new.app"
   local previous_app="${HOME}/.usejunction/${APP_NAME}.previous.app"
   rm -rf "$staged_app" "$previous_app"
+  bash "$PACKAGE_SCRIPT" "$tmp_binary" "$staged_app" "$VERSION"
+  if [[ -d "$LEGACY_APP_DIR" && ! -d "$APP_DIR" ]]; then
+    mv "$LEGACY_APP_DIR" "$APP_DIR"
+  elif [[ -d "$LEGACY_APP_DIR" ]]; then
+    rm -rf "$LEGACY_APP_DIR"
+  fi
   bash "$PACKAGE_SCRIPT" "$tmp_binary" "$staged_app" "$VERSION"
   if [[ -d "$APP_DIR" ]]; then
     mv "$APP_DIR" "$previous_app"

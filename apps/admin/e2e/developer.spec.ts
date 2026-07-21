@@ -26,6 +26,16 @@ test("developer chrome hides owner-only navigation", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Signals" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Settings", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Billing settings" })).toHaveCount(0);
+  // Developers stay personal-only — no Team | You audience switcher.
+  await expect(page.getByRole("tablist", { name: "Audience" })).toHaveCount(0);
+
+  await page.goto("/activity");
+  await expect(page.getByRole("tablist", { name: "Audience" })).toHaveCount(0);
+
+  await page.goto("/reports/daily");
+  await expect(page).toHaveURL(/\/activity/);
+  await expect(page.getByRole("heading", { name: "Reports." })).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "Audience" })).toHaveCount(0);
 });
 
 test("developer gets a safe forbidden state on owner-only calculation routes", async ({ page }) => {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { ArrowUpRight } from "lucide-react";
+import { AudienceScopeSwitcher } from "@/components/audience-scope-switcher";
 import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
 import { Panel } from "@/components/panel";
 import { MemberWorkSessionList } from "@/components/developers/member-work-session-list";
@@ -13,8 +14,8 @@ import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-u
 import { flowDisplayLabel } from "@/components/signals/flow-segment";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
+import type { AudienceScope } from "@/lib/audience-scope";
 import {
-  cycleViewPeriodLabel,
   type CycleView,
 } from "@/lib/dashboard/cycle-view";
 import type { RollingPeriod } from "@/lib/dashboard/period-prefs";
@@ -24,7 +25,15 @@ import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
 const SignalsTrendChart = dynamic(() => import("@/components/signals/signals-trend-chart").then((mod) => mod.SignalsTrendChart), { ssr: false });
 
-type SignalsOverviewPayload = { cycleView: CycleView; rollingPeriod: RollingPeriod; periodLabel: string; work: Awaited<ReturnType<typeof getWorkOverview>>["data"] };
+type SignalsOverviewPayload = {
+  scope: AudienceScope;
+  canSwitchAudience: boolean;
+  youUnlinked?: boolean;
+  cycleView: CycleView;
+  rollingPeriod: RollingPeriod;
+  periodLabel: string;
+  work: Awaited<ReturnType<typeof getWorkOverview>>["data"];
+};
 
 export default function SignalsOverviewPage() {
   const searchParams = useSearchParams();
@@ -32,23 +41,34 @@ export default function SignalsOverviewPage() {
   const query = useAppQuery<SignalsOverviewPayload>(["app", "signals", "overview", queryString], `/api/app/signals/overview${queryString ? `?${queryString}` : ""}`);
   if (query.isPending) return <AppPageSkeleton />;
   if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
-  const { cycleView, rollingPeriod, periodLabel, work } = query.data;
+  const { scope, cycleView, rollingPeriod, periodLabel, work, youUnlinked } = query.data;
+  const isYou = scope === "you";
   const topTool = work.topTools[0] ?? null;
+  const activityHref = isYou ? "/signals/activity?scope=you" : "/signals/activity";
 
   return (
     <>
       <SignalsPageHeader
         title="Signals"
-        description="See what your team does well—and help more people do it."
+        description={
+          isYou
+            ? "Your coding-tool work sessions when Signals extraction is on."
+            : "See what your team does well—and help more people do it."
+        }
       >
-        {work.enabled ? (
-          <div className="flex justify-end">
+        <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-end sm:gap-6">
+          {work.enabled ? (
             <CycleViewPicker view={cycleView} period={rollingPeriod} basePath="/signals" />
-          </div>
-        ) : null}
+          ) : null}
+          <AudienceScopeSwitcher className="sm:w-auto" />
+        </div>
       </SignalsPageHeader>
 
-      {!work.enabled ? (
+      {youUnlinked ? (
+        <Empty className="min-h-0 gap-1 border border-border p-6 md:p-8">
+          <EmptyDescription>Link a developer profile to see your Signals work.</EmptyDescription>
+        </Empty>
+      ) : !work.enabled ? (
         <SignalsDisabledEmptyState />
       ) : (
         <>
@@ -61,10 +81,16 @@ export default function SignalsOverviewPage() {
               sub={periodLabel}
             />
             <SignalsKpi
-              label="Active people"
+              label={isYou ? "Active" : "Active people"}
               className="sm:border-l sm:border-border sm:pl-8"
               value={work.activePeople.toLocaleString()}
-              sub={work.activePeople === 1 ? "person with work" : "people with work"}
+              sub={
+                isYou
+                  ? work.activePeople ? "you had work" : "no work yet"
+                  : work.activePeople === 1
+                    ? "person with work"
+                    : "people with work"
+              }
             />
             <SignalsKpi
               label="Models seen"
@@ -95,7 +121,7 @@ export default function SignalsOverviewPage() {
                       {topTool.sharePercent}%
                     </span>
                     <Link
-                      href="/signals/activity"
+                      href={activityHref}
                       className="inline-flex w-fit items-center gap-0.5 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                     >
                       Open Activity
@@ -125,7 +151,7 @@ export default function SignalsOverviewPage() {
                 bordered={false}
                 action={
                   <Link
-                    href="/signals/activity"
+                    href={activityHref}
                     className="text-xs text-muted-foreground underline-offset-4 hover:underline"
                   >
                     All activity
@@ -173,7 +199,7 @@ export default function SignalsOverviewPage() {
               bordered={false}
               action={
                 <Link
-                  href="/signals/activity"
+                  href={activityHref}
                   className="text-xs text-muted-foreground underline-offset-4 hover:underline"
                 >
                   All activity
@@ -185,7 +211,7 @@ export default function SignalsOverviewPage() {
                 sessions={work.recent}
                 density="table"
                 fromTeam={false}
-                showPerson
+                showPerson={!isYou}
                 maxHeightClass="max-h-[28rem]"
               />
             ) : (

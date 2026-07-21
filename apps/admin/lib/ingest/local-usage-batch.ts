@@ -236,6 +236,29 @@ export function attachRepositoryIds(
   });
 }
 
+function localAggregateKey(row: NormalizedLocalUsageRow): string {
+  return `${row.dateKey}|${row.toolName}|${row.model}|${row.source}`;
+}
+
+/**
+ * Collapse duplicates that would violate bulk INSERT ON CONFLICT targets.
+ * Last-write-wins matches the old per-row Prisma upsert loop.
+ */
+export function collapseLocalUsageRows(rows: NormalizedLocalUsageRow[]): NormalizedLocalUsageRow[] {
+  if (rows.length <= 1) return rows;
+
+  const byLocalKey = new Map<string, NormalizedLocalUsageRow>();
+  for (const row of rows) {
+    byLocalKey.set(localAggregateKey(row), row);
+  }
+
+  const byDedupeKey = new Map<string, NormalizedLocalUsageRow>();
+  for (const row of byLocalKey.values()) {
+    byDedupeKey.set(row.dedupeKey, row);
+  }
+  return [...byDedupeKey.values()];
+}
+
 export async function resolveRepositoryIdMap(
   orgId: string,
   rows: NormalizedLocalUsageRow[],
@@ -445,7 +468,7 @@ export async function ingestLocalUsageBatch(params: {
   }
 
   const repoIds = await resolveRepositoryIdMap(params.orgId, normalized);
-  const rows = attachRepositoryIds(normalized, params.deviceId, repoIds);
+  const rows = collapseLocalUsageRows(attachRepositoryIds(normalized, params.deviceId, repoIds));
   const observedAt = new Date();
 
   await bulkUpsertLocalUsageAggregates(params.orgId, params.userId, params.deviceId, rows);

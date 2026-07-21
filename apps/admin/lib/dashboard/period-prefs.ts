@@ -57,7 +57,11 @@ export function rollingPeriodLabel(period: RollingPeriod): string {
   return `${shortUtcDate(period.from)} – ${shortUtcDate(period.to)}`;
 }
 
-export function rollingPeriodHref(period: RollingPeriod, basePath = "/dashboard"): string {
+export function rollingPeriodHref(
+  period: RollingPeriod,
+  basePath = "/dashboard",
+  preserveSearch: string | URLSearchParams = "",
+): string {
   const params = new URLSearchParams({ view: "last_30_days" });
   if (period.kind === "preset") {
     if (period.days !== 30) params.set("days", String(period.days));
@@ -65,17 +69,38 @@ export function rollingPeriodHref(period: RollingPeriod, basePath = "/dashboard"
     params.set("from", period.from);
     params.set("to", period.to);
   }
+  // Preserve audience scope (and other non-period params callers care about).
+  const source =
+    typeof preserveSearch === "string"
+      ? new URLSearchParams(preserveSearch.startsWith("?") ? preserveSearch.slice(1) : preserveSearch)
+      : new URLSearchParams(preserveSearch);
+  for (const key of ["scope"] as const) {
+    const value = source.get(key);
+    if (value) params.set(key, value);
+  }
   return `${basePath}?${params.toString()}`;
 }
 
 /** Query-only period href for pages that filter metrics without cycle views. */
-export function metricPeriodHref(period: RollingPeriod, basePath: string): string {
+export function metricPeriodHref(
+  period: RollingPeriod,
+  basePath: string,
+  preserveSearch: string | URLSearchParams = "",
+): string {
   const params = new URLSearchParams();
   if (period.kind === "preset") {
     if (period.days !== 30) params.set("days", String(period.days));
   } else {
     params.set("from", period.from);
     params.set("to", period.to);
+  }
+  const source =
+    typeof preserveSearch === "string"
+      ? new URLSearchParams(preserveSearch.startsWith("?") ? preserveSearch.slice(1) : preserveSearch)
+      : new URLSearchParams(preserveSearch);
+  for (const key of ["scope"] as const) {
+    const value = source.get(key);
+    if (value) params.set(key, value);
   }
   const query = params.toString();
   return query ? `${basePath}?${query}` : basePath;

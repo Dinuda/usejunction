@@ -10,12 +10,14 @@ import { encryptSecret, hashOpaqueToken } from "@/lib/security";
 import { limitedJson } from "@/lib/security/http";
 import { logServerError } from "@/lib/errors/public";
 import { getFullUsageRescanDay } from "@/lib/runtime-settings";
+import { applyUserTimeZone } from "@/lib/notifications/preferences";
+import { isValidIanaTimeZone } from "@/lib/timezone";
 
 export async function POST(req: NextRequest) {
   const started = Date.now();
   try {
     const device = await findDeviceByBearerToken(req, {
-      include: { user: { select: { removedAt: true } } },
+      include: { user: { select: { removedAt: true, authUserId: true } } },
     });
     if (!device) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -164,6 +166,20 @@ export async function POST(req: NextRequest) {
       fullUsageRescanDay = await getFullUsageRescanDay();
     } catch (error) {
       logServerError("devices/heartbeat-full-usage-day", error);
+    }
+
+    const reportedTimeZone =
+      typeof body.timeZone === "string" ? body.timeZone.trim().slice(0, 64) : "";
+    if (reportedTimeZone && isValidIanaTimeZone(reportedTimeZone) && device.user.authUserId) {
+      try {
+        await applyUserTimeZone({
+          userId: device.user.authUserId,
+          timeZone: reportedTimeZone,
+          source: "agent",
+        });
+      } catch (error) {
+        logServerError("devices/heartbeat-timezone", error);
+      }
     }
 
     return NextResponse.json({

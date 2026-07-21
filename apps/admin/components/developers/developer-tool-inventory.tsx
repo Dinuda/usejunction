@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BarChart3, ChevronDown, ChevronUp, SquarePen, Users } from "lucide-react";
@@ -8,14 +8,20 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { SignalsKpi } from "@/components/signals/signals-ui";
+import { CycleUtilizationBar } from "@/components/dashboard/cycle-utilization-bar";
 import { cn } from "@/lib/utils";
 import { AddSubscriptionSheet } from "@/components/tools/add-subscription-sheet";
 import { Panel } from "@/components/panel";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
-import { RosterPlanUsage, type RosterPlanUsagePlan } from "@/components/developers/roster-plan-usage";
+import {
+  aggregateRosterPlanUsage,
+  RosterPlanUsage,
+  type RosterPlanUsagePlan,
+} from "@/components/developers/roster-plan-usage";
 import { SubscriptionChoices } from "@/components/developers/member-plans-panel";
 import { formatCompactNumber } from "@/lib/format";
 import type { PlanUsageDeveloperRow } from "@/lib/insights/contracts/plan-usage.v1";
+import { countActiveDevices } from "@/lib/devices/presence";
 import { toolDisplayName } from "@/lib/tools/catalog";
 import { useInvalidateAppData } from "@/lib/api/client";
 
@@ -99,12 +105,41 @@ export function DeveloperToolInventory({
     setPlanUsageByDeveloper(planUsageMap(initialPlanUsage));
   }, [initialDevelopers, initialSubscriptions, initialPlanUsage]);
 
-  const configured = developers.filter((developer) => developer.manualPlans.length > 0).length;
-  const unassignedActivity = developers.filter(
-    (developer) => detectedTools(developer).length > 0 && developer.manualPlans.length === 0,
-  ).length;
-  const availableSeats = subscriptions.reduce((sum, subscription) => sum + subscription.availableSeats, 0);
   const canBulkAssign = developers.length > 1 && subscriptions.some((subscription) => subscription.availableSeats > 0);
+
+  const summary = useMemo(() => {
+    const devices = developers.flatMap((developer) => developer.devices);
+    const { active: activeMachines, total: enrolledMachines } = countActiveDevices(devices);
+
+    const peopleWithPlans = developers.filter((developer) => {
+      const usage = planUsageByDeveloper.get(developer.id);
+      return (usage?.plans.length ?? 0) > 0;
+    }).length;
+    const planCoveragePercent =
+      developers.length > 0 ? Math.round((peopleWithPlans / developers.length) * 100) : null;
+
+    const allPlans: RosterPlanUsagePlan[] = [...planUsageByDeveloper.values()].flatMap((row) =>
+      row.plans.map((plan) => ({
+        toolName: plan.toolName,
+        toolKey: plan.toolKey,
+        planName: plan.planName,
+        primaryRatio: plan.primaryRatio,
+        verdict: plan.verdict,
+      })),
+    );
+    const teamUsage = aggregateRosterPlanUsage(allPlans);
+    const avgPercent = teamUsage.avgRatio != null ? teamUsage.avgRatio * 100 : null;
+
+    return {
+      activeMachines,
+      enrolledMachines,
+      memberCount: developers.length,
+      peopleWithPlans,
+      planCoveragePercent,
+      avgPercent,
+      teamUsage,
+    };
+  }, [developers, planUsageByDeveloper]);
 
   async function assignBulk(subscription: Subscription) {
     const ids = [...selected];
@@ -137,22 +172,65 @@ export function DeveloperToolInventory({
   return (
     <div className="space-y-10">
       {showSummary ? (
-        <div className="grid items-start gap-y-8 sm:grid-cols-3">
+        <div className="grid grid-cols-2 items-stretch gap-y-5 sm:gap-y-8 xl:grid-cols-4">
           <SignalsKpi
-            label="People covered"
+            label="Active machines"
             hero
-            className="pl-5"
-            value={`${configured}/${developers.length}`}
+            accent
+            compactMobile
+            value={
+              summary.enrolledMachines > 0
+                ? `${summary.activeMachines}/${summary.enrolledMachines}`
+                : "0"
+            }
+            sub={
+              summary.enrolledMachines > 0
+                ? "heartbeat in last 45m · enrolled"
+                : "no machines enrolled yet"
+            }
           />
           <SignalsKpi
-            label="Seats available"
-            className="sm:border-l sm:border-border sm:pl-8"
-            value={availableSeats}
+            label="Team members"
+            compactMobile
+            className="border-l-2 border-border-strong pl-3 pr-2 sm:pl-4 sm:pr-3"
+            value={summary.memberCount}
+            sub="on the roster"
           />
           <SignalsKpi
-            label="Needs a plan"
-            className="sm:border-l sm:border-border sm:pl-8"
-            value={unassignedActivity}
+            label="Team plan coverage"
+            compactMobile
+            className="border-l-2 border-border-strong pl-3 pr-2 sm:pl-4 sm:pr-3"
+            value={
+              summary.memberCount > 0
+                ? `${summary.peopleWithPlans}/${summary.memberCount}`
+                : "0"
+            }
+            sub={
+              summary.planCoveragePercent != null
+                ? `${summary.planCoveragePercent}% with an assigned plan`
+                : "invite people, then assign plans"
+            }
+          />
+          <SignalsKpi
+            label="Team usage"
+            compactMobile
+            className="border-l-2 border-border-strong pl-3 pr-2 sm:pl-4 sm:pr-3"
+            value={summary.avgPercent != null ? `${summary.avgPercent.toFixed(0)}%` : "—"}
+            sub={
+              summary.teamUsage.withSignal.length > 0
+                ? `avg across ${summary.teamUsage.withSignal.length} ${
+                    summary.teamUsage.withSignal.length === 1 ? "plan" : "plans"
+                  }`
+                : "waiting for quota signal"
+            }
+            footer={
+              <CycleUtilizationBar
+                percent={summary.avgPercent}
+                displayPercent={summary.avgPercent}
+                verdictCode={summary.teamUsage.verdict?.code ?? null}
+                label="Team"
+              />
+            }
           />
         </div>
       ) : null}
@@ -323,13 +401,4 @@ export function DeveloperToolInventory({
       />
     </div>
   );
-}
-
-function detectedTools(developer: Developer) {
-  return [
-    ...new Set([
-      ...developer.devices.flatMap((device) => device.toolInstallations.map((tool) => tool.toolName)),
-      ...developer.toolEvidence.map((tool) => tool.toolName),
-    ]),
-  ].sort();
 }

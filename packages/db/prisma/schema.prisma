@@ -65,6 +65,8 @@ model Organization {
   agentUpdateEvents      AgentUpdateEvent[]
   activitySettings       ActivitySettings?
   deviceActivityEvents   DeviceActivityEvent[]
+  notificationPreferences UserNotificationPreference[]
+  dailyReportDeliveries  DailyReportDelivery[]
 
   @@map("organizations")
 }
@@ -420,14 +422,20 @@ model User {
   emailVerified DateTime?
   image         String?
   passwordHash  String?
+  /// IANA timezone (e.g. Asia/Colombo). Used for 19:00 local daily reports.
+  timeZone       String?  @map("time_zone")
+  timeZoneSource String?  @map("time_zone_source")
+  timeZoneManual Boolean  @default(false) @map("time_zone_manual")
   createdAt     DateTime  @default(now()) @map("created_at")
 
-  accounts          Account[]
-  sessions          Session[]
-  memberships       OrganizationMembership[]
-  actionTokens      AuthActionToken[]
-  planInterests     PlanInterest[]
-  developerProfiles Developer[]
+  accounts                 Account[]
+  sessions                 Session[]
+  memberships              OrganizationMembership[]
+  actionTokens             AuthActionToken[]
+  planInterests            PlanInterest[]
+  developerProfiles        Developer[]
+  notificationPreferences  UserNotificationPreference[]
+  dailyReportDeliveries    DailyReportDelivery[]
 
   @@map("auth_users")
 }
@@ -1199,4 +1207,41 @@ model AppRuntimeSetting {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("app_runtime_settings")
+}
+
+/// Per-user, per-workspace email digest preferences (defaults on when missing).
+model UserNotificationPreference {
+  id                    String   @id @default(cuid())
+  userId                String   @map("user_id")
+  orgId                 String   @map("org_id")
+  dailyPersonalEnabled  Boolean  @default(true) @map("daily_personal_enabled")
+  dailyOrgEnabled       Boolean  @default(true) @map("daily_org_enabled")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+  @@map("user_notification_preferences")
+}
+
+/// Idempotency log for 19:00 local daily report emails.
+model DailyReportDelivery {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  orgId     String   @map("org_id")
+  kind      String
+  localDate String   @map("local_date")
+  status    String   @default("success")
+  error     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, kind, localDate])
+  @@index([orgId, localDate])
+  @@map("daily_report_deliveries")
 }

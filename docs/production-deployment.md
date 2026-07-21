@@ -97,6 +97,8 @@ After changing env vars, **redeploy** Production so the new values are picked up
 | Route | Purpose | Schedule |
 |-------|---------|----------|
 | `POST /api/cron/usage-daily-refresh` | Seal UTC day for agent full usage rescans + invalidate analytics caches | `15 0 * * *` (Vercel cron in `apps/admin/vercel.json`) |
+| `POST /api/cron/materialize-org-day-snapshots` | Materialize org day analytics snapshots | `*/15 * * * *` |
+| `POST /api/cron/daily-report-send` | Email daily report teasers at 19:00 in each user’s timezone | `5 * * * *` |
 
 These routes exist but are **not** scheduled by default (no Actions schedule; add Vercel cron or external ping if needed):
 
@@ -109,6 +111,10 @@ These routes exist but are **not** scheduled by default (no Actions schedule; ad
 Authenticate with `Authorization: Bearer $CRON_SECRET`.
 
 The usage daily refresh stores `fullUsageRescanDay` (UTC `YYYY-MM-DD`) in `app_runtime_settings`. Enrolled agents receive that day on heartbeat and run one full 60-day local usage rescan, then return to incremental snapshot syncs.
+
+Daily report emails are **separate** from the usage seal. The hourly `daily-report-send` job selects users whose local clock is 19:00, sends a branded HTML teaser (personal + owner/admin org rollup), and deep-links to `/reports/daily` (React + shadcn charts). Users opt out under Settings → Email reports. Timezone is captured from the browser and agent heartbeat (`User.timeZone`).
+
+**Local dev:** how to trigger the report cron, test the UI without email, and interpret `due` / `skipped` — [daily-reports.md](./daily-reports.md#run-the-report-job-locally).
 
 ## Agent OTA (separate from web deploy)
 

@@ -5,8 +5,9 @@ ENROLL_TOKEN=""
 CONNECT_TOKEN=""
 CONTROL_PLANE_URL="${USEJUNCTION_URL:-http://localhost:3001}"
 INSTALL_DIR="${HOME}/.usejunction/bin"
-APP_NAME="UseJunction Agent"
+APP_NAME="UseJunction"
 APP_DIR="${HOME}/.usejunction/${APP_NAME}.app"
+LEGACY_APP_DIR="${HOME}/.usejunction/UseJunction Agent.app"
 VERSION="0.1.0"
 UPGRADE_ONLY=false
 
@@ -118,10 +119,19 @@ find_package_script() {
   return 1
 }
 
+migrate_legacy_macos_app() {
+  [[ -d "$LEGACY_APP_DIR" ]] || return 0
+  if [[ -d "$APP_DIR" ]]; then
+    rm -rf "$LEGACY_APP_DIR"
+    return 0
+  fi
+  mv "$LEGACY_APP_DIR" "$APP_DIR"
+}
+
 install_macos_app_bundle() {
   local binary="$1"
   local package_script=""
-  local staged_app="${APP_DIR}.new"
+  local staged_app="${HOME}/.usejunction/${APP_NAME}.new.app"
   rm -rf "$staged_app"
   if package_script="$(find_package_script)"; then
     bash "$package_script" "$binary" "$staged_app" "$VERSION"
@@ -158,7 +168,8 @@ install_macos_app_bundle() {
 
 swap_macos_app() {
   local staged_app="$1"
-  local previous_app="${APP_DIR}.previous"
+  local previous_app="${HOME}/.usejunction/${APP_NAME}.previous.app"
+  migrate_legacy_macos_app
   rm -rf "$previous_app"
   if [[ -d "$APP_DIR" ]]; then
     mv "$APP_DIR" "$previous_app"
@@ -181,12 +192,18 @@ download_macos_agent() {
   local app_path
   if app_path="$(download_agent "$base" "$tmp_dir" "$app_archive")"; then
     local extracted="${tmp_dir}/extracted"
-    local staged_app="${APP_DIR}.new"
+    local staged_app="${HOME}/.usejunction/${APP_NAME}.new.app"
     rm -rf "$extracted" "$staged_app"
     mkdir -p "$extracted"
     ditto -x -k "$app_path" "$extracted"
-    [[ -x "${extracted}/${APP_NAME}.app/Contents/MacOS/usejunction" ]] || { echo "App bundle missing executable"; return 1; }
-    ditto "${extracted}/${APP_NAME}.app" "$staged_app"
+    if [[ -x "${extracted}/${APP_NAME}.app/Contents/MacOS/usejunction" ]]; then
+      ditto "${extracted}/${APP_NAME}.app" "$staged_app"
+    elif [[ -x "${extracted}/UseJunction Agent.app/Contents/MacOS/usejunction" ]]; then
+      ditto "${extracted}/UseJunction Agent.app" "$staged_app"
+    else
+      echo "App bundle missing executable"
+      return 1
+    fi
     swap_macos_app "$staged_app"
     link_macos_cli
     return 0

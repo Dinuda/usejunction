@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { invalidateAllAnalyticsCaches } from "@/lib/analytics/query";
 import { logServerError } from "@/lib/errors/public";
 import { setFullUsageRescanDay, utcDayString } from "@/lib/runtime-settings";
+import {
+  markActiveOrgsTodayDirty,
+  materializeDirtyOrgUsageDays,
+  ORG_DAY_SNAPSHOT_VERSION,
+} from "@/lib/analytics/snapshots";
+import { prisma } from "@usejunction/db";
 
 function authorizeCron(req: NextRequest): NextResponse | null {
   const secret = process.env.CRON_SECRET;
@@ -22,9 +28,8 @@ function authorizeCron(req: NextRequest): NextResponse | null {
 }
 
 /**
- * Seals the UTC day for agent full usage rescans and refreshes dashboard caches.
- * Agents learn the day via heartbeat `fullUsageRescanDay` and run one full local
- * 60-day rescan, then return to incremental snapshots.
+ * Seals the UTC day for agent full usage rescans, marks active orgs' today/yesterday
+ * dirty, rematerializes those snapshots, and refreshes analytics query caches.
  */
 export async function POST(req: NextRequest) {
   const denied = authorizeCron(req);
@@ -33,8 +38,31 @@ export async function POST(req: NextRequest) {
   try {
     const day = utcDayString();
     await setFullUsageRescanDay(day);
+    const orgsMarked = await markActiveOrgsTodayDirty({ metricVersion: ORG_DAY_SNAPSHOT_VERSION });
+
+    const dirtyOrgs = await prisma.analyticsDirtyDay.findMany({
+      where: { metricVersion: ORG_DAY_SNAPSHOT_VERSION },
+      distinct: ["orgId"],
+      select: { orgId: true },
+      take: 200,
+    });
+    let snapshotDays = 0;
+    for (const row of dirtyOrgs) {
+      const result = await materializeDirtyOrgUsageDays(row.orgId, {
+        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+        limit: 90,
+      });
+      snapshotDays += result.days;
+    }
+
     const cachesInvalidated = await invalidateAllAnalyticsCaches();
-    return NextResponse.json({ ok: true, day, cachesInvalidated });
+    return NextResponse.json({
+      ok: true,
+      day,
+      orgsMarked,
+      snapshotDays,
+      cachesInvalidated,
+    });
   } catch (error) {
     logServerError("cron/usage-daily-refresh", error);
     return NextResponse.json({ error: "usage daily refresh failed" }, { status: 500 });

@@ -72,7 +72,6 @@ export default function TeamPage() {
       ) : null}
 
       <DeveloperToolInventory
-        showSummary={false}
         initialDevelopers={initial.developers}
         initialSubscriptions={initial.subscriptions}
         initialPlanUsage={initial.planUsage}
