@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { userFacingError } from "@/lib/errors/user-facing";
 import type { PlatformCommands } from "@/lib/connect-command";
+import { activateWorkspace } from "@/lib/api/client";
 
 type Props = {
   token: string;
@@ -50,6 +51,16 @@ export function TeamInviteClient({ token, organizationName, signedIn, sessionEma
       if (cancelled) return;
       if (!response.ok) {
         setState({ kind: "error", message: userFacingError(data.error, "Could not redeem invite.") });
+        return;
+      }
+      if (typeof data.orgId !== "string") {
+        setState({ kind: "error", message: "Could not activate the invited workspace." });
+        return;
+      }
+      try {
+        await activateWorkspace(data.orgId);
+      } catch {
+        setState({ kind: "error", message: "Could not activate the invited workspace." });
         return;
       }
       setState({

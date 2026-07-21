@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/usejunction/agent/internal/config"
@@ -38,19 +39,22 @@ type codexSessionState struct {
 // ScanCodex walks ~/.codex/sessions (+ archived_sessions) JSONL using
 // cumulative total_token_usage deltas.
 // Sessions are attributed to "codex" or "codex-work" via session_meta.originator.
-func ScanCodex(codexHome string, refresh bool) ([]types.DailyUsage, error) {
-	cacheFile := filepath.Join(config.CacheDir(), "codex.json")
-	if !refresh {
-		if cached, err := loadCache(cacheFile); err == nil && len(cached) > 0 {
-			return cached, nil
-		}
-	}
-
+// When forceFull is false and no session JSONL changed since the last snapshot,
+// prior aggregates are reused.
+func ScanCodex(codexHome string, forceFull bool) ([]types.DailyUsage, error) {
 	dirs := []string{
 		filepath.Join(codexHome, "sessions"),
 		filepath.Join(codexHome, "archived_sessions"),
 	}
+	current, keys, _ := CollectJSONLWatermarks(dirs)
+	snap, _ := LoadScanSnapshot()
+	if !forceFull && JSONLSourcesUnchanged(snap, dirs, current, keys) {
+		if rows := AggregatesForTools(snap, codexToolName, codexWorkToolName); len(rows) > 0 || len(keys) == 0 {
+			return rows, nil
+		}
+	}
 
+	cacheFile := filepath.Join(config.CacheDir(), "codex.json")
 	buckets := map[string]*types.DailyUsage{}
 	for _, root := range dirs {
 		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -88,8 +92,25 @@ func ScanCodex(codexHome string, refresh bool) ([]types.DailyUsage, error) {
 		b.CalculationVersion = calculationVersion
 		result = append(result, *b)
 	}
+	result = PruneAggregatesLookback(result, time.Now().UTC())
 
 	_ = saveCache(cacheFile, result)
+	snap.Aggregates = ReplaceToolNamesAggregates(snap.Aggregates, []string{codexToolName, codexWorkToolName}, result)
+	if snap.Sources == nil {
+		snap.Sources = map[string]SourceWatermark{}
+	}
+	for key, wm := range current {
+		snap.Sources[key] = wm
+	}
+	// Drop stale jsonl watermarks under codex roots.
+	for key, wm := range snap.Sources {
+		if strings.HasPrefix(key, "jsonl:") && strings.Contains(wm.Path, "codex") {
+			if _, ok := current[key]; !ok {
+				delete(snap.Sources, key)
+			}
+		}
+	}
+	_ = SaveScanSnapshot(snap)
 	return result, nil
 }
 

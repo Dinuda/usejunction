@@ -36,6 +36,9 @@ type Config struct {
 	WorkExtractionStartedAt string `json:"workExtractionStartedAt,omitempty"`
 	WorkExtractionLastAt    string `json:"workExtractionLastAt,omitempty"`
 	BlockedUpdateVersion    string `json:"blockedUpdateVersion,omitempty"`
+	// LastFullUsageRescanDay is the UTC YYYY-MM-DD of the last control-plane
+	// sealed full usage rescan this agent completed.
+	LastFullUsageRescanDay string `json:"lastFullUsageRescanDay,omitempty"`
 }
 
 const DefaultLocalSyncPort = 47832

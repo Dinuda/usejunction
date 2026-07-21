@@ -10,6 +10,7 @@ import { Panel } from "@/components/panel";
 import { Label } from "@/components/ui/label";
 import { WorkspaceColorSwatches, WorkspaceIcon } from "@/components/workspace-icon";
 import { userFacingError } from "@/lib/errors/user-facing";
+import { useInvalidateAppData } from "@/lib/api/client";
 import {
   resolveWorkspaceColor,
   type WorkspaceColor,
@@ -25,6 +26,7 @@ export function WorkspaceSettingsCard({
   initialColor: string | null;
 }) {
   const router = useRouter();
+  const invalidateAppData = useInvalidateAppData();
   const [name, setName] = useState(initialName);
   const [color, setColor] = useState<WorkspaceColor>(resolveWorkspaceColor(orgId, initialColor));
   const [savedName, setSavedName] = useState(initialName.trim());
@@ -67,6 +69,7 @@ export function WorkspaceSettingsCard({
       setSavedName(body.organization.name.trim());
       setSavedColor(nextColor);
       setSaved(true);
+      await invalidateAppData();
       router.refresh();
     });
   }

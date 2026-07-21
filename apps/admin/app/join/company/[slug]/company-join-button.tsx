@@ -6,14 +6,21 @@ import { signOut } from "next-auth/react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { userFacingError } from "@/lib/errors/user-facing";
+import { activateWorkspace } from "@/lib/api/client";
 
 export function CompanyJoinButton({ slug }: { slug: string }) {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
-    void fetch(`/api/organizations/${encodeURIComponent(slug)}/join`, { method: "POST" }).then(async (response) => ({ response, data: await response.json().catch(() => ({})) })).then(({ response, data }) => {
+    void fetch(`/api/organizations/${encodeURIComponent(slug)}/join`, { method: "POST" }).then(async (response) => ({ response, data: await response.json().catch(() => ({})) })).then(async ({ response, data }) => {
       if (!active) return;
       if (!response.ok) { setError(userFacingError(data.error, "Unable to join this workspace.")); return; }
+      try {
+        await activateWorkspace(data.orgId);
+      } catch {
+        if (active) setError("The workspace was joined, but it could not be activated.");
+        return;
+      }
       window.location.href = "/onboarding";
     });
     return () => { active = false; };

@@ -77,11 +77,13 @@ func ScanClaude(roots []string, refresh bool) ([]types.DailyUsage, error) {
 	return rows, nil
 }
 
-func scanJSONLDirs(tool string, roots []string, parser lineParser, refresh bool) ([]types.DailyUsage, error) {
+func scanJSONLDirs(tool string, roots []string, parser lineParser, forceFull bool) ([]types.DailyUsage, error) {
 	cacheFile := filepath.Join(config.CacheDir(), tool+".json")
-	if !refresh {
-		if cached, err := loadCache(cacheFile); err == nil && len(cached) > 0 {
-			return cached, nil
+	current, keys, _ := CollectJSONLWatermarks(roots)
+	snap, _ := LoadScanSnapshot()
+	if !forceFull && JSONLSourcesUnchanged(snap, roots, current, keys) {
+		if rows := AggregatesForTools(snap, tool); len(rows) > 0 || len(keys) == 0 {
+			return rows, nil
 		}
 	}
 
@@ -120,8 +122,31 @@ func scanJSONLDirs(tool string, roots []string, parser lineParser, refresh bool)
 		b.CalculationVersion = calculationVersion
 		result = append(result, *b)
 	}
+	result = PruneAggregatesLookback(result, time.Now().UTC())
 
 	_ = saveCache(cacheFile, result)
+	snap.Aggregates = ReplaceToolNamesAggregates(snap.Aggregates, []string{tool}, result)
+	if snap.Sources == nil {
+		snap.Sources = map[string]SourceWatermark{}
+	}
+	prefix := "jsonl:"
+	for key, wm := range snap.Sources {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		for _, root := range roots {
+			if strings.HasPrefix(wm.Path, root+string(os.PathSeparator)) || wm.Path == root {
+				if _, ok := current[key]; !ok {
+					delete(snap.Sources, key)
+				}
+				break
+			}
+		}
+	}
+	for key, wm := range current {
+		snap.Sources[key] = wm
+	}
+	_ = SaveScanSnapshot(snap)
 	return result, nil
 }
 

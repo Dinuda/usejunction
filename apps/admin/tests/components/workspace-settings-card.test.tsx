@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, expect, test, vi } from "vitest";
 import { WorkspaceSettingsCard } from "@/components/settings/workspace-settings-card";
 import "../setup/component";
@@ -27,11 +28,13 @@ test("workspace form uses named native colors and announces a successful save", 
   vi.stubGlobal("fetch", fetchMock);
 
   render(
-    <WorkspaceSettingsCard
-      orgId="org-1"
-      initialName="Junction"
-      initialColor="#0f766e"
-    />,
+    <QueryClientProvider client={new QueryClient()}>
+      <WorkspaceSettingsCard
+        orgId="org-1"
+        initialName="Junction"
+        initialColor="#0f766e"
+      />
+    </QueryClientProvider>,
   );
 
   expect(screen.getByRole("region", { name: "Workspace" })).toBeTruthy();

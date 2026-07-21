@@ -40,6 +40,7 @@ import {
   aggregateJourneys,
   aggregateTools,
   buildDailyTrend,
+  buildDailyTrendPoints,
   buildWeeklyTrend,
   compatibilitySummaryFromSessions,
   summarizeWindow,
@@ -241,6 +242,30 @@ test("Signals rollups deduplicate people, retain empty weeks, and compare prior 
   assert.equal(summary.sessions, 3);
   assert.equal(summary.activeDevelopers, 2);
   assert.equal(summary.recentSessions[0]?.id, "s1");
+
+  const tieJourneys = aggregateJourneys([
+    session({ id: "j1", developerId: "d1", startedAt: day("2026-07-14") }),
+    session({ id: "j2", developerId: "d2", startedAt: day("2026-07-14") }),
+    session({
+      id: "j3",
+      developerId: "d3",
+      startedAt: day("2026-07-14"),
+      domainBefore: "linear.app",
+      domainAfter: "github.com",
+    }),
+  ]);
+  assert.equal(toJourneyRows(tieJourneys, [])[0]?.people, 2);
+
+  const tieTools = aggregateTools([
+    session({ id: "t1", developerId: "d1", startedAt: day("2026-07-14"), aiTool: "cursor" }),
+    session({ id: "t2", developerId: "d2", startedAt: day("2026-07-14"), aiTool: "cursor" }),
+    session({ id: "t3", developerId: "d3", startedAt: day("2026-07-14"), aiTool: "codex" }),
+  ]);
+  assert.equal(toToolRows(tieTools, [])[0]?.people, 2);
+  assert.equal(
+    buildDailyTrendPoints([{ at: day("2026-07-14"), personId: "d1" }])[0]?.durationSeconds,
+    0,
+  );
 });
 
 test("Signals flow keys and windows are stable for generated and invalid routes", () => {

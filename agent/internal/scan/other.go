@@ -1,17 +1,15 @@
 package scan
 
 import (
-	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
-
 	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/platformdirs"
+	"github.com/usejunction/agent/internal/sqlitedb"
 	"github.com/usejunction/agent/internal/types"
 )
 
@@ -54,7 +52,7 @@ func ScanCopilot(refresh bool) ([]types.DailyUsage, error) {
 }
 
 func scanCopilotTracesDB(dbPath string, buckets map[string]*types.DailyUsage) error {
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	db, err := sqlitedb.OpenReadonly(dbPath)
 	if err != nil {
 		return err
 	}

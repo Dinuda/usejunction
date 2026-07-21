@@ -7,10 +7,15 @@ import {
 import type { SignalsActivityInput } from "@/lib/signals/contracts/activity.v1";
 import type { SignalsTrendPoint } from "@/lib/signals/contracts/shared";
 import { sharePercent } from "@/lib/signals/policies/aggregates";
-import { buildDailyTrendPoints } from "@/lib/signals/policies/rollup";
 import { resolveSignalsWindows } from "@/lib/signals/queries/windows";
-import { readLocalWorkSessionsWindow } from "@/lib/signals/readers/work-sessions";
-import { getOrgSignalsPolicy } from "@/lib/signals/service";
+import {
+  readLocalWorkSessionOverviewAggregates,
+  readLocalWorkSessionsRecent,
+} from "@/lib/signals/readers/work-sessions";
+import {
+  getOrgSignalsPolicy,
+  type EffectiveSignalsPolicy,
+} from "@/lib/signals/service";
 import { rolesFor } from "@/lib/rbac";
 import type { WorkActivitySession } from "@/lib/signals/queries/get-work-activity";
 import { asWorkToolCallCounts } from "@/lib/signals/queries/get-work-activity";
@@ -32,12 +37,18 @@ export type WorkOverviewV1 = {
   recent: WorkActivitySession[];
 };
 
+export type WorkOverviewOptions = {
+  /** Preloaded policy so the route can fetch it in parallel with subscriptions. */
+  policy?: EffectiveSignalsPolicy;
+};
+
 export async function getWorkOverview(
   context: InsightContext,
   input: SignalsActivityInput = {},
+  options: WorkOverviewOptions = {},
 ): Promise<InsightEnvelope<WorkOverviewV1>> {
   assertInsightRoles(context, rolesFor("org_overview"));
-  const policy = await getOrgSignalsPolicy(context.orgId);
+  const policy = options.policy ?? (await getOrgSignalsPolicy(context.orgId));
   const windows = resolveSignalsWindows(input, context.now);
 
   if (!policy.workExtractionEnabled) {
@@ -58,38 +69,23 @@ export async function getWorkOverview(
     });
   }
 
-  const rows = await readLocalWorkSessionsWindow(context.orgId, {
+  const windowOpts = {
     from: windows.current.from,
     to: windows.current.to,
     ...windows.filters,
-  });
+  };
 
-  const people = new Set(rows.map((row) => row.developerId));
-  const models = new Set(rows.map((row) => row.model).filter((model): model is string => Boolean(model)));
-  const toolBuckets = new Map<string, { sessions: number; people: Set<string> }>();
-  for (const row of rows) {
-    const bucket = toolBuckets.get(row.toolName) ?? { sessions: 0, people: new Set<string>() };
-    bucket.sessions += 1;
-    bucket.people.add(row.developerId);
-    toolBuckets.set(row.toolName, bucket);
-  }
+  const [aggregates, recentRows] = await Promise.all([
+    readLocalWorkSessionOverviewAggregates(context.orgId, windowOpts),
+    readLocalWorkSessionsRecent(context.orgId, windowOpts, 12),
+  ]);
 
-  const topTools = [...toolBuckets.entries()]
-    .map(([tool, bucket]) => ({
-      tool,
-      sessions: bucket.sessions,
-      people: bucket.people.size,
-      sharePercent: sharePercent(bucket.sessions, rows.length),
-    }))
-    .sort((a, b) => b.sessions - a.sessions || b.people - a.people)
-    .slice(0, 10);
+  const topTools = aggregates.topTools.map((row) => ({
+    ...row,
+    sharePercent: sharePercent(row.sessions, aggregates.sessions),
+  }));
 
-  const trend = buildDailyTrendPoints(
-    rows.map((row) => ({ at: row.observedAt, personId: row.developerId })),
-    { from: windows.current.from, to: windows.current.to },
-  );
-
-  const recent = rows.slice(0, 12).map((session) => ({
+  const recent = recentRows.map((session) => ({
     id: session.id,
     person: session.developer.name,
     email: session.developer.email,
@@ -109,13 +105,13 @@ export async function getWorkOverview(
     context,
     kind: "work-overview",
     window: windows.current,
-    dataThrough: rows[0]?.observedAt ?? null,
+    dataThrough: aggregates.dataThrough ?? recentRows[0]?.observedAt ?? null,
     data: {
       enabled: true,
-      sessions: rows.length,
-      activePeople: people.size,
-      models: models.size,
-      trend,
+      sessions: aggregates.sessions,
+      activePeople: aggregates.activePeople,
+      models: aggregates.models,
+      trend: aggregates.trend,
       topTools,
       recent,
     },

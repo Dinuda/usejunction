@@ -6,6 +6,12 @@ import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { compare } from "bcryptjs";
 import { prisma } from "@usejunction/db";
+import { isOAuthAccountNotLinkedError } from "@/lib/auth/oauth-account-conflict";
+import { notifyServerIssue } from "@/lib/notifications/slack";
+import {
+  applyWorkspaceJwtClaims,
+  exposeWorkspaceSessionClaims,
+} from "@/lib/auth/session-callbacks";
 import {
   isRecentSignup,
   notifyUserLoggedIn,
@@ -15,8 +21,46 @@ import authConfig from "./auth.config";
 
 const MAX_PASSWORD_BYTES = 256;
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+export const {
+  handlers,
+  auth,
+  signIn,
+  signOut,
+  unstable_update: updateSession,
+} = NextAuth({
   ...authConfig,
+  logger: {
+    error(error) {
+      const authError = error as Error & { type?: string };
+      const type = authError.type || authError.name || "UnknownAuthError";
+      const message = authError.message ? `: ${authError.message.slice(0, 500)}` : "";
+      if (isOAuthAccountNotLinkedError(error)) {
+        // This is an expected, safely recoverable identity conflict. Avoid a
+        // production stack trace while retaining a concise operational signal.
+        console.warn("[auth][account-conflict] OAuth sign-in requires account recovery");
+        notifyServerIssue({
+          severity: "warning",
+          scope: `auth/${type}`,
+          error: `${type}${message}`,
+        });
+        return;
+      }
+      console.error("[auth][error]", error);
+      notifyServerIssue({
+        severity: "error",
+        scope: `auth/${type}`,
+        error: `${type}${message}`,
+      });
+    },
+    warn(code) {
+      console.warn("[auth][warn]", code);
+      notifyServerIssue({
+        severity: "warning",
+        scope: "auth/warning",
+        error: String(code),
+      });
+    },
+  },
   adapter: PrismaAdapter(prisma),
   providers: [
     Credentials({
@@ -64,58 +108,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       : []),
   ],
   callbacks: {
-    async jwt({ token, user, trigger, session }) {
-      if (user) {
-        token.userId = user.id;
-        token.email = user.email ?? null;
-        token.picture = user.image ?? null;
-        token.orgId = (user as { orgId?: string | null }).orgId ?? null;
-        token.role = (user as { role?: string | null }).role ?? null;
-      }
-      if (token.userId) {
-        const dbUser = await prisma.user.findUnique({
-          where: { id: String(token.userId) },
-          select: { id: true, image: true, email: true },
-        });
-        if (!dbUser) {
-          return {};
-        }
-        token.picture = dbUser.image ?? null;
-      }
-      if (trigger === "update" && session?.orgId && token.userId) {
-        const membership = await prisma.organizationMembership.findUnique({
-          where: {
-            userId_orgId: {
-              userId: String(token.userId),
-              orgId: String(session.orgId),
-            },
-          },
-          select: { orgId: true, role: true },
-        });
-        if (membership) {
-          token.orgId = membership.orgId;
-          token.role = membership.role;
-        }
-      }
-      if (token.userId && !token.orgId) {
-        const membership = await prisma.organizationMembership.findFirst({
-          where: { userId: String(token.userId) },
-          orderBy: { createdAt: "desc" },
-        });
-        token.orgId = membership?.orgId ?? null;
-        token.role = membership?.role ?? null;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user && token.userId) {
-        session.user.id = String(token.userId);
-        session.user.orgId = token.orgId ? String(token.orgId) : null;
-        session.user.role = token.role ? String(token.role) : null;
-        session.user.image = token.picture ? String(token.picture) : null;
-      }
-      return session;
-    },
+    jwt: applyWorkspaceJwtClaims,
+    session: exposeWorkspaceSessionClaims,
   },
   events: {
     async createUser({ user }) {

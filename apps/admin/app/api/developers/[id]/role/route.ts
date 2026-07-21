@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { updateSession } from "@/auth";
 import { prisma } from "@usejunction/db";
 import { audit, requireOrgRole, rolesFor } from "@/lib/rbac";
 import { ASSIGNABLE_ROLES } from "@/lib/rbac/permissions";
@@ -56,6 +57,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       });
     }
   });
+
+  // Keep the actor's JWT role in sync when they change their own membership.
+  // Other members pick up the new role on their next workspace update / session refresh.
+  if (developer.authUserId === auth.userId) {
+    await updateSession({ user: { orgId: auth.orgId } });
+  }
 
   await audit({
     orgId: auth.orgId,

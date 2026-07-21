@@ -1,8 +1,9 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
-import { resolveOrgId } from "@/lib/require-organization";
+import { ACTIVE_ORG_COOKIE } from "@/lib/require-organization";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
 
 export type { OrganizationRole };
@@ -15,6 +16,7 @@ export type WorkspaceContext = {
   orgId: string | null;
   orgName: string | null;
   role: OrganizationRole | null;
+  onboardingCompletedAt: Date | null;
   organizations: Array<{ id: string; name: string; color: string | null; role: OrganizationRole }>;
 };
 
@@ -22,35 +24,39 @@ export const getWorkspaceContext = cache(async (): Promise<WorkspaceContext | nu
   const session = await auth();
   if (!session?.user?.id || !session.user.email) return null;
 
-  const orgId = await resolveOrgId(session.user.id, session.user.orgId);
+  const cookieStore = await cookies();
+  const cookieOrgId = cookieStore.get(ACTIVE_ORG_COOKIE)?.value;
+  // The legacy cookie is only a migration hint. It is never trusted without
+  // the same indexed membership check used for a JWT-selected workspace.
+  const candidateOrgId = cookieOrgId ?? session.user.orgId;
+  const membership = candidateOrgId
+    ? await prisma.organizationMembership.findUnique({
+      where: { userId_orgId: { userId: session.user.id, orgId: candidateOrgId } },
+      select: {
+        role: true,
+        orgId: true,
+        onboardingCompletedAt: true,
+        organization: { select: { id: true, name: true, color: true } },
+      },
+    })
+    : null;
 
-  const memberships = await prisma.organizationMembership.findMany({
-    where: { userId: session.user.id },
-    orderBy: { createdAt: "asc" },
-    select: {
-      role: true,
-      orgId: true,
-      organization: { select: { id: true, name: true, color: true } },
-    },
-  });
-
-  const organizations = memberships.map((membership) => ({
+  const organizations = membership ? [{
     id: membership.organization.id,
     name: membership.organization.name,
     color: membership.organization.color,
     role: membership.role as OrganizationRole,
-  }));
-
-  const active = memberships.find((membership) => membership.orgId === orgId) ?? memberships[0] ?? null;
+  }] : [];
 
   return {
     userId: session.user.id,
     email: session.user.email,
     name: session.user.name,
     image: session.user.image,
-    orgId: active?.orgId ?? null,
-    orgName: active?.organization.name ?? null,
-    role: (active?.role as OrganizationRole | undefined) ?? null,
+    orgId: membership?.orgId ?? null,
+    orgName: membership?.organization.name ?? null,
+    role: (membership?.role as OrganizationRole | undefined) ?? null,
+    onboardingCompletedAt: membership?.onboardingCompletedAt ?? null,
     organizations,
   };
 });
@@ -64,11 +70,7 @@ export async function requireWorkspaceContext(): Promise<WorkspaceContext & { or
 
 export async function requireCompletedOnboarding(): Promise<WorkspaceContext & { orgId: string }> {
   const ctx = await requireWorkspaceContext();
-  const membership = await prisma.organizationMembership.findUnique({
-    where: { userId_orgId: { userId: ctx.userId, orgId: ctx.orgId } },
-    select: { onboardingCompletedAt: true },
-  });
-  if (!membership?.onboardingCompletedAt) redirect("/onboarding");
+  if (!ctx.onboardingCompletedAt) redirect("/onboarding");
   return ctx;
 }
 

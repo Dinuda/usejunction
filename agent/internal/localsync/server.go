@@ -21,8 +21,10 @@ import (
 // ProgressFunc records the current phase for a running sync job.
 type ProgressFunc func(step, message string)
 
-// SyncFunc runs a collect+report cycle. refresh=true bypasses on-disk usage
-// scan caches; usage/work uploads remain delta-filtered (fingerprints + watermark).
+// SyncFunc runs a collect+report cycle. refresh=true forces a full local usage
+// rescan (bypasses scan snapshots). Scheduled collects use refresh=false
+// (incremental) unless the control plane sealed a newer fullUsageRescanDay.
+// Usage/work uploads remain delta-filtered (fingerprints + watermark).
 type SyncFunc func(ctx context.Context, refresh bool, progress ProgressFunc) (tools, accounts, quotas, usage int, warnings []string, err error)
 
 type syncJob struct {

@@ -17,7 +17,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   if (!invite) return NextResponse.json({ error: "connect invite not found" }, { status: 404 });
 
   if (invite.expiresAt <= new Date() && invite.status === "pending") {
-    await prisma.connectInvite.update({ where: { id: invite.id }, data: { status: "expired" } });
     return NextResponse.json({
       status: "expired",
       email: maskEmail(invite.email),

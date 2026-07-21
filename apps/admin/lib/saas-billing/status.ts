@@ -26,6 +26,54 @@ export type OrgBillingStatus = {
   seatSyncPending: boolean;
 };
 
+export type OrgBillingFacts = {
+  plan: string;
+  trialEndsAt: Date | null;
+  subscriptionStatus: string | null;
+  currentPeriodEnd: Date | null;
+  lemonSqueezyCustomerId: string | null;
+  lemonSqueezySubscriptionId: string | null;
+  lemonSqueezyQuantity: number | null;
+  usersUsed: number;
+};
+
+export function computeOrgBillingStatus(
+  facts: OrgBillingFacts,
+  role: OrganizationRole | null,
+): OrgBillingStatus {
+  const effectivePlan = resolveEffectivePlan(facts);
+  const usersLimit = getUserLimit(effectivePlan);
+  const trialDaysLeft = effectivePlan === "trial" ? getTrialDaysLeft(facts.trialEndsAt) : null;
+  const paid = isPaidPlan(effectivePlan);
+  const isAdmin = canManageSettings(role);
+  const desiredSeatQuantity = Math.max(1, facts.usersUsed);
+  const billingSeatQuantity = effectivePlan === "team" ? facts.lemonSqueezyQuantity : null;
+  const seatSyncPending =
+    effectivePlan === "team" &&
+    (facts.subscriptionStatus === "active" || facts.subscriptionStatus === "on_trial") &&
+    billingSeatQuantity !== desiredSeatQuantity;
+  let usagePercent: number | null = null;
+  if (!paid && usersLimit !== null) {
+    usagePercent = Math.min(100, Math.round((facts.usersUsed / usersLimit) * 100));
+  }
+
+  return {
+    plan: facts.plan,
+    effectivePlan,
+    planLabel: getPlanDisplayName(effectivePlan),
+    trialDaysLeft,
+    subscriptionStatus: facts.subscriptionStatus,
+    usersUsed: facts.usersUsed,
+    usersLimit,
+    usagePercent,
+    canUpgrade: isAdmin && !paid,
+    canManage: isAdmin && paid && Boolean(facts.lemonSqueezyCustomerId),
+    isAtUserLimit: usersLimit !== null && facts.usersUsed >= usersLimit,
+    billingSeatQuantity,
+    seatSyncPending,
+  };
+}
+
 export async function getOrgBillingStatus(
   orgId: string,
   role: OrganizationRole | null,
@@ -50,37 +98,7 @@ export async function getOrgBillingStatus(
     throw new Error("organization not found");
   }
 
-  const effectivePlan = resolveEffectivePlan(org);
-  const usersLimit = getUserLimit(effectivePlan);
-  const trialDaysLeft = effectivePlan === "trial" ? getTrialDaysLeft(org.trialEndsAt) : null;
-  const paid = isPaidPlan(effectivePlan);
-  const isAdmin = canManageSettings(role);
-  const desiredSeatQuantity = Math.max(1, usersUsed);
-  const billingSeatQuantity = effectivePlan === "team" ? org.lemonSqueezyQuantity : null;
-  const seatSyncPending =
-    effectivePlan === "team" &&
-    (org.subscriptionStatus === "active" || org.subscriptionStatus === "on_trial") &&
-    billingSeatQuantity !== desiredSeatQuantity;
-  let usagePercent: number | null = null;
-  if (!paid && usersLimit !== null) {
-    usagePercent = Math.min(100, Math.round((usersUsed / usersLimit) * 100));
-  }
-
-  return {
-    plan: org.plan,
-    effectivePlan,
-    planLabel: getPlanDisplayName(effectivePlan),
-    trialDaysLeft,
-    subscriptionStatus: org.subscriptionStatus,
-    usersUsed,
-    usersLimit,
-    usagePercent,
-    canUpgrade: isAdmin && !paid,
-    canManage: isAdmin && paid && Boolean(org.lemonSqueezyCustomerId),
-    isAtUserLimit: usersLimit !== null && usersUsed >= usersLimit,
-    billingSeatQuantity,
-    seatSyncPending,
-  };
+  return computeOrgBillingStatus({ ...org, usersUsed }, role);
 }
 
 export async function assertCanEnrollDevice(

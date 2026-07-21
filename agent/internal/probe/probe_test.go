@@ -1,6 +1,7 @@
 package probe
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -192,10 +193,12 @@ func TestCopilotResetAtParsesDate(t *testing.T) {
 	}
 }
 
-func TestResolveCursorPlanPrefersLocalMembership(t *testing.T) {
-	got := firstNonEmpty("pro_plus", "hobby")
+func TestResolveCursorPlanPrefersAPIOverStaleLocal(t *testing.T) {
+	// usage-summary membershipType must win over a stale cursorAuth/stripeMembershipType.
+	summary := &cursorUsageSummary{MembershipType: "pro_plus"}
+	got := resolveCursorPlan(context.Background(), "", summary)
 	if got != "pro_plus" {
-		t.Fatalf("firstNonEmpty = %q", got)
+		t.Fatalf("resolveCursorPlan = %q, want pro_plus", got)
 	}
 }
 

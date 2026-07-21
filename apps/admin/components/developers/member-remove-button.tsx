@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { userFacingError } from "@/lib/errors/user-facing";
+import { useInvalidateAppData } from "@/lib/api/client";
 
 export function MemberRemoveButton({
   developerId,
@@ -30,6 +31,7 @@ export function MemberRemoveButton({
   locked?: boolean;
 }) {
   const router = useRouter();
+  const invalidateAppData = useInvalidateAppData();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +49,7 @@ export function MemberRemoveButton({
       return;
     }
     setOpen(false);
+    await invalidateAppData();
     router.push("/team");
     router.refresh();
   }

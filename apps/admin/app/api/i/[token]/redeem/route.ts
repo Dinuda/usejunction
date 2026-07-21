@@ -5,7 +5,6 @@ import { buildInstallCommand, buildPlatformInstallCommands, getPublicAppUrl } fr
 import { hasVerifiedIdentity, linkDeveloperToUser, normalizeEmail } from "@/lib/developer-identity";
 import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/quantity";
 import { assertCanAddUser } from "@/lib/saas-billing/status";
-import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 import { audit } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
 
@@ -131,7 +130,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
   const installCommand = buildInstallCommand(enrollmentToken, base);
   const installCommands = buildPlatformInstallCommands(enrollmentToken, base);
 
-  const response = NextResponse.json({
+  return NextResponse.json({
     status: "ready",
     orgId: link.orgId,
     organization: link.organization,
@@ -142,6 +141,4 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
     installCommands,
     expiresAt: expiresAt.toISOString(),
   });
-  response.cookies.set(ACTIVE_ORG_COOKIE, link.orgId, activeOrgCookieOptions());
-  return response;
 }

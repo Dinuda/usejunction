@@ -10,12 +10,24 @@ export type QuotaSnapshotInput = {
   windowType: string;
   usedPercent: number | null;
   creditsRemaining: number | null;
-  resetAt: Date | null;
+  /** Prisma Date, or ISO string after JSON/cache round-trips. */
+  resetAt: Date | string | null;
   source: string;
-  updatedAt: Date;
+  updatedAt: Date | string;
   developerId?: string | null;
   deviceId?: string | null;
 };
+
+function toDate(value: Date | string | null | undefined): Date | null {
+  if (value == null) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function toIso(value: Date | string | null | undefined): string | null {
+  return toDate(value)?.toISOString() ?? null;
+}
 
 export type QuotaUtilization = {
   quotaKey: string;
@@ -120,6 +132,7 @@ export function mapQuotaSnapshots(
         : snapshot.usedPercent / 100;
     const unit: QuotaUtilization["unit"] =
       snapshot.creditsRemaining != null && snapshot.usedPercent == null ? "credits" : "percent";
+    const updatedAt = toDate(snapshot.updatedAt) ?? now;
 
     return {
       quotaKey: `${toolKey}:${snapshot.windowType}`,
@@ -131,10 +144,10 @@ export function mapQuotaSnapshots(
       rawRatio,
       displayRatio: rawRatio == null ? null : Math.min(rawRatio, 1),
       periodStartsAt: null,
-      resetsAt: snapshot.resetAt?.toISOString() ?? null,
+      resetsAt: toIso(snapshot.resetAt),
       source: mapSource(snapshot.source),
-      observedAt: snapshot.updatedAt.toISOString(),
-      stale: now.getTime() - snapshot.updatedAt.getTime() > STALE_QUOTA_MS,
+      observedAt: updatedAt.toISOString(),
+      stale: now.getTime() - updatedAt.getTime() > STALE_QUOTA_MS,
       toolKey,
       windowType: snapshot.windowType,
       developerId: snapshot.developerId ?? null,

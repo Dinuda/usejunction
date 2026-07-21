@@ -49,6 +49,9 @@ model Organization {
   repositories           Repository[]
   usageDaily             UsageDaily[]
   analyticsQueryCaches   AnalyticsQueryCache[]
+  orgUsageDaySnapshots   OrgUsageDaySnapshot[]
+  analyticsDirtyDays     AnalyticsDirtyDay[]
+  analyticsWatermarks    AnalyticsWatermark[]
   toolClaims             DeveloperToolClaim[]
   billingPlanTemplates   BillingPlanTemplate[]
   planAssignments        DeveloperPlanAssignment[]
@@ -847,6 +850,63 @@ model AnalyticsQueryCache {
   @@map("analytics_query_cache")
 }
 
+/// Source-priority-resolved org/tool daily rollup for dashboard reads.
+/// `toolName = ""` is the org-day total; other rows are per-tool slices.
+model OrgUsageDaySnapshot {
+  id                        String   @id @default(cuid())
+  orgId                     String   @map("org_id")
+  date                      DateTime @db.Date
+  toolName                  String   @default("") @map("tool_name")
+  metricVersion             String   @map("metric_version")
+  requests                  Int      @default(0)
+  inputTokens               BigInt   @default(0) @map("input_tokens")
+  outputTokens              BigInt   @default(0) @map("output_tokens")
+  verifiedUsageCostMicros   BigInt   @default(0) @map("verified_usage_cost_micros")
+  estimatedApiCostMicros    BigInt   @default(0) @map("estimated_api_cost_micros")
+  actualSpendCostMicros     BigInt   @default(0) @map("actual_spend_cost_micros")
+  activeDevelopers          Int      @default(0) @map("active_developers")
+  activeDeveloperIds        Json     @default("[]") @map("active_developer_ids")
+  computedAt                DateTime @map("computed_at")
+  sourceObservedThrough     DateTime? @map("source_observed_through")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, date, toolName, metricVersion])
+  @@index([orgId, date, metricVersion])
+  @@map("org_usage_day_snapshots")
+}
+
+model AnalyticsDirtyDay {
+  id            String   @id @default(cuid())
+  orgId         String   @map("org_id")
+  date          DateTime @db.Date
+  metricVersion String   @map("metric_version")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, date, metricVersion])
+  @@index([orgId, metricVersion])
+  @@map("analytics_dirty_days")
+}
+
+model AnalyticsWatermark {
+  id               String    @id @default(cuid())
+  orgId            String    @map("org_id")
+  kind             String
+  metricVersion    String    @map("metric_version")
+  cursorDate       DateTime? @map("cursor_date") @db.Date
+  status           String    @default("idle")
+  lastError        String?   @map("last_error")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, kind, metricVersion])
+  @@map("analytics_watermarks")
+}
+
 model DeveloperToolClaim {
   id          String   @id @default(cuid())
   orgId       String   @map("org_id")
@@ -1129,4 +1189,14 @@ model AuditLog {
 
   @@index([orgId, createdAt])
   @@map("audit_logs")
+}
+
+/// Global control-plane key/value settings (cron seals, feature flags).
+model AppRuntimeSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("app_runtime_settings")
 }

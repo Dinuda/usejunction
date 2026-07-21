@@ -1,3 +1,7 @@
+"use client";
+
+import { useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { MobileDataCard, MobileDataField, MobileDataList } from "@/components/ui/mobile-data";
 import {
@@ -13,32 +17,25 @@ import { ActivityPageHeader } from "@/components/activity/activity-page-header";
 import { Panel } from "@/components/panel";
 import { DeviceActivityFeed } from "@/components/activity/device-activity-feed";
 import { UsageBreakdownList } from "@/components/activity/usage-breakdown-list";
-import { AiCodingPanel } from "@/components/dashboard/ai-coding-panel";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
 import { MetricPeriodFilter } from "@/components/dashboard/metric-period-filter";
 import { FlowPath, SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
-import type { OrgActivitySettings } from "@/lib/activity/contracts";
-import { getOrgActivitySettings } from "@/lib/activity/service";
-import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import {
-  cycleViewPeriodLabel,
-  parseCycleView,
-  reportWindowForCycleView,
   type CycleView,
 } from "@/lib/dashboard/cycle-view";
 import {
-  DEFAULT_ROLLING_PERIOD,
-  parseRollingPeriodFromSearch,
   type RollingPeriod,
 } from "@/lib/dashboard/period-prefs";
-import { getDeviceActivityFeed } from "@/lib/queries/activity/device-activity";
-import { getDashboardUsage } from "@/lib/queries/dashboard/usage";
-import { getMeOverview } from "@/lib/queries/me/overview";
+import type { getDeviceActivityFeed } from "@/lib/queries/activity/device-activity";
+import type { getDashboardUsage } from "@/lib/queries/dashboard/usage";
+import type { getMeOverview } from "@/lib/queries/me/overview";
 import { formatCompactNumber } from "@/lib/format";
-import { getPersonalSignalsLedger } from "@/lib/signals/read";
-import { listSubscriptions } from "@/lib/tools/subscriptions";
-import { requireWorkspaceRole } from "@/lib/workspace-context";
-import { rolesFor } from "@/lib/rbac";
+import type { getPersonalSignalsLedger } from "@/lib/signals/read";
+import type { OrgActivitySettings } from "@/lib/activity/contracts";
+import { useAppQuery } from "@/lib/api/client";
+import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
+
+const AiCodingPanel = dynamic(() => import("@/components/dashboard/ai-coding-panel").then((mod) => mod.AiCodingPanel), { ssr: false });
 
 function duration(seconds: number) {
   if (seconds < 60) return `${seconds}s`;
@@ -107,33 +104,19 @@ function DataTable({
   );
 }
 
-type PeriodProps = {
-  cycleView: CycleView;
-  rollingPeriod: RollingPeriod;
-  reportWindow: MetricWindow;
-  periodLabel: string;
-};
-
-async function DeveloperActivityView({
-  orgId,
-  userId,
-  role,
-  reportWindow,
+function DeveloperActivityView({
   periodLabel,
   settings,
+  personal,
+  signalsLedger,
+  deviceFeed,
 }: {
-  orgId: string;
-  userId: string;
-  role: "user";
   settings: OrgActivitySettings;
-} & Pick<PeriodProps, "reportWindow" | "periodLabel">) {
-  const personal = await getMeOverview(orgId, userId, role, { reportWindow });
-  const [signalsLedger, deviceFeed] = await Promise.all([
-    getPersonalSignalsLedger(orgId, userId),
-    settings.teamDeviceActivityEnabled
-      ? getDeviceActivityFeed(orgId, { developerId: personal.developer.id, limit: 50 })
-      : Promise.resolve({ items: [], presenceFallback: false }),
-  ]);
+  periodLabel: string;
+  personal: Awaited<ReturnType<typeof getMeOverview>>;
+  signalsLedger: Awaited<ReturnType<typeof getPersonalSignalsLedger>>;
+  deviceFeed: Awaited<ReturnType<typeof getDeviceActivityFeed>>;
+}) {
   const tokens = Number(BigInt(personal.usage30d.inputTokens) + BigInt(personal.usage30d.outputTokens));
 
   return (
@@ -224,15 +207,15 @@ async function DeveloperActivityView({
   );
 }
 
-async function AdminActivityView({
-  orgId,
-  reportWindow,
+function AdminActivityView({
   periodLabel,
-}: { orgId: string } & Pick<PeriodProps, "reportWindow" | "periodLabel">) {
-  const [usage, feed] = await Promise.all([
-    getDashboardUsage(orgId, reportWindow),
-    getDeviceActivityFeed(orgId, { limit: 50 }),
-  ]);
+  usage,
+  feed,
+}: {
+  periodLabel: string;
+  usage: Awaited<ReturnType<typeof getDashboardUsage>>;
+  feed: Awaited<ReturnType<typeof getDeviceActivityFeed>>;
+}) {
   const totalTokens = usage.kpis.inputTokens + usage.kpis.outputTokens;
   const totalRequests = usage.kpis.modelCalls;
   const models = [...usage.byModel].sort(
@@ -318,36 +301,19 @@ async function AdminActivityView({
   );
 }
 
-export default async function ActivityPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ view?: string; days?: string; from?: string; to?: string }>;
-}) {
-  const { orgId, role, userId } = await requireWorkspaceRole(rolesFor("self_view"));
-  const isDeveloper = role === "user";
-  const params = await searchParams;
-  const settings = await getOrgActivitySettings(orgId);
-  const allowDeveloperPeriodControls = !isDeveloper || settings.teamPeriodControlsEnabled;
+type ActivityPayload =
+  | { kind: "personal"; settings: OrgActivitySettings; allowPeriodControls: boolean; cycleView: CycleView; rollingPeriod: RollingPeriod; periodLabel: string; personal: Awaited<ReturnType<typeof getMeOverview>>; signalsLedger: Awaited<ReturnType<typeof getPersonalSignalsLedger>>; deviceFeed: Awaited<ReturnType<typeof getDeviceActivityFeed>> }
+  | { kind: "organization"; allowPeriodControls: boolean; cycleView: CycleView; rollingPeriod: RollingPeriod; periodLabel: string; usage: Awaited<ReturnType<typeof getDashboardUsage>>; deviceFeed: Awaited<ReturnType<typeof getDeviceActivityFeed>> };
 
-  const cycleView = allowDeveloperPeriodControls ? parseCycleView(params.view) : "last_30_days";
-  const rollingPeriod: RollingPeriod = allowDeveloperPeriodControls
-    ? parseRollingPeriodFromSearch({
-        days: params.days,
-        from: params.from,
-        to: params.to,
-      })
-    : DEFAULT_ROLLING_PERIOD;
-  const now = new Date();
-  const subscriptions = await listSubscriptions(orgId);
-  const cyclePlans: Array<{
-    billingCadence: string;
-    billingCycleAnchorDate: Date | null;
-    billingCycleDays?: number | null;
-    createdAt?: Date | null;
-  }> = subscriptions;
-
-  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, cyclePlans, now);
-  const periodLabel = cycleViewPeriodLabel(cycleView, rollingPeriod);
+export default function ActivityPage() {
+  const searchParams = useSearchParams();
+  const queryString = searchParams.toString();
+  const query = useAppQuery<ActivityPayload>(["app", "activity", queryString], `/api/app/activity${queryString ? `?${queryString}` : ""}`);
+  if (query.isPending) return <AppPageSkeleton />;
+  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  const payload = query.data;
+  const isDeveloper = payload.kind === "personal";
+  const { allowPeriodControls: allowDeveloperPeriodControls, cycleView, rollingPeriod, periodLabel } = payload;
 
   return (
     <>
@@ -370,20 +336,9 @@ export default async function ActivityPage({
         }
       />
 
-      {isDeveloper
-        ? await DeveloperActivityView({
-            orgId,
-            userId,
-            role: "user",
-            settings,
-            reportWindow,
-            periodLabel,
-          })
-        : await AdminActivityView({
-            orgId,
-            reportWindow,
-            periodLabel,
-          })}
+      {payload.kind === "personal"
+        ? <DeveloperActivityView settings={payload.settings} periodLabel={periodLabel} personal={payload.personal} signalsLedger={payload.signalsLedger} deviceFeed={payload.deviceFeed} />
+        : <AdminActivityView periodLabel={periodLabel} usage={payload.usage} feed={payload.deviceFeed} />}
     </>
   );
 }

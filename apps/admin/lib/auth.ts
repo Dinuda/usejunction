@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma, prisma } from "@usejunction/db";
 import { getWorkspaceContext } from "@/lib/workspace-context";
 import { logServerError } from "@/lib/errors/public";
+import { browserMutationGuard } from "@/lib/security/http";
 
 export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -71,8 +72,10 @@ async function backfillLegacyDeviceTokenHash(deviceId: string, token: string, to
 }
 
 export async function requireAdminSession(
-  _req: NextRequest
+  req: NextRequest
 ): Promise<{ email: string; userId: string; orgId: string | null; role: string | null } | NextResponse> {
+  const rejected = browserMutationGuard(req);
+  if (rejected) return rejected;
   const ctx = await getWorkspaceContext();
   if (!ctx) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

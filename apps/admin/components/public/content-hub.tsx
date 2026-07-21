@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { buildHubJsonLd } from "@/lib/public/json-ld";
 import { Breadcrumbs } from "@/components/public/breadcrumbs";

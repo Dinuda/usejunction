@@ -1,69 +1,39 @@
+"use client";
+
 import Link from "next/link";
-import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
 import { MemberWorkSessionList } from "@/components/developers/member-work-session-list";
 import { SignalsFilters } from "@/components/signals/signals-filters";
 import { SignalsPageHeader } from "@/components/signals/signals-page-header";
 import { WorkCsvExportButton } from "@/components/signals/work-csv-export-button";
-import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 import {
-  parseCycleView,
-  reportWindowForCycleView,
+  type CycleView,
 } from "@/lib/dashboard/cycle-view";
-import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
-import { getWorkActivity, readSignalsFilterOptions } from "@/lib/signals";
+import type { RollingPeriod } from "@/lib/dashboard/period-prefs";
+import type { getWorkActivity, readSignalsFilterOptions } from "@/lib/signals";
 import { workSessionsToCsv } from "@/lib/signals/work-export";
-import { listSubscriptions } from "@/lib/tools/subscriptions";
-import { requireWorkspaceRole } from "@/lib/workspace-context";
-import { rolesFor } from "@/lib/rbac";
+import { useAppQuery } from "@/lib/api/client";
+import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
-type SearchParams = Record<string, string | string[] | undefined>;
+type SignalsActivityPayload = {
+  cycleView: CycleView;
+  rollingPeriod: RollingPeriod;
+  developerId?: string;
+  teamId?: string;
+  tool?: string;
+  options: Awaited<ReturnType<typeof readSignalsFilterOptions>>;
+  work: Awaited<ReturnType<typeof getWorkActivity>>["data"];
+};
 
-function firstParam(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-function isoDate(value: Date) {
-  return value.toISOString().slice(0, 10);
-}
-
-export default async function SignalsActivityPage({
-  searchParams,
-}: {
-  searchParams?: Promise<SearchParams>;
-}) {
-  const params = (await searchParams) ?? {};
-  const { orgId, userId, role } = await requireWorkspaceRole(rolesFor("org_overview"));
-  const cycleView = parseCycleView(firstParam(params.view));
-  const rollingPeriod = parseRollingPeriodFromSearch({
-    days: firstParam(params.days),
-    from: firstParam(params.from),
-    to: firstParam(params.to),
-  });
-  const developerId = firstParam(params.developerId) || undefined;
-  const teamId = firstParam(params.teamId) || undefined;
-  const tool = firstParam(params.tool) || undefined;
-  const now = new Date();
-
-  const [subscriptions, options] = await Promise.all([
-    listSubscriptions(orgId),
-    readSignalsFilterOptions(orgId),
-  ]);
-  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
-
-  const filters = {
-    from: isoDate(reportWindow.from),
-    to: isoDate(reportWindow.to),
-    developerId,
-    teamId,
-    tool,
-    limit: 100,
-  };
-  const context = { orgId, actorId: userId, roles: [role], now, timezone: UTC_TIMEZONE };
-
-  const workEnvelope = await getWorkActivity(context, filters);
-  const work = workEnvelope.data;
+export default function SignalsActivityPage() {
+  const searchParams = useSearchParams();
+  const queryString = searchParams.toString();
+  const query = useAppQuery<SignalsActivityPayload>(["app", "signals", "activity", queryString], `/api/app/signals/activity${queryString ? `?${queryString}` : ""}`);
+  if (query.isPending) return <AppPageSkeleton />;
+  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  const { cycleView, rollingPeriod, developerId, teamId, tool, options, work } = query.data;
 
   return (
     <>
@@ -76,15 +46,13 @@ export default async function SignalsActivityPage({
         </div>
       </SignalsPageHeader>
 
-      <Suspense fallback={null}>
-        <SignalsFilters
+      <SignalsFilters
           value={{ teamId, tool, developerId }}
           teams={options.teams}
           tools={options.tools}
           developers={options.developers}
           showPerson
-        />
-      </Suspense>
+      />
 
       <section>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">

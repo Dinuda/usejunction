@@ -9,10 +9,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+const LOGIN_ERROR_COPY: Record<string, string> = {
+  OAuthAccountNotLinked: "This account is already linked to another user. Sign in with the method you used originally.",
+  OAuthCallback: "We couldn’t complete sign-in. Try again or use another sign-in method.",
+  OAuthCallbackError: "We couldn’t complete sign-in. Try again or use another sign-in method.",
+  OAuthSignin: "We couldn’t start sign-in. Try again or use another sign-in method.",
+  OAuthSignInError: "We couldn’t start sign-in. Try again or use another sign-in method.",
+  AccessDenied: "This account is not allowed to sign in. Use another account or contact your administrator.",
+  CredentialsSignin: "The email or password is incorrect. Check your details and try again.",
+  invalid_verification: "This verification link is invalid. Request a new one and try again.",
+  expired_verification: "This verification link has expired. Request a new one and try again.",
+};
+
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const from = searchParams.get("from") ?? "/dashboard";
+  const authError = searchParams.get("error");
+  const authErrorCopy = authError ? LOGIN_ERROR_COPY[authError] : undefined;
   const verified = searchParams.get("verified") === "1";
   const joiningInvite =
     from.startsWith("/i/") || from.startsWith("/join/") || from.startsWith("/connect-invite/");
@@ -37,6 +51,7 @@ export function LoginForm() {
 
   return (
     <div className="space-y-5">
+      {authErrorCopy && <p className="text-sm text-destructive">{authErrorCopy}</p>}
       {verified && (
         <Alert>
           <AlertDescription>

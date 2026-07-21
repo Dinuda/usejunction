@@ -40,12 +40,11 @@ const toolsViews = [
 
 type ToolsView = (typeof toolsViews)[number]["id"];
 
-type Cadence = "weekly" | "monthly" | "annual" | "custom";
 type CatalogTool = {
   key: string;
   name: string;
   shortName: string;
-  aliases: string[];
+  aliases: readonly string[];
   sourceUrl: string;
   lastVerifiedAt: string;
   plans: Array<{
@@ -53,7 +52,7 @@ type CatalogTool = {
     name: string;
     tier: string;
     description: string;
-    prices: Partial<Record<Cadence, string>>;
+    prices: Partial<Record<"weekly" | "monthly" | "annual" | "custom", string>>;
     includedCycleMicros: string;
     customPrice?: boolean;
     minimumSeats?: number;
@@ -65,10 +64,10 @@ type Subscription = {
   catalogPlanKey: string | null;
   name: string;
   tier: string | null;
-  billingCadence: Cadence;
+  billingCadence: string;
   seatCapacity: number;
-  cycleSeatMicros: string;
-  estimatedCycleMicros: string;
+  cycleSeatMicros: string | bigint;
+  estimatedCycleMicros: string | bigint;
   assignedSeats: number;
   availableSeats: number;
   customPrice: boolean;
@@ -82,6 +81,8 @@ function matchesCatalogTool(subscriptionToolKey: string | null, catalogToolKey: 
 
 export function SubscriptionInventory({
   detected,
+  initialCatalog,
+  initialSubscriptions,
   defaultTab = "subscriptions",
   hasLocalSync = false,
   title = "Tools, seats, spend.",
@@ -93,6 +94,8 @@ export function SubscriptionInventory({
   children,
 }: {
   detected: DashboardToolsData | null;
+  initialCatalog?: CatalogTool[];
+  initialSubscriptions?: Subscription[];
   defaultTab?: ToolsView;
   hasLocalSync?: boolean;
   title?: string;
@@ -104,25 +107,22 @@ export function SubscriptionInventory({
   children?: ReactNode;
 }) {
   const [view, setView] = useState<ToolsView>(defaultTab);
-  const [catalog, setCatalog] = useState<CatalogTool[]>([]);
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [catalog, setCatalog] = useState<CatalogTool[]>(initialCatalog ?? []);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>(initialSubscriptions ?? []);
+  const [loading, setLoading] = useState(initialSubscriptions === undefined);
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addToolKey, setAddToolKey] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [catalogRes, subscriptionsRes] = await Promise.all([
-      fetch("/api/tools/catalog"),
-      fetch("/api/tools/subscriptions"),
-    ]);
-    const catalogJson = await catalogRes.json().catch(() => ({}));
+    // Catalog data is static and arrives in the client bundle. Refresh only
+    // the mutable subscription list after a successful mutation.
+    const subscriptionsRes = await fetch("/api/tools/subscriptions");
     const subscriptionsJson = await subscriptionsRes.json().catch(() => ({}));
-    if (!catalogRes.ok || !subscriptionsRes.ok) {
-      setError(catalogJson.error ?? subscriptionsJson.error ?? "Could not load subscriptions");
+    if (!subscriptionsRes.ok) {
+      setError(subscriptionsJson.error ?? "Could not load subscriptions");
     } else {
-      setCatalog(catalogJson.tools ?? []);
       setSubscriptions(subscriptionsJson.subscriptions ?? []);
       setError(null);
     }
@@ -130,8 +130,12 @@ export function SubscriptionInventory({
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (initialCatalog) setCatalog(initialCatalog);
+    if (initialSubscriptions) {
+      setSubscriptions(initialSubscriptions);
+      setLoading(false);
+    }
+  }, [initialCatalog, initialSubscriptions]);
 
   const groups = useMemo(
     () =>

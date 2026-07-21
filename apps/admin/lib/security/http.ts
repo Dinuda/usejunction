@@ -39,3 +39,27 @@ export function clientIp(req: Request | NextRequest): string {
     "unknown"
   );
 }
+
+/** Reject cross-site cookie-authenticated mutations before business logic. */
+export function browserMutationGuard(req: NextRequest, env: NodeJS.ProcessEnv = process.env): NextResponse | null {
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return null;
+  if (env.NODE_ENV !== "production") return null;
+
+  const origin = req.headers.get("origin");
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  const forwardedProto = req.headers.get("x-forwarded-proto") ?? "https";
+  const expectedOrigin = host ? `${forwardedProto}://${host}` : null;
+  const fetchSite = req.headers.get("sec-fetch-site");
+  const requestedWith = req.headers.get("x-requested-with");
+
+  if (!origin || !expectedOrigin || origin !== expectedOrigin) {
+    return NextResponse.json({ error: "invalid request origin" }, { status: 403 });
+  }
+  if (fetchSite !== "same-origin" && requestedWith !== "usejunction-web") {
+    return NextResponse.json({ error: "same-origin request header required" }, { status: 403 });
+  }
+  if (req.body && !req.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
+    return NextResponse.json({ error: "content-type must be application/json" }, { status: 415 });
+  }
+  return null;
+}

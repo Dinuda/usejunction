@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Panel } from "@/components/panel";
+import { useInvalidateAppData } from "@/lib/api/client";
 
 /** Shown after Lemon checkout redirect (`?upgraded=1`) until Team status lands. */
 export function SubscriptionUpgradedBanner({ isTeam }: { isTeam: boolean }) {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const invalidateAppData = useInvalidateAppData();
   const upgraded = searchParams.get("upgraded") === "1";
   const [visible, setVisible] = useState(upgraded);
 
@@ -22,10 +24,11 @@ export function SubscriptionUpgradedBanner({ isTeam }: { isTeam: boolean }) {
       return () => window.clearTimeout(timeout);
     }
     const interval = window.setInterval(() => {
+      void invalidateAppData();
       router.refresh();
     }, 2000);
     return () => window.clearInterval(interval);
-  }, [upgraded, isTeam, router]);
+  }, [upgraded, isTeam, router, invalidateAppData]);
 
   if (!visible) return null;
 

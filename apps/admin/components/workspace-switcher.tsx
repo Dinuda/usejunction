@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { WorkspaceColorSwatches, WorkspaceIcon } from "@/components/workspace-icon";
 import { userFacingError } from "@/lib/errors/user-facing";
+import { activateWorkspace } from "@/lib/api/client";
 import { canManageSettings } from "@/lib/rbac/permissions";
 import {
   WORKSPACE_COLORS,
@@ -56,6 +58,7 @@ export function WorkspaceSwitcher({
   className?: string;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const value = currentOrgId ?? organizations[0]?.id;
   const current = organizations.find((org) => org.id === value) ?? organizations[0];
   const canEdit = canManageSettings(role as "owner" | "admin" | "manager" | "user" | null);
@@ -93,13 +96,13 @@ export function WorkspaceSwitcher({
 
   async function switchWorkspace(orgId: string) {
     if (orgId === value) return;
-    const response = await fetch("/api/me/workspace", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ orgId }),
-    });
-    if (!response.ok) return;
-    router.refresh();
+    try {
+      await activateWorkspace(orgId);
+      queryClient.clear();
+      window.location.assign("/dashboard");
+    } catch {
+      // Keep the current workspace selected when the server rejects the switch.
+    }
   }
 
   async function submitForm(event: React.FormEvent) {
@@ -119,12 +122,18 @@ export function WorkspaceSwitcher({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ name: trimmed, color }),
         });
-        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        const payload = (await response.json().catch(() => ({}))) as { error?: string; orgId?: string };
         if (!response.ok) {
           setError(userFacingError(payload.error, "Could not create workspace."));
           return;
         }
+        if (!payload.orgId) {
+          setError("Could not activate the new workspace.");
+          return;
+        }
+        await activateWorkspace(payload.orgId);
         closeForm();
+        queryClient.clear();
         router.push("/onboarding?resume=1");
         router.refresh();
         return;
@@ -141,6 +150,7 @@ export function WorkspaceSwitcher({
         return;
       }
       closeForm();
+      await queryClient.invalidateQueries({ queryKey: ["app"] });
       router.refresh();
     } catch {
       setError(formMode === "create" ? "Could not create workspace." : "Could not update workspace.");

@@ -1,3 +1,5 @@
+"use client";
+
 import { ArrowRight, Check, Plus } from "lucide-react";
 import Link from "next/link";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";

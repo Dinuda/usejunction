@@ -1,3 +1,9 @@
 {
-  "buildCommand": "pnpm --filter @usejunction/db generate && next build"
+  "buildCommand": "pnpm --filter @usejunction/db generate && pnpm check:client-boundaries && next build && pnpm check:client-build",
+  "crons": [
+    {
+      "path": "/api/cron/usage-daily-refresh",
+      "schedule": "15 0 * * *"
+    }
+  ]
 }

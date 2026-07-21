@@ -4,7 +4,6 @@ import { prisma } from "@usejunction/db";
 import { hasVerifiedIdentity, linkDeveloperToUser, normalizeEmail } from "@/lib/developer-identity";
 import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/quantity";
 import { assertCanAddUser } from "@/lib/saas-billing/status";
-import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 import { audit } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
 
@@ -30,12 +29,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
     return NextResponse.json({ error: "connect invite already used" }, { status: 410 });
   }
   if (connectInvite.status === "ready" && connectInvite.enrollmentTokenReveal) {
-    const response = NextResponse.json({
+    return NextResponse.json({
       status: "ready",
       orgId: connectInvite.orgId,
     });
-    response.cookies.set(ACTIVE_ORG_COOKIE, connectInvite.orgId, activeOrgCookieOptions());
-    return response;
   }
 
   const sessionEmail = normalizeEmail(session.user.email);
@@ -119,11 +116,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
     targetId: developer.id,
   });
 
-  const response = NextResponse.json({
+  return NextResponse.json({
     status: "ready",
     orgId: connectInvite.orgId,
     developerId: developer.id,
   });
-  response.cookies.set(ACTIVE_ORG_COOKIE, connectInvite.orgId, activeOrgCookieOptions());
-  return response;
 }

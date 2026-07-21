@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Cable, X } from "lucide-react";
 import { DeviceConnectCard } from "@/components/onboarding/device-connect-card";
 import { Button } from "@/components/ui/button";
+import { useInvalidateAppData } from "@/lib/api/client";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +23,7 @@ type Props = {
 
 export function ConnectMachineBanner({ show }: Props) {
   const router = useRouter();
+  const invalidateAppData = useInvalidateAppData();
   const [hidden, setHidden] = useState(true);
   const [open, setOpen] = useState(false);
 
@@ -83,6 +85,7 @@ export function ConnectMachineBanner({ show }: Props) {
             title="Connect command"
             description="Installs the agent, configures tools, and starts reporting."
             onConnected={() => {
+              void invalidateAppData();
               router.refresh();
               setOpen(false);
             }}

@@ -21,19 +21,29 @@ export function shouldShowSidebarPlanCard(billing: OrgBillingStatus) {
 }
 
 export function ActivePlanBadge({ billing, onNavigate }: PlanStatusCardProps) {
+  const icon = <Settings className="size-3.5" aria-hidden="true" />;
   return (
     <div
       className="mb-2 flex w-full items-stretch rounded-none border border-border/80 bg-muted/30"
       aria-label={`Current plan: ${billing.planLabel}`}
     >
-      <Link
-        href="/settings#settings-billing"
-        className="flex shrink-0 items-center justify-center border-r border-border/80 px-2.5 py-2 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-        aria-label="Billing settings"
-        onClick={onNavigate}
-      >
-        <Settings className="size-3.5" aria-hidden="true" />
-      </Link>
+      {billing.canManage ? (
+        <Link
+          href="/settings#settings-billing"
+          className="flex shrink-0 items-center justify-center border-r border-border/80 px-2.5 py-2 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+          aria-label="Billing settings"
+          onClick={onNavigate}
+        >
+          {icon}
+        </Link>
+      ) : (
+        <span
+          className="flex shrink-0 items-center justify-center border-r border-border/80 px-2.5 py-2 text-muted-foreground"
+          aria-hidden="true"
+        >
+          {icon}
+        </span>
+      )}
       <div className="flex flex-1 items-center px-3 py-2 text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">
         {billing.planLabel} plan
       </div>

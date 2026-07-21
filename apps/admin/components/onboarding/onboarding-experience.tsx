@@ -114,8 +114,22 @@ export function OnboardingExperience() {
   const [path, setPath] = useState<Path>("choose");
 
   const refresh = useCallback(async () => {
-    const response = await fetch("/api/onboarding", { cache: "no-store" });
-    if (response.ok) setStatus(await response.json());
+    let response = await fetch("/api/onboarding", { cache: "no-store" });
+    if (response.status === 401) {
+      window.location.href = "/login?from=/onboarding";
+      return;
+    }
+    let next = response.ok ? await response.json() as OnboardingStatus : null;
+    if (next && !next.configured) {
+      const create = await fetch("/api/onboarding", { method: "POST", headers: { "content-type": "application/json", "x-requested-with": "usejunction-web" }, body: "{}" });
+      if (create.status === 401) {
+        window.location.href = "/login?from=/onboarding";
+        return;
+      }
+      response = await fetch("/api/onboarding", { cache: "no-store" });
+      next = response.ok ? await response.json() as OnboardingStatus : null;
+    }
+    if (next) setStatus(next);
     setLoading(false);
   }, []);
 

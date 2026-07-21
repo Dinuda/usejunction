@@ -11,11 +11,10 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
-
 	"github.com/usejunction/agent/internal/client"
 	"github.com/usejunction/agent/internal/platformdirs"
 	"github.com/usejunction/agent/internal/scan"
+	"github.com/usejunction/agent/internal/sqlitedb"
 )
 
 func cursorAITrackingDBPath() string {
@@ -23,7 +22,13 @@ func cursorAITrackingDBPath() string {
 	return filepath.Join(home, ".cursor", "ai-tracking", "ai-code-tracking.db")
 }
 
+// cursorStateDBPathOverride is set by tests to point at a fixture state.vscdb.
+var cursorStateDBPathOverride string
+
 func cursorStateDBPath() string {
+	if cursorStateDBPathOverride != "" {
+		return cursorStateDBPathOverride
+	}
 	return filepath.Join(platformdirs.CursorUserDir(), "globalStorage", "state.vscdb")
 }
 
@@ -259,18 +264,61 @@ type composerHeader struct {
 }
 
 func extractCursorComposerHeaders(limit int) []client.WorkSession {
-	dbPath := cursorStateDBPath()
+	return extractCursorComposerHeadersAt(cursorStateDBPath(), limit)
+}
+
+// extractCursorComposerHeadersAt reads composer session headers from Cursor's
+// state.vscdb. Newer Cursor builds migrate headers into a dedicated
+// composerHeaders table (see composer.composerHeaders.migratedToTable);
+// older builds keep a JSON blob under ItemTable key composer.composerHeaders.
+func extractCursorComposerHeadersAt(dbPath string, limit int) []client.WorkSession {
 	if _, err := os.Stat(dbPath); err != nil {
 		return nil
 	}
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	db, err := sqlitedb.OpenReadonly(dbPath)
 	if err != nil {
 		return nil
 	}
 	defer db.Close()
 
+	if sessions := composerHeadersFromTable(db, limit); len(sessions) > 0 {
+		return sessions
+	}
+	return composerHeadersFromItemTable(db, limit)
+}
+
+func composerHeadersFromTable(db *sql.DB, limit int) []client.WorkSession {
+	rows, err := db.Query(`
+		SELECT value FROM composerHeaders
+		WHERE COALESCE(isArchived, 0) = 0
+		ORDER BY COALESCE(recency, lastUpdatedAt, createdAt) DESC
+	`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var headers []composerHeader
+	for rows.Next() {
+		var raw string
+		if rows.Scan(&raw) != nil || strings.TrimSpace(raw) == "" {
+			continue
+		}
+		var header composerHeader
+		if json.Unmarshal([]byte(raw), &header) != nil {
+			continue
+		}
+		headers = append(headers, header)
+	}
+	if len(headers) == 0 {
+		return nil
+	}
+	return composerHeadersToSessions(headers, limit)
+}
+
+func composerHeadersFromItemTable(db *sql.DB, limit int) []client.WorkSession {
 	var raw string
-	err = db.QueryRow(`SELECT value FROM ItemTable WHERE key = 'composer.composerHeaders'`).Scan(&raw)
+	err := db.QueryRow(`SELECT value FROM ItemTable WHERE key = 'composer.composerHeaders'`).Scan(&raw)
 	if err != nil || strings.TrimSpace(raw) == "" {
 		return nil
 	}
@@ -461,7 +509,7 @@ func extractCursorConversationSummaries(limit int) []client.WorkSession {
 	if _, err := os.Stat(dbPath); err != nil {
 		return nil
 	}
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	db, err := sqlitedb.OpenReadonly(dbPath)
 	if err != nil {
 		return nil
 	}
@@ -594,7 +642,7 @@ func enrichCursorAuthorship(byID map[string]client.WorkSession, evidence map[str
 	if _, err := os.Stat(dbPath); err != nil {
 		return
 	}
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	db, err := sqlitedb.OpenReadonly(dbPath)
 	if err != nil {
 		return
 	}
@@ -746,7 +794,7 @@ func enrichCursorModels(byID map[string]client.WorkSession) {
 	if _, err := os.Stat(dbPath); err != nil {
 		return
 	}
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	db, err := sqlitedb.OpenReadonly(dbPath)
 	if err != nil {
 		return
 	}

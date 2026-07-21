@@ -1,54 +1,23 @@
-import { auth } from "@/auth";
-import { prisma } from "@usejunction/db";
+"use client";
+
+import { useParams } from "next/navigation";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { hashOpaqueToken } from "@/lib/security";
+import { AppPageSkeleton } from "@/components/app-data-state";
+import { useRawQuery } from "@/lib/api/client";
 import { InviteAuthActions } from "./invite-auth-actions";
 import { JoinInviteButton } from "./join-invite-button";
 
-function maskEmail(email: string) {
-  const [local, domain] = email.split("@");
-  return `${local.slice(0, Math.min(2, local.length))}${"•".repeat(Math.max(3, local.length - 2))}@${domain}`;
-}
+type Invite = { organization: { name: string }; email: string; status: string };
+type Session = { user?: { id?: string } };
 
-export default async function JoinPage({ params }: { params: Promise<{ token: string }> }) {
-  const { token } = await params;
-  const session = await auth();
-  const invite = await prisma.organizationInvite.findUnique({
-    where: { tokenHash: hashOpaqueToken(token) },
-    include: { organization: { select: { name: true } } },
-  });
-  const invalid = !invite || invite.acceptedAt || invite.expiresAt <= new Date();
-
-  if (invalid) {
-    return (
-      <AuthShell
-        size="md"
-        accent="cyan"
-        contentAlign="top"
-        eyebrow="Join"
-        title="This invitation is unavailable."
-        description="Ask your administrator for a new link."
-        statement="Visibility before control."
-      >
-        <Alert variant="destructive">
-          <AlertDescription>This invitation has expired, was already accepted, or is no longer valid.</AlertDescription>
-        </Alert>
-      </AuthShell>
-    );
+export default function JoinPage() {
+  const { token } = useParams<{ token: string }>();
+  const invite = useRawQuery<Invite>(["public", "join", token], `/api/join/${encodeURIComponent(token)}/accept`);
+  const session = useRawQuery<Session>(["auth", "session"], "/api/auth/session");
+  if (invite.isPending || session.isPending) return <main className="mx-auto max-w-xl p-6"><AppPageSkeleton /></main>;
+  if (invite.error || !invite.data || invite.data.status !== "valid") {
+    return <AuthShell size="md" accent="cyan" contentAlign="top" eyebrow="Join" title="This invitation is unavailable." description="Ask your administrator for a new link." statement="Visibility before control."><Alert variant="destructive"><AlertDescription>This invitation has expired, was already accepted, or is no longer valid.</AlertDescription></Alert></AuthShell>;
   }
-
-  return (
-    <AuthShell
-      size="md"
-      accent="cyan"
-      contentAlign="top"
-      eyebrow="Join"
-      title={`Join ${invite.organization.name}.`}
-      description={`Continue with ${maskEmail(invite.email)}, then connect your machine.`}
-      statement="Visibility before control."
-    >
-      {session?.user?.id ? <JoinInviteButton token={token} /> : <InviteAuthActions token={token} />}
-    </AuthShell>
-  );
+  return <AuthShell size="md" accent="cyan" contentAlign="top" eyebrow="Join" title={`Join ${invite.data.organization.name}.`} description={`Continue with ${invite.data.email}, then connect your machine.`} statement="Visibility before control.">{session.data?.user?.id ? <JoinInviteButton token={token} /> : <InviteAuthActions token={token} />}</AuthShell>;
 }

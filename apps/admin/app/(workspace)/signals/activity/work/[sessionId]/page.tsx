@@ -1,36 +1,29 @@
-import { notFound } from "next/navigation";
+"use client";
+
+import { useParams, useSearchParams } from "next/navigation";
 import { WorkSessionDetailView } from "@/components/signals/work-session-detail-view";
-import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
-import { getWorkSessionDetail } from "@/lib/signals/queries/get-work-session-detail";
-import { requireWorkspaceRole } from "@/lib/workspace-context";
-import { rolesFor } from "@/lib/rbac";
+import type { getWorkSessionDetail } from "@/lib/signals/queries/get-work-session-detail";
+import { useAppQuery } from "@/lib/api/client";
+import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
-export default async function WorkSessionDetailPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ sessionId: string }>;
-  searchParams?: Promise<{ from?: string }>;
-}) {
-  const { sessionId } = await params;
-  const query = (await searchParams) ?? {};
-  const { orgId, userId, role } = await requireWorkspaceRole(rolesFor("org_overview"));
+type WorkDetailPayload = { session: NonNullable<Awaited<ReturnType<typeof getWorkSessionDetail>>>["data"] };
 
-  const envelope = await getWorkSessionDetail(
-    { orgId, actorId: userId, roles: [role], now: new Date(), timezone: UTC_TIMEZONE },
-    sessionId,
-  );
-  if (!envelope) notFound();
-
-  const fromDeveloper = query.from === "team";
+export default function WorkSessionDetailPage() {
+  const { sessionId } = useParams<{ sessionId: string }>();
+  const searchParams = useSearchParams();
+  const query = useAppQuery<WorkDetailPayload>(["app", "signals", "work", sessionId], `/api/app/signals/activity/work/${encodeURIComponent(sessionId)}`);
+  if (query.isPending) return <AppPageSkeleton />;
+  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  const session = query.data.session;
+  const fromDeveloper = searchParams.get("from") === "team";
   const backHref = fromDeveloper
-    ? `/team/${envelope.data.developer.id}/work`
+    ? `/team/${session.developer.id}/work`
     : "/signals/activity";
-  const backLabel = fromDeveloper ? envelope.data.developer.name : "Activity";
+  const backLabel = fromDeveloper ? session.developer.name : "Activity";
 
   return (
     <WorkSessionDetailView
-      session={envelope.data}
+      session={session}
       backHref={backHref}
       backLabel={backLabel}
     />

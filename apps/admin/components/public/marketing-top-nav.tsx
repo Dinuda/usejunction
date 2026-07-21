@@ -88,6 +88,15 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
         </Link>
 
         <nav className="hidden h-10 items-center gap-8 md:flex md:justify-self-center" aria-label="Primary navigation">
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="inline-flex h-10 items-center text-sm leading-none text-[var(--public-muted)] transition-colors hover:text-[var(--public-fg)]"
+            >
+              {link.label}
+            </Link>
+          ))}
           {navAnchors.map((anchor) => (
             <button
               key={anchor.id}
@@ -97,15 +106,6 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
             >
               {anchor.label}
             </button>
-          ))}
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="inline-flex h-10 items-center text-sm leading-none text-[var(--public-muted)] transition-colors hover:text-[var(--public-fg)]"
-            >
-              {link.label}
-            </Link>
           ))}
         </nav>
 
@@ -141,16 +141,6 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
           style={{ borderColor: "var(--public-border)", background: "var(--public-surface)" }}
         >
           <nav className="public-container flex flex-col gap-1 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]" aria-label="Mobile navigation">
-            {navAnchors.map((anchor) => (
-              <button
-                key={anchor.id}
-                type="button"
-                onClick={() => scrollToAnchor(anchor.id)}
-                className="flex min-h-11 items-center px-1 text-left text-sm"
-              >
-                {anchor.label}
-              </button>
-            ))}
             {navLinks.map((link) => (
               <Link
                 key={link.href}
@@ -160,6 +150,16 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
               >
                 {link.label}
               </Link>
+            ))}
+            {navAnchors.map((anchor) => (
+              <button
+                key={anchor.id}
+                type="button"
+                onClick={() => scrollToAnchor(anchor.id)}
+                className="flex min-h-11 items-center px-1 text-left text-sm"
+              >
+                {anchor.label}
+              </button>
             ))}
             <div className="mt-2 flex justify-center">
               <GithubStarBadge href={siteConfig.githubUrl} />

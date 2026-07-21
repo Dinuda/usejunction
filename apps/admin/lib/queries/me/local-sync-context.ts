@@ -22,6 +22,16 @@ function catalogToolDetectedWithoutPlan(input: {
   return false;
 }
 
+/** Exported for unit tests — catalog tool detected without a plan on that developer. */
+export function catalogToolDetectedWithoutPlanForTests(
+  input: {
+    installations: Array<{ toolName: string }>;
+    accounts: Array<{ toolName: string; plan: string | null }>;
+  },
+) {
+  return catalogToolDetectedWithoutPlan(input);
+}
+
 export async function orgNeedsPlanSync(orgId: string): Promise<boolean> {
   const [installations, accounts] = await Promise.all([
     prisma.toolInstallation.findMany({
@@ -52,8 +62,8 @@ export async function orgNeedsPlanSync(orgId: string): Promise<boolean> {
   });
 }
 
-export async function getLocalSyncContext(orgId: string, authUserId: string): Promise<LocalSyncContext | null> {
-  const developer = await prisma.developer.findFirst({
+async function loadDeveloperSyncDevices(orgId: string, authUserId: string) {
+  return prisma.developer.findFirst({
     where: { orgId, authUserId },
     select: {
       devices: {
@@ -70,16 +80,25 @@ export async function getLocalSyncContext(orgId: string, authUserId: string): Pr
       },
     },
   });
-  if (!developer) return null;
+}
 
+function summarizeDeveloperDevices(
+  devices: Array<{
+    lastSeenAt: Date;
+    lastUsageSyncAt: Date | null;
+    lastAccountSyncAt: Date | null;
+    localEndpoint: string | null;
+    toolInstallations: Array<{ toolName: string }>;
+    toolAccounts: Array<{ toolName: string; plan: string | null }>;
+  }>,
+) {
   let latestSeen: Date | null = null;
   let latestUsageSync: Date | null = null;
   let latestAccountSync: Date | null = null;
-
   const allInstallations: Array<{ toolName: string }> = [];
   const allAccounts: Array<{ toolName: string; plan: string | null }> = [];
 
-  for (const device of developer.devices) {
+  for (const device of devices) {
     if (!latestSeen || device.lastSeenAt > latestSeen) latestSeen = device.lastSeenAt;
     if (device.lastUsageSyncAt && (!latestUsageSync || device.lastUsageSyncAt > latestUsageSync)) {
       latestUsageSync = device.lastUsageSyncAt;
@@ -91,17 +110,49 @@ export async function getLocalSyncContext(orgId: string, authUserId: string): Pr
     allAccounts.push(...device.toolAccounts);
   }
 
-  const personalNeedsPlanSync = catalogToolDetectedWithoutPlan({
-    installations: allInstallations,
-    accounts: allAccounts,
-  });
-  const orgWideNeedsPlanSync = await orgNeedsPlanSync(orgId);
-
   return {
     lastSeenAt: latestSeen?.toISOString() ?? null,
     lastUsageSyncAt: latestUsageSync?.toISOString() ?? null,
     lastAccountSyncAt: latestAccountSync?.toISOString() ?? null,
-    hasLocalEndpoint: developer.devices.some((device) => Boolean(device.localEndpoint)),
-    needsPlanSync: personalNeedsPlanSync || orgWideNeedsPlanSync,
+    hasLocalEndpoint: devices.some((device) => Boolean(device.localEndpoint)),
+    personalNeedsPlanSync: catalogToolDetectedWithoutPlan({
+      installations: allInstallations,
+      accounts: allAccounts,
+    }),
+  };
+}
+
+/**
+ * Sync panel context for org tools / dashboard shells.
+ * Skips the org-wide plan-sync scan — only personal device timestamps matter for the panel.
+ */
+export async function getLocalSyncPanelContext(
+  orgId: string,
+  authUserId: string,
+): Promise<LocalSyncContext | null> {
+  const developer = await loadDeveloperSyncDevices(orgId, authUserId);
+  if (!developer) return null;
+  const summary = summarizeDeveloperDevices(developer.devices);
+  return {
+    lastSeenAt: summary.lastSeenAt,
+    lastUsageSyncAt: summary.lastUsageSyncAt,
+    lastAccountSyncAt: summary.lastAccountSyncAt,
+    hasLocalEndpoint: summary.hasLocalEndpoint,
+    needsPlanSync: summary.personalNeedsPlanSync,
+  };
+}
+
+export async function getLocalSyncContext(orgId: string, authUserId: string): Promise<LocalSyncContext | null> {
+  const developer = await loadDeveloperSyncDevices(orgId, authUserId);
+  if (!developer) return null;
+  const summary = summarizeDeveloperDevices(developer.devices);
+  const orgWideNeedsPlanSync = await orgNeedsPlanSync(orgId);
+
+  return {
+    lastSeenAt: summary.lastSeenAt,
+    lastUsageSyncAt: summary.lastUsageSyncAt,
+    lastAccountSyncAt: summary.lastAccountSyncAt,
+    hasLocalEndpoint: summary.hasLocalEndpoint,
+    needsPlanSync: summary.personalNeedsPlanSync || orgWideNeedsPlanSync,
   };
 }

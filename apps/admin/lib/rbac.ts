@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma, type Prisma } from "@usejunction/db";
 import { getWorkspaceContext } from "@/lib/workspace-context";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
+import { browserMutationGuard } from "@/lib/security/http";
 
 export type { OrganizationRole, Capability } from "@/lib/rbac/permissions";
 export {
@@ -17,22 +18,16 @@ export {
 } from "@/lib/rbac/permissions";
 
 export async function requireOrgRole(
-  _req: NextRequest,
+  req: NextRequest,
   allowed: readonly OrganizationRole[]
 ): Promise<{ email: string; userId: string; orgId: string; role: OrganizationRole } | NextResponse> {
+  const rejected = browserMutationGuard(req);
+  if (rejected) return rejected;
   const ctx = await getWorkspaceContext();
   if (!ctx) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!ctx.orgId) return NextResponse.json({ error: "organization setup required" }, { status: 409 });
 
-  let role = ctx.role;
-  if (!role || !allowed.includes(role)) {
-    const membership = await prisma.organizationMembership.findUnique({
-      where: { userId_orgId: { userId: ctx.userId, orgId: ctx.orgId } },
-      select: { role: true },
-    });
-    role = (membership?.role as OrganizationRole | undefined) ?? null;
-  }
-
+  const role = ctx.role;
   if (!role || !allowed.includes(role)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }

@@ -3,14 +3,14 @@ import { expect, test } from "@playwright/test";
 test("developer calculation views use personal usage totals", async ({ page }) => {
   await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/dashboard/);
-  await expect(page.getByText("Your machines, tools, and last 30 days of traffic.")).toBeVisible();
-  await expect(page.getByText("10").first()).toBeVisible();
+  await expect(page.getByText("Your device, tools, and last 30 days of traffic.")).toBeVisible();
+  await expect(page.getByRole("row", { name: /Cursor gpt-4\.1 10 .*\$5\.00 Verified/i })).toBeVisible();
 
   await page.goto("/activity");
-  await expect(page.getByText("Verified usage")).toBeVisible();
-  await expect(page.getByText("$5.00").first()).toBeVisible();
-  await expect(page.getByText("Estimated API value")).toBeVisible();
-  await expect(page.getByText("$1.00").first()).toBeVisible();
+  const verifiedUsage = page.getByText("Verified usage").locator("../..");
+  const estimatedUsage = page.getByText("Estimated API value").locator("../..");
+  await expect(verifiedUsage.getByText("$5.00", { exact: true })).toBeVisible();
+  await expect(estimatedUsage.getByText("$2.00", { exact: true })).toBeVisible();
 
   await page.goto("/tools");
   await expect(page.getByRole("heading", { name: "Your tools." })).toBeVisible();
@@ -24,10 +24,11 @@ test("developer chrome hides owner-only navigation", async ({ page }) => {
   await expect(page.getByRole("link", { name: /My activity|Activity/i }).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Team" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Signals" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Settings" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Settings", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Billing settings" })).toHaveCount(0);
 });
 
-test("developer is redirected away from owner-only calculation routes", async ({ page }) => {
+test("developer gets a safe forbidden state on owner-only calculation routes", async ({ page }) => {
   for (const route of [
     "/team",
     "/team/e2e-developer",
@@ -38,7 +39,10 @@ test("developer is redirected away from owner-only calculation routes", async ({
     "/settings",
   ]) {
     await page.goto(route);
-    await expect(page).toHaveURL(/\/dashboard/);
+    await expect(
+      page.getByRole("alert").filter({ hasText: "You do not have access to this resource." }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
   }
 });
 

@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToolLogoTile } from "./tool-brand-icon";
 import { formatMicrosAsCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { serializeCatalog } from "@/lib/tools/catalog";
 
 type Cadence = "weekly" | "monthly" | "annual" | "custom";
 type CatalogPlan = {
@@ -33,7 +34,7 @@ type CatalogTool = {
   key: string;
   name: string;
   shortName: string;
-  aliases: string[];
+  aliases: readonly string[];
   sourceUrl: string;
   lastVerifiedAt: string;
   plans: CatalogPlan[];
@@ -55,7 +56,7 @@ export function AddSubscriptionSheet({
   initialToolKey = null,
   onCreated,
 }: AddSubscriptionSheetProps) {
-  const [catalog, setCatalog] = useState<CatalogTool[]>([]);
+  const [catalog] = useState<CatalogTool[]>(() => serializeCatalog());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedToolKey, setSelectedToolKey] = useState<string | null>(null);
@@ -101,19 +102,10 @@ export function AddSubscriptionSheet({
   useEffect(() => {
     if (!open) return;
     reset(initialToolKey);
-    let cancelled = false;
-    void (async () => {
-      setLoading(true);
-      const response = await fetch("/api/tools/catalog");
-      const body = await response.json().catch(() => ({}));
-      if (cancelled) return;
-      if (!response.ok) setError(body.error ?? "Could not load catalog");
-      else setCatalog(body.tools ?? []);
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
+    // The catalog is versioned static application data. Keep it in the
+    // client bundle instead of making another authenticated round trip when
+    // the sheet opens.
+    setLoading(false);
   }, [open, initialToolKey, reset]);
 
   const selectedTool = catalog.find((tool) => tool.key === selectedToolKey);

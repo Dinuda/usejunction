@@ -1,19 +1,18 @@
+"use client";
+
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { SignalsKpi } from "@/components/signals/signals-ui";
 import { MemberWorkSessionList } from "@/components/developers/member-work-session-list";
 import { WorkCsvExportButton } from "@/components/signals/work-csv-export-button";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
-import {
-  loadMemberMetrics,
-  loadMemberWork,
-  workFiltersFromWindow,
-} from "@/lib/developers/member-page-context";
+import { useMemberClientData } from "@/components/developers/member-client-layout";
+import type { WorkActivitySession } from "@/lib/signals/queries/get-work-activity";
 import { workSessionsToCsv } from "@/lib/signals/work-export";
 import { formatTraceLocation } from "@/lib/signals/work-trace";
 import { toolDisplayName } from "@/lib/tools/catalog";
 
-function workSummary(sessions: Awaited<ReturnType<typeof loadMemberWork>>["work"]["sessions"]) {
+function workSummary(sessions: WorkActivitySession[]) {
   const tools = new Map<string, number>();
   const locations = new Map<string, number>();
   for (const session of sessions) {
@@ -26,20 +25,9 @@ function workSummary(sessions: Awaited<ReturnType<typeof loadMemberWork>>["work"
   return { topTool, topLocation };
 }
 
-export default async function MemberWorkPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ developerId: string }>;
-  searchParams: Promise<{ view?: string; days?: string; from?: string; to?: string }>;
-}) {
-  const { developerId } = await params;
-  const paramsValue = await searchParams;
-  const { reportWindow, selectedPeriodLabel } = await loadMemberMetrics(developerId, paramsValue);
-  const { work, workExtractionEnabled } = await loadMemberWork(developerId, {
-    limit: 200,
-    ...workFiltersFromWindow(reportWindow),
-  });
+export default function MemberWorkPage() {
+  const { developerId, selectedPeriodLabel, work: workValue, workExtractionEnabled } = useMemberClientData();
+  const work = workValue ?? { enabled: false, sessions: [] };
   const { topTool, topLocation } = workSummary(work.sessions);
   const csv = work.enabled && work.sessions.length ? workSessionsToCsv(work.sessions) : "";
   const filename = `work-${developerId.slice(0, 8)}-${new Date().toISOString().slice(0, 10)}.csv`;

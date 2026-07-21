@@ -38,6 +38,28 @@ test("mapQuotaSnapshots keeps null absolutes and converts percent to ratio", () 
   assert.equal(row.stale, false);
 });
 
+test("mapQuotaSnapshots accepts ISO string dates from serialized snapshots", () => {
+  const now = new Date("2026-07-14T12:00:00.000Z");
+  const [row] = mapQuotaSnapshots(
+    [
+      {
+        toolName: "cursor",
+        windowType: "monthly",
+        usedPercent: 50,
+        creditsRemaining: null,
+        resetAt: "2026-08-01T00:00:00.000Z",
+        source: "cli_rpc",
+        updatedAt: "2026-07-14T12:00:00.000Z",
+        developerId: "dev-1",
+      },
+    ],
+    now,
+  );
+  assert.equal(row.resetsAt, "2026-08-01T00:00:00.000Z");
+  assert.equal(row.observedAt, "2026-07-14T12:00:00.000Z");
+  assert.equal(row.stale, false);
+});
+
 test("mapQuotaSnapshots treats Codex OAuth quota readings as provider data", () => {
   const now = new Date("2026-07-14T12:00:00.000Z");
   const [row] = mapQuotaSnapshots(

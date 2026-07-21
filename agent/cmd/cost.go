@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -117,7 +118,7 @@ daemon (today UTC always, unchanged historical rows skipped).`,
 			for _, u := range all {
 				aggs = append(aggs, usageToAggregate(u))
 			}
-			_, _ = reportLocalUsageDelta(api, aggs, nil)
+			_, _, _ = reportLocalUsageDelta(api, aggs, nil)
 		}
 
 		if format == "json" {
@@ -148,36 +149,77 @@ daemon (today UTC always, unchanged historical rows skipped).`,
 	},
 }
 
-// reportLocalUsageDelta uploads only changed historical rows plus today's UTC
-// rows, then persists fingerprints under ~/.usejunction/cache/cost-usage/usage-upload.json.
-// beforeUpload runs after filtering and before the network call (nil-safe).
-// Fingerprint save failures are returned but do not roll back a successful upload.
-func reportLocalUsageDelta(api *client.APIClient, rows []client.UsageAggregate, beforeUpload func(uploaded, scanned int)) (uploaded int, err error) {
+// reportLocalUsageDelta drains a bounded slice of the pending usage queue.
+// History older than scan.UsageLookbackDays is dropped. Batches within the
+// sync budget are uploaded concurrently (UsageUploadConcurrency). Each
+// successful batch is fingerprinted so later syncs continue the queue without
+// re-uploading accepted rows. Leftover rows after the budget are not an error.
+func reportLocalUsageDelta(api *client.APIClient, rows []client.UsageAggregate, beforeUpload func(drain, pending, scanned int)) (uploaded int, remaining int, err error) {
 	if len(rows) == 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
 	usageRows := make([]types.DailyUsage, 0, len(rows))
 	for _, row := range rows {
 		usageRows = append(usageRows, aggregateToUsage(row))
 	}
-	delta := scan.FilterUsageUploadDelta(usageRows, time.Now().UTC())
-	if len(delta) == 0 {
-		return 0, nil
+	pending := scan.FilterUsageUploadDelta(usageRows, time.Now().UTC())
+	if len(pending) == 0 {
+		return 0, 0, nil
 	}
-	deltaReports := make([]client.UsageAggregate, 0, len(delta))
-	for _, row := range delta {
-		deltaReports = append(deltaReports, usageToAggregate(row))
-	}
+	drain, leftover := scan.TakeUsageUploadBatch(pending, scan.UsageUploadBatchSize, scan.UsageUploadMaxBatchesPerSync)
 	if beforeUpload != nil {
-		beforeUpload(len(deltaReports), len(rows))
+		beforeUpload(len(drain), len(pending), len(rows))
 	}
-	if err := api.ReportLocalUsage(deltaReports); err != nil {
-		return 0, err
+
+	batches := scan.SplitUsageUploadBatches(drain, scan.UsageUploadBatchSize)
+	type batchResult struct {
+		rows []types.DailyUsage
+		err  error
 	}
-	if err := scan.RememberUsageUpload(delta); err != nil {
-		return len(deltaReports), err
+	results := make(chan batchResult, len(batches))
+	sem := make(chan struct{}, scan.UsageUploadConcurrency)
+	var wg sync.WaitGroup
+	for _, batch := range batches {
+		batch := batch
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			reports := make([]client.UsageAggregate, 0, len(batch))
+			for _, row := range batch {
+				reports = append(reports, usageToAggregate(row))
+			}
+			if err := api.ReportLocalUsage(reports); err != nil {
+				results <- batchResult{err: err}
+				return
+			}
+			results <- batchResult{rows: batch}
+		}()
 	}
-	return len(deltaReports), nil
+	wg.Wait()
+	close(results)
+
+	accepted := make([]types.DailyUsage, 0, len(drain))
+	var firstErr error
+	for result := range results {
+		if result.err != nil {
+			if firstErr == nil {
+				firstErr = result.err
+			}
+			continue
+		}
+		accepted = append(accepted, result.rows...)
+	}
+	if len(accepted) > 0 {
+		if rememberErr := scan.RememberUsageUpload(accepted); rememberErr != nil && firstErr == nil {
+			firstErr = rememberErr
+		}
+	}
+	uploaded = len(accepted)
+	remaining = len(leftover) + (len(drain) - uploaded)
+	return uploaded, remaining, firstErr
 }
 
 func truncate(s string, n int) string {

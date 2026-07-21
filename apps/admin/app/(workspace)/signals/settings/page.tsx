@@ -1,12 +1,17 @@
+"use client";
+
 import { SignalsPageHeader } from "@/components/signals/signals-page-header";
 import { SignalsPolicyCard } from "@/components/signals/signals-policy-card";
-import { getOrgSignalsPolicy } from "@/lib/signals/service";
-import { requireWorkspaceRole } from "@/lib/workspace-context";
-import { rolesFor } from "@/lib/rbac";
+import type { getOrgSignalsPolicy } from "@/lib/signals/service";
+import { useAppQuery } from "@/lib/api/client";
+import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
-export default async function SignalsSettingsPage() {
-  const { orgId } = await requireWorkspaceRole(rolesFor("settings_billing"));
-  const signalsPolicy = await getOrgSignalsPolicy(orgId);
+type SignalsSettingsPayload = { policy: Awaited<ReturnType<typeof getOrgSignalsPolicy>> };
+
+export default function SignalsSettingsPage() {
+  const query = useAppQuery<SignalsSettingsPayload>(["app", "signals", "settings"], "/api/app/signals/settings");
+  if (query.isPending) return <AppPageSkeleton />;
+  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
 
   return (
     <>
@@ -14,7 +19,7 @@ export default async function SignalsSettingsPage() {
         title="Boundaries"
         description="Retention for coding-tool work from enrolled agents."
       />
-      <SignalsPolicyCard initialPolicy={signalsPolicy} />
+      <SignalsPolicyCard initialPolicy={query.data.policy} />
     </>
   );
 }

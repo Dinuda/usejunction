@@ -1,3 +1,6 @@
+"use client";
+
+import { useSearchParams } from "next/navigation";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { SubscriptionInventory } from "@/components/tools/subscription-inventory";
 import { PageHeader } from "@/components/page-header";
@@ -7,15 +10,18 @@ import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
 import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
 import {
   cycleViewShortSuffix,
-  parseCycleView,
-  reportWindowForCycleView,
+  type CycleView,
 } from "@/lib/dashboard/cycle-view";
-import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
-import { getDashboardTools } from "@/lib/queries/dashboard/tools";
-import { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
-import { getMeOverview } from "@/lib/queries/me/overview";
-import { listSubscriptions } from "@/lib/tools/subscriptions";
-import { requireWorkspaceRole } from "@/lib/workspace-context";
+import type { RollingPeriod } from "@/lib/dashboard/period-prefs";
+import type { getDashboardTools } from "@/lib/queries/dashboard/tools";
+import type { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
+import type { getMeOverview } from "@/lib/queries/me/overview";
+import type { listSubscriptions } from "@/lib/tools/subscriptions";
+import { serializeCatalog } from "@/lib/tools/catalog";
+import { useAppQuery } from "@/lib/api/client";
+import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
+
+const serializedCatalog = serializeCatalog();
 
 function ToolsHeader({ personal = false }: { personal?: boolean }) {
   return (
@@ -132,15 +138,35 @@ function PersonalTools({
   );
 }
 
-export default async function ToolsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ view?: string; days?: string; from?: string; to?: string }>;
-}) {
-  const { orgId, role, userId } = await requireWorkspaceRole(["owner", "admin", "user"]);
-  const syncContext = await getLocalSyncContext(orgId, userId);
-  if (role === "user") {
-    const personal = await getMeOverview(orgId, userId, role);
+type ToolsPayload =
+  | {
+      kind: "personal";
+      personal: Awaited<ReturnType<typeof getMeOverview>>;
+      syncContext: Awaited<ReturnType<typeof getLocalSyncContext>>;
+    }
+  | {
+      kind: "organization";
+      cycleView: CycleView;
+      rollingPeriod: RollingPeriod;
+      detected: Awaited<ReturnType<typeof getDashboardTools>> | null;
+      subscriptions: Awaited<ReturnType<typeof listSubscriptions>>;
+      error: string | null;
+      syncContext: Awaited<ReturnType<typeof getLocalSyncContext>>;
+      defaultTab: "activity" | "subscriptions";
+    };
+
+export default function ToolsPage() {
+  const searchParams = useSearchParams();
+  const queryString = searchParams.toString();
+  const query = useAppQuery<ToolsPayload>(
+    ["app", "tools", queryString],
+    `/api/app/tools${queryString ? `?${queryString}` : ""}`,
+  );
+  if (query.isPending) return <AppPageSkeleton />;
+  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+
+  if (query.data.kind === "personal") {
+    const { personal, syncContext } = query.data;
     if (!syncContext) {
       return (
         <PersonalTools
@@ -157,34 +183,8 @@ export default async function ToolsPage({
     }
     return <PersonalTools data={personal} sync={syncContext} />;
   }
-
-  const params = await searchParams;
-  const cycleView = parseCycleView(params.view);
-  const rollingPeriod = parseRollingPeriodFromSearch({
-    days: params.days,
-    from: params.from,
-    to: params.to,
-  });
-  const now = new Date();
-  const subscriptions = await listSubscriptions(orgId);
-  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
+  const { cycleView, rollingPeriod, detected: data, error: err, syncContext, defaultTab } = query.data;
   const periodSuffix = cycleViewShortSuffix(cycleView, rollingPeriod);
-
-  let data: Awaited<ReturnType<typeof getDashboardTools>> | null = null;
-  let err: string | null = null;
-
-  try {
-    data = await getDashboardTools(orgId, reportWindow);
-  } catch (e) {
-    err = e instanceof Error ? e.message : "Failed to load tools";
-  }
-
-  // Period/view query params come from the Activity picker — keep that tab open.
-  // Plain /tools always lands on Subscriptions.
-  const defaultTab =
-    params.view != null || params.days != null || params.from != null || params.to != null
-      ? "activity"
-      : "subscriptions";
 
   return (
     <>
@@ -196,6 +196,8 @@ export default async function ToolsPage({
 
       <SubscriptionInventory
         detected={data}
+        initialCatalog={serializedCatalog}
+        initialSubscriptions={query.data.subscriptions}
         defaultTab={defaultTab}
         hasLocalSync={Boolean(syncContext?.hasLocalEndpoint)}
         cycleView={cycleView}

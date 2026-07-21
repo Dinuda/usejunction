@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select";
 import { ASSIGNABLE_ROLES, type OrganizationRole } from "@/lib/rbac/permissions";
 import { userFacingError } from "@/lib/errors/user-facing";
+import { useInvalidateAppData } from "@/lib/api/client";
 
 const ROLE_LABELS: Record<(typeof ASSIGNABLE_ROLES)[number], string> = {
   admin: "Admin",
@@ -26,6 +27,7 @@ export function MemberRoleSelect({
   role: string;
 }) {
   const router = useRouter();
+  const invalidateAppData = useInvalidateAppData();
   const locked = role === "owner";
   const current = (ASSIGNABLE_ROLES as readonly string[]).includes(role)
     ? (role as (typeof ASSIGNABLE_ROLES)[number])
@@ -51,6 +53,7 @@ export function MemberRoleSelect({
     }
     setValue(next as (typeof ASSIGNABLE_ROLES)[number]);
     setSaving(false);
+    await invalidateAppData();
     router.refresh();
   }
 

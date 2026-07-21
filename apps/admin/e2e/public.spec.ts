@@ -35,7 +35,7 @@ test("landing page shows brand and primary CTA", async ({ page }) => {
     page.getByRole("heading", { name: /See how your team uses AI/i }),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: /Get started/i }).first()).toBeVisible();
-  await expect(page.getByRole("link", { name: /Self-host UseJunction/i })).toBeVisible();
+  await expect(page.getByText("Open source · Your infrastructure · Your data")).toBeVisible();
 });
 
 test("homepage product story exposes spend pace and plan runway", async ({ page }) => {
@@ -52,14 +52,15 @@ test("homepage product story exposes spend pace and plan runway", async ({ page 
   await expect(understandTab).toHaveAttribute("aria-selected", "true");
 
   const spendPanel = page.getByRole("tabpanel");
-  await expect(spendPanel.getByText("Developer spend watch")).toBeVisible();
-  await expect(spendPanel.getByText("Above team baseline")).toBeVisible();
-  await expect(spendPanel.getByText("Projected to run out 6 days early")).toBeVisible();
-  await expect(spendPanel.getByText("1 plan at risk")).toBeVisible();
+  await expect(
+    spendPanel.getByRole("img", { name: /developer spend watch and plan runway/i }),
+  ).toBeVisible();
 
   await understandTab.press("End");
   await expect(actTab).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("tabpanel").getByText("Claude Max may run out 6 days early")).toBeVisible();
+  await expect(
+    page.getByRole("tabpanel").getByRole("img", { name: /signals with owners and next steps/i }),
+  ).toBeVisible();
 });
 
 test("homepage shows current pricing", async ({ page }) => {
@@ -69,10 +70,9 @@ test("homepage shows current pricing", async ({ page }) => {
   await expect(page.getByText("$8", { exact: true })).toBeVisible();
   await expect(page.getByText("Custom", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Community" })).toBeVisible();
-  await expect(page.getByText("Self-hosted", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Managed" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Managed", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Get Started" }).first()).toBeVisible();
-  await expect(page.getByRole("link", { name: "Self-host UseJunction" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Talk to us" })).toBeVisible();
 });
 
 test("login form rejects bad credentials and links to recovery", async ({ page }) => {

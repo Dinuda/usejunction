@@ -1,5 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
+import { loadEnvConfig } from "@next/env";
 import path from "node:path";
+
+// Keep Playwright, its seed script, and the inherited Next.js dev server on the
+// same monorepo-root environment. Next would otherwise auto-load apps/admin/.env
+// after the seed has populated the root test database.
+loadEnvConfig(path.join(__dirname, "../.."));
 
 const authDir = path.join(__dirname, "e2e", ".auth");
 

@@ -25,7 +25,7 @@ export async function getDeveloperRoster(
             lastSeenAt: true,
             toolInstallations: {
               where: { detected: true },
-              select: { toolName: true, version: true },
+              select: { toolName: true },
             },
           },
         },
@@ -38,14 +38,12 @@ export async function getDeveloperRoster(
             source: true,
             lastActivityAt: true,
             observedAt: true,
-            connection: { select: { id: true, status: true, lastSyncedAt: true } },
           },
         },
         toolClaims: {
           where: { enabled: true },
           select: { toolName: true, source: true, observedAt: true },
         },
-        _count: { select: { requestMetadata: true } },
       },
     }),
     readUsageMetrics({
@@ -93,7 +91,6 @@ export async function getDeveloperRoster(
       role: developer.role,
       teamId: developer.teamId,
       createdAt: developer.createdAt,
-      totalRequests: developer._count.requestMetadata,
       devices: developer.devices,
       assignedPlans: developer.seatAssignments,
       manualPlans: [] as Array<never>,

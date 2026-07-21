@@ -1,20 +1,14 @@
+"use client";
+
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { ToolBrandLabel } from "@/components/tools/tool-brand-icon";
-import { loadMemberMetrics } from "@/lib/developers/member-page-context";
+import { useMemberClientData } from "@/components/developers/member-client-layout";
 import { formatCompactNumber, formatRelativeTime, formatUsd } from "@/lib/format";
 
-export default async function MemberFleetPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ developerId: string }>;
-  searchParams: Promise<{ view?: string; days?: string; from?: string; to?: string }>;
-}) {
-  const { developerId } = await params;
-  const paramsValue = await searchParams;
-  const { personal, selectedPeriodLabel } = await loadMemberMetrics(developerId, paramsValue);
+export default function MemberFleetPage() {
+  const { developerId, personal, selectedPeriodLabel } = useMemberClientData();
 
   return (
     <>

@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
+"use client";
 
-export default function PersonalWorkspacePage() {
-  redirect("/dashboard");
-}
+import { ClientRedirect } from "@/components/client-redirect";
+export default function PersonalWorkspacePage() { return <ClientRedirect href="/dashboard" />; }

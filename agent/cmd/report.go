@@ -121,7 +121,8 @@ var daemonCmd = &cobra.Command{
 		}
 
 		fmt.Println("Starting UseJunction daemon (Ctrl-C to stop)…")
-		if _, _, _, _, _, err := syncFn(cmd.Context(), true, nil); err != nil && verbose {
+		// Incremental by default; Sync UI ?refresh=1 and daily heartbeat seal force full.
+		if _, _, _, _, _, err := syncFn(cmd.Context(), false, nil); err != nil && verbose {
 			fmt.Printf("[daemon] initial collect error: %v\n", err)
 		}
 
@@ -167,14 +168,14 @@ var daemonCmd = &cobra.Command{
 					// A scheduled collection may have failed while the control plane was
 					// unavailable. Every successful heartbeat is a chance to catch up.
 					if loopErr == nil && usageRuns.due(time.Now(), collectionInterval) {
-						_, _, _, _, _, loopErr = syncFn(cmd.Context(), true, nil)
+						_, _, _, _, _, loopErr = syncFn(cmd.Context(), false, nil)
 					}
 				}
 			case <-collectionTicker.C:
 				// Rescan every 30 minutes; usage/work uploads stay incremental
-				// (fingerprint deltas + ObservedAt watermark).
+				// (scan snapshots + fingerprint deltas + ObservedAt watermark).
 				if usageRuns.due(time.Now(), collectionInterval) {
-					_, _, _, _, _, loopErr = syncFn(cmd.Context(), true, nil)
+					_, _, _, _, _, loopErr = syncFn(cmd.Context(), false, nil)
 				}
 			case <-cmd.Context().Done():
 				return nil

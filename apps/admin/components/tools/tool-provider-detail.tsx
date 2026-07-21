@@ -41,6 +41,7 @@ import type { ToolDetailData } from "@/lib/queries/dashboard/tool-detail";
 import type { CycleView } from "@/lib/dashboard/cycle-view";
 import { DEFAULT_ROLLING_PERIOD, type RollingPeriod } from "@/lib/dashboard/period-prefs";
 import { formatMicrosAsCurrency, formatUsd } from "@/lib/format";
+import { useInvalidateAppData } from "@/lib/api/client";
 import {
   isSecondaryQuotaWindow,
   quotaRemainingLabel,
@@ -102,6 +103,7 @@ export function ToolProviderDetail({
   periodBasePath?: string;
 }) {
   const router = useRouter();
+  const invalidateAppData = useInvalidateAppData();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -110,6 +112,7 @@ export function ToolProviderDetail({
   const basePath = periodBasePath ?? `/tools/${data.toolKey}`;
 
   async function refresh() {
+    await invalidateAppData();
     router.refresh();
   }
 

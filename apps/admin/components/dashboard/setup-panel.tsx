@@ -12,9 +12,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useInvalidateAppData } from "@/lib/api/client";
 
 export function DashboardSetupPanel({ canInvite = true }: { canInvite?: boolean }) {
   const router = useRouter();
+  const invalidateAppData = useInvalidateAppData();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [formKey, setFormKey] = useState(0);
 
@@ -29,7 +31,10 @@ export function DashboardSetupPanel({ canInvite = true }: { canInvite?: boolean 
           <DeviceConnectCard
             title="Connect command"
             description="Installs the agent and starts reporting. Expires in 15 minutes."
-            onConnected={() => router.refresh()}
+            onConnected={() => {
+              void invalidateAppData();
+              router.refresh();
+            }}
           />
         </div>
       </section>
@@ -50,6 +55,7 @@ export function DashboardSetupPanel({ canInvite = true }: { canInvite?: boolean 
               setInviteOpen(next);
               if (!next) {
                 setFormKey((current) => current + 1);
+                void invalidateAppData();
                 router.refresh();
               }
             }}
@@ -63,7 +69,10 @@ export function DashboardSetupPanel({ canInvite = true }: { canInvite?: boolean 
               </DialogHeader>
               <InviteTeamForm
                 key={formKey}
-                onInvited={() => router.refresh()}
+                onInvited={() => {
+                  void invalidateAppData();
+                  router.refresh();
+                }}
               />
             </DialogContent>
           </Dialog>

@@ -28,10 +28,18 @@ type APIClient struct {
 
 // New creates an APIClient from an enrolled config.
 func New(cfg *config.Config) *APIClient {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// Parallel usage-batch uploads share this client; raise idle conns so
+	// workers are not serialized on the default MaxIdleConnsPerHost=2.
+	transport.MaxIdleConns = 32
+	transport.MaxIdleConnsPerHost = 8
 	return &APIClient{
 		baseURL: cfg.ControlPlaneURL,
 		token:   cfg.DeviceToken,
-		http:    &http.Client{Timeout: 15 * time.Second},
+		http: &http.Client{
+			Timeout:   90 * time.Second,
+			Transport: transport,
+		},
 	}
 }
 
@@ -120,6 +128,10 @@ type HeartbeatResponse struct {
 	DeviceID  string                `json:"deviceId"`
 	Update    *AgentUpdateDirective `json:"update,omitempty"`
 	Uninstall bool                  `json:"uninstall,omitempty"`
+	// FullUsageRescanDay is the UTC YYYY-MM-DD sealed by the daily usage refresh
+	// cron. Agents run one full local usage rescan when this exceeds their
+	// persisted lastFullUsageRescanDay.
+	FullUsageRescanDay string `json:"fullUsageRescanDay,omitempty"`
 }
 
 type AgentUpdateEvent struct {
@@ -453,12 +465,16 @@ func (c *APIClient) ReportQuotas(quotas []QuotaReport) error {
 	return c.post("/api/devices/quota", map[string]any{"quotas": quotas})
 }
 
-// localUsageBatchSize matches the control-plane ingest cap
-// (maximum 1000 aggregates per request).
-const localUsageBatchSize = 1000
+// localUsageBatchSize aligns with scan.UsageUploadBatchSize so each
+// ReportLocalUsage call is typically one POST.
+const localUsageBatchSize = 50
+
+// localUsageMaxPayloadBytes keeps each POST under the control-plane
+// 1 MiB body limit with headroom for JSON framing.
+const localUsageMaxPayloadBytes = 900 * 1024
 
 func (c *APIClient) ReportLocalUsage(aggregates []UsageAggregate) error {
-	for _, batch := range chunkUsageAggregates(aggregates, localUsageBatchSize) {
+	for _, batch := range chunkUsageAggregates(aggregates, localUsageBatchSize, localUsageMaxPayloadBytes) {
 		if err := c.post("/api/ingest/local-usage", map[string]any{"aggregates": batch}); err != nil {
 			return err
 		}
@@ -466,21 +482,58 @@ func (c *APIClient) ReportLocalUsage(aggregates []UsageAggregate) error {
 	return nil
 }
 
-func chunkUsageAggregates(aggregates []UsageAggregate, batchSize int) [][]UsageAggregate {
+// chunkUsageAggregates packs rows until either maxRows or maxBytes would be
+// exceeded for {"aggregates":[...]}. A single oversized row is sent alone.
+func chunkUsageAggregates(aggregates []UsageAggregate, maxRows, maxBytes int) [][]UsageAggregate {
 	if len(aggregates) == 0 {
 		return nil
 	}
-	if batchSize <= 0 {
-		batchSize = localUsageBatchSize
+	if maxRows <= 0 {
+		maxRows = localUsageBatchSize
 	}
-	out := make([][]UsageAggregate, 0, (len(aggregates)+batchSize-1)/batchSize)
-	for i := 0; i < len(aggregates); i += batchSize {
-		end := i + batchSize
-		if end > len(aggregates) {
-			end = len(aggregates)
+	if maxBytes <= 0 {
+		maxBytes = localUsageMaxPayloadBytes
+	}
+
+	out := make([][]UsageAggregate, 0)
+	batch := make([]UsageAggregate, 0, maxRows)
+	batchBytes := len(`{"aggregates":[]}`)
+
+	flush := func() {
+		if len(batch) == 0 {
+			return
 		}
-		out = append(out, aggregates[i:end])
+		cp := make([]UsageAggregate, len(batch))
+		copy(cp, batch)
+		out = append(out, cp)
+		batch = batch[:0]
+		batchBytes = len(`{"aggregates":[]}`)
 	}
+
+	for _, row := range aggregates {
+		rowJSON, err := json.Marshal(row)
+		if err != nil {
+			// Fall back to count-only packing if a row cannot be measured.
+			if len(batch) >= maxRows {
+				flush()
+			}
+			batch = append(batch, row)
+			continue
+		}
+		rowBytes := len(rowJSON)
+		// Comma separators between array elements.
+		extra := rowBytes
+		if len(batch) > 0 {
+			extra++
+		}
+		if len(batch) > 0 && (len(batch) >= maxRows || batchBytes+extra > maxBytes) {
+			flush()
+			extra = rowBytes
+		}
+		batch = append(batch, row)
+		batchBytes += extra
+	}
+	flush()
 	return out
 }
 

@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 
 import { fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactElement } from "react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { AiCodingPanel } from "@/components/dashboard/ai-coding-panel";
@@ -12,6 +14,10 @@ import type { AiCodingMetrics, ModelUsageRow } from "@/lib/queries/me/overview";
 import "../setup/component";
 
 const router = { push: vi.fn() };
+
+function renderWithQueryClient(ui: ReactElement) {
+  return render(<QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>);
+}
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/signals/activity",
@@ -175,7 +181,7 @@ describe("calculation-bearing components", () => {
   });
 
   test("ToolProviderDetail labels usage cost separately from subscription seats", () => {
-    render(
+    renderWithQueryClient(
       <ToolProviderDetail
         data={{
           toolKey: "cursor",
@@ -202,7 +208,7 @@ describe("calculation-bearing components", () => {
   });
 
   test("ToolProviderDetail makes plans and live quota pressure scannable", () => {
-    render(
+    renderWithQueryClient(
       <ToolProviderDetail
         data={{
           toolKey: "chatgpt-codex",
@@ -260,7 +266,7 @@ describe("calculation-bearing components", () => {
   });
 
   test("ToolProviderDetail aggregates tokens per person in Models", () => {
-    render(
+    renderWithQueryClient(
       <ToolProviderDetail
         data={{
           toolKey: "cursor",

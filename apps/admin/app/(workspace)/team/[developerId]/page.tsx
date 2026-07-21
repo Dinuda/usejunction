@@ -1,36 +1,24 @@
+"use client";
+
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowUpRight } from "lucide-react";
 import { MemberPlanBoard } from "@/components/developers/member-plan-board";
 import { MemberWorkSessionList } from "@/components/developers/member-work-session-list";
 import { SignalsKpi } from "@/components/signals/signals-ui";
-import {
-  loadMemberMetrics,
-  loadMemberWork,
-  memberPeriodQuery,
-  workFiltersFromWindow,
-} from "@/lib/developers/member-page-context";
+import { useMemberClientData } from "@/components/developers/member-client-layout";
 import { formatCompactNumber, formatUsd } from "@/lib/format";
 import { buildMemberPlanBoard, planBoardLeadLabel } from "@/lib/quotas/plan-board";
 import type { WorkActivitySession } from "@/lib/signals/queries/get-work-activity";
 import { canonicalToolKey } from "@/lib/tools/catalog";
 
-export default async function MemberOverviewPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ developerId: string }>;
-  searchParams: Promise<{ view?: string; days?: string; from?: string; to?: string }>;
-}) {
-  const { developerId } = await params;
-  const paramsValue = await searchParams;
-  const metrics = await loadMemberMetrics(developerId, paramsValue);
-  const { personal, reportWindow, selectedPeriodLabel } = metrics;
-  const workCtx = await loadMemberWork(developerId, {
-    limit: 50,
-    ...workFiltersFromWindow(reportWindow),
-  });
-  const recentWorkSessions = workCtx.work.sessions.slice(0, 4);
-  const periodQs = memberPeriodQuery(paramsValue);
+export default function MemberOverviewPage() {
+  const searchParams = useSearchParams();
+  const { developerId, personal, selectedPeriodLabel, work, workExtractionEnabled } = useMemberClientData();
+  const workData = work ?? { enabled: false, sessions: [] };
+  const recentWorkSessions = workData.sessions.slice(0, 4);
+  const queryString = searchParams.toString();
+  const periodQs = queryString ? `?${queryString}` : "";
 
   const tokens =
     Number(BigInt(personal.usage30d.inputTokens)) + Number(BigInt(personal.usage30d.outputTokens));
@@ -59,7 +47,7 @@ export default async function MemberOverviewPage({
   const planKpi = planBoardLeadLabel(planCards);
 
   const workSessionsByTool: Record<string, WorkActivitySession[]> = {};
-  for (const session of workCtx.work.sessions) {
+  for (const session of workData.sessions) {
     const key = canonicalToolKey(session.toolName) || session.toolName;
     const list = workSessionsByTool[key] ?? [];
     list.push(session);
@@ -128,7 +116,7 @@ export default async function MemberOverviewPage({
             <ArrowUpRight className="size-3" />
           </Link>
         </div>
-        {workCtx.workExtractionEnabled ? (
+        {workExtractionEnabled ? (
           <MemberWorkSessionList
             sessions={recentWorkSessions}
             emptyMessage="No extracted work sessions in this period."

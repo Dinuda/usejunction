@@ -1,11 +1,15 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useSearchParams } from "next/navigation";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-
-export const metadata: Metadata = {
-  title: "Sign-in error",
-  robots: { index: false, follow: false },
-};
+import {
+  isOAuthProviderId,
+  OAUTH_PROVIDER_LABELS,
+  safeAuthReturnPath,
+} from "@/lib/auth/oauth-account-conflict";
+import { OAuthAccountConflictActions } from "./oauth-account-conflict-actions";
+import { useRawQuery } from "@/lib/api/client";
 
 const ERROR_COPY: Record<string, { title: string; description: string; detail: string }> = {
   Configuration: {
@@ -61,12 +65,55 @@ const DEFAULT_COPY = {
   detail: "Try again, or return to the sign-in page.",
 };
 
-export default async function AuthErrorPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ error?: string }>;
-}) {
-  const { error } = await searchParams;
+export default function AuthErrorPage() {
+  const searchParams = useSearchParams();
+  const error = searchParams.get("error") ?? undefined;
+  const providerParam = searchParams.get("provider") ?? undefined;
+  const fromParam = searchParams.get("from") ?? undefined;
+  const provider = isOAuthProviderId(providerParam) ? providerParam : undefined;
+  const from = safeAuthReturnPath(fromParam);
+  const sessionQuery = useRawQuery<{ user?: { email?: string | null } }>(["auth", "session"], "/api/auth/session", { enabled: error === "OAuthAccountNotLinked" });
+  const session = sessionQuery.data;
+  const providerLabel = provider ? OAUTH_PROVIDER_LABELS[provider] : "OAuth";
+
+  if (error === "OAuthAccountNotLinked") {
+    const signedInEmail = session?.user?.email;
+    const signedIn = Boolean(session?.user);
+
+    return (
+      <AuthShell
+        size="md"
+        accent="cyan"
+        contentAlign="top"
+        eyebrow="Auth"
+        title={
+          signedIn
+            ? "You’re signed in to a different account."
+            : "This email already has an account."
+        }
+        description={
+          signedIn
+            ? `That ${providerLabel} sign-in belongs to another UseJunction user.`
+            : `The ${providerLabel} sign-in isn’t linked to this UseJunction account.`
+        }
+        statement="Visibility before control."
+      >
+        <Alert variant="destructive">
+          <AlertDescription>
+            {signedIn
+              ? `${signedInEmail ? `You’re currently signed in as ${signedInEmail}. ` : ""}To switch accounts, sign out first. No account links were changed.`
+              : "For your security, we didn’t link the accounts automatically. Sign in with the method you originally used, or reset your password if you registered with email."}
+          </AlertDescription>
+        </Alert>
+        <OAuthAccountConflictActions
+          callbackUrl={from}
+          provider={provider}
+          signedIn={signedIn}
+        />
+      </AuthShell>
+    );
+  }
+
   const copy = (error && ERROR_COPY[error]) || DEFAULT_COPY;
 
   return (

@@ -25,6 +25,8 @@ type ToolBucket = {
   durationSeconds: number;
 };
 
+type AggregatedJourneyRow = Omit<SignalsJourneyRow, "lastSeenAt"> & { lastSeenAt: string };
+
 export function aggregateJourneys(sessions: SignalsSessionRow[]): FlowBucket[] {
   const flows = new Map<string, FlowBucket>();
   for (const session of sessions) {
@@ -72,7 +74,7 @@ export function aggregateTools(sessions: SignalsSessionRow[]): ToolBucket[] {
 export function toJourneyRows(
   current: FlowBucket[],
   prior: FlowBucket[],
-): SignalsJourneyRow[] {
+): AggregatedJourneyRow[] {
   const priorByKey = new Map(prior.map((row) => [row.flowKey, row]));
   return current
     .map((row) => {
@@ -256,7 +258,7 @@ export function compatibilitySummaryFromSessions(
       sessions: row.sessions,
       people: row.people,
       averageDurationSeconds: row.averageDurationSeconds,
-      lastSeenAt: row.lastSeenAt ? new Date(row.lastSeenAt) : new Date(0),
+      lastSeenAt: new Date(row.lastSeenAt),
     })),
     byTool: tools.slice(0, 10).map((row) => ({
       tool: row.tool,

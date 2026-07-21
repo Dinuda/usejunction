@@ -1,65 +1,38 @@
+"use client";
+
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { ArrowUpRight } from "lucide-react";
 import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
 import { Panel } from "@/components/panel";
 import { MemberWorkSessionList } from "@/components/developers/member-work-session-list";
 import { SignalsPageHeader } from "@/components/signals/signals-page-header";
 import { SignalsDisabledEmptyState } from "@/components/signals/signals-disabled-empty-state";
-import { SignalsTrendChart } from "@/components/signals/signals-trend-chart";
 import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
 import { flowDisplayLabel } from "@/components/signals/flow-segment";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
-import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 import {
   cycleViewPeriodLabel,
-  parseCycleView,
-  reportWindowForCycleView,
+  type CycleView,
 } from "@/lib/dashboard/cycle-view";
-import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
-import { getWorkOverview } from "@/lib/signals";
-import { listSubscriptions } from "@/lib/tools/subscriptions";
-import { requireWorkspaceRole } from "@/lib/workspace-context";
-import { rolesFor } from "@/lib/rbac";
+import type { RollingPeriod } from "@/lib/dashboard/period-prefs";
+import type { getWorkOverview } from "@/lib/signals";
+import { useAppQuery } from "@/lib/api/client";
+import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
-type SearchParams = Record<string, string | string[] | undefined>;
+const SignalsTrendChart = dynamic(() => import("@/components/signals/signals-trend-chart").then((mod) => mod.SignalsTrendChart), { ssr: false });
 
-function firstParam(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] : value;
-}
+type SignalsOverviewPayload = { cycleView: CycleView; rollingPeriod: RollingPeriod; periodLabel: string; work: Awaited<ReturnType<typeof getWorkOverview>>["data"] };
 
-function isoDate(value: Date) {
-  return value.toISOString().slice(0, 10);
-}
-
-export default async function SignalsOverviewPage({
-  searchParams,
-}: {
-  searchParams?: Promise<SearchParams>;
-}) {
-  const params = (await searchParams) ?? {};
-  const { orgId, userId, role } = await requireWorkspaceRole(rolesFor("org_overview"));
-  const cycleView = parseCycleView(firstParam(params.view));
-  const rollingPeriod = parseRollingPeriodFromSearch({
-    days: firstParam(params.days),
-    from: firstParam(params.from),
-    to: firstParam(params.to),
-  });
-  const now = new Date();
-  const subscriptions = await listSubscriptions(orgId);
-  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
-  const context = { orgId, actorId: userId, roles: [role], now, timezone: UTC_TIMEZONE };
-  const filters = {
-    from: isoDate(reportWindow.from),
-    to: isoDate(reportWindow.to),
-    developerId: firstParam(params.developerId) || undefined,
-    teamId: firstParam(params.teamId) || undefined,
-    tool: firstParam(params.tool) || undefined,
-  };
-
-  const envelope = await getWorkOverview(context, filters);
-  const work = envelope.data;
-  const periodLabel = cycleViewPeriodLabel(cycleView, rollingPeriod);
+export default function SignalsOverviewPage() {
+  const searchParams = useSearchParams();
+  const queryString = searchParams.toString();
+  const query = useAppQuery<SignalsOverviewPayload>(["app", "signals", "overview", queryString], `/api/app/signals/overview${queryString ? `?${queryString}` : ""}`);
+  if (query.isPending) return <AppPageSkeleton />;
+  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  const { cycleView, rollingPeriod, periodLabel, work } = query.data;
   const topTool = work.topTools[0] ?? null;
 
   return (

@@ -1,67 +1,50 @@
+"use client";
+
+import { useSearchParams } from "next/navigation";
 import { DeveloperToolInventory } from "@/components/developers/developer-tool-inventory";
 import { PageHeader } from "@/components/page-header";
 import { InvitePeopleDialog } from "@/components/team/team-connect-panel";
-import { AgentUpdateCoverage } from "@/components/team/agent-update-coverage";
-import { getAgentUpdateCoverage } from "@/lib/agent-updates";
-import { getDashboardDevices } from "@/lib/queries/dashboard/devices";
-import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 import { serializeBigInts } from "@/lib/billing/validation";
 import {
   cycleViewShortSuffix,
-  parseCycleView,
-  reportWindowForCycleView,
+  type CycleView,
 } from "@/lib/dashboard/cycle-view";
-import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
-import { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
-import { getDeveloperRoster } from "@/lib/read-models/developers";
-import { listSubscriptions } from "@/lib/tools/subscriptions";
-import { requireWorkspaceRole } from "@/lib/workspace-context";
+import type { RollingPeriod } from "@/lib/dashboard/period-prefs";
+import type { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
+import type { getDeveloperRoster } from "@/lib/read-models/developers";
+import type { listSubscriptions } from "@/lib/tools/subscriptions";
+import { useAppQuery } from "@/lib/api/client";
+import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
-export default async function TeamPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ view?: string; days?: string; from?: string; to?: string }>;
-}) {
-  const { orgId, userId, role } = await requireWorkspaceRole(["owner", "admin"]);
-  const params = await searchParams;
-  const cycleView = parseCycleView(params.view);
-  const rollingPeriod = parseRollingPeriodFromSearch({
-    days: params.days,
-    from: params.from,
-    to: params.to,
-  });
-  const now = new Date();
-  const subscriptions = await listSubscriptions(orgId);
-  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
+type TeamPayload = {
+  cycleView: CycleView;
+  rollingPeriod: RollingPeriod;
+  empty: boolean;
+  developers: Awaited<ReturnType<typeof getDeveloperRoster>>["developers"];
+  subscriptions: Awaited<ReturnType<typeof listSubscriptions>>;
+  planUsage: Awaited<ReturnType<typeof getPlanUsage>>["data"]["developers"];
+};
+
+export default function TeamPage() {
+  const searchParams = useSearchParams();
+  const queryString = searchParams.toString();
+  const query = useAppQuery<TeamPayload>(
+    ["app", "team", queryString],
+    `/api/app/team${queryString ? `?${queryString}` : ""}`,
+  );
+  if (query.isPending) return <AppPageSkeleton />;
+  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  const { cycleView, rollingPeriod, empty, subscriptions } = query.data;
   const periodSuffix = cycleViewShortSuffix(cycleView, rollingPeriod);
-
-  const [data, roster, planUsage, updateCoverage] = await Promise.all([
-    getDashboardDevices(orgId).catch(() => ({
-      devices: [] as Awaited<ReturnType<typeof getDashboardDevices>>["devices"],
-    })),
-    getDeveloperRoster(orgId, { reportWindow }),
-    getPlanUsage(
-      {
-        orgId,
-        actorId: userId,
-        roles: [role],
-        now,
-        timezone: UTC_TIMEZONE,
-      },
-      { reportWindow },
-    ),
-    getAgentUpdateCoverage(orgId).catch(() => null),
-  ]);
   const initial = serializeBigInts({
-    developers: roster.developers,
+    developers: query.data.developers,
     subscriptions,
-    planUsage: planUsage.data.developers,
+    planUsage: query.data.planUsage,
   }) as unknown as {
     developers: Parameters<typeof DeveloperToolInventory>[0]["initialDevelopers"];
     subscriptions: Parameters<typeof DeveloperToolInventory>[0]["initialSubscriptions"];
     planUsage: Parameters<typeof DeveloperToolInventory>[0]["initialPlanUsage"];
   };
-  const empty = data.devices.length === 0;
 
   return (
     <>
@@ -96,7 +79,6 @@ export default async function TeamPage({
         periodSuffix={periodSuffix}
       />
 
-      {updateCoverage ? <AgentUpdateCoverage coverage={updateCoverage} /> : null}
     </>
   );
 }

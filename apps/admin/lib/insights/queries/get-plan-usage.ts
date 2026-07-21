@@ -1,5 +1,5 @@
 import { prisma } from "@usejunction/db";
-import { internalAnalyticsScope, readCanonicalBillingFacts, readDataThrough } from "@/lib/analytics/query";
+import { internalAnalyticsScope, readCachedCanonicalBillingFacts, readDataThrough } from "@/lib/analytics/query";
 import { calculateBilling, serializeBillingLine } from "@/lib/billing/calculator";
 import { cycleToJson, resolveBillingCycle } from "@/lib/billing/cycles";
 import {
@@ -58,21 +58,26 @@ function summarize(rows: Array<{ primaryRatio: number | null; verdict: PlanVerdi
 export async function getPlanUsage(
   context: InsightContext,
   input: PlanUsageInput,
+  options: { subscriptions?: Awaited<ReturnType<typeof readSubscriptions>> } = {},
 ): Promise<InsightEnvelope<PlanUsageV1>> {
   assertInsightRoles(context, ["owner", "admin"]);
 
   const analyticsScope = internalAnalyticsScope(context.orgId, input.developerId);
-  const [subscriptions, assignments, quotaRows, dataThrough] = await Promise.all([
-    readSubscriptions(context.orgId),
+  // Billing facts only depend on the resolved scope/window, so start this
+  // expensive analytics read with the independent plan readers instead of
+  // waiting for them to finish first. Cached via AnalyticsQueryCache.
+  const billingFactsPromise = readCachedCanonicalBillingFacts(analyticsScope, input.reportWindow);
+  const [subscriptions, assignments, quotaRows, dataThrough, billingFactsResult] = await Promise.all([
+    options.subscriptions ? Promise.resolve(options.subscriptions) : readSubscriptions(context.orgId),
     readAssignments(context.orgId, { developerId: input.developerId }),
     readQuotas(context.orgId, { developerId: input.developerId }),
     readDataThrough(prisma, analyticsScope),
+    billingFactsPromise,
   ]);
-  const billingFacts = await readCanonicalBillingFacts(prisma, analyticsScope, input.reportWindow);
 
   const billingLines = calculateBilling({
     assignments,
-    usage: billingFacts,
+    usage: billingFactsResult.facts,
     from: input.reportWindow.from,
     to: input.reportWindow.to,
   });

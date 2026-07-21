@@ -21,7 +21,7 @@ Confirm in the Vercel dashboard (or local `.vercel/project.json`):
 - Framework: Next.js
 - Root Directory: `apps/admin`
 - Install Command: `cd ../.. && corepack enable && pnpm install --frozen-lockfile`
-- Build: `apps/admin/vercel.json` runs `pnpm --filter @usejunction/db generate && next build`
+- Build: `apps/admin/vercel.json` generates Prisma, enforces client/server import boundaries, runs `next build`, then asserts that application UI routes were prerendered
 - Domains: `usejunction.dev` (www / `.com` redirect to apex via `next.config.ts`)
 
 ## Database migrations
@@ -33,6 +33,15 @@ DATABASE_URL='postgresql://…' pnpm --filter @usejunction/db exec prisma migrat
 ```
 
 Apply against the **production** database before or immediately after shipping code that depends on the migration.
+
+## Database connection and function region
+
+Authenticated page models are served by `/api/app/*`, so database placement is part of the request latency budget:
+
+- `DATABASE_URL` must be the provider's pooled, Prisma-compatible runtime URL (not a direct single-connection endpoint). Keep a direct URL only for migration tooling when the provider requires it.
+- Set the Vercel Function Region to the supported region closest to the primary Postgres region. Do not choose from the visitor location alone.
+- Verify a preview from that region using the `Server-Timing` response header (`session`, `membership`, `data`, and `total` where applicable) before promotion. Warm `/api/auth/session` p95 must remain below 300 ms, workspace-context below 750 ms, page-data below 1.5 seconds, and cold page-data below 3 seconds.
+- Investigate measured slow SQL before adding an index. The application endpoints aggregate and parallelize independent readers first.
 
 ## Required environment variables (Vercel Production)
 
@@ -85,7 +94,11 @@ After changing env vars, **redeploy** Production so the new values are picked up
 
 ## Cron jobs
 
-These routes exist but are **not** scheduled by default (no `crons` in `vercel.json`, no Actions schedule):
+| Route | Purpose | Schedule |
+|-------|---------|----------|
+| `POST /api/cron/usage-daily-refresh` | Seal UTC day for agent full usage rescans + invalidate analytics caches | `15 0 * * *` (Vercel cron in `apps/admin/vercel.json`) |
+
+These routes exist but are **not** scheduled by default (no Actions schedule; add Vercel cron or external ping if needed):
 
 | Route | Purpose | When to schedule |
 |-------|---------|------------------|
@@ -94,6 +107,8 @@ These routes exist but are **not** scheduled by default (no `crons` in `vercel.j
 | `POST /api/cron/litellm-budget` | Reset LiteLLM budgets | Only if LiteLLM runs in production |
 
 Authenticate with `Authorization: Bearer $CRON_SECRET`.
+
+The usage daily refresh stores `fullUsageRescanDay` (UTC `YYYY-MM-DD`) in `app_runtime_settings`. Enrolled agents receive that day on heartbeat and run one full 60-day local usage rescan, then return to incremental snapshot syncs.
 
 ## Agent OTA (separate from web deploy)
 
@@ -107,14 +122,15 @@ Full ship checklist: [agent-releases.md § How to ship a production agent releas
 
 ## First-time go-live checklist
 
-1. [ ] Production Postgres provisioned; `DATABASE_URL` set
+1. [ ] Production Postgres provisioned; pooled Prisma-compatible `DATABASE_URL` set
 2. [ ] `prisma migrate deploy` against production
 3. [ ] Required Vercel env vars set; Production redeployed
-4. [ ] Sign-up / sign-in / email invite works (Resend)
-5. [ ] Domain `https://usejunction.dev` serves the app
-6. [ ] (If Team billing) Lemon keys + webhook configured
-7. [ ] GitHub `agent-production` env + signing secrets configured
-8. [ ] First `agent-v*` candidate built and promoted when ready to OTA
+4. [ ] Vercel Function Region is closest to the database; preview `Server-Timing` budgets pass
+5. [ ] Sign-up / sign-in / email invite works (Resend)
+6. [ ] Domain `https://usejunction.dev` serves the app
+7. [ ] (If Team billing) Lemon keys + webhook configured
+8. [ ] GitHub `agent-production` env + signing secrets configured
+9. [ ] First `agent-v*` candidate built and promoted when ready to OTA
 
 ## Related docs
 

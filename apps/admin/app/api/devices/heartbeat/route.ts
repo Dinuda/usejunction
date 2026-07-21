@@ -9,6 +9,7 @@ import { revokeDeviceAuth } from "@/lib/devices/decommission";
 import { encryptSecret, hashOpaqueToken } from "@/lib/security";
 import { limitedJson } from "@/lib/security/http";
 import { logServerError } from "@/lib/errors/public";
+import { getFullUsageRescanDay } from "@/lib/runtime-settings";
 
 export async function POST(req: NextRequest) {
   const started = Date.now();
@@ -158,7 +159,19 @@ export async function POST(req: NextRequest) {
       durationMs: Date.now() - started,
     });
 
-    return NextResponse.json({ ok: true, deviceId: device.id, update });
+    let fullUsageRescanDay: string | null = null;
+    try {
+      fullUsageRescanDay = await getFullUsageRescanDay();
+    } catch (error) {
+      logServerError("devices/heartbeat-full-usage-day", error);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      deviceId: device.id,
+      update,
+      ...(fullUsageRescanDay ? { fullUsageRescanDay } : {}),
+    });
   } catch (e) {
     logServerError("devices/heartbeat", e);
     return NextResponse.json({ error: "heartbeat failed" }, { status: 500 });

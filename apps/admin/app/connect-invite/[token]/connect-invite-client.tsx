@@ -6,6 +6,7 @@ import { OAuthProviderButtons, getEnabledOAuthProviders } from "@/components/aut
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { userFacingError } from "@/lib/errors/user-facing";
+import { activateWorkspace } from "@/lib/api/client";
 
 type Props = {
   token: string;
@@ -21,11 +22,6 @@ export function ConnectInviteClient({ token, email, signedIn, sessionEmail }: Pr
 
   useEffect(() => {
     if (!signedIn) return;
-    if (sessionEmail && sessionEmail.toLowerCase() !== email.toLowerCase()) {
-      setStatus("idle");
-      setError(`Sign in as ${email} to continue. You are signed in as ${sessionEmail}.`);
-      return;
-    }
     let cancelled = false;
     void (async () => {
       setStatus("completing");
@@ -34,6 +30,18 @@ export function ConnectInviteClient({ token, email, signedIn, sessionEmail }: Pr
       if (cancelled) return;
       if (!response.ok) {
         setError(userFacingError(data.error, "Could not complete connect invite."));
+        setStatus("error");
+        return;
+      }
+      if (typeof data.orgId !== "string") {
+        setError("Could not activate the invited workspace.");
+        setStatus("error");
+        return;
+      }
+      try {
+        await activateWorkspace(data.orgId);
+      } catch {
+        setError("Could not activate the invited workspace.");
         setStatus("error");
         return;
       }
@@ -74,13 +82,6 @@ export function ConnectInviteClient({ token, email, signedIn, sessionEmail }: Pr
       <p className="text-sm text-muted-foreground">
         Continue as <span className="font-medium text-foreground">{email}</span>.
       </p>
-      {sessionEmail && sessionEmail.toLowerCase() !== email.toLowerCase() ? (
-        <Alert variant="destructive">
-          <AlertDescription>
-            Signed in as {sessionEmail}. Sign out and continue as {email}.
-          </AlertDescription>
-        </Alert>
-      ) : null}
       {error ? (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>

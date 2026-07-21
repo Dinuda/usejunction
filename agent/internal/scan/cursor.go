@@ -6,15 +6,23 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	_ "modernc.org/sqlite"
+	"time"
 
 	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/platformdirs"
+	"github.com/usejunction/agent/internal/sqlitedb"
 	"github.com/usejunction/agent/internal/types"
 )
 
+const cursorLocalSource = "cursor_local"
+
+// cursorStateDBPathOverride is set by tests to point at a fixture state.vscdb.
+var cursorStateDBPathOverride string
+
 func cursorStateDBPath() string {
+	if cursorStateDBPathOverride != "" {
+		return cursorStateDBPathOverride
+	}
 	return filepath.Join(platformdirs.CursorUserDir(), "globalStorage", "state.vscdb")
 }
 
@@ -23,14 +31,34 @@ func cursorAITrackingDBPath() string {
 	return filepath.Join(home, ".cursor", "ai-tracking", "ai-code-tracking.db")
 }
 
+func cursorLocalSourceKeys() (map[string]SourceWatermark, []string) {
+	paths := []string{cursorStateDBPath(), cursorAITrackingDBPath()}
+	current := map[string]SourceWatermark{}
+	keys := make([]string, 0, len(paths))
+	for _, path := range paths {
+		wm, err := FileWatermark(path)
+		if err != nil {
+			continue
+		}
+		key := "sqlite:" + path
+		current[key] = wm
+		keys = append(keys, key)
+	}
+	return current, keys
+}
+
 // ScanCursorLocal harvests WakaTime-style AI line metrics and model attribution
 // from Cursor's local sqlite stores (User/globalStorage/state.vscdb and
 // ~/.cursor/ai-tracking/ai-code-tracking.db). It never reads prompt text.
-func ScanCursorLocal(refresh bool) ([]types.DailyUsage, error) {
+// When forceFull is false and both sqlite files are unchanged, prior aggregates
+// are reused from the scan snapshot.
+func ScanCursorLocal(forceFull bool) ([]types.DailyUsage, error) {
 	cacheFile := filepath.Join(config.CacheDir(), "cursor-local.json")
-	if !refresh {
-		if cached, err := loadCache(cacheFile); err == nil && len(cached) > 0 {
-			return cached, nil
+	current, keys := cursorLocalSourceKeys()
+	snap, _ := LoadScanSnapshot()
+	if !forceFull && SQLiteSourcesUnchanged(snap, current, keys) {
+		if rows := AggregatesForSource(snap, "cursor", cursorLocalSource); len(rows) > 0 || len(keys) == 0 {
+			return rows, nil
 		}
 	}
 
@@ -43,11 +71,27 @@ func ScanCursorLocal(refresh bool) ([]types.DailyUsage, error) {
 	result := make([]types.DailyUsage, 0, len(buckets))
 	for _, b := range buckets {
 		if b.Source == "" {
-			b.Source = "cursor_local"
+			b.Source = cursorLocalSource
 		}
 		result = append(result, *b)
 	}
+	result = PruneAggregatesLookback(result, time.Now().UTC())
 	_ = saveCache(cacheFile, result)
+	snap.Aggregates = ReplaceSourceAggregates(snap.Aggregates, "cursor", cursorLocalSource, result)
+	if snap.Sources == nil {
+		snap.Sources = map[string]SourceWatermark{}
+	}
+	for key := range snap.Sources {
+		if strings.HasPrefix(key, "sqlite:") {
+			if _, ok := current[key]; !ok {
+				delete(snap.Sources, key)
+			}
+		}
+	}
+	for key, wm := range current {
+		snap.Sources[key] = wm
+	}
+	_ = SaveScanSnapshot(snap)
 	return result, nil
 }
 
@@ -66,11 +110,14 @@ func cursorBucket(buckets map[string]*types.DailyUsage, date, model string) *typ
 }
 
 func scanCursorDailyStats(buckets map[string]*types.DailyUsage) error {
-	dbPath := cursorStateDBPath()
+	return scanCursorDailyStatsAt(cursorStateDBPath(), buckets)
+}
+
+func scanCursorDailyStatsAt(dbPath string, buckets map[string]*types.DailyUsage) error {
 	if _, err := os.Stat(dbPath); err != nil {
 		return err
 	}
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	db, err := sqlitedb.OpenReadonly(dbPath)
 	if err != nil {
 		return err
 	}
@@ -116,7 +163,7 @@ func scanCursorAICodeHashes(buckets map[string]*types.DailyUsage) error {
 	if _, err := os.Stat(dbPath); err != nil {
 		return err
 	}
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	db, err := sqlitedb.OpenReadonly(dbPath)
 	if err != nil {
 		return err
 	}
@@ -156,7 +203,7 @@ func scanCursorScoredCommits(buckets map[string]*types.DailyUsage) error {
 	if _, err := os.Stat(dbPath); err != nil {
 		return err
 	}
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	db, err := sqlitedb.OpenReadonly(dbPath)
 	if err != nil {
 		return err
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/probe"
 	"github.com/usejunction/agent/internal/providers"
+	"github.com/usejunction/agent/internal/scan"
 	"github.com/usejunction/agent/internal/types"
 	"github.com/usejunction/agent/internal/workextract"
 )
@@ -60,7 +61,8 @@ func codexHomeForProbe() string {
 }
 
 // collectAndReport gathers telemetry from all providers and posts to the control plane.
-// When refresh is false, providers may use on-disk usage caches.
+// When refresh is false, providers use incremental scan snapshots unless the
+// control plane sealed a newer fullUsageRescanDay.
 func collectAndReport(api *client.APIClient, refresh bool) (tools int, accounts int, quotas int, usage int, err error) {
 	tools, accounts, quotas, usage, _, err = collectAndReportWithProgress(context.Background(), api, refresh, func(string, string) {})
 	return tools, accounts, quotas, usage, err
@@ -77,8 +79,23 @@ func collectAndReportWithProgress(
 	}
 
 	progress("heartbeat", "Registering local agent")
-	if err = sendHeartbeat(api); err != nil {
+	hb, err := heartbeat(api)
+	if err != nil {
 		return 0, 0, 0, 0, warnings, fmt.Errorf("heartbeat: %w", err)
+	}
+
+	forceFull := refresh
+	sealedDay := strings.TrimSpace(hb.FullUsageRescanDay)
+	cfg, cfgErr := config.Load()
+	lastFullDay := ""
+	if cfgErr == nil && cfg != nil {
+		lastFullDay = strings.TrimSpace(cfg.LastFullUsageRescanDay)
+	}
+	if shouldForceFullUsageRescan(refresh, sealedDay, lastFullDay) {
+		forceFull = true
+		if !refresh && sealedDay != "" {
+			progress("scan", fmt.Sprintf("Full usage rescan for sealed day %s", sealedDay))
+		}
 	}
 
 	var toolReports []client.ToolReport
@@ -89,7 +106,7 @@ func collectAndReportWithProgress(
 
 	for _, p := range providers.All() {
 		progress("scan", fmt.Sprintf("Scanning %s", p.ID()))
-		result, timedOut := collectProviderWithTimeout(ctx, p, refresh)
+		result, timedOut := collectProviderWithTimeout(ctx, p, forceFull)
 		if timedOut {
 			warnings = append(warnings, fmt.Sprintf("%s scan timed out", p.ID()))
 			progress("scan", fmt.Sprintf("Skipped slow %s scan", p.ID()))
@@ -125,22 +142,39 @@ func collectAndReportWithProgress(
 		}
 	}
 	if len(usageReports) > 0 {
-		uploaded, uploadErr := reportLocalUsageDelta(api, usageReports, func(n, scanned int) {
-			progress("upload-usage", fmt.Sprintf("Uploading %d changed usage rows (of %d scanned)", n, scanned))
+		uploaded, remaining, uploadErr := reportLocalUsageDelta(api, usageReports, func(drain, pending, scanned int) {
+			progress("upload-usage", fmt.Sprintf("Uploading %d of %d queued usage rows (scanned %d, last %d days)", drain, pending, scanned, scan.UsageLookbackDays))
 		})
 		if uploadErr != nil && uploaded == 0 {
 			return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, fmt.Errorf("usage: %w", uploadErr)
 		}
-		if uploaded == 0 {
+		switch {
+		case uploaded == 0:
 			progress("upload-usage", "No usage changes since last upload")
-		} else if uploadErr != nil && verbose {
-			fmt.Printf("[report] usage fingerprint save: %v\n", uploadErr)
+		case remaining > 0:
+			progress("upload-usage", fmt.Sprintf("Uploaded %d usage rows; %d older rows queued for next sync", uploaded, remaining))
+			warnings = append(warnings, fmt.Sprintf("%d usage rows still queued for upload", remaining))
+		default:
+			progress("upload-usage", fmt.Sprintf("Uploaded %d usage rows", uploaded))
+		}
+		if uploadErr != nil {
+			warnings = append(warnings, "usage upload interrupted; will retry remaining rows")
+			if verbose {
+				fmt.Printf("[report] usage upload: %v\n", uploadErr)
+			}
 		}
 	}
 
 	progress("work-extract", "Checking work extraction policy")
 	if workErr := maybeReportWorkSessions(api, progress); workErr != nil && verbose {
 		fmt.Printf("[report] work extraction: %v\n", workErr)
+	}
+
+	if forceFull && sealedDay != "" && sealedDay > lastFullDay && cfgErr == nil && cfg != nil {
+		cfg.LastFullUsageRescanDay = sealedDay
+		if saveErr := config.Save(cfg); saveErr != nil {
+			warnings = append(warnings, fmt.Sprintf("persist lastFullUsageRescanDay: %v", saveErr))
+		}
 	}
 
 	progress("complete", "Sync complete")
@@ -338,4 +372,13 @@ func collectProvider(ctx context.Context, p providers.Provider, refresh bool) pr
 		}
 	}
 	return result
+}
+
+func shouldForceFullUsageRescan(refresh bool, sealedDay, lastFullDay string) bool {
+	if refresh {
+		return true
+	}
+	sealedDay = strings.TrimSpace(sealedDay)
+	lastFullDay = strings.TrimSpace(lastFullDay)
+	return sealedDay != "" && sealedDay > lastFullDay
 }

@@ -1,30 +1,31 @@
-import { prisma } from "@usejunction/db";
+"use client";
+
 import { ActivitySettingsCard } from "@/components/activity/activity-settings-card";
 import { PageHeader } from "@/components/page-header";
 import { BillingSettingsCard } from "@/components/settings/billing-settings-card";
 import { SignalsSettingsCard } from "@/components/settings/signals-settings-card";
 import { WorkspaceSettingsCard } from "@/components/settings/workspace-settings-card";
-import { getOrgActivitySettings } from "@/lib/activity/service";
-import { getOrgSignalsPolicy } from "@/lib/signals/service";
-import { getOrgBillingStatus } from "@/lib/saas-billing/status";
-import { requireWorkspaceRole } from "@/lib/workspace-context";
-import { rolesFor } from "@/lib/rbac";
+import type { getOrgActivitySettings } from "@/lib/activity/service";
+import type { getOrgSignalsPolicy } from "@/lib/signals/service";
+import type { getOrgBillingStatus } from "@/lib/saas-billing/status";
+import { useAppQuery } from "@/lib/api/client";
+import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
-export default async function SettingsPage() {
-  const { orgId, orgName, organizations, role } = await requireWorkspaceRole(
-    rolesFor("settings_billing"),
-  );
-  const current = organizations.find((org) => org.id === orgId);
-  const [settings, signalsPolicy, billing, billingMembers] = await Promise.all([
-    getOrgActivitySettings(orgId),
-    getOrgSignalsPolicy(orgId),
-    getOrgBillingStatus(orgId, role),
-    prisma.developer.findMany({
-      where: { orgId, removedAt: null },
-      select: { id: true, name: true, email: true },
-      orderBy: [{ name: "asc" }, { email: "asc" }],
-    }),
-  ]);
+type SettingsPayload = {
+  orgId: string;
+  orgName: string;
+  orgColor: string | null;
+  settings: Awaited<ReturnType<typeof getOrgActivitySettings>>;
+  signalsPolicy: Awaited<ReturnType<typeof getOrgSignalsPolicy>>;
+  billing: Awaited<ReturnType<typeof getOrgBillingStatus>>;
+  billingMembers: Array<{ id: string; name: string; email: string }>;
+};
+
+export default function SettingsPage() {
+  const query = useAppQuery<SettingsPayload>(["app", "settings"], "/api/app/settings");
+  if (query.isPending) return <AppPageSkeleton />;
+  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  const { orgId, orgName, orgColor, settings, signalsPolicy, billing, billingMembers } = query.data;
 
   return (
     <div className="mx-auto w-full max-w-6xl">
@@ -37,8 +38,8 @@ export default async function SettingsPage() {
       <div className="space-y-6">
         <WorkspaceSettingsCard
           orgId={orgId}
-          initialName={orgName ?? current?.name ?? "Workspace"}
-          initialColor={current?.color ?? null}
+          initialName={orgName}
+          initialColor={orgColor}
         />
         <BillingSettingsCard billing={billing} members={billingMembers} />
         <SignalsSettingsCard initialPolicy={signalsPolicy} />

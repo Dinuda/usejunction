@@ -1,5 +1,7 @@
+"use client";
+
 import { MarketingTopNav } from "@/components/public/marketing-top-nav";
-export default async function PublicLayout({ children }: { children: React.ReactNode }) {
+export default function PublicLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div>

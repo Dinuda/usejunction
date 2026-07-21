@@ -165,7 +165,7 @@ export async function getMeOverview(
   orgId: string,
   userId: string,
   role: OrganizationRole,
-  options: { reportWindow?: MetricWindow } = {},
+  options: { reportWindow?: MetricWindow; includeOrgPlanSync?: boolean } = {},
 ): Promise<MeOverviewData> {
   const developer = await prisma.developer.findFirst({
     where: { orgId, authUserId: userId },
@@ -176,7 +176,9 @@ export async function getMeOverview(
     throw new Error("developer profile required");
   }
 
-  return buildMeOverview(orgId, developer, role, options.reportWindow);
+  return buildMeOverview(orgId, developer, role, options.reportWindow, {
+    includeOrgPlanSync: options.includeOrgPlanSync,
+  });
 }
 
 /** Admin view of any teammate by developer id. */
@@ -198,6 +200,7 @@ async function buildMeOverview(
   developer: OverviewDeveloper,
   role: OrganizationRole,
   reportWindow?: MetricWindow,
+  options: { includeOrgPlanSync?: boolean } = {},
 ): Promise<MeOverviewData> {
   const usage30d = reportWindow ?? usageWindowDays(30);
   const measures = [
@@ -339,7 +342,9 @@ async function buildMeOverview(
     const account = allAccounts.find((row) => canonicalToolKey(row.toolName) === toolKey);
     return !account?.plan?.trim();
   });
-  const needsPlanSync = personalNeedsPlanSync || (await orgNeedsPlanSync(orgId));
+  const needsPlanSync =
+    personalNeedsPlanSync ||
+    (options.includeOrgPlanSync === false ? false : await orgNeedsPlanSync(orgId));
 
   return {
     developer: {

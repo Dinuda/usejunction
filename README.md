@@ -4,6 +4,10 @@ Open-source observability for AI coding tools. Track usage, cost, latency, plan/
 
 **Site:** [usejunction.dev](https://usejunction.dev) · **Guides:** [Plan usage & waste](https://usejunction.dev/guides/see-plan-usage-and-waste) · [Team AI coding insights](https://usejunction.dev/guides/see-team-ai-coding-usage) · [llms.txt](https://usejunction.dev/llms.txt)
 
+## Project status
+
+UseJunction is currently maintained by a single independent developer. The project is open for evaluation, feedback, and self-hosted use today, with a fuller community contribution setup coming soon.
+
 ## Quick start
 
 ### Full Docker

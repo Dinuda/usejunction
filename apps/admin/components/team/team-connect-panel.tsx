@@ -14,9 +14,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useInvalidateAppData } from "@/lib/api/client";
 
 export function InvitePeopleDialog() {
   const router = useRouter();
+  const invalidateAppData = useInvalidateAppData();
   const [open, setOpen] = useState(false);
   const [formKey, setFormKey] = useState(0);
 
@@ -27,6 +29,7 @@ export function InvitePeopleDialog() {
         setOpen(next);
         if (!next) {
           setFormKey((current) => current + 1);
+          void invalidateAppData();
           router.refresh();
         }
       }}
@@ -47,6 +50,7 @@ export function InvitePeopleDialog() {
         <InviteTeamForm
           key={formKey}
           onInvited={() => {
+            void invalidateAppData();
             router.refresh();
           }}
         />
@@ -57,6 +61,7 @@ export function InvitePeopleDialog() {
 
 export function EnrollMachineDialog() {
   const router = useRouter();
+  const invalidateAppData = useInvalidateAppData();
   const [open, setOpen] = useState(false);
 
   return (
@@ -78,6 +83,7 @@ export function EnrollMachineDialog() {
           title="Connect command"
           description="Installs the agent and starts reporting."
           onConnected={() => {
+            void invalidateAppData();
             router.refresh();
             setOpen(false);
           }}

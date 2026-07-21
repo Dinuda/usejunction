@@ -2,7 +2,6 @@ package probe
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
-
 	"github.com/usejunction/agent/internal/platformdirs"
+	"github.com/usejunction/agent/internal/scan"
+	"github.com/usejunction/agent/internal/sqlitedb"
 	"github.com/usejunction/agent/internal/types"
 )
 
@@ -63,16 +62,25 @@ type cursorUserInfo struct {
 	Sub            string `json:"sub"`
 }
 
+// cursorStateDBPathOverride is set by tests to point at a fixture state.vscdb.
+var cursorStateDBPathOverride string
+
 func cursorStateDBPath() string {
+	if cursorStateDBPathOverride != "" {
+		return cursorStateDBPathOverride
+	}
 	return filepath.Join(platformdirs.CursorUserDir(), "globalStorage", "state.vscdb")
 }
 
 func cursorStateDBValue(key string) (string, error) {
-	dbPath := cursorStateDBPath()
+	return cursorStateDBValueAt(cursorStateDBPath(), key)
+}
+
+func cursorStateDBValueAt(dbPath, key string) (string, error) {
 	if _, err := os.Stat(dbPath); err != nil {
 		return "", err
 	}
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	db, err := sqlitedb.OpenReadonly(dbPath)
 	if err != nil {
 		return "", err
 	}
@@ -180,23 +188,24 @@ func firstNonEmpty(values ...string) string {
 
 func resolveCursorPlan(ctx context.Context, cookie string, summary *cursorUsageSummary) string {
 	local := cursorLocalMembershipType()
+	// Prefer live API responses over cursorAuth/stripeMembershipType in state.vscdb.
+	// Local cache is often stale after upgrades (e.g. pro → pro_plus).
 	if summary != nil && summary.MembershipType != "" {
-		return firstNonEmpty(local, summary.MembershipType)
-	}
-	if local != "" {
-		return local
+		return summary.MembershipType
 	}
 	if profile := fetchCursorStripeProfile(ctx, cookie); profile != nil {
-		return firstNonEmpty(
+		if plan := firstNonEmpty(
 			profile.IndividualMembershipType,
 			profile.MembershipType,
 			profile.TeamMembershipType,
-		)
+		); plan != "" {
+			return plan
+		}
 	}
-	if user := cursorMeProfile(ctx, cookie); user != nil {
+	if user := cursorMeProfile(ctx, cookie); user != nil && user.MembershipType != "" {
 		return user.MembershipType
 	}
-	return ""
+	return local
 }
 
 func CursorAccountFromLocal() (*types.ToolAccount, error) {
@@ -496,14 +505,22 @@ type cursorEventsCache struct {
 	Rows               []types.DailyUsage `json:"rows"`
 }
 
+const cursorEventsSourceKey = "cursor:usage-events"
+const cursorEventsSource = "cursor_usage_events"
+
 // ScanCursorUsageEvents fetches billed usage events using the local Cursor
-// session cookie. Results are cached for one hour under ~/.usejunction/cache.
-func ScanCursorUsageEvents(ctx context.Context, refresh bool) ([]types.DailyUsage, error) {
+// session cookie. Incremental mode reuses the scan snapshot when the newest
+// event timestamp matches the stored watermark, and otherwise merges only newer
+// events into prior aggregates.
+func ScanCursorUsageEvents(ctx context.Context, forceFull bool) ([]types.DailyUsage, error) {
 	cachePath := filepath.Join(os.Getenv("HOME"), ".usejunction", "cache", "cursor-usage-events.json")
 	if home, err := os.UserHomeDir(); err == nil {
 		cachePath = filepath.Join(home, ".usejunction", "cache", "cursor-usage-events.json")
 	}
-	if !refresh {
+
+	snap, _ := scan.LoadScanSnapshot()
+	prevWM := snap.Sources[cursorEventsSourceKey]
+	if !forceFull {
 		if cached, err := loadCursorEventsCache(cachePath); err == nil {
 			return cached, nil
 		}
@@ -522,7 +539,20 @@ func ScanCursorUsageEvents(ctx context.Context, refresh bool) ([]types.DailyUsag
 	buckets := map[string]*types.DailyUsage{}
 	page := 1
 	pageSize := 200
-	var lastEventTS string
+	var newestEventTS string
+	lookbackStart := time.Now().UTC().AddDate(0, 0, -scan.UsageLookbackDays).Format("2006-01-02")
+	watermarkTime := parseUnixOrRFC3339(prevWM.Extra)
+	// Only merge onto prior aggregates when the watermark is parseable; otherwise
+	// a full event recompute avoids double-counting.
+	incrementalMerge := !forceFull && !watermarkTime.IsZero()
+	if incrementalMerge {
+		for _, row := range scan.AggregatesForSource(snap, "cursor", cursorEventsSource) {
+			key := row.Date + "|" + row.Model
+			cp := row
+			buckets[key] = &cp
+		}
+	}
+	reachedPriorWatermark := false
 
 	for {
 		body := map[string]any{
@@ -557,10 +587,20 @@ func ScanCursorUsageEvents(ctx context.Context, refresh bool) ([]types.DailyUsag
 			break
 		}
 
+		reachedLookbackFloor := false
 		for _, ev := range out.UsageEventsDisplay {
+			if page == 1 && newestEventTS == "" && ev.Timestamp != "" {
+				newestEventTS = ev.Timestamp
+			}
+			evTime := parseUnixOrRFC3339(ev.Timestamp)
+			if incrementalMerge && !evTime.IsZero() && !evTime.After(watermarkTime) {
+				reachedPriorWatermark = true
+				continue
+			}
 			date := cursorEventDate(ev.Timestamp)
-			if ev.Timestamp != "" {
-				lastEventTS = ev.Timestamp
+			if date < lookbackStart {
+				reachedLookbackFloor = true
+				continue
 			}
 			model := strings.TrimSpace(ev.Model)
 			if model == "" {
@@ -570,7 +610,7 @@ func ScanCursorUsageEvents(ctx context.Context, refresh bool) ([]types.DailyUsag
 			if buckets[key] == nil {
 				buckets[key] = &types.DailyUsage{
 					Date: date, ToolName: "cursor", Model: model,
-					Source: "cursor_usage_events", Verified: true,
+					Source: cursorEventsSource, Verified: true,
 					MetricKind: types.MetricKindUsage, CostKind: types.CostKindVerifiedUsage,
 					TokenSemantics: types.TokenSemanticsVendor, CalculationVersion: "usage-v2",
 				}
@@ -589,7 +629,7 @@ func ScanCursorUsageEvents(ctx context.Context, refresh bool) ([]types.DailyUsag
 			}
 		}
 
-		if len(out.UsageEventsDisplay) < pageSize {
+		if reachedPriorWatermark || reachedLookbackFloor || len(out.UsageEventsDisplay) < pageSize {
 			break
 		}
 		if out.TotalUsageEventsCount > 0 && page*pageSize >= out.TotalUsageEventsCount {
@@ -601,15 +641,41 @@ func ScanCursorUsageEvents(ctx context.Context, refresh bool) ([]types.DailyUsag
 		}
 	}
 
+	if newestEventTS == "" {
+		newestEventTS = prevWM.Extra
+	}
+	// Warm path: first page newest timestamp matches prior watermark and we
+	// already had aggregates — nothing new arrived.
+	if !forceFull && prevWM.Extra != "" && newestEventTS == prevWM.Extra && reachedPriorWatermark {
+		if rows := scan.AggregatesForSource(snap, "cursor", cursorEventsSource); len(rows) > 0 {
+			_ = saveCursorEventsCache(cachePath, cursorEventsCache{
+				Version: "2", CalculationVersion: "usage-v2",
+				LastEventTimestamp: newestEventTS, Rows: rows,
+			})
+			return rows, nil
+		}
+	}
+
 	result := make([]types.DailyUsage, 0, len(buckets))
 	for _, b := range buckets {
 		result = append(result, *b)
 	}
+	result = scan.PruneAggregatesLookback(result, time.Now().UTC())
 	cache := cursorEventsCache{
 		Version: "2", CalculationVersion: "usage-v2",
-		LastEventTimestamp: lastEventTS, Rows: result,
+		LastEventTimestamp: newestEventTS, Rows: result,
 	}
 	_ = saveCursorEventsCache(cachePath, cache)
+
+	snap.Aggregates = scan.ReplaceSourceAggregates(snap.Aggregates, "cursor", cursorEventsSource, result)
+	if snap.Sources == nil {
+		snap.Sources = map[string]scan.SourceWatermark{}
+	}
+	snap.Sources[cursorEventsSourceKey] = scan.SourceWatermark{
+		Path:  cursorEventsSourceKey,
+		Extra: newestEventTS,
+	}
+	_ = scan.SaveScanSnapshot(snap)
 	return result, nil
 }
 

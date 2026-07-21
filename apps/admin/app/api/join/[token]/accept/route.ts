@@ -4,7 +4,6 @@ import { prisma } from "@usejunction/db";
 import { hasVerifiedIdentity, linkDeveloperToUser, normalizeEmail } from "@/lib/developer-identity";
 import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/quantity";
 import { assertCanAddUser } from "@/lib/saas-billing/status";
-import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 import { audit } from "@/lib/rbac";
 import { hashOpaqueToken } from "@/lib/security";
 
@@ -54,7 +53,5 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
   });
   await syncTeamSeatQuantityBestEffort(invite.orgId, "invite.accepted");
   await audit({ orgId: invite.orgId, actorType: "user", actorId: session.user.id, action: "invite.accepted", targetType: "developer", targetId: developer.id });
-  const response = NextResponse.json({ orgId: invite.orgId, developerId: developer.id, role: invite.role });
-  response.cookies.set(ACTIVE_ORG_COOKIE, invite.orgId, activeOrgCookieOptions());
-  return response;
+  return NextResponse.json({ orgId: invite.orgId, developerId: developer.id, role: invite.role });
 }

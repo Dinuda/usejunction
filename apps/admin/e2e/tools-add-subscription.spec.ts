@@ -80,20 +80,41 @@ test("Add a team tool sheet lists Codex/Work once and creates a ChatGPT subscrip
 test("adding ChatGPT / Codex persists through the real subscriptions API", async ({ page }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
+  let createdSubscriptionId: string | null = null;
 
-  await page.goto("/tools");
-  await page.getByRole("tab", { name: "Subscriptions" }).click();
-  await page.getByRole("button", { name: /Add tool/i }).first().click();
+  try {
+    await page.goto("/tools");
+    await page.getByRole("tab", { name: "Subscriptions" }).click();
+    await page.getByRole("button", { name: /Add tool/i }).first().click();
 
-  const sheet = page.getByRole("dialog");
-  await sheet.getByRole("button", { name: /ChatGPT \/ Codex/i }).click();
-  await sheet.getByRole("button", { name: /^Plus\b/i }).click();
-  await sheet.getByRole("button", { name: /Add 1 seat/i }).click();
+    const sheet = page.getByRole("dialog");
+    await sheet.getByRole("button", { name: /ChatGPT \/ Codex/i }).click();
+    await sheet.getByRole("button", { name: /^Plus\b/i }).click();
+    const createResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === "/api/tools/subscriptions",
+    );
+    await sheet.getByRole("button", { name: /Add 1 seat/i }).click();
+    const createResponse = await createResponsePromise;
+    const createPayload = (await createResponse.json()) as { subscription?: { id?: string } };
+    createdSubscriptionId = createPayload.subscription?.id ?? null;
 
-  await expect(sheet).toBeHidden();
-  await expect(page.getByRole("heading", { name: "ChatGPT / Codex" })).toBeVisible();
-  await expect(page.getByText(/1 Plus/i).first()).toBeVisible();
-  expect(pageErrors, "persisted add page errors").toEqual([]);
+    expect(createResponse.status()).toBe(201);
+    expect(createdSubscriptionId).toBeTruthy();
+    await expect(sheet).toBeHidden();
+    await expect(page.getByRole("heading", { name: "ChatGPT / Codex" })).toBeVisible();
+    await expect(page.getByText(/1 Plus/i).first()).toBeVisible();
+    expect(pageErrors, "persisted add page errors").toEqual([]);
+  } finally {
+    if (createdSubscriptionId) {
+      const cleanupStatus = await page.evaluate(async (subscriptionId) => {
+        const response = await fetch(`/api/tools/subscriptions/${subscriptionId}`, { method: "DELETE" });
+        return response.status;
+      }, createdSubscriptionId);
+      expect(cleanupStatus, "archive the subscription created by this test").toBe(200);
+    }
+  }
 });
 
 test("Add a team tool sheet recovers from create errors without crashing", async ({ page }) => {

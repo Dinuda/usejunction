@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import type { ContentPage } from "@/content/types";
 import { contentBreadcrumbs, getRelatedPages } from "@/content/registry";

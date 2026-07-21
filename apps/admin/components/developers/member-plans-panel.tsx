@@ -11,6 +11,7 @@ import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { formatMicrosAsCurrency } from "@/lib/format";
 import { toolDisplayName } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
+import { useInvalidateAppData } from "@/lib/api/client";
 
 type Subscription = {
   id: string;
@@ -62,6 +63,7 @@ export function MemberPlansPanel({
   initialSubscriptions: Subscription[];
 }) {
   const router = useRouter();
+  const invalidateAppData = useInvalidateAppData();
   const [developer, setDeveloper] = useState<Developer | null>(initialDeveloper);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>(initialSubscriptions);
   const [saving, setSaving] = useState<string | null>(null);
@@ -101,6 +103,7 @@ export function MemberPlansPanel({
       setError(body.error ?? (existing ? "Could not add another seat" : "Could not assign subscription"));
     } else {
       setAdding(false);
+      await invalidateAppData();
       router.refresh();
     }
     setSaving(null);
@@ -123,7 +126,10 @@ export function MemberPlansPanel({
           });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) setError(body.error ?? "Could not remove plan");
-    else router.refresh();
+    else {
+      await invalidateAppData();
+      router.refresh();
+    }
     setSaving(null);
   }
 
@@ -208,6 +214,7 @@ export function MemberPlansPanel({
         open={addSubscriptionOpen}
         onOpenChange={setAddSubscriptionOpen}
         onCreated={() => {
+          void invalidateAppData();
           router.refresh();
           setAdding(true);
         }}

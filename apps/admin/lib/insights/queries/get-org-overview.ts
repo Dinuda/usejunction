@@ -31,6 +31,7 @@ import { readDeviceCoverage } from "@/lib/insights/readers/devices";
 import { getDashboardConfigHealth } from "@/lib/queries/dashboard/config-health";
 import { reportWindowForCycleOffset } from "@/lib/dashboard/cycle-view";
 import { isCodingTool, toolUsageNames } from "@/lib/tools/catalog";
+import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { fillOverviewTrend } from "@/lib/insights/policies/overview-trend";
 
 function isoDay(date: Date) {
@@ -333,23 +334,10 @@ export async function getOrgOverview(
 
   // Load plans first so current/previous cycle views can align KPI/chart windows
   // to billing cycles (same behavior as team/tools/signals).
-  const subscriptionPlans = await prisma.billingPlanTemplate.findMany({
-    where: { orgId, active: true },
-    select: {
-      cycleSeatMicros: true,
-      id: true,
-      name: true,
-      seatCapacity: true,
-      billingCadence: true,
-      billingCycleAnchorDate: true,
-      billingCycleDays: true,
-      toolKey: true,
-      toolName: true,
-      createdAt: true,
-    },
-  });
-
-  const subscriptions: SubscriptionCycleSource[] = filterCycleCodingSubscriptions(subscriptionPlans, isCodingTool).map((plan) => ({
+  // Load the subscription rows once. The same rows are needed to resolve
+  // cycle windows and to calculate plan utilization below.
+  const subscriptionRows = await listSubscriptions(orgId);
+  const subscriptions: SubscriptionCycleSource[] = filterCycleCodingSubscriptions(subscriptionRows, isCodingTool).map((plan) => ({
     id: plan.id,
     name: plan.name,
     toolKey: plan.toolKey,
@@ -434,7 +422,7 @@ export async function getOrgOverview(
       where: { orgId, detected: true },
       _count: { id: true },
     }),
-    getPlanUsage(context, { reportWindow }),
+    getPlanUsage(context, { reportWindow }, { subscriptions: subscriptionRows }),
   ]);
 
   const previousKpis = previousUsage.kpis;

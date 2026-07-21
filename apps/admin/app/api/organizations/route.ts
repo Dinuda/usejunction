@@ -3,7 +3,6 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { isAuthUserNotFoundError } from "@/lib/ensure-auth-user";
 import { createWorkspace } from "@/lib/ensure-workspace";
-import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 import { audit } from "@/lib/rbac";
 import { WORKSPACE_COLORS } from "@/lib/workspace-colors";
 
@@ -50,7 +49,7 @@ export async function POST(req: NextRequest) {
     metadata: { name: result.name, slug: result.slug, color: result.color },
   });
 
-  const response = NextResponse.json(
+  return NextResponse.json(
     {
       orgId: result.orgId,
       name: result.name,
@@ -60,6 +59,4 @@ export async function POST(req: NextRequest) {
     },
     { status: 201 },
   );
-  response.cookies.set(ACTIVE_ORG_COOKIE, result.orgId, activeOrgCookieOptions());
-  return response;
 }

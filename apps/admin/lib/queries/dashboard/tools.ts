@@ -26,6 +26,33 @@ export interface DashboardToolsData {
   }>;
 }
 
+type LatestQuotaRow = {
+  tool_name: string;
+  window_type: string;
+  used_percent: number | null;
+  reset_at: Date | null;
+  device_hostname: string | null;
+  developer_name: string | null;
+};
+
+async function readLatestQuotas(orgId: string): Promise<LatestQuotaRow[]> {
+  // DISTINCT ON keeps the newest row per tool/window/device — matches prior JS dedupe.
+  return prisma.$queryRaw<LatestQuotaRow[]>`
+    SELECT DISTINCT ON (qs.tool_name, qs.window_type, qs.device_id)
+      qs.tool_name,
+      qs.window_type,
+      qs.used_percent,
+      qs.reset_at,
+      d.hostname AS device_hostname,
+      u.name AS developer_name
+    FROM quota_snapshots qs
+    LEFT JOIN devices d ON d.id = qs.device_id
+    LEFT JOIN users u ON u.id = d.user_id
+    WHERE qs.org_id = ${orgId}
+    ORDER BY qs.tool_name, qs.window_type, qs.device_id, qs.updated_at DESC
+  `;
+}
+
 export async function getDashboardTools(
   orgId: string,
   reportWindow: MetricWindow = resolveReportWindow({ range: 30 }),
@@ -52,18 +79,7 @@ export async function getDashboardTools(
       where: { orgId, enabled: true },
       _count: { id: true },
     }),
-    prisma.quotaSnapshot.findMany({
-      where: { orgId },
-      include: {
-        device: {
-          select: {
-            hostname: true,
-            user: { select: { name: true } },
-          },
-        },
-      },
-      orderBy: { updatedAt: "desc" },
-    }),
+    readLatestQuotas(orgId),
   ]);
 
   const configuredMap = new Map(configured.map((c) => [c.toolName, c._count.id]));
@@ -97,22 +113,16 @@ export async function getDashboardTools(
   const quotasByTool = new Map<string, DashboardToolsData["tools"][number]["quotas"]>();
 
   for (const quota of quotas) {
-    const list = quotasByTool.get(quota.toolName) ?? [];
-    const already = list.some(
-      (item) =>
-        item.windowType === quota.windowType &&
-        item.deviceHostname === (quota.device?.hostname ?? null),
-    );
-    if (already) continue;
+    const list = quotasByTool.get(quota.tool_name) ?? [];
     list.push({
-      toolName: quota.toolName,
-      windowType: quota.windowType,
-      usedPercent: quota.usedPercent,
-      resetAt: quota.resetAt,
-      deviceHostname: quota.device?.hostname ?? null,
-      developerName: quota.device?.user?.name ?? null,
+      toolName: quota.tool_name,
+      windowType: quota.window_type,
+      usedPercent: quota.used_percent,
+      resetAt: quota.reset_at,
+      deviceHostname: quota.device_hostname,
+      developerName: quota.developer_name,
     });
-    quotasByTool.set(quota.toolName, list);
+    quotasByTool.set(quota.tool_name, list);
   }
 
   const allToolNames = new Set(

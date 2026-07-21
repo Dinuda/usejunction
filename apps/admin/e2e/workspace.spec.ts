@@ -24,6 +24,42 @@ const workspaceRoutes = [
   "/onboarding?resume=1",
 ];
 
+test("workspace startup has no bootstrap gate or duplicate page-data request", async ({ page }) => {
+  const appRequests: string[] = [];
+  const failedAppRequests: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/app/")) appRequests.push(path);
+  });
+  page.on("requestfailed", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/app/")) failedAppRequests.push(path);
+  });
+
+  await page.goto("/dashboard");
+  await expect(page.getByRole("heading", { name: "Spend, traffic, coverage." })).toBeVisible();
+
+  expect(appRequests).not.toContain("/api/app/bootstrap");
+  expect(appRequests.filter((path) => path === "/api/app/workspace-context")).toHaveLength(1);
+  expect(appRequests.filter((path) => path === "/api/app/dashboard")).toHaveLength(1);
+  expect(failedAppRequests).toEqual([]);
+
+  const startTimes = await page.evaluate(() => Object.fromEntries(
+    performance.getEntriesByType("resource")
+      .filter((entry) => [
+        "/api/auth/session",
+        "/api/app/workspace-context",
+        "/api/app/dashboard",
+      ].includes(new URL(entry.name).pathname))
+      .map((entry) => [new URL(entry.name).pathname, entry.startTime]),
+  )) as Record<string, number>;
+  const values = Object.values(startTimes) as number[];
+  expect(values).toHaveLength(3);
+  expect(
+    Math.abs(startTimes["/api/app/workspace-context"] - startTimes["/api/app/dashboard"]),
+  ).toBeLessThan(100);
+});
+
 for (const route of workspaceRoutes) {
   test(`${route} renders without server or browser errors`, async ({ page }) => {
     const pageErrors: string[] = [];
@@ -43,7 +79,7 @@ test("owner chrome exposes nav, active-plan badge, and workspace switcher", asyn
   await expect(page.getByRole("link", { name: "Signals" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Tools", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Activity" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
   await expect(page.getByText("Plan", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Team plan", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Manage billing|Upgrade to Team/i })).toHaveCount(0);
@@ -57,10 +93,10 @@ test("dashboard exposes seeded calculation output and all period controls", asyn
   await expect(page.getByText("Subscription commitment")).toBeVisible();
   await expect(page.getByText("purchased seats · current cycle")).toBeVisible();
   await expect(page.getByText("$40.00").first()).toBeVisible();
-  await expect(page.getByText("$5.00").first()).toBeVisible();
-  await expect(page.getByText("$1.00").first()).toBeVisible();
+  await expect(page.getByText("$25.00").first()).toBeVisible();
+  await expect(page.getByText("$2.00").first()).toBeVisible();
   await expect(page.getByText("Price per 1M tokens").first()).toBeVisible();
-  await expect(page.getByText("$4.00").first()).toBeVisible();
+  await expect(page.getByText("$4.95").first()).toBeVisible();
   await expect(page.getByText("1.5M")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Current cycles." })).toBeVisible();
   await page.getByRole("link", { name: "Previous cycles" }).click();
@@ -214,7 +250,8 @@ test("team roster lists seeded members and opens invite dialog", async ({ page }
   await expect(page.getByRole("heading", { name: "Team", exact: true, level: 1 })).toBeVisible();
   await expect(page.getByText("E2E Developer").first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Edit E2E Developer" })).toBeVisible();
-  await expect(page.getByText("Off", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("1 machine · 38 requests · current")).toBeVisible();
+  await expect(page.getByRole("meter", { name: /Average plan use/i })).toBeVisible();
   await page.getByRole("button", { name: "Invite teammates" }).click();
   await expect(page.getByRole("heading", { name: "Invite teammates." })).toBeVisible();
   await expect(page.getByText(/Share the invite link/i)).toBeVisible();

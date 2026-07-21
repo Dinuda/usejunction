@@ -25,14 +25,12 @@ export const siteConfig = {
 /** X/Twitter profile URL derived from the handle, for sameAs. */
 export const twitterUrl = `https://x.com/${siteConfig.twitterHandle.replace(/^@/, "")}`;
 
-export const navAnchors = [
-  { id: "product", label: "Product" },
-  { id: "features", label: "Features" },
-  { id: "pricing", label: "Pricing" },
-] as const;
+export const navAnchors = [{ id: "pricing", label: "Pricing" }] as const;
 
-/** Extra page links (Guides, Compare, etc.) — re-add when those sections ship in nav. */
-export const navLinks: ReadonlyArray<{ href: string; label: string }> = [];
+/** Primary page links (product lines, guides, etc.). */
+export const navLinks: ReadonlyArray<{ href: string; label: string }> = [
+  { href: "/", label: "For Coders" },
+];
 
 export const SUPPORTED_TOOLS = [
   { name: "Codex", initials: "CX" },

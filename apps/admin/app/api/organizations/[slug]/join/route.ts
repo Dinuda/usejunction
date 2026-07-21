@@ -4,8 +4,18 @@ import { prisma } from "@usejunction/db";
 import { hasVerifiedIdentity, linkDeveloperToUser, normalizeEmail } from "@/lib/developer-identity";
 import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/quantity";
 import { assertCanAddUser } from "@/lib/saas-billing/status";
-import { ACTIVE_ORG_COOKIE, activeOrgCookieOptions } from "@/lib/require-organization";
 import { audit } from "@/lib/rbac";
+
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+  const organization = await prisma.organization.findUnique({
+    where: { slug: (await params).slug },
+    select: { name: true, domains: { where: { verifiedAt: { not: null } }, select: { id: true }, take: 1 } },
+  });
+  if (!organization || organization.domains.length === 0) {
+    return NextResponse.json({ error: "company join unavailable" }, { status: 404, headers: { "cache-control": "private, no-store" } });
+  }
+  return NextResponse.json({ name: organization.name, available: true }, { headers: { "cache-control": "private, no-store" } });
+}
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const session = await auth();
@@ -31,7 +41,5 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
   });
   await syncTeamSeatQuantityBestEffort(organization.id, "domain_join.accepted");
   await audit({ orgId: organization.id, actorType: "user", actorId: session.user.id, action: "domain_join.accepted", targetType: "developer", targetId: developer.id, metadata: { domain: emailDomain } });
-  const response = NextResponse.json({ orgId: organization.id, developerId: developer.id, role: "user" });
-  response.cookies.set(ACTIVE_ORG_COOKIE, organization.id, activeOrgCookieOptions());
-  return response;
+  return NextResponse.json({ orgId: organization.id, developerId: developer.id, role: "user" });
 }

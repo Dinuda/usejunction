@@ -1,6 +1,4 @@
-import { redirect } from "next/navigation";
+"use client";
 
-/** Classic journey detail is hidden for the work-first Signals ship. */
-export default function SignalsJourneyDetailPage() {
-  redirect("/signals/activity");
-}
+import { ClientRedirect } from "@/components/client-redirect";
+export default function SignalsJourneyDetailPage() { return <ClientRedirect href="/signals/activity" />; }

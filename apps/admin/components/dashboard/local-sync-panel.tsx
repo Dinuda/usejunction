@@ -8,6 +8,7 @@ import { ToolBrandIcon, hasToolBrandIcon } from "@/components/tools/tool-brand-i
 import { formatRelativeTime } from "@/lib/format";
 import { toolDisplayName } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
+import { useInvalidateAppData } from "@/lib/api/client";
 
 type LocalSyncInfo =
   | {
@@ -145,6 +146,7 @@ export function LocalSyncPanel({
   lastAccountSyncAt?: string | null;
 }) {
   const router = useRouter();
+  const invalidateAppData = useInvalidateAppData();
   const [pending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "syncing" | "ok" | "unreachable" | "error">("idle");
   const [detail, setDetail] = useState<string | null>(null);
@@ -223,6 +225,7 @@ export function LocalSyncPanel({
       }
       setStatus("ok");
       setDetail(formatSyncDetail({ warnings: body.warnings }));
+      await invalidateAppData();
       startTransition(() => router.refresh());
     } catch (cause) {
       setStatus("unreachable");
@@ -278,6 +281,7 @@ export function LocalSyncPanel({
       }
       setStatus("ok");
       setDetail(formatSyncDetail({ warnings: body.warnings }));
+      await invalidateAppData();
       startTransition(() => router.refresh());
       return;
     }

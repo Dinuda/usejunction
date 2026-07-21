@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -7,19 +11,14 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { AiCodingPanel } from "@/components/dashboard/ai-coding-panel";
-import { loadMemberMetrics, memberPeriodQuery } from "@/lib/developers/member-page-context";
+import { useMemberClientData } from "@/components/developers/member-client-layout";
 
-export default async function MemberCodingPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ developerId: string }>;
-  searchParams: Promise<{ view?: string; days?: string; from?: string; to?: string }>;
-}) {
-  const { developerId } = await params;
-  const paramsValue = await searchParams;
-  const { personal, selectedPeriodLabel } = await loadMemberMetrics(developerId, paramsValue);
+const AiCodingPanel = dynamic(() => import("@/components/dashboard/ai-coding-panel").then((mod) => mod.AiCodingPanel), { ssr: false });
+
+export default function MemberCodingPage() {
+  const searchParams = useSearchParams();
+  const { developerId, personal, selectedPeriodLabel } = useMemberClientData();
+  const queryString = searchParams.toString();
 
   return (
     <section>
@@ -35,7 +34,7 @@ export default async function MemberCodingPage({
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
-                <Link href={`/team/${developerId}${memberPeriodQuery(paramsValue)}`}>Overview</Link>
+                <Link href={`/team/${developerId}${queryString ? `?${queryString}` : ""}`}>Overview</Link>
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />

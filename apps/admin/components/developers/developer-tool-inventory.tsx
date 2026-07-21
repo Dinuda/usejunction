@@ -17,6 +17,7 @@ import { SubscriptionChoices } from "@/components/developers/member-plans-panel"
 import { formatCompactNumber } from "@/lib/format";
 import type { PlanUsageDeveloperRow } from "@/lib/insights/contracts/plan-usage.v1";
 import { toolDisplayName } from "@/lib/tools/catalog";
+import { useInvalidateAppData } from "@/lib/api/client";
 
 type Subscription = {
   id: string;
@@ -82,6 +83,7 @@ export function DeveloperToolInventory({
   periodSuffix?: string;
 }) {
   const router = useRouter();
+  const invalidateAppData = useInvalidateAppData();
   const [developers, setDevelopers] = useState<Developer[]>(initialDevelopers);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>(initialSubscriptions);
   const [saving, setSaving] = useState<string | null>(null);
@@ -126,6 +128,7 @@ export function DeveloperToolInventory({
     else {
       setSelected(new Set());
       setBulkOpen(false);
+      await invalidateAppData();
       router.refresh();
     }
     setSaving(null);
@@ -313,7 +316,10 @@ export function DeveloperToolInventory({
       <AddSubscriptionSheet
         open={addSubscriptionOpen}
         onOpenChange={setAddSubscriptionOpen}
-        onCreated={() => router.refresh()}
+        onCreated={() => {
+          void invalidateAppData();
+          router.refresh();
+        }}
       />
     </div>
   );

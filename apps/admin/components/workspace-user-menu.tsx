@@ -2,6 +2,7 @@
 
 import { signOut } from "next-auth/react";
 import { LogOut } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Avatar,
   AvatarFallback,
@@ -44,6 +45,7 @@ export function WorkspaceUserMenu({
   image?: string | null;
   role?: string | null;
 }) {
+  const queryClient = useQueryClient();
   const displayName = name ?? "User";
   const displayRole = role ? roleDisplayLabel(role) : "member";
 
@@ -100,7 +102,10 @@ export function WorkspaceUserMenu({
           <DropdownMenuGroup>
             <DropdownMenuItem
               variant="destructive"
-              onClick={() => signOut({ callbackUrl: "/login" })}
+              onClick={() => {
+                queryClient.clear();
+                void signOut({ callbackUrl: "/login" });
+              }}
             >
               <LogOut />
               Log out

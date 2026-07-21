@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { DM_Sans, Figtree, JetBrains_Mono } from "next/font/google";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { AppProviders } from "@/components/app-providers";
 import { siteConfig } from "@/lib/public/config";
 import { siteOgImage } from "@/lib/public/seo-metadata";
 import { getSiteUrl } from "@/lib/public/site-url";
@@ -80,7 +81,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className={`${dmSans.variable} ${figtree.variable} ${jetbrainsMono.variable}`}>
-        <TooltipProvider>{children}</TooltipProvider>
+        <AppProviders><Suspense fallback={null}>{children}</Suspense></AppProviders>
       </body>
     </html>
   );

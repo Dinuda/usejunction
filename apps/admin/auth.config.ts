@@ -4,7 +4,7 @@ if (!process.env.AUTH_SECRET && process.env.NEXTAUTH_SECRET) {
   process.env.AUTH_SECRET = process.env.NEXTAUTH_SECRET;
 }
 
-function isPublicPath(pathname: string): boolean {
+export function isPublicPath(pathname: string): boolean {
   if (/\.(?:png|svg|jpg|jpeg|gif|webp|ico|lottie|txt|xml|webmanifest)$/.test(pathname)) return true;
   if (
     pathname === "/" ||
@@ -39,6 +39,9 @@ function isPublicPath(pathname: string): boolean {
 
     pathname.startsWith("/releases/") ||
     pathname.startsWith("/api/auth") ||
+    // Page-data handlers own authentication and must return typed JSON 401/403
+    // responses instead of Auth.js middleware redirects to an HTML login page.
+    pathname.startsWith("/api/app/") ||
     pathname.startsWith("/api/contact") ||
     pathname.startsWith("/api/health") ||
     pathname.startsWith("/api/join") ||
