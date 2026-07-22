@@ -18,21 +18,29 @@ test("release cohort, escalation, ownership, idempotency, and confirmation", {
   const started = new Date("2026-07-16T00:00:00.000Z");
   const escalated = new Date("2026-07-16T01:00:00.000Z");
   const org = await prisma.organization.create({ data: { name: `Update test ${suffix}`, slug: `update-test-${suffix}` } });
-  const developer = await prisma.developer.create({
-    data: { orgId: org.id, name: "Release Tester", email: `release-${suffix}@example.com`, role: "owner" },
-  });
-  const createDevice = (hostname: string, os: string, architecture: string, agentVersion: string) => prisma.device.create({
-    data: {
-      orgId: org.id,
-      userId: developer.id,
-      hostname,
-      os,
-      architecture,
-      agentVersion,
-      deviceToken: `uj_update_test_${suffix}_${hostname}`,
-      lastSeenAt: new Date("2026-07-15T00:00:00.000Z"),
-    },
-  });
+  let deviceIndex = 0;
+  const createDevice = async (hostname: string, os: string, architecture: string, agentVersion: string) => {
+    const developer = await prisma.developer.create({
+      data: {
+        orgId: org.id,
+        name: `Release Tester ${hostname}`,
+        email: `release-${suffix}-${deviceIndex++}@example.com`,
+        role: "owner",
+      },
+    });
+    return prisma.device.create({
+      data: {
+        orgId: org.id,
+        userId: developer.id,
+        hostname,
+        os,
+        architecture,
+        agentVersion,
+        deviceToken: `uj_update_test_${suffix}_${hostname}`,
+        lastSeenAt: new Date("2026-07-15T00:00:00.000Z"),
+      },
+    });
+  };
 
   const pendingDevice = await createDevice("pending-linux", "linux", "amd64", "0.1.0");
   const currentDevice = await createDevice("current-mac", "darwin", "arm64", version);

@@ -175,24 +175,41 @@ function loadLogoDataUri(): string {
   }
 }
 
-function buildBreakdownNarrative(report: DailyReportPayload, windowLabel: string): string {
-  const tools = report.topTools;
-  if (tools.length === 0) {
-    return `No tool activity ${windowLabel}. Open the app for live usage.`;
+function buildInsightLine(report: DailyReportPayload, isTeamWeek: boolean): string {
+  const prior = isTeamWeek ? "week" : "day";
+  const parts: string[] = [];
+
+  const tokensDelta = report.kpis.tokensDeltaPct;
+  if (tokensDelta != null) {
+    parts.push(
+      `<span class="underline">${escapeHtml(`${tokensDelta >= 0 ? "+" : ""}${tokensDelta.toFixed(0)}% tokens vs the prior ${prior}`)}</span>`,
+    );
+  } else if (report.kpis.costDeltaPct != null) {
+    const d = report.kpis.costDeltaPct;
+    parts.push(
+      `<span class="underline">${escapeHtml(`${d >= 0 ? "+" : ""}${d.toFixed(0)}% spend vs the prior ${prior}`)}</span>`,
+    );
   }
-  const lead = tools[0]!;
-  const parts = tools.slice(0, 3).map((tool) => {
-    return `${tool.displayName} (${formatCompactNumber(tool.tokens)} tokens, ${formatUsd(tool.cost)})`;
-  });
-  if (tools.length === 1) {
-    return `${lead.displayName} accounted for all ${formatCompactNumber(lead.tokens)} tokens and ${formatUsd(lead.cost)} ${windowLabel}.`;
+
+  if (report.plan) {
+    const pct =
+      report.plan.usedPercent != null ? ` at ${report.plan.usedPercent.toFixed(0)}% used` : "";
+    parts.push(`Plans are <strong>${escapeHtml(report.plan.statusLabel.toLowerCase())}</strong>${escapeHtml(pct)}`);
+  } else if (report.topTools[0]) {
+    parts.push(`${escapeHtml(report.topTools[0].displayName)} led activity`);
   }
-  return `${parts.join(", ")}${tools.length > 3 ? `, and ${tools.length - 3} more` : ""}.`;
+
+  if (parts.length === 0) {
+    return isTeamWeek
+      ? "Here’s how the team used AI tools this week."
+      : "Here’s how you used AI tools today.";
+  }
+  return `${parts.join(" · ")}.`;
 }
 
 /**
  * Full Chrome-print HTML for the daily/weekly report PDF.
- * Layout follows the reference: Inter, generous rhythm, area chart, KPI tiles, narrative breakdown.
+ * Layout follows the reference: Inter, generous rhythm, area chart, KPI tiles, plan status, breakdown.
  */
 export function buildDailyReportPdfHtml(input: {
   report: DailyReportPayload;
@@ -221,67 +238,21 @@ export function buildDailyReportPdfHtml(input: {
 
   const first = input.recipientName?.trim().split(/\s+/)[0];
   const greeting = first ? `Good evening, ${first}` : "Good evening";
-  const windowLabel = isTeamWeek ? "this week" : "today";
-  const contextLabel = isTeamWeek ? "This week · Team" : report.kind === "org" ? "Today · Team" : "Today · You";
 
   const spend = formatUsd(report.kpis.cost);
   const tokens = formatCompactNumber(report.kpis.tokens);
   const requests = formatCompactNumber(report.kpis.requests);
-  const topTool = report.topTools[0];
-  const fourthLabel = topTool ? "Top tool" : report.kind === "org" ? "Active members" : "Tools";
-  const fourthValue = topTool
-    ? topTool.displayName
-    : formatCompactNumber(report.kind === "org" ? report.membersActive ?? 0 : report.kpis.tools);
+  const planPct =
+    report.plan?.usedPercent != null ? formatPct(report.plan.usedPercent, 0) : "—";
+  const planStatus = report.plan?.statusLabel ?? "No signal";
 
-  const daysInWeek =
-    report.weekStart && report.weekEnd
-      ? Math.max(
-          1,
-          Math.round(
-            (Date.parse(`${report.weekEnd}T00:00:00Z`) - Date.parse(`${report.weekStart}T00:00:00Z`)) /
-              86_400_000,
-          ) + 1,
-        )
-      : 7;
-  const avgDailySpend = isTeamWeek ? formatUsd(report.kpis.cost / daysInWeek) : null;
-  const avgDailyTokens = isTeamWeek ? formatCompactNumber(report.kpis.tokens / daysInWeek) : null;
-
-  const tokensDelta = report.kpis.tokensDeltaPct;
-  const tokensDeltaText =
-    tokensDelta === null
-      ? null
-      : `${tokensDelta >= 0 ? "+" : ""}${tokensDelta.toFixed(0)}% tokens vs the prior ${isTeamWeek ? "week" : "day"}`;
-
-  const costDelta = report.kpis.costDeltaPct;
-  const costDeltaText =
-    costDelta === null
-      ? null
-      : `${costDelta >= 0 ? "+" : ""}${costDelta.toFixed(0)}% spend vs the prior ${isTeamWeek ? "week" : "day"}`;
-
-  const insightParts: string[] = [
-    `${tokens} tokens and ${spend} across ${requests} requests ${windowLabel}`,
-  ];
-  if (tokensDeltaText) {
-    insightParts.push(`<span class="underline">${escapeHtml(tokensDeltaText)}</span>`);
-  } else if (costDeltaText) {
-    insightParts.push(`<span class="underline">${escapeHtml(costDeltaText)}</span>`);
-  }
-  if (topTool) {
-    insightParts.push(
-      `${escapeHtml(topTool.displayName)} led with ${escapeHtml(formatPct(topTool.tokenSharePercent, 0))} of tokens`,
-    );
-  }
-
-  const summaryHeading = isTeamWeek
-    ? `${tokens} tokens and ${spend} this week${avgDailyTokens && avgDailySpend ? `, averaging ${avgDailyTokens} tokens / ${avgDailySpend} per day` : ""}.`
-    : `${tokens} tokens and ${spend} today.`;
-  const summaryDetail = buildBreakdownNarrative(report, windowLabel);
+  const insightHtml = buildInsightLine(report, isTeamWeek);
 
   const metric = seriesMetric(report);
   const chartSvg = buildPdfAreaChartSvg(
     report.series.length ? report.series : [{ label: "—", requests: 0, tokens: 0, cost: 0 }],
     metric,
-    { height: isTeamWeek ? 190 : 170 },
+    { height: isTeamWeek ? 180 : 160 },
   );
   const chartLegend = isTeamWeek
     ? metric === "tokens"
@@ -299,12 +270,46 @@ export function buildDailyReportPdfHtml(input: {
     { value: spend, label: isTeamWeek ? "Period spend" : "Today's spend" },
     { value: tokens, label: "Tokens" },
     { value: requests, label: "Requests" },
-    { value: fourthValue, label: fourthLabel },
+    { value: planPct, label: "Plan usage" },
   ];
+
+  const planSection = report.plan
+    ? `<div class="plan-block">
+  <div class="section-label">Plan status</div>
+  <h2>${escapeHtml(planStatus)}${report.plan.usedPercent != null ? ` · ${escapeHtml(planPct)} used` : ""}.</h2>
+  <p>${escapeHtml(report.plan.hint ?? (report.plan.onPlan ? "Usage is within your included plan allowance." : "Check seats and quotas before the next cycle."))}</p>
+  ${
+    report.plan.tools.length > 0
+      ? report.plan.tools
+          .map((tool) => {
+            const width =
+              tool.usedPercent == null
+                ? 0
+                : Math.max(3, Math.min(100, Math.round(tool.usedPercent)));
+            return `<div class="break-row">
+  <div class="break-top">
+    <span class="break-name">${escapeHtml(tool.displayName)}</span>
+    <span class="break-metrics">
+      <span class="break-tokens">${escapeHtml(tool.statusLabel)}</span>
+      <span class="break-cost">${tool.usedPercent != null ? escapeHtml(formatPct(tool.usedPercent, 0)) : "—"}</span>
+    </span>
+  </div>
+  <div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div>
+</div>`;
+          })
+          .join("")
+      : ""
+  }
+</div>`
+    : `<div class="plan-block">
+  <div class="section-label">Plan status</div>
+  <h2>No plan signal yet.</h2>
+  <p>Connect a device or wait for the next quota reading to see if you’re on plan.</p>
+</div>`;
 
   const breakdown =
     report.topTools.length === 0
-      ? `<p class="muted">No tool breakdown for this period.</p>`
+      ? `<p class="muted">No tool activity this period.</p>`
       : report.topTools
           .slice(0, isTeamWeek ? 6 : 5)
           .map((tool) => {
@@ -312,8 +317,6 @@ export function buildDailyReportPdfHtml(input: {
               3,
               Math.min(100, Math.round(tool.tokenSharePercent || tool.sharePercent)),
             );
-            const costPer1k =
-              tool.tokens > 0 ? formatUsd((tool.cost / tool.tokens) * 1000) : null;
             return `<div class="break-row">
   <div class="break-top">
     <span class="break-name">${escapeHtml(tool.displayName)}</span>
@@ -322,7 +325,7 @@ export function buildDailyReportPdfHtml(input: {
       <span class="break-cost">${escapeHtml(formatUsd(tool.cost))}</span>
     </span>
   </div>
-  <div class="break-meta">${escapeHtml(formatCompactNumber(tool.requests))} requests · ${escapeHtml(formatPct(tool.tokenSharePercent, 0))} of tokens · ${escapeHtml(formatPct(tool.sharePercent, 0))} of spend${costPer1k ? ` · ${escapeHtml(costPer1k)} / 1K tok` : ""}</div>
+  <div class="break-meta">${escapeHtml(formatCompactNumber(tool.requests))} requests · ${escapeHtml(formatPct(tool.tokenSharePercent, 0))} of tokens</div>
   <div class="bar-track"><div class="bar-fill" style="width:${barPct}%"></div></div>
 </div>`;
           })
@@ -364,19 +367,11 @@ export function buildDailyReportPdfHtml(input: {
     .top {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 16px;
+      justify-content: flex-start;
       margin-bottom: 22px;
       flex-shrink: 0;
     }
     .logo { height: 26px; width: auto; display: block; }
-    .context {
-      font-size: 10px;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: ${brand.muted};
-      font-weight: 600;
-    }
     h1 {
       margin: 0;
       font-size: 28px;
@@ -393,13 +388,14 @@ export function buildDailyReportPdfHtml(input: {
       max-width: 92%;
       flex-shrink: 0;
     }
+    .insight strong { color: ${brand.charcoal}; font-weight: 600; }
     .underline {
       color: ${brand.charcoal};
       text-decoration: underline;
       text-underline-offset: 3px;
       text-decoration-color: ${brand.border};
     }
-    .chart { margin-top: 22px; flex-shrink: 0; }
+    .chart { margin-top: 20px; flex-shrink: 0; }
     .chart svg { width: 100%; height: auto; display: block; }
     .legend {
       margin-top: 10px;
@@ -421,13 +417,13 @@ export function buildDailyReportPdfHtml(input: {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 12px;
-      margin-top: 22px;
+      margin-top: 20px;
       flex-shrink: 0;
     }
     .kpi {
       background: ${brand.wash};
       border-radius: 12px;
-      padding: 18px 10px;
+      padding: 16px 10px;
       text-align: center;
     }
     .kpi-value {
@@ -445,35 +441,37 @@ export function buildDailyReportPdfHtml(input: {
       line-height: 1.3;
     }
     .summary {
-      margin-top: 22px;
-      padding-top: 20px;
+      margin-top: 18px;
+      padding-top: 18px;
       border-top: 1px solid ${brand.border};
       flex: 1;
       min-height: 0;
       overflow: hidden;
     }
-    .summary h2 {
+    .plan-block h2, .summary h2 {
       margin: 0;
       font-size: 17px;
       font-weight: 600;
       letter-spacing: -0.015em;
       line-height: 1.4;
     }
-    .summary > p {
-      margin: 10px 0 0;
+    .plan-block > p, .summary > p {
+      margin: 8px 0 0;
       font-size: 13px;
-      line-height: 1.6;
+      line-height: 1.55;
       color: ${brand.muted};
     }
     .section-label {
-      margin-top: 18px;
+      margin-top: 0;
+      margin-bottom: 8px;
       font-size: 10px;
       letter-spacing: 0.14em;
       text-transform: uppercase;
       color: ${brand.muted};
       font-weight: 600;
     }
-    .break-row { padding: 12px 0; border-bottom: 1px solid ${brand.border}; }
+    .summary .section-label { margin-top: 16px; }
+    .break-row { padding: 10px 0; border-bottom: 1px solid ${brand.border}; }
     .break-row:last-child { border-bottom: none; }
     .break-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
     .break-name { font-size: 14px; font-weight: 600; }
@@ -486,9 +484,9 @@ export function buildDailyReportPdfHtml(input: {
     }
     .break-tokens { font-size: 13px; font-weight: 600; color: ${brand.charcoal}; }
     .break-cost { font-size: 13px; font-weight: 600; color: ${brand.muted}; }
-    .break-meta { margin-top: 5px; font-size: 12px; color: ${brand.muted}; line-height: 1.4; }
+    .break-meta { margin-top: 4px; font-size: 12px; color: ${brand.muted}; line-height: 1.4; }
     .bar-track {
-      margin-top: 9px;
+      margin-top: 8px;
       height: 6px;
       background: ${brand.track};
       border-radius: 999px;
@@ -505,7 +503,7 @@ export function buildDailyReportPdfHtml(input: {
       justify-content: space-between;
       gap: 16px;
       margin-top: auto;
-      padding-top: 16px;
+      padding-top: 14px;
       flex-shrink: 0;
     }
     .cta {
@@ -532,11 +530,10 @@ export function buildDailyReportPdfHtml(input: {
   <div class="card">
     <div class="top">
       ${logoDataUri ? `<img class="logo" src="${logoDataUri}" alt="UseJunction" />` : `<div style="font-weight:700;font-size:16px;">UseJunction</div>`}
-      <div class="context">${escapeHtml(contextLabel)}</div>
     </div>
 
     <h1>${escapeHtml(greeting)}.</h1>
-    <p class="insight">${insightParts.join(" · ")}.</p>
+    <p class="insight">${insightHtml}</p>
 
     <div class="chart">
       ${chartSvg}
@@ -555,9 +552,8 @@ export function buildDailyReportPdfHtml(input: {
     </div>
 
     <div class="summary">
-      <h2>${escapeHtml(summaryHeading)}</h2>
-      <p>${escapeHtml(summaryDetail)}</p>
-      <div class="section-label">Breakdown by tool</div>
+      ${planSection}
+      <div class="section-label">Usage by tool</div>
       ${breakdown}
     </div>
 

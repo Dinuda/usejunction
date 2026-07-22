@@ -1,12 +1,21 @@
 import { prisma } from "@usejunction/db";
 import {
+  dedupeQuotaUtilizations,
+  evaluatePlanUtilization,
+  mapQuotaSnapshots,
+  selectPrimaryQuota,
+  verdictHint,
+  type PlanVerdictCode,
+} from "@/lib/billing/plan-utilization-policy";
+import { readQuotas } from "@/lib/insights/readers/quotas";
+import {
   addLocalDays,
   localDateString,
   localDayUtcWindow,
   normalizeTimeZone,
   weekRangeEndingOnOrBefore,
 } from "@/lib/timezone";
-import { toolDisplayName } from "@/lib/tools/catalog";
+import { canonicalToolKey, toolDisplayName } from "@/lib/tools/catalog";
 
 export type DailyReportKind = "personal" | "org";
 export type DailyReportPeriod = "day" | "week";
@@ -33,6 +42,25 @@ export type DailyReportToolRow = {
   tokenSharePercent: number;
 };
 
+export type DailyReportPlanTool = {
+  toolName: string;
+  displayName: string;
+  usedPercent: number | null;
+  statusLabel: string;
+  onPlan: boolean | null;
+};
+
+export type DailyReportPlanStatus = {
+  /** Avg primary-window utilization across tools with signal, 0–100+. */
+  usedPercent: number | null;
+  /** Fleet-style status: On plan / Running out / Over limit / … */
+  statusLabel: string;
+  /** true = within plan, false = at risk or over, null = unknown/stale. */
+  onPlan: boolean | null;
+  hint: string | null;
+  tools: DailyReportPlanTool[];
+};
+
 export type DailyReportPayload = {
   kind: DailyReportKind;
   /** day = personal/today; week = team weekly rollup */
@@ -52,7 +80,7 @@ export type DailyReportPayload = {
     requestsDeltaPct: number | null;
     tokensDeltaPct: number | null;
     costDeltaPct: number | null;
-    /** Avg plan/quota used across assignments (0–100+). Kept for API compat; not shown in report UI. */
+    /** @deprecated Prefer `plan.usedPercent` — kept for API compat. */
     planUsedPercent: number | null;
     /**
      * Accepted / suggested lines from productivity ingest (0–100).
@@ -60,6 +88,8 @@ export type DailyReportPayload = {
      */
     acceptancePercent: number | null;
   };
+  /** Live provider quota + on-plan verdict (primary windows only). */
+  plan: DailyReportPlanStatus | null;
   series: DailyReportSeriesPoint[];
   topTools: DailyReportToolRow[];
   membersActive?: number;
@@ -140,22 +170,6 @@ function sumRows(
   };
 }
 
-async function readPlanUsedPercent(orgId: string, developerId?: string | null): Promise<number | null> {
-  const snapshots = await prisma.quotaSnapshot.findMany({
-    where: {
-      orgId,
-      usedPercent: { not: null },
-      ...(developerId ? { device: { userId: developerId } } : {}),
-    },
-    select: { usedPercent: true },
-    orderBy: { updatedAt: "desc" },
-    take: 40,
-  });
-  const values = snapshots.map((s) => s.usedPercent).filter((v): v is number => v != null);
-  if (values.length === 0) return null;
-  return values.reduce((sum, v) => sum + v, 0) / values.length;
-}
-
 async function readAcceptancePercent(input: {
   orgId: string;
   developerId?: string | null;
@@ -179,6 +193,105 @@ async function readAcceptancePercent(input: {
   }
   if (suggested <= 0) return null;
   return (accepted / suggested) * 100;
+}
+
+const VERDICT_RANK: Record<PlanVerdictCode, number> = {
+  LIMIT_EXCEEDED: 5,
+  NEAR_LIMIT: 4,
+  DATA_STALE: 3,
+  UNKNOWN: 2,
+  LIGHT_USE: 1,
+  HEALTHY: 0,
+};
+
+/** Fleet-style status: HEALTHY and LIGHT_USE both count as on plan. */
+export function reportPlanStatusLabel(code: PlanVerdictCode): {
+  statusLabel: string;
+  onPlan: boolean | null;
+} {
+  switch (code) {
+    case "LIGHT_USE":
+    case "HEALTHY":
+      return { statusLabel: "On plan", onPlan: true };
+    case "NEAR_LIMIT":
+      return { statusLabel: "Running out", onPlan: false };
+    case "LIMIT_EXCEEDED":
+      return { statusLabel: "Over limit", onPlan: false };
+    case "DATA_STALE":
+      return { statusLabel: "Stale data", onPlan: null };
+    default:
+      return { statusLabel: "No signal", onPlan: null };
+  }
+}
+
+/**
+ * Primary-window plan utilization — same policy as dashboard / roster.
+ * Avoids averaging every quota window (which made “plans used” misleading).
+ */
+async function readPlanStatus(input: {
+  orgId: string;
+  developerId?: string | null;
+  now?: Date;
+}): Promise<DailyReportPlanStatus | null> {
+  const quotaRows = await readQuotas(input.orgId, {
+    developerId: input.developerId ?? undefined,
+  });
+  if (quotaRows.length === 0) return null;
+
+  const allQuotas = dedupeQuotaUtilizations(mapQuotaSnapshots(quotaRows, input.now ?? new Date()));
+  const byTool = new Map<string, typeof allQuotas>();
+  for (const quota of allQuotas) {
+    const key = quota.toolKey || canonicalToolKey(quota.windowType);
+    const list = byTool.get(key) ?? [];
+    list.push(quota);
+    byTool.set(key, list);
+  }
+
+  const tools: DailyReportPlanTool[] = [];
+  let worstCode: PlanVerdictCode = "UNKNOWN";
+  for (const [toolKey, quotas] of byTool) {
+    const primaryQuota = selectPrimaryQuota(quotas);
+    const verdict = evaluatePlanUtilization({ primaryQuota, included: null });
+    if (VERDICT_RANK[verdict.code] > VERDICT_RANK[worstCode]) {
+      worstCode = verdict.code;
+    }
+    const { statusLabel, onPlan } = reportPlanStatusLabel(verdict.code);
+    const usedPercent = primaryQuota?.rawRatio != null ? primaryQuota.rawRatio * 100 : null;
+    tools.push({
+      toolName: toolKey,
+      displayName: toolDisplayName(toolKey),
+      usedPercent,
+      statusLabel,
+      onPlan,
+    });
+  }
+
+  tools.sort((a, b) => (b.usedPercent ?? -1) - (a.usedPercent ?? -1));
+
+  const withSignal = tools.filter((t) => t.usedPercent != null);
+  const usedPercent =
+    withSignal.length > 0
+      ? withSignal.reduce((sum, t) => sum + (t.usedPercent ?? 0), 0) / withSignal.length
+      : null;
+
+  // Fleet badge: every signaled tool within plan → On plan.
+  const signaledOnPlan = withSignal.map((t) => t.onPlan);
+  let statusLabel: string;
+  let onPlan: boolean | null;
+  if (signaledOnPlan.length > 0 && signaledOnPlan.every((v) => v === true)) {
+    statusLabel = "On plan";
+    onPlan = true;
+  } else {
+    ({ statusLabel, onPlan } = reportPlanStatusLabel(worstCode));
+  }
+
+  return {
+    usedPercent,
+    statusLabel,
+    onPlan,
+    hint: verdictHint(worstCode),
+    tools: tools.slice(0, 4),
+  };
 }
 
 async function usageForUtcDates(input: {
@@ -363,7 +476,7 @@ async function getWeeklyOrgReportPayload(input: {
     dateOnlyUtc(new Date(`${d}T00:00:00.000Z`)),
   );
 
-  const [weekRows, prevRows, series, org, active, planUsedPercent, acceptancePercent] = await Promise.all([
+  const [weekRows, prevRows, series, org, active, plan, acceptancePercent] = await Promise.all([
     usageForUtcDates({ orgId: input.orgId, dates: weekDates }),
     usageForUtcDates({ orgId: input.orgId, dates: prevDates }),
     recentDailySeries({
@@ -385,7 +498,7 @@ async function getWeeklyOrgReportPayload(input: {
       select: { developerId: true },
       distinct: ["developerId"],
     }),
-    readPlanUsedPercent(input.orgId),
+    readPlanStatus({ orgId: input.orgId }),
     readAcceptancePercent({ orgId: input.orgId, dates: weekDates }),
   ]);
 
@@ -409,9 +522,10 @@ async function getWeeklyOrgReportPayload(input: {
       requestsDeltaPct: pctDelta(week.requests, previous.requests),
       tokensDeltaPct: pctDelta(week.tokens, previous.tokens),
       costDeltaPct: pctDelta(week.cost, previous.cost),
-      planUsedPercent,
+      planUsedPercent: plan?.usedPercent ?? null,
       acceptancePercent,
     },
+    plan,
     series,
     topTools: week.topTools,
     membersActive: active.length,
@@ -450,7 +564,7 @@ export async function getDailyReportPayload(input: {
   const uniqueToday = [...new Map(todayDates.map((d) => [d.toISOString(), d])).values()];
   const prevDates = [dateOnlyUtc(new Date(`${previousDate}T00:00:00.000Z`))];
 
-  const [todayRows, prevRows, hourly, org, planUsedPercent, acceptancePercent] = await Promise.all([
+  const [todayRows, prevRows, hourly, org, plan, acceptancePercent] = await Promise.all([
     usageForUtcDates({ orgId: input.orgId, developerId, dates: uniqueToday }),
     usageForUtcDates({ orgId: input.orgId, developerId, dates: prevDates }),
     hourlySeries({
@@ -464,7 +578,7 @@ export async function getDailyReportPayload(input: {
       where: { id: input.orgId },
       select: { name: true },
     }),
-    readPlanUsedPercent(input.orgId, developerId),
+    readPlanStatus({ orgId: input.orgId, developerId, now }),
     readAcceptancePercent({ orgId: input.orgId, developerId, dates: uniqueToday }),
   ]);
 
@@ -513,9 +627,10 @@ export async function getDailyReportPayload(input: {
       requestsDeltaPct: pctDelta(today.requests, previous.requests),
       tokensDeltaPct: pctDelta(today.tokens, previous.tokens),
       costDeltaPct: pctDelta(today.cost, previous.cost),
-      planUsedPercent,
+      planUsedPercent: plan?.usedPercent ?? null,
       acceptancePercent,
     },
+    plan,
     series,
     topTools: today.topTools,
     membersActive,

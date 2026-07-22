@@ -158,19 +158,26 @@ function breakdownRow(
 </tr>`;
 }
 
-function buildBreakdownNarrative(report: DailyReportPayload, windowLabel: string): string {
-  const tools = report.topTools;
-  if (tools.length === 0) {
-    return `No tool activity ${windowLabel}. Open the app for live usage.`;
+function buildInsightBits(report: DailyReportPayload, isTeamWeek: boolean): string[] {
+  const prior = isTeamWeek ? "week" : "day";
+  const bits: string[] = [];
+  const tokensDelta = report.kpis.tokensDeltaPct;
+  if (tokensDelta != null) {
+    bits.push(`${tokensDelta >= 0 ? "+" : ""}${tokensDelta.toFixed(0)}% tokens vs the prior ${prior}`);
+  } else if (report.kpis.costDeltaPct != null) {
+    const d = report.kpis.costDeltaPct;
+    bits.push(`${d >= 0 ? "+" : ""}${d.toFixed(0)}% spend vs the prior ${prior}`);
   }
-  const lead = tools[0]!;
-  const parts = tools.slice(0, 3).map((tool) => {
-    return `${tool.displayName} (${formatCompactNumber(tool.tokens)} tokens, ${formatUsd(tool.cost)})`;
-  });
-  if (tools.length === 1) {
-    return `${lead.displayName} accounted for all ${formatCompactNumber(lead.tokens)} tokens and ${formatUsd(lead.cost)} ${windowLabel}.`;
+  if (report.plan) {
+    const pct = report.plan.usedPercent != null ? ` at ${report.plan.usedPercent.toFixed(0)}% used` : "";
+    bits.push(`Plans are ${report.plan.statusLabel.toLowerCase()}${pct}`);
+  } else if (report.topTools[0]) {
+    bits.push(`${report.topTools[0].displayName} led activity`);
   }
-  return `${parts.join(", ")}${tools.length > 3 ? `, and ${tools.length - 3} more` : ""}.`;
+  if (bits.length === 0) {
+    bits.push(isTeamWeek ? "Here’s how the team used AI tools this week" : "Here’s how you used AI tools today");
+  }
+  return bits;
 }
 
 export function buildDailyReportEmailDocument(input: {
@@ -196,55 +203,16 @@ export function buildDailyReportEmailDocument(input: {
 
   const first = input.recipientName?.trim().split(/\s+/)[0];
   const greeting = first ? `Good evening, ${first}` : "Good evening";
-  const windowLabel = isTeamWeek ? "this week" : "today";
-  const eyebrow = isTeamWeek ? "This week" : "Today";
-  const audience = report.kind === "org" ? "Team" : "You";
 
   const spend = formatUsd(report.kpis.cost);
   const tokens = formatCompactNumber(report.kpis.tokens);
   const requests = formatCompactNumber(report.kpis.requests);
-  const topTool = report.topTools[0];
-  const fourthLabel = topTool ? "Top tool" : report.kind === "org" ? "Active members" : "Tools";
-  const fourthValue = topTool
-    ? topTool.displayName
-    : formatCompactNumber(report.kind === "org" ? report.membersActive ?? 0 : report.kpis.tools);
+  const planPct = report.plan?.usedPercent != null ? formatPct(report.plan.usedPercent, 0) : "—";
+  const planStatus = report.plan?.statusLabel ?? "No signal";
 
-  const daysInWeek =
-    report.weekStart && report.weekEnd
-      ? Math.max(
-          1,
-          Math.round(
-            (Date.parse(`${report.weekEnd}T00:00:00Z`) - Date.parse(`${report.weekStart}T00:00:00Z`)) /
-              86_400_000,
-          ) + 1,
-        )
-      : 7;
-  const avgDailySpend = isTeamWeek ? formatUsd(report.kpis.cost / daysInWeek) : null;
-  const avgDailyTokens = isTeamWeek ? formatCompactNumber(report.kpis.tokens / daysInWeek) : null;
-
-  const tokensDelta = report.kpis.tokensDeltaPct;
-  const tokensDeltaText =
-    tokensDelta === null
-      ? null
-      : `${tokensDelta >= 0 ? "+" : ""}${tokensDelta.toFixed(0)}% tokens vs the prior ${isTeamWeek ? "week" : "day"}`;
-
-  const costDelta = report.kpis.costDeltaPct;
-  const costDeltaText =
-    costDelta === null
-      ? null
-      : `${costDelta >= 0 ? "+" : ""}${costDelta.toFixed(0)}% spend vs the prior ${isTeamWeek ? "week" : "day"}`;
-
-  const insightBits: string[] = [`${tokens} tokens and ${spend} across ${requests} requests ${windowLabel}`];
-  if (tokensDeltaText) insightBits.push(tokensDeltaText);
-  else if (costDeltaText) insightBits.push(costDeltaText);
-  if (topTool) {
-    insightBits.push(`${topTool.displayName} led with ${formatPct(topTool.tokenSharePercent, 0)} of tokens`);
-  }
-
-  const summaryHeading = isTeamWeek
-    ? `${tokens} tokens and ${spend} this week${avgDailyTokens && avgDailySpend ? `, averaging ${avgDailyTokens} tokens / ${avgDailySpend} per day` : ""}.`
-    : `${tokens} tokens and ${spend} today.`;
-  const summaryDetail = buildBreakdownNarrative(report, windowLabel);
+  const insightBits = buildInsightBits(report, isTeamWeek);
+  const hasDelta =
+    report.kpis.tokensDeltaPct != null || report.kpis.costDeltaPct != null;
 
   const cta = isTeamWeek ? "Open this week's report" : "Open today's report";
   const optOut = isTeamWeek ? "Turn off weekly team emails" : "Turn off daily emails";
@@ -264,28 +232,51 @@ export function buildDailyReportEmailDocument(input: {
         ? "Spend · key moments"
         : "Requests · key moments";
 
+  const planToolRows =
+    report.plan && report.plan.tools.length > 0
+      ? report.plan.tools
+          .map((tool, index) =>
+            breakdownRow(
+              tool.displayName,
+              "Primary quota window",
+              tool.statusLabel,
+              tool.usedPercent != null ? formatPct(tool.usedPercent, 0) : "—",
+              tool.usedPercent ?? 0,
+              index === report.plan!.tools.length - 1,
+            ),
+          )
+          .join("")
+      : "";
+
+  const planBlock = report.plan
+    ? `<div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${brand.muted};font-weight:600;">Plan status</div>
+              <div style="margin-top:10px;font-size:18px;font-weight:600;color:${brand.charcoal};line-height:1.4;letter-spacing:-0.015em;font-family:Inter,Helvetica,Arial,sans-serif;">${escapeHtml(planStatus)}${report.plan.usedPercent != null ? ` · ${escapeHtml(planPct)} used` : ""}.</div>
+              <p style="margin:12px 0 0;font-size:14px;line-height:1.65;color:${brand.muted};">${escapeHtml(report.plan.hint ?? (report.plan.onPlan ? "Usage is within your included plan allowance." : "Check seats and quotas before the next cycle."))}</p>
+              ${planToolRows ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:8px;">${planToolRows}</table>` : ""}`
+    : `<div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${brand.muted};font-weight:600;">Plan status</div>
+              <div style="margin-top:10px;font-size:18px;font-weight:600;color:${brand.charcoal};line-height:1.4;">No plan signal yet.</div>
+              <p style="margin:12px 0 0;font-size:14px;line-height:1.65;color:${brand.muted};">Connect a device or wait for the next quota reading to see if you’re on plan.</p>`;
+
   const breakdownRows =
     report.topTools.length > 0
       ? report.topTools
-          .map((tool, index) => {
-            const costPer1k =
-              tool.tokens > 0 ? formatUsd((tool.cost / tool.tokens) * 1000) : null;
-            return breakdownRow(
+          .map((tool, index) =>
+            breakdownRow(
               tool.displayName,
-              `${formatCompactNumber(tool.requests)} requests · ${formatPct(tool.tokenSharePercent, 0)} of tokens · ${formatPct(tool.sharePercent, 0)} of spend${costPer1k ? ` · ${costPer1k} / 1K tok` : ""}`,
+              `${formatCompactNumber(tool.requests)} requests · ${formatPct(tool.tokenSharePercent, 0)} of tokens`,
               `${formatCompactNumber(tool.tokens)} tok`,
               formatUsd(tool.cost),
               tool.tokenSharePercent || tool.sharePercent,
               index === report.topTools.length - 1,
-            );
-          })
+            ),
+          )
           .join("")
-      : `<tr><td style="padding:16px 0;color:${brand.muted};font-size:14px;">No tool breakdown for this period.</td></tr>`;
+      : `<tr><td style="padding:16px 0;color:${brand.muted};font-size:14px;">No tool activity this period.</td></tr>`;
 
   const insightHtml = insightBits
     .map((bit, i) => {
       const escaped = escapeHtml(bit);
-      if (i === 1 && (tokensDeltaText || costDeltaText)) {
+      if (i === 0 && hasDelta) {
         return `<span style="color:${brand.charcoal};text-decoration:underline;text-underline-offset:3px;text-decoration-color:${brand.border};">${escaped}</span>`;
       }
       return escaped;
@@ -297,6 +288,7 @@ export function buildDailyReportEmailDocument(input: {
     `${greeting}.`,
     "",
     insightBits.join(" · "),
+    report.plan ? `Plan status: ${planStatus}${report.plan.usedPercent != null ? ` (${planPct} used)` : ""}` : "",
     `Tokens: ${report.kpis.tokens}`,
     `Requests: ${report.kpis.requests}`,
     `Spend: ${formatUsd(report.kpis.cost)}`,
@@ -337,10 +329,7 @@ export function buildDailyReportEmailDocument(input: {
         <!-- Header -->
         <tr>
           <td style="padding:32px 40px 8px;">
-            <div style="font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:${brand.muted};font-weight:600;">
-              ${escapeHtml(eyebrow)} · ${escapeHtml(audience)}
-            </div>
-            <div style="margin-top:18px;font-size:32px;font-weight:600;color:${brand.charcoal};font-family:Inter,Helvetica,Arial,sans-serif;letter-spacing:-0.03em;line-height:1.12;">
+            <div style="margin-top:4px;font-size:32px;font-weight:600;color:${brand.charcoal};font-family:Inter,Helvetica,Arial,sans-serif;letter-spacing:-0.03em;line-height:1.12;">
               ${escapeHtml(greeting)}.
             </div>
             <p style="margin:18px 0 0;font-size:15px;line-height:1.7;color:${brand.muted};max-width:480px;">
@@ -367,19 +356,18 @@ export function buildDailyReportEmailDocument(input: {
                 ${metricTile(spend, isTeamWeek ? "Period spend" : "Today's spend")}
                 ${metricTile(tokens, "Tokens")}
                 ${metricTile(requests, "Requests")}
-                ${metricTile(fourthValue, fourthLabel)}
+                ${metricTile(planPct, "Plan usage")}
               </tr>
             </table>
           </td>
         </tr>
 
-        <!-- Summary + breakdown -->
+        <!-- Plan status + usage breakdown -->
         <tr>
           <td style="padding:32px 40px 8px;">
             <div style="border-top:1px solid ${brand.border};padding-top:32px;">
-              <div style="font-size:18px;font-weight:600;color:${brand.charcoal};line-height:1.4;letter-spacing:-0.015em;font-family:Inter,Helvetica,Arial,sans-serif;">${escapeHtml(summaryHeading)}</div>
-              <p style="margin:14px 0 0;font-size:14px;line-height:1.7;color:${brand.muted};">${escapeHtml(summaryDetail)}</p>
-              <div style="margin-top:32px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${brand.muted};font-weight:600;">Breakdown by tool</div>
+              ${planBlock}
+              <div style="margin-top:32px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${brand.muted};font-weight:600;">Usage by tool</div>
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:4px;">
                 ${breakdownRows}
               </table>

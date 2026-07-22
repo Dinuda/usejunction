@@ -21,6 +21,28 @@ const report: DailyReportPayload = {
     planUsedPercent: 27,
     acceptancePercent: 100,
   },
+  plan: {
+    usedPercent: 27,
+    statusLabel: "On plan",
+    onPlan: true,
+    hint: "Plenty of headroom this cycle",
+    tools: [
+      {
+        toolName: "chatgpt",
+        displayName: "ChatGPT",
+        usedPercent: 31,
+        statusLabel: "On plan",
+        onPlan: true,
+      },
+      {
+        toolName: "cursor",
+        displayName: "Cursor",
+        usedPercent: 23,
+        statusLabel: "On plan",
+        onPlan: true,
+      },
+    ],
+  },
   series: [
     { label: "07:00", requests: 10, tokens: 12_000_000, cost: 2 },
     { label: "09:00", requests: 12, tokens: 18_000_000, cost: 3 },

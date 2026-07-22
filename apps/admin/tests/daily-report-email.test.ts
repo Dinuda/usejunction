@@ -23,6 +23,21 @@ const report: DailyReportPayload = {
     planUsedPercent: 42,
     acceptancePercent: 61,
   },
+  plan: {
+    usedPercent: 42,
+    statusLabel: "On plan",
+    onPlan: true,
+    hint: "Plenty of headroom this cycle",
+    tools: [
+      {
+        toolName: "cursor",
+        displayName: "Cursor",
+        usedPercent: 42,
+        statusLabel: "On plan",
+        onPlan: true,
+      },
+    ],
+  },
   series: [
     { label: "10:00", requests: 3, tokens: 100, cost: 0.1 },
     { label: "14:00", requests: 5, tokens: 200, cost: 0.5 },
@@ -60,18 +75,19 @@ describe("daily report email", () => {
     assert.match(built.text, /Manage email reports|Turn off daily emails/);
   });
 
-  test("includes tokens, requests, breakdown, logo, and email-safe chart", () => {
+  test("includes plan status, usage KPIs, and drops redundant eyebrow", () => {
     const built = buildDailyReportEmail({ report, recipientName: "Dinuda" });
     assert.match(built.html, /Good evening, Dinuda/);
     assert.match(built.html, /usejunction\.png/);
     assert.match(built.html, /alt="UseJunction"/);
-    assert.match(built.html, /Tokens/);
-    assert.match(built.html, /3\.4K|3400/);
-    assert.match(built.html, /Requests/);
-    assert.match(built.html, /Breakdown by tool/);
+    assert.match(built.html, /Plan status/);
+    assert.match(built.html, /On plan/);
+    assert.match(built.html, /Plan usage/);
+    assert.match(built.html, /42%/);
+    assert.match(built.html, /Usage by tool/);
     assert.match(built.html, /ChatGPT/);
-    assert.match(built.html, /59% of tokens/);
-    assert.doesNotMatch(built.html, /Plans used/);
+    assert.doesNotMatch(built.html, /Today · You/);
+    assert.doesNotMatch(built.html, /750K tokens and/);
     assert.doesNotMatch(built.html, /#e5ec67/);
     assert.doesNotMatch(built.html, /<svg/);
   });
@@ -100,7 +116,6 @@ describe("daily report email", () => {
     assert.match(built.url, /\/activity\?scope=team&date=2026-07-26&period=week#reports/);
     assert.match(built.html, /Open this week's report/);
     assert.match(built.html, /Sent Sundays at 19:00/);
-    assert.match(built.html, /This week/);
     assert.doesNotMatch(built.url, /scope=you/);
   });
 });
@@ -132,7 +147,7 @@ describe("daily report send email", () => {
 });
 
 describe("daily report PDF document", () => {
-  test("builds polished PDF HTML with SVG area chart and KPIs", () => {
+  test("builds polished PDF HTML with SVG area chart, plan status, and KPIs", () => {
     const pdf = buildDailyReportPdfHtml({
       report,
       recipientName: "Dinuda",
@@ -143,13 +158,13 @@ describe("daily report PDF document", () => {
     assert.match(pdf.html, /Good evening, Dinuda/);
     assert.match(pdf.html, /<svg/);
     assert.match(pdf.html, /linearGradient/);
-    assert.match(pdf.html, /Tokens/);
-    assert.match(pdf.html, /Requests/);
-    assert.match(pdf.html, /Breakdown by tool/);
-    assert.match(pdf.html, /ChatGPT/);
+    assert.match(pdf.html, /Plan status/);
+    assert.match(pdf.html, /On plan/);
+    assert.match(pdf.html, /Plan usage/);
+    assert.match(pdf.html, /Usage by tool/);
     assert.match(pdf.html, /Tokens by hour/);
     assert.match(pdf.html, /Today's spend/);
-    assert.doesNotMatch(pdf.html, /Plans used/);
+    assert.doesNotMatch(pdf.html, /Today · You/);
     assert.doesNotMatch(pdf.html, /#e5ec67/);
     assert.match(pdf.html, /class="actions"/);
     assert.match(pdf.html, /margin-left: auto/);
