@@ -6,7 +6,7 @@ import {
 
 /** Short, stable facts for answer engines and llms.txt */
 export const AEO_FACTS = {
-  oneLiner: `${siteConfig.name} is open-source observability for AI coding tools—usage, cost, plan utilization, and device health.`,
+  oneLiner: `${siteConfig.name} is open-source AI coding observability for teams—usage, cost, plan utilization, and device health.`,
   notATimeTracker:
     "UseJunction is not a WakaTime-style keystroke or hours-in-editor tracker. It focuses on AI coding tool observability.",
   license: "UseJunction Community License",

@@ -1,4 +1,5 @@
 import { AEO_FACTS } from "@/content/aeo/facts";
+import { BLOG_POSTS } from "@/content/blog";
 import { AEO_CITE_PATHS, ALL_CONTENT_PAGES } from "@/content/registry";
 import { absoluteUrl, getSiteUrl } from "@/lib/public/site-url";
 import { siteConfig } from "@/lib/public/config";
@@ -44,6 +45,14 @@ export function buildLlmsTxt(full = false): string {
 
   if (full) {
     lines.push("## All public pages", "");
+    for (const post of BLOG_POSTS) {
+      lines.push(`### ${post.title}`);
+      lines.push("");
+      lines.push(`- URL: ${absoluteUrl(post.path)}`);
+      lines.push(`- Keyword: ${post.primaryKeyword}`);
+      lines.push(`- Summary: ${post.answer}`);
+      lines.push("");
+    }
     for (const page of ALL_CONTENT_PAGES) {
       lines.push(`### ${page.title}`);
       lines.push("");

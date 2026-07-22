@@ -29,6 +29,16 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        source: "/blog/visibility-before-control",
+        destination: "/blog/what-is-ai-coding-observability",
+        permanent: true,
+      },
+      {
+        source: "/blog/stop-wasting-ai-coding-seats",
+        destination: "/guides/see-plan-usage-and-waste",
+        permanent: true,
+      },
+      {
         source: "/:path*",
         has: [{ type: "host", value: "www.usejunction.dev" }],
         destination: "https://usejunction.dev/:path*",

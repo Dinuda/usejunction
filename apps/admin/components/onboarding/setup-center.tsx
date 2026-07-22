@@ -61,14 +61,30 @@ export function SetupCenter() {
 
   async function verifyDomain(id: string) {
     setBusy(id);
-    await fetch(`/api/organizations/domains/${id}/verify`, { method: "POST" });
+    await fetch(`/api/organizations/domains/${id}/verify`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "content-type": "application/json",
+        "x-requested-with": "usejunction-web",
+      },
+      body: "{}",
+    });
     setBusy(null);
     await refresh();
   }
 
   async function createTelemetry() {
     setBusy("telemetry");
-    const response = await fetch("/api/telemetry/claude-code", { method: "POST" });
+    const response = await fetch("/api/telemetry/claude-code", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "content-type": "application/json",
+        "x-requested-with": "usejunction-web",
+      },
+      body: "{}",
+    });
     if (response.ok) setTelemetry(await response.json());
     setBusy(null);
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { hasToolBrandIcon, ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { Panel } from "@/components/panel";
@@ -10,6 +10,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { canonicalToolKey } from "@/lib/tools/catalog";
 import { userFacingError } from "@/lib/errors/user-facing";
+import { cn } from "@/lib/utils";
+
+const POLL_INTERVAL_MS = 2500;
+const POLL_DURATION_MS = 60_000;
 
 type Device = {
   id: string;
@@ -19,11 +23,32 @@ type Device = {
   toolInstallations?: Array<{ toolName: string; version?: string | null }>;
 };
 
+type EnrollmentCredentials = {
+  token: string;
+  controlPlaneUrl: string;
+  expiresAt: string;
+};
+
+function isEnrollmentTokenStale(expiresAt: string | null | undefined) {
+  if (!expiresAt) return true;
+  return new Date(expiresAt).getTime() <= Date.now();
+}
+
 type Props = {
   title?: string;
   description?: string;
+  footerDescription?: string;
   compact?: boolean;
+  /** Only poll for enrollment after the connect command is copied. */
+  pollAfterCopy?: boolean;
+  /** Hide the inline waiting row (e.g. when parent renders status elsewhere). */
+  hideInlineStatus?: boolean;
+  onPollingStateChange?: (state: { isPolling: boolean; waitingForTools: boolean }) => void;
   onConnected?: (device: Device) => void;
+};
+
+export type DeviceConnectCardHandle = {
+  checkConnection: () => void;
 };
 
 /** Device is ready once enrolled and the agent has reported at least one tool. */
@@ -31,12 +56,19 @@ function isReadyDevice(device: Device | null | undefined): boolean {
   return Boolean(device && (device.toolInstallations?.length ?? 0) > 0);
 }
 
-export function DeviceConnectCard({
-  title = "Connect command",
-  description = "Choose this device's platform, then run the command. It installs the agent, enables reporting, and starts it in the background. Expires in 15 minutes.",
-  compact = false,
-  onConnected,
-}: Props) {
+export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(function DeviceConnectCard(
+  {
+    title = "Connect command",
+    description = "Choose this device's platform, then run the command. It installs the agent, enables reporting, and starts it in the background. Expires in 15 minutes.",
+    footerDescription,
+    compact = false,
+    pollAfterCopy = false,
+    hideInlineStatus = false,
+    onPollingStateChange,
+    onConnected,
+  },
+  ref,
+) {
   const [device, setDevice] = useState<Device | null>(null);
   const [knownIds, setKnownIds] = useState<Set<string>>(new Set());
   const [token, setToken] = useState<string | null>(null);
@@ -45,10 +77,13 @@ export function DeviceConnectCard({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [waitingForTools, setWaitingForTools] = useState(false);
+  const [isPolling, setIsPolling] = useState(false);
+  const [pollSession, setPollSession] = useState(0);
   const notifiedRef = useRef<string | null>(null);
+  const refreshInFlightRef = useRef<Promise<EnrollmentCredentials | null> | null>(null);
 
   const refreshStatus = useCallback(async () => {
-    const response = await fetch("/api/onboarding", { cache: "no-store" });
+    const response = await fetch("/api/onboarding?include=developer", { cache: "no-store" });
     if (!response.ok) return null;
     const data = await response.json();
     const devices = (data.developer?.devices as Device[] | undefined) ?? [];
@@ -57,11 +92,35 @@ export function DeviceConnectCard({
     return { next, devices };
   }, []);
 
-  const generateToken = useCallback(async () => {
+  const checkEnrollment = useCallback(async () => {
+    const status = await refreshStatus();
+    const devices = status?.devices ?? [];
+    const fresh = devices.find((item) => !knownIds.has(item.id)) ?? null;
+    const candidate = fresh ?? devices.find((item) => item.id === device?.id) ?? status?.next ?? null;
+
+    if (candidate && !knownIds.has(candidate.id)) {
+      setKnownIds(new Set(devices.map((item) => item.id)));
+    }
+
+    if (candidate && !isReadyDevice(candidate)) {
+      setWaitingForTools(true);
+      setDevice(candidate);
+      return;
+    }
+
+    if (candidate && isReadyDevice(candidate)) {
+      setWaitingForTools(false);
+      setIsPolling(false);
+      setDevice(candidate);
+      if (notifiedRef.current !== candidate.id) {
+        notifiedRef.current = candidate.id;
+        onConnected?.(candidate);
+      }
+    }
+  }, [device?.id, knownIds, onConnected, refreshStatus]);
+
+  const generateToken = useCallback(async (): Promise<EnrollmentCredentials | null> => {
     setError(null);
-    // Ensure a workspace exists and the JWT carries orgId before enroll.
-    // OAuth users can reach Connect with a null session orgId even after
-    // ensureOwnerWorkspace has run.
     const bootstrap = await fetch("/api/onboarding", {
       method: "POST",
       credentials: "same-origin",
@@ -70,33 +129,64 @@ export function DeviceConnectCard({
     });
     if (bootstrap.status === 401) {
       window.location.href = "/login?from=/onboarding";
-      return;
+      return null;
     }
-    if (bootstrap.ok) {
-      const created = await bootstrap.json().catch(() => null) as { orgId?: string } | null;
-      if (created?.orgId) {
-        await fetch("/api/me/workspace", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            "content-type": "application/json",
-            "x-requested-with": "usejunction-web",
-          },
-          body: JSON.stringify({ orgId: created.orgId }),
-        });
-      }
+    if (!bootstrap.ok) {
+      const data = await bootstrap.json().catch(() => ({}));
+      setError(userFacingError(data.error, "Unable to prepare your workspace."));
+      return null;
     }
 
-    const response = await fetch("/api/me/enrollment-token", { method: "POST" });
+    const response = await fetch("/api/me/enrollment-token", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "content-type": "application/json",
+        "x-requested-with": "usejunction-web",
+      },
+      body: "{}",
+    });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       setError(userFacingError(data.error, "Unable to create a connect command."));
-      return;
+      return null;
     }
-    setToken(data.token);
-    setExpiresAt(data.expiresAt);
-    setControlPlaneUrl(data.controlPlaneUrl || window.location.origin);
+
+    const credentials: EnrollmentCredentials = {
+      token: data.token,
+      expiresAt: data.expiresAt,
+      controlPlaneUrl: data.controlPlaneUrl || window.location.origin,
+    };
+    setToken(credentials.token);
+    setExpiresAt(credentials.expiresAt);
+    setControlPlaneUrl(credentials.controlPlaneUrl);
+    return credentials;
   }, []);
+
+  const ensureFreshEnrollment = useCallback(async (): Promise<EnrollmentCredentials | null> => {
+    if (token && controlPlaneUrl && !isEnrollmentTokenStale(expiresAt)) {
+      return { token, controlPlaneUrl, expiresAt: expiresAt! };
+    }
+
+    if (refreshInFlightRef.current) return refreshInFlightRef.current;
+
+    const pending = generateToken().finally(() => {
+      refreshInFlightRef.current = null;
+    });
+    refreshInFlightRef.current = pending;
+    return pending;
+  }, [controlPlaneUrl, expiresAt, generateToken, token]);
+
+  const resolveCommandForCopy = useCallback(
+    async (platform: "macosLinux" | "windows") => {
+      const credentials = await ensureFreshEnrollment();
+      if (!credentials) {
+        throw new Error("Unable to refresh connect command.");
+      }
+      return buildPlatformInstallCommands(credentials.token, credentials.controlPlaneUrl)[platform];
+    },
+    [ensureFreshEnrollment],
+  );
 
   useEffect(() => {
     void (async () => {
@@ -109,36 +199,44 @@ export function DeviceConnectCard({
   }, [generateToken, refreshStatus]);
 
   useEffect(() => {
+    if (pollAfterCopy) return;
     if (isReadyDevice(device)) return;
-    const interval = window.setInterval(async () => {
-      const status = await refreshStatus();
-      const devices = status?.devices ?? [];
-      const fresh = devices.find((item) => !knownIds.has(item.id)) ?? null;
-      const candidate = fresh ?? devices.find((item) => item.id === device?.id) ?? status?.next ?? null;
 
-      if (candidate && !knownIds.has(candidate.id)) {
-        setKnownIds(new Set(devices.map((item) => item.id)));
-      }
-
-      // Enroll creates the device before the agent finishes detecting tools —
-      // keep waiting until tools are reported.
-      if (candidate && !isReadyDevice(candidate)) {
-        setWaitingForTools(true);
-        setDevice(candidate);
-        return;
-      }
-
-      if (candidate && isReadyDevice(candidate)) {
-        setWaitingForTools(false);
-        setDevice(candidate);
-        if (notifiedRef.current !== candidate.id) {
-          notifiedRef.current = candidate.id;
-          onConnected?.(candidate);
-        }
-      }
-    }, 2500);
+    const interval = window.setInterval(() => void checkEnrollment(), POLL_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  }, [device, knownIds, onConnected, refreshStatus]);
+  }, [checkEnrollment, device, pollAfterCopy]);
+
+  useEffect(() => {
+    if (!pollAfterCopy || pollSession === 0 || isReadyDevice(device)) return;
+
+    setIsPolling(true);
+    setWaitingForTools(false);
+    void checkEnrollment();
+
+    const interval = window.setInterval(() => void checkEnrollment(), POLL_INTERVAL_MS);
+    const timeout = window.setTimeout(() => setIsPolling(false), POLL_DURATION_MS);
+
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [checkEnrollment, device, pollAfterCopy, pollSession]);
+
+  const handleCopied = useCallback(() => {
+    if (!pollAfterCopy) return;
+    setPollSession((current) => current + 1);
+  }, [pollAfterCopy]);
+
+  const checkConnection = useCallback(() => {
+    if (!pollAfterCopy || isReadyDevice(device)) return;
+    setPollSession((current) => current + 1);
+  }, [device, pollAfterCopy]);
+
+  useImperativeHandle(ref, () => ({ checkConnection }), [checkConnection]);
+
+  useEffect(() => {
+    onPollingStateChange?.({ isPolling, waitingForTools });
+  }, [isPolling, onPollingStateChange, waitingForTools]);
 
   const commands = useMemo(() => {
     if (!token || !controlPlaneUrl) return null;
@@ -176,10 +274,12 @@ export function DeviceConnectCard({
     );
   }
 
-  const expired = Boolean(expiresAt && new Date(expiresAt).getTime() <= Date.now());
+  const expired = isEnrollmentTokenStale(expiresAt);
+  const showWaiting = pollAfterCopy ? isPolling : true;
+  const showStatusRow = !hideInlineStatus && (showWaiting || expired);
 
   return (
-    <div className="space-y-4">
+    <div className={cn(compact ? "space-y-0" : "space-y-4")}>
       {!compact && (
         <div>
           <p className="text-sm font-medium">{title}</p>
@@ -187,7 +287,12 @@ export function DeviceConnectCard({
         </div>
       )}
       {commands ? (
-        <PlatformCommand commands={commands} />
+        <PlatformCommand
+          commands={commands}
+          resolveCommandForCopy={resolveCommandForCopy}
+          onCopied={handleCopied}
+          footerDescription={footerDescription}
+        />
       ) : (
         <div className="border border-brand-olive bg-brand-olive p-4 font-mono text-xs text-primary-foreground">Preparing commands…</div>
       )}
@@ -196,19 +301,25 @@ export function DeviceConnectCard({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin text-primary" />
-          {waitingForTools
-            ? "Device enrolled — waiting for tool detection…"
-            : "Waiting for enroll…"}
+      {showStatusRow ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          {showWaiting ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin text-primary" />
+              {waitingForTools
+                ? "Device enrolled — waiting for tool detection…"
+                : "Waiting for enroll…"}
+            </div>
+          ) : (
+            <div />
+          )}
+          {expired && (
+            <Button variant="outline" size="sm" onClick={() => void generateToken()}>
+              Refresh expired command
+            </Button>
+          )}
         </div>
-        {expired && (
-          <Button variant="outline" size="sm" onClick={() => void generateToken()}>
-            Refresh expired command
-          </Button>
-        )}
-      </div>
+      ) : null}
     </div>
   );
-}
+});

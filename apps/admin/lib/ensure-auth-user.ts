@@ -13,7 +13,7 @@ export type AuthUserInput = {
   name?: string | null;
 };
 
-type ResolvedAuthUser = {
+export type ResolvedAuthUser = {
   id: string;
   email: string;
   name: string | null;

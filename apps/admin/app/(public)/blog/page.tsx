@@ -1,12 +1,12 @@
-import { ContentHub } from "@/components/public/content-hub";
+import { BlogIndex } from "@/components/public/blog-index";
 import { BLOG_POSTS } from "@/content/blog";
 import { hubMetadata } from "@/lib/public/seo-metadata";
 import { absoluteUrl } from "@/lib/public/site-url";
 
 const base = hubMetadata({
-  title: "Blog",
+  title: "AI Coding Observability Blog",
   description:
-    "Essays on AI coding observability, visibility before control, and stopping seat waste before renewal.",
+    "Field notes on AI coding observability, infrastructure, cost, privacy, and visibility before control.",
   path: "/blog",
 });
 
@@ -19,16 +19,5 @@ export const metadata = {
 };
 
 export default function BlogIndexPage() {
-  return (
-    <ContentHub
-      title="Blog"
-      description="Operating notes for platform teams running AI coding tools at scale."
-      path="/blog"
-      items={BLOG_POSTS.map((post) => ({
-        title: post.title,
-        description: post.description,
-        path: post.path,
-      }))}
-    />
-  );
+  return <BlogIndex posts={BLOG_POSTS} />;
 }

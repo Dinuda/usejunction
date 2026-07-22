@@ -4,6 +4,8 @@ import { ALL_CONTENT_PAGES, AEO_CITE_PATHS, buildSitemapEntries, contentBreadcru
 import { buildLlmsTxt } from "../lib/public/llms-txt";
 import { buildHomeJsonLd } from "../lib/public/json-ld";
 import { AEO_FACTS } from "../content/aeo/facts";
+import { BLOG_POSTS } from "../content/blog";
+import { buildBlogPostJsonLd } from "../lib/public/json-ld";
 
 test("seo registry includes priority guides and compare pages", () => {
   const paths = new Set(ALL_CONTENT_PAGES.map((page) => page.path));
@@ -38,6 +40,10 @@ test("sitemap includes home and content hubs", () => {
   const paths = entries.map((entry) => entry.path);
   assert.ok(paths.includes("/"));
   assert.ok(paths.includes("/guides"));
+  assert.ok(paths.includes("/blog/what-is-ai-coding-observability"));
+  assert.ok(paths.includes("/authors/dinuda-yaggahavita"));
+  assert.ok(!paths.includes("/blog/visibility-before-control"));
+  assert.ok(!paths.includes("/blog/stop-wasting-ai-coding-seats"));
   assert.equal(entries[0]?.priority, 1);
 });
 
@@ -54,7 +60,23 @@ test("llms.txt includes cite paths and non-claims", () => {
 test("llms-full.txt includes page summaries", () => {
   const text = buildLlmsTxt(true);
   assert.match(text, /How to See AI Coding Plan Usage/);
+  assert.match(text, /What Is AI Coding Observability/);
   assert.ok(text.length > buildLlmsTxt(false).length);
+});
+
+test("native blog exposes one canonical founder-authored post", () => {
+  assert.equal(BLOG_POSTS.length, 1);
+  const post = BLOG_POSTS[0]!;
+  assert.equal(post.path, "/blog/what-is-ai-coding-observability");
+  assert.equal(post.author.name, "Dinuda Yaggahavita");
+  assert.notEqual(post.publishedAt, "");
+  assert.equal(post.socialImage.width, 1200);
+  assert.equal(post.socialImage.height, 630);
+  const graph = buildBlogPostJsonLd(post);
+  const article = graph.find((node) => node["@type"] === "BlogPosting");
+  assert.ok(article);
+  assert.equal((article!.author as { name: string }).name, "Dinuda Yaggahavita");
+  assert.equal(article!.datePublished, "2026-07-22");
 });
 
 test("home JSON-LD includes FAQPage and Organization", () => {

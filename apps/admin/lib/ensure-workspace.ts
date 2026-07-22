@@ -5,7 +5,9 @@ import {
   isMissingAuthUserPrismaError,
   resolveAuthUser,
   type AuthUserInput,
+  type ResolvedAuthUser,
 } from "@/lib/ensure-auth-user";
+import { hasPendingWorkspaceInvite } from "@/lib/onboarding-status";
 import { trialEndsAtFromNow } from "@/lib/saas-billing/entitlements";
 
 function slugify(value: string) {
@@ -48,11 +50,24 @@ export function suggestedWorkspaceName(user: { email: string; name?: string | nu
 
 export type WorkspaceUser = AuthUserInput;
 
-export async function createWorkspace(
-  user: WorkspaceUser,
+export class PendingInviteError extends Error {
+  readonly code = "invite_pending" as const;
+
+  constructor(message = "invite_pending") {
+    super(message);
+    this.name = "PendingInviteError";
+  }
+}
+
+export function isPendingInviteError(error: unknown): error is PendingInviteError {
+  return error instanceof PendingInviteError;
+}
+
+/** Create a personal workspace for an already-resolved auth user (no extra user lookup). */
+export async function createWorkspaceForUser(
+  authUser: ResolvedAuthUser,
   options?: { name?: string; color?: string | null },
 ) {
-  const authUser = await resolveAuthUser(user);
   const name = options?.name?.trim() || suggestedWorkspaceName(authUser);
   const slug = `${slugify(name)}-${randomBytes(2).toString("hex")}`;
   const color = options?.color?.trim() || null;
@@ -100,8 +115,19 @@ export async function createWorkspace(
   };
 }
 
+export async function createWorkspace(
+  user: WorkspaceUser,
+  options?: { name?: string; color?: string | null },
+) {
+  const authUser = await resolveAuthUser(user);
+  return createWorkspaceForUser(authUser, options);
+}
+
 /** Returns an existing membership (newest first) or creates a personal workspace. */
-export async function ensureOwnerWorkspace(user: WorkspaceUser, options?: { name?: string }) {
+export async function ensureOwnerWorkspace(
+  user: WorkspaceUser,
+  options?: { name?: string; rejectPendingInvite?: boolean },
+) {
   const authUser = await resolveAuthUser(user);
   const existing = await prisma.organizationMembership.findFirst({
     where: { userId: authUser.id },
@@ -112,5 +138,9 @@ export async function ensureOwnerWorkspace(user: WorkspaceUser, options?: { name
     return { orgId: existing.orgId, role: existing.role, created: false as const };
   }
 
-  return createWorkspace(authUser, options);
+  if (options?.rejectPendingInvite && (await hasPendingWorkspaceInvite(authUser.email))) {
+    throw new PendingInviteError();
+  }
+
+  return createWorkspaceForUser(authUser, { name: options?.name });
 }

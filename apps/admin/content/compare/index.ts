@@ -125,7 +125,7 @@ export const compareLangfuse: ContentPage = {
   path: "/compare/langfuse",
   title: "UseJunction vs Langfuse",
   description:
-    "Langfuse is LLM tracing and evals for applications. UseJunction is observability for AI coding tools used by your engineering team.",
+    "Langfuse is LLM tracing and evals for applications. UseJunction is open-source AI coding observability for teams.",
   primaryKeyword: "UseJunction vs Langfuse",
   secondaryKeywords: ["LLM tracing vs AI coding observability"],
   updatedAt: "2026-07-19",

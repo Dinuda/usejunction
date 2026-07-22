@@ -436,14 +436,7 @@ export default function DashboardPage() {
           </AlertDescription>
         </Alert>
       ) : empty ? (
-        <div>
-          <div className="uj-grid-texture uj-grid-texture-strong relative mb-10 overflow-hidden border border-primary-dark bg-primary p-6 text-primary-foreground sm:p-8 [--uj-grid-opacity:0.1]">
-            <p className="relative max-w-lg text-2xl font-semibold leading-[1.05] tracking-[-0.03em] sm:text-3xl">
-              Visibility before control.
-            </p>
-          </div>
-          <DashboardSetupPanel />
-        </div>
+        <DashboardSetupPanel />
       ) : data ? (
         <>
           <div className="grid grid-cols-2 items-stretch gap-y-5 sm:gap-y-8 xl:grid-cols-4">

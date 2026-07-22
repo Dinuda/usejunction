@@ -3,7 +3,8 @@ import { expect, test } from "@playwright/test";
 const routes = [
   "/",
   "/blog",
-  "/blog/visibility-before-control",
+  "/blog/what-is-ai-coding-observability",
+  "/authors/dinuda-yaggahavita",
   "/guides",
   "/guides/see-plan-usage-and-waste",
   "/compare",

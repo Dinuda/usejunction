@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import type { ContentPage } from "@/content/types";
+import type { BlogPost, ContentPage } from "@/content/types";
 import { absoluteUrl, getSiteUrl } from "@/lib/public/site-url";
 import { siteConfig } from "@/lib/public/config";
 
@@ -61,6 +61,43 @@ export function hubMetadata(opts: {
       description: opts.description,
       images: [siteOgImage.url],
     },
+  };
+}
+
+export function blogPostMetadata(post: BlogPost): Metadata {
+  const url = absoluteUrl(post.path);
+  const image = {
+    url: post.socialImage.src,
+    width: post.socialImage.width,
+    height: post.socialImage.height,
+    alt: post.socialImage.alt,
+  };
+  return {
+    title: post.title,
+    description: post.description,
+    keywords: [post.primaryKeyword, ...post.topics],
+    authors: [{ name: post.author.name, url: absoluteUrl(post.author.path) }],
+    alternates: { canonical: url },
+    openGraph: {
+      type: "article",
+      locale: "en_US",
+      url,
+      siteName: siteConfig.name,
+      title: post.title,
+      description: post.description,
+      publishedTime: post.publishedAt,
+      modifiedTime: post.updatedAt,
+      authors: [absoluteUrl(post.author.path)],
+      tags: post.topics,
+      images: [image],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: post.title,
+      description: post.description,
+      images: [post.socialImage.src],
+    },
+    robots: { index: true, follow: true },
   };
 }
 

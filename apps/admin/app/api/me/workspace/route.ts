@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { auth, updateSession } from "@/auth";
-import { prisma } from "@usejunction/db";
+import { auth } from "@/auth";
 import { ACTIVE_ORG_COOKIE } from "@/lib/require-organization";
 import { browserMutationGuard, limitedJson } from "@/lib/security/http";
+import { syncSessionWorkspace } from "@/lib/workspace-session";
 
 const schema = z.object({
   orgId: z.string().min(1),
@@ -22,21 +22,15 @@ export async function POST(req: NextRequest) {
   const parsed = schema.safeParse(body.data);
   if (!parsed.success) return NextResponse.json({ error: "orgId required" }, { status: 400 });
 
-  const membership = await prisma.organizationMembership.findUnique({
-    where: { userId_orgId: { userId: session.user.id, orgId: parsed.data.orgId } },
-    select: { orgId: true, role: true, organization: { select: { name: true } } },
-  });
-  if (!membership) return NextResponse.json({ error: "not a member of that workspace" }, { status: 403 });
-
-  const updated = await updateSession({ user: { orgId: membership.orgId } });
-  if (updated?.user?.orgId !== membership.orgId) {
-    return NextResponse.json({ error: "session update failed" }, { status: 500 });
+  const synced = await syncSessionWorkspace(session.user.id, parsed.data.orgId);
+  if (!synced.ok) {
+    return NextResponse.json({ error: synced.error }, { status: synced.status });
   }
 
   const response = NextResponse.json({
-    orgId: membership.orgId,
-    role: membership.role,
-    name: membership.organization.name,
+    orgId: synced.orgId,
+    role: synced.role,
+    name: synced.name,
   });
   response.cookies.delete(ACTIVE_ORG_COOKIE);
   return response;

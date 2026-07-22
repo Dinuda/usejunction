@@ -111,44 +111,39 @@ function ChoiceCard({
 export function OnboardingExperience() {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [invitePending, setInvitePending] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [path, setPath] = useState<Path>("choose");
 
-  const refresh = useCallback(async () => {
-    let response = await fetch("/api/onboarding", { cache: "no-store" });
-    if (response.status === 401) {
-      window.location.href = "/login?from=/onboarding";
-      return;
-    }
-    let next = response.ok ? await response.json() as OnboardingStatus : null;
-    if (next && !next.configured) {
-      const create = await fetch("/api/onboarding", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-requested-with": "usejunction-web" },
-        body: "{}",
-      });
-      if (create.status === 401) {
-        window.location.href = "/login?from=/onboarding";
-        return;
-      }
-      if (create.ok) {
-        const created = await create.json().catch(() => null) as { orgId?: string } | null;
-        if (created?.orgId) {
-          // Put orgId into the JWT so enroll / requireOrgRole work immediately.
-          await fetch("/api/me/workspace", {
+  const refresh = useCallback(async (mode: "bootstrap" | "poll" = "poll") => {
+    const response =
+      mode === "bootstrap"
+        ? await fetch("/api/onboarding", {
             method: "POST",
             credentials: "same-origin",
             headers: {
               "content-type": "application/json",
               "x-requested-with": "usejunction-web",
             },
-            body: JSON.stringify({ orgId: created.orgId }),
-          });
-        }
-      }
-      response = await fetch("/api/onboarding", { cache: "no-store" });
-      next = response.ok ? await response.json() as OnboardingStatus : null;
+            body: "{}",
+            cache: "no-store",
+          })
+        : await fetch("/api/onboarding?include=developer", { cache: "no-store" });
+
+    if (response.status === 401) {
+      window.location.href = "/login?from=/onboarding";
+      return;
     }
+    if (response.status === 409) {
+      const body = await response.json().catch(() => null) as { error?: string } | null;
+      if (body?.error === "invite_pending") {
+        setInvitePending(true);
+        setLoading(false);
+        return;
+      }
+    }
+
+    const next = response.ok ? await response.json() as OnboardingStatus : null;
     if (next?.onboardingCompletedAt) {
       window.location.href = "/dashboard";
       return;
@@ -158,17 +153,39 @@ export function OnboardingExperience() {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    void refresh("bootstrap");
   }, [refresh]);
 
   async function finish(action: "complete" | "skip" = "complete") {
     setFinishing(true);
     await fetch("/api/onboarding", {
       method: "PATCH",
-      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      headers: {
+        "content-type": "application/json",
+        "x-requested-with": "usejunction-web",
+      },
       body: JSON.stringify({ action }),
     });
     window.location.href = "/dashboard";
+  }
+
+  if (invitePending) {
+    return (
+      <AuthShell
+        size="md"
+        accent="cyan"
+        contentAlign="top"
+        eyebrow="Invite pending"
+        title="Finish your invite first."
+        description="Open the invite link from your email or teammate before setting up a personal workspace."
+        statement="Visibility before control."
+      >
+        <p className="text-sm text-muted-foreground">
+          Creating a personal workspace is blocked while you have an open invite.
+        </p>
+      </AuthShell>
+    );
   }
 
   if (loading || !status) {
@@ -252,7 +269,7 @@ export function OnboardingExperience() {
             onConnected={() => {
               // Refresh UI only — do not mark onboarding complete or redirect yet.
               // User clicks Open dashboard after tools are detected.
-              void refresh();
+              void refresh("poll");
             }}
           />
           <p className="font-mono text-[0.65rem] text-muted-foreground">

@@ -24,6 +24,8 @@ export function GET() {
       <guid isPermaLink="true">${url}</guid>
       <pubDate>${new Date(post.updatedAt).toUTCString()}</pubDate>
       <description>${escapeXml(post.description)}</description>
+      <author>hello@usejunction.dev (${escapeXml(post.author.name)})</author>
+      <category>${escapeXml(post.primaryKeyword)}</category>
     </item>`;
     })
     .join("\n");
@@ -34,7 +36,7 @@ export function GET() {
     <title>${escapeXml(`${siteConfig.name} Blog`)}</title>
     <link>${base}/blog</link>
     <atom:link href="${feedUrl}" rel="self" type="application/rss+xml" />
-    <description>${escapeXml("AI coding observability, plan usage, and operating notes for platform teams.")}</description>
+    <description>${escapeXml("Field notes on AI coding observability, infrastructure, cost, and privacy.")}</description>
     <language>en</language>
 ${items}
   </channel>

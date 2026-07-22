@@ -1,4 +1,4 @@
-import type { ContentFaq, ContentPage, HowToStep } from "@/content/types";
+import type { BlogPost, ContentFaq, ContentPage, HowToStep } from "@/content/types";
 import { HOME_FAQS } from "@/lib/public/home-faqs";
 import { OBSERVABILITY_FEATURES, siteConfig, twitterUrl } from "@/lib/public/config";
 import { absoluteUrl, getSiteUrl } from "@/lib/public/site-url";
@@ -147,21 +147,49 @@ export function buildContentJsonLd(page: ContentPage) {
     });
   }
 
-  if (page.kind === "blog") {
-    graph.push({
-      "@context": "https://schema.org",
-      "@type": "Article",
-      headline: page.title,
-      description: page.description,
-      dateModified: page.updatedAt,
-      datePublished: page.updatedAt,
-      author: { "@type": "Organization", name: siteConfig.name },
-      publisher: { "@type": "Organization", name: siteConfig.name, url: baseUrl },
-      mainEntityOfPage: url,
-    });
-  }
-
   return graph;
+}
+
+export function buildBlogPostJsonLd(post: BlogPost) {
+  const url = absoluteUrl(post.path);
+  const authorUrl = absoluteUrl(post.author.path);
+  const baseUrl = getSiteUrl();
+  return [
+    {
+      "@context": "https://schema.org",
+      "@type": "BlogPosting",
+      headline: post.title,
+      description: post.description,
+      image: [absoluteUrl(post.socialImage.src)],
+      datePublished: post.publishedAt,
+      dateModified: post.updatedAt,
+      articleSection: "AI coding observability",
+      keywords: post.topics.join(", "),
+      author: {
+        "@type": "Person",
+        name: post.author.name,
+        url: authorUrl,
+        sameAs: post.author.links.map((item) => item.href),
+      },
+      publisher: {
+        "@type": "Organization",
+        "@id": `${baseUrl}/#organization`,
+        name: siteConfig.name,
+        url: baseUrl,
+        logo: { "@type": "ImageObject", url: absoluteUrl("/icons/icon-192.png") },
+      },
+      mainEntityOfPage: { "@type": "WebPage", "@id": url },
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: baseUrl },
+        { "@type": "ListItem", position: 2, name: "Blog", item: absoluteUrl("/blog") },
+        { "@type": "ListItem", position: 3, name: post.title, item: url },
+      ],
+    },
+  ];
 }
 
 export function buildHubJsonLd(opts: { name: string; description: string; path: string; items: { name: string; path: string }[] }) {

@@ -29,6 +29,7 @@ export function isPublicPath(pathname: string): boolean {
     pathname.startsWith("/compare") ||
     pathname.startsWith("/for") ||
     pathname.startsWith("/blog") ||
+    pathname.startsWith("/authors") ||
     pathname.startsWith("/join") ||
     pathname.startsWith("/connect-invite") ||
     pathname.startsWith("/auth/") ||

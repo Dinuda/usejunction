@@ -11,8 +11,7 @@ export function SiteFooter() {
           <div>
             <BrandLogo className="h-9" />
             <p className="mt-3 max-w-xs text-sm leading-6 text-muted-foreground">
-              {siteConfig.tagline}. Self-hosted, open source, and built for teams that want context before
-              control.
+              {siteConfig.tagline}. Self-hosted on your infrastructure—visibility before control.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3">

@@ -52,7 +52,6 @@ export default function SettingsPage() {
       />
 
       <div className="space-y-6">
-        {prefsQuery.data ? <EmailReportsSettingsCard initial={prefsQuery.data} /> : null}
         {canManageOrg && orgQuery.data ? (
           <>
             <WorkspaceSettingsCard
@@ -61,9 +60,12 @@ export default function SettingsPage() {
               initialColor={orgQuery.data.orgColor}
             />
             <BillingSettingsCard billing={orgQuery.data.billing} members={orgQuery.data.billingMembers} />
+            {prefsQuery.data ? <EmailReportsSettingsCard initial={prefsQuery.data} /> : null}
             <SignalsSettingsCard initialPolicy={orgQuery.data.signalsPolicy} />
             <ActivitySettingsCard initialSettings={orgQuery.data.settings} />
           </>
+        ) : prefsQuery.data ? (
+          <EmailReportsSettingsCard initial={prefsQuery.data} />
         ) : null}
       </div>
     </div>

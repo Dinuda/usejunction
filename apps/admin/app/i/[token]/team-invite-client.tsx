@@ -84,7 +84,7 @@ export function TeamInviteClient({ token, organizationName, signedIn, sessionEma
     let intervalId: number | undefined;
 
     async function refreshStatus() {
-      const response = await fetch("/api/onboarding", { cache: "no-store" });
+      const response = await fetch("/api/onboarding?include=developer", { cache: "no-store" });
       if (!response.ok || cancelled) return;
       const data = await response.json();
       const devices = (data.developer?.devices as Device[] | undefined) ?? [];

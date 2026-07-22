@@ -43,3 +43,52 @@ export type SitemapEntry = {
   changeFrequency: "weekly" | "monthly" | "yearly";
   priority: number;
 };
+
+export type Author = {
+  slug: string;
+  name: string;
+  role: string;
+  bio: string;
+  initials: string;
+  path: string;
+  links: { label: string; href: string }[];
+};
+
+export type BlogInline = {
+  text: string;
+  strong?: boolean;
+  href?: string;
+};
+
+export type BlogImage = {
+  src: string;
+  alt: string;
+  width: number;
+  height: number;
+  caption?: string;
+};
+
+export type BlogBlock =
+  | { type: "heading"; text: string }
+  | { type: "paragraph"; content: BlogInline[] }
+  | { type: "list"; items: BlogInline[][] }
+  | { type: "quote"; content: BlogInline[] }
+  | { type: "image"; image: BlogImage };
+
+export type BlogPost = {
+  slug: string;
+  path: string;
+  title: string;
+  description: string;
+  answer: string;
+  primaryKeyword: string;
+  topics: string[];
+  publishedAt: string;
+  updatedAt: string;
+  readingMinutes: number;
+  author: Author;
+  heroImage: BlogImage;
+  socialImage: BlogImage;
+  blocks: BlogBlock[];
+  relatedPaths: string[];
+};

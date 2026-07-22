@@ -101,7 +101,7 @@ export const guideSeeTeamUsage: ContentPage = {
   ],
   updatedAt: "2026-07-19",
   answer:
-    "UseJunction is open-source observability for AI coding tools. Enroll devices and you get org-wide insights: which tools and models developers use, estimated cost and latency, configuration health, and optional Signals work sessions—privacy first, with no keystroke surveillance.",
+    "UseJunction is open-source AI coding observability for teams. Enroll devices and you get org-wide insights: which tools and models developers use, estimated cost and latency, configuration health, and optional Signals work sessions—privacy first, with no keystroke surveillance.",
   sections: [
     {
       heading: "Team coding insights, for the AI era",
@@ -174,7 +174,7 @@ export const guideWakatimeAdjacent: ContentPage = {
     {
       heading: "When to choose UseJunction",
       body: [
-        "You want open-source, self-hosted observability for AI coding tools.",
+        "You want open-source, self-hosted AI coding observability for teams.",
         "You need plan usage, seat intentionality, and personal-key detection.",
         "You want privacy-first Signals-style work context with controls over how much detail is visible.",
       ],
@@ -190,7 +190,7 @@ export const guideWakatimeAdjacent: ContentPage = {
     {
       question: "Is UseJunction a WakaTime clone?",
       answer:
-        "No. It is open-source observability for AI coding tools. It captures adjacent search intent for teams that outgrew time-only dashboards and need AI usage, cost, and plan insights.",
+        "No. It is open-source AI coding observability for teams. It captures adjacent search intent for teams that outgrew time-only dashboards and need AI usage, cost, and plan insights.",
     },
     {
       question: "Can I self-host it?",

@@ -1,83 +1,142 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { DeviceConnectCard } from "@/components/onboarding/device-connect-card";
+import { Loader2 } from "lucide-react";
+import { DeviceConnectCard, type DeviceConnectCardHandle } from "@/components/onboarding/device-connect-card";
 import { InviteTeamForm } from "@/components/onboarding/invite-team-form";
+import { Panel } from "@/components/panel";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { useInvalidateAppData } from "@/lib/api/client";
+import { cn } from "@/lib/utils";
+
+function SetupCard({
+  children,
+  imageSrc,
+  className,
+}: {
+  children: React.ReactNode;
+  imageSrc: string;
+  className?: string;
+}) {
+  return (
+    <Panel padded={false} className={cn("flex h-[36rem] flex-col overflow-hidden border-border", className)}>
+      <div
+        className="relative h-40 shrink-0 overflow-hidden border-b border-border bg-muted"
+        aria-hidden
+      >
+        <Image
+          src={imageSrc}
+          alt=""
+          fill
+          sizes="(min-width: 1024px) min(50vw, 36rem), 100vw"
+          className="object-cover object-center"
+        />
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-6 sm:gap-7 sm:p-8">{children}</div>
+    </Panel>
+  );
+}
+
+function SetupCardIntro({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+      {/* Fixed 2-line subtitle height so both cards align the next section horizontally. */}
+      <p className="min-h-[3rem] text-sm leading-6 text-muted-foreground">{description}</p>
+    </div>
+  );
+}
 
 export function DashboardSetupPanel({ canInvite = true }: { canInvite?: boolean }) {
   const router = useRouter();
   const invalidateAppData = useInvalidateAppData();
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [formKey, setFormKey] = useState(0);
+  const [machineConnected, setMachineConnected] = useState(false);
+  const [enrollStatus, setEnrollStatus] = useState<string | null>(null);
+  const connectCardRef = useRef<DeviceConnectCardHandle>(null);
 
   return (
-    <div className={canInvite ? "grid gap-8 lg:grid-cols-2" : "max-w-xl"}>
-      <section>
-        <h2 className="text-xl font-semibold tracking-tight">Connect this machine.</h2>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Enrolls your computer under your account — configures tools, enables Claude metrics, and starts reporting.
-        </p>
-        <div className="mt-5">
-          <DeviceConnectCard
-            title="Connect command"
-            description="Installs the agent and starts reporting. Expires in 15 minutes."
-            onConnected={() => {
-              void invalidateAppData();
-              router.refresh();
-            }}
+    <div className={canInvite ? "grid gap-6 lg:grid-cols-2 lg:gap-8" : "max-w-xl"}>
+      <SetupCard imageSrc="/images/connecting-computer.png">
+        <div className="flex min-h-0 flex-1 flex-col gap-7">
+          {enrollStatus ? (
+            <div className="flex w-fit max-w-full items-center gap-2 border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" aria-hidden />
+              <span>{enrollStatus}</span>
+            </div>
+          ) : null}
+          <SetupCardIntro
+            title="Connect this machine."
+            description="Enrolls this computer under your account, installs the agent, and starts reporting your AI coding tools and usage."
           />
-        </div>
-      </section>
-      {canInvite && (
-        <section>
-          <h2 className="text-xl font-semibold tracking-tight">Invite teammates.</h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Share one invite link — or email it with instructions — and each teammate connects one device.
-          </p>
-          <div className="mt-5">
-            <Button type="button" onClick={() => setInviteOpen(true)}>
-              Invite teammates
-            </Button>
-          </div>
-          <Dialog
-            open={inviteOpen}
-            onOpenChange={(next) => {
-              setInviteOpen(next);
-              if (!next) {
-                setFormKey((current) => current + 1);
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
+            <DeviceConnectCard
+              ref={connectCardRef}
+              compact
+              pollAfterCopy
+              hideInlineStatus
+              onPollingStateChange={({ isPolling, waitingForTools }) => {
+                if (!isPolling) {
+                  setEnrollStatus(null);
+                  return;
+                }
+                setEnrollStatus(
+                  waitingForTools
+                    ? "Device enrolled — waiting for tool detection…"
+                    : "Waiting for enroll…",
+                );
+              }}
+              onConnected={() => {
+                setMachineConnected(true);
+                setEnrollStatus(null);
                 void invalidateAppData();
                 router.refresh();
-              }
-            }}
-          >
-            <DialogContent className="max-w-xl gap-5 sm:max-w-xl">
-              <DialogHeader>
-                <DialogTitle>Invite teammates.</DialogTitle>
-                <DialogDescription>
-                  Share the invite link (or email it). Teammates sign up or sign in, then install on their machine.
-                </DialogDescription>
-              </DialogHeader>
-              <InviteTeamForm
-                key={formKey}
-                onInvited={() => {
-                  void invalidateAppData();
-                  router.refresh();
-                }}
-              />
-            </DialogContent>
-          </Dialog>
-        </section>
-      )}
+              }}
+            />
+            <div className="mt-auto flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className={cn(
+                  "h-9 min-w-[10.5rem] gap-1.5 rounded-none px-6 bg-background shadow-none",
+                  machineConnected
+                    ? "border-primary/30 text-primary hover:bg-primary/5"
+                    : "border-border text-foreground hover:bg-muted/50",
+                )}
+                onClick={() => connectCardRef.current?.checkConnection()}
+              >
+                Connect
+              </Button>
+            </div>
+          </div>
+        </div>
+      </SetupCard>
+
+      {canInvite ? (
+        <SetupCard imageSrc="/images/team-invite.png">
+          <div className="flex min-h-0 flex-1 flex-col gap-8">
+            <SetupCardIntro
+              title="Invite teammates."
+              description="Invite someone else to help you build out the workspace."
+            />
+            <InviteTeamForm
+              variant="dashboard"
+              onInvited={() => {
+                void invalidateAppData();
+                router.refresh();
+              }}
+            />
+          </div>
+        </SetupCard>
+      ) : null}
     </div>
   );
 }

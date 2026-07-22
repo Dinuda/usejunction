@@ -9,7 +9,6 @@ export const ALL_CONTENT_PAGES: ContentPage[] = [
   ...GUIDES,
   ...COMPARE_PAGES,
   ...FOR_PAGES,
-  ...BLOG_POSTS,
   ...LEGAL_PAGES,
 ];
 
@@ -60,6 +59,7 @@ export function buildSitemapEntries(): SitemapEntry[] {
     { path: "/for", lastModified: "2026-07-19", changeFrequency: "weekly", priority: 0.8 },
     { path: "/blog", lastModified: "2026-07-19", changeFrequency: "weekly", priority: 0.7 },
     { path: "/contact", lastModified: "2026-07-19", changeFrequency: "monthly", priority: 0.5 },
+    { path: "/authors/dinuda-yaggahavita", lastModified: "2026-07-22", changeFrequency: "monthly", priority: 0.5 },
   ];
 
   const pages = ALL_CONTENT_PAGES.map((page) => ({
@@ -69,7 +69,14 @@ export function buildSitemapEntries(): SitemapEntry[] {
     priority: page.kind === "legal" ? 0.3 : page.kind === "blog" ? 0.6 : 0.7,
   }));
 
-  return [home, ...hubs, ...pages];
+  const blogPages = BLOG_POSTS.map((post) => ({
+    path: post.path,
+    lastModified: post.updatedAt,
+    changeFrequency: "monthly" as const,
+    priority: 0.7,
+  }));
+
+  return [home, ...hubs, ...blogPages, ...pages];
 }
 
 /** Priority cite URLs for answer engines */
@@ -78,6 +85,7 @@ export const AEO_CITE_PATHS = [
   "/guides/see-plan-usage-and-waste",
   "/guides/see-team-ai-coding-usage",
   "/guides/open-source-wakatime-alternative-for-ai-coding",
+  "/blog/what-is-ai-coding-observability",
   "/compare/wakatime",
   "/for/cursor",
   "/for/claude-code",

@@ -2,129 +2,127 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { isAuthUserNotFoundError } from "@/lib/ensure-auth-user";
-import { ensureOwnerWorkspace } from "@/lib/ensure-workspace";
-import { resolveOrgId } from "@/lib/require-organization";
+import {
+  ensureOwnerWorkspace,
+  isPendingInviteError,
+} from "@/lib/ensure-workspace";
+import { timingHeader } from "@/lib/api/app-response";
+import {
+  buildOnboardingStatus,
+  buildOnboardingStatusForOrg,
+} from "@/lib/onboarding-status";
+import { ACTIVE_ORG_COOKIE, resolveOrgId } from "@/lib/require-organization";
+import { browserMutationGuard } from "@/lib/security/http";
+import { syncSessionWorkspace } from "@/lib/workspace-session";
 import { prisma } from "@usejunction/db";
 
-const updateSchema = z.object({ action: z.enum(["complete", "skip", "dismiss_checklist", "reopen_checklist"]) });
+const updateSchema = z.object({
+  action: z.enum(["complete", "skip", "dismiss_checklist", "reopen_checklist"]),
+});
 
-export async function POST() {
+function onboardingHeaders(serverTiming: string) {
+  return {
+    "cache-control": "private, no-store, max-age=0",
+    pragma: "no-cache",
+    "server-timing": serverTiming,
+  };
+}
+
+export async function POST(request: NextRequest) {
+  const rejected = browserMutationGuard(request);
+  if (rejected) return rejected;
+
+  const started = performance.now();
   const session = await auth();
+  const sessionMs = performance.now();
   if (!session?.user?.id || !session.user.email) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  // Prefer an existing membership; only create when the user has none.
-  const existingOrgId = await resolveOrgId(session.user.id, session.user.orgId);
   let result;
   try {
-    result = existingOrgId
-      ? { orgId: existingOrgId, created: false as const }
-      : await ensureOwnerWorkspace({
-          id: session.user.id,
-          email: session.user.email,
-          name: session.user.name,
-        });
+    result = await ensureOwnerWorkspace(
+      {
+        id: session.user.id,
+        email: session.user.email,
+        name: session.user.name,
+      },
+      { rejectPendingInvite: true },
+    );
   } catch (error) {
     if (isAuthUserNotFoundError(error)) {
       return NextResponse.json({ error: "session_expired" }, { status: 401 });
     }
+    if (isPendingInviteError(error)) {
+      return NextResponse.json(
+        { error: "invite_pending", configured: false },
+        { status: 409 },
+      );
+    }
     throw error;
   }
+  const resolveMs = performance.now();
 
-  const organization = await prisma.organization.findUnique({
-    where: { id: result.orgId },
-    select: { id: true, name: true, slug: true },
+  let sessionSynced = false;
+  if (session.user.orgId !== result.orgId) {
+    const synced = await syncSessionWorkspace(session.user.id, result.orgId);
+    if (!synced.ok) {
+      return NextResponse.json({ error: synced.error }, { status: synced.status });
+    }
+    sessionSynced = true;
+  }
+
+  const status = await buildOnboardingStatusForOrg(session.user.id, result.orgId, {
+    includeDeveloper: true,
   });
+  const dataMs = performance.now();
 
-  return NextResponse.json(
-    {
-      orgId: result.orgId,
-      organizationName: organization?.name,
-      slug: organization?.slug,
-      alreadyConfigured: !result.created,
-    },
-    { status: result.created ? 201 : 200 },
-  );
+  const response = NextResponse.json(status, {
+    status: result.created ? 201 : 200,
+    headers: onboardingHeaders(
+      timingHeader({
+        session: sessionMs - started,
+        resolve: resolveMs - sessionMs,
+        data: dataMs - resolveMs,
+        total: dataMs - started,
+      }),
+    ),
+  });
+  if (sessionSynced) {
+    response.cookies.delete(ACTIVE_ORG_COOKIE);
+  }
+  return response;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const started = performance.now();
   const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  const orgId = await resolveOrgId(session.user.id, session.user.orgId);
-  if (!orgId) {
-    return NextResponse.json({ configured: false, role: null, currentStep: "install" });
+  const sessionMs = performance.now();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const membership = await prisma.organizationMembership.findUnique({
-    where: { userId_orgId: { userId: session.user.id, orgId } },
-    include: {
-      organization: {
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          _count: { select: { invites: true, developers: true, devices: true } },
-        },
-      },
-    },
+  const includeDeveloper = request.nextUrl.searchParams.get("include") === "developer";
+  const status = await buildOnboardingStatus(session.user.id, session.user.orgId, {
+    includeDeveloper,
   });
+  const dataMs = performance.now();
 
-  if (!membership) {
-    return NextResponse.json({ configured: false, role: null, currentStep: "install" });
-  }
-
-  const developer = await prisma.developer.findFirst({
-    where: { orgId, authUserId: session.user.id },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      devices: {
-        where: { decommissionedAt: null },
-        orderBy: { lastSeenAt: "desc" },
-        take: 1,
-        select: {
-          id: true,
-          hostname: true,
-          os: true,
-          architecture: true,
-          agentVersion: true,
-          lastSeenAt: true,
-          toolInstallations: {
-            where: { detected: true },
-            select: { toolName: true, version: true, lastCheckedAt: true },
-          },
-        },
-      },
-    },
-  });
-
-  const deviceConnected = Boolean(developer?.devices.length);
-  const teamInvited =
-    membership.organization._count.invites > 0 || membership.organization._count.developers > 1;
-
-  return NextResponse.json({
-    configured: true,
-    role: membership.role,
-    currentStep: deviceConnected ? "complete" : "install",
-    onboardingCompletedAt: membership.onboardingCompletedAt,
-    setupChecklistDismissedAt: membership.setupChecklistDismissedAt,
-    organization: {
-      id: membership.organization.id,
-      name: membership.organization.name,
-      slug: membership.organization.slug,
-    },
-    developer,
-    steps: {
-      install: deviceConnected,
-      team: teamInvited,
-    },
+  return NextResponse.json(status, {
+    headers: onboardingHeaders(
+      timingHeader({
+        session: sessionMs - started,
+        data: dataMs - sessionMs,
+        total: dataMs - started,
+      }),
+    ),
   });
 }
 
 export async function PATCH(request: NextRequest) {
+  const rejected = browserMutationGuard(request);
+  if (rejected) return rejected;
+
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const parsed = updateSchema.safeParse(await request.json().catch(() => ({})));

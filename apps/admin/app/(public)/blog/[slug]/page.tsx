@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { ContentArticle } from "@/components/public/content-article";
-import { getContentByKindAndSlug } from "@/content/registry";
-import { BLOG_POSTS } from "@/content/blog";
-import { contentPageMetadata } from "@/lib/public/seo-metadata";
+import { BlogArticle } from "@/components/public/blog-article";
+import { BLOG_POSTS, getBlogPostBySlug } from "@/content/blog";
+import { blogPostMetadata } from "@/lib/public/seo-metadata";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -13,14 +12,14 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const page = getContentByKindAndSlug("blog", slug);
-  if (!page) return {};
-  return contentPageMetadata(page);
+  const post = getBlogPostBySlug(slug);
+  if (!post) return {};
+  return blogPostMetadata(post);
 }
 
 export default async function BlogPostPage({ params }: Props) {
   const { slug } = await params;
-  const page = getContentByKindAndSlug("blog", slug);
-  if (!page) notFound();
-  return <ContentArticle page={page} />;
+  const post = getBlogPostBySlug(slug);
+  if (!post) notFound();
+  return <BlogArticle post={post} />;
 }

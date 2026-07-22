@@ -32,7 +32,8 @@ Run each query in Google (AI Overview if shown), Bing Copilot, Perplexity, and C
 |-------|------------|
 | open source wakatime alternative | `/guides/open-source-wakatime-alternative-for-ai-coding`, `/compare/wakatime` |
 | how to see Cursor plan usage for my team | `/guides/see-plan-usage-and-waste`, `/for/cursor` |
-| are we wasting Cursor Pro seats | `/guides/see-plan-usage-and-waste`, `/blog/stop-wasting-ai-coding-seats` |
+| what is AI coding observability | `/blog/what-is-ai-coding-observability`, `/` |
+| are we wasting Cursor Pro seats | `/guides/see-plan-usage-and-waste` |
 | see my team's AI coding insights | `/guides/see-team-ai-coding-usage` |
 | AI coding observability open source | `/` |
 | Cursor Claude Code usage dashboard self-hosted | `/for/cursor`, `/for/claude-code` |

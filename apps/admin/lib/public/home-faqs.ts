@@ -6,7 +6,7 @@ export const HOME_FAQS: ContentFaq[] = [
   {
     question: "What is UseJunction?",
     answer:
-      "UseJunction is open-source observability for AI coding tools. It shows which tools and models your team uses, estimated cost and latency, plan and seat utilization, and device health—self-hosted under the UseJunction Community License, with privacy-first controls over how much work detail is visible.",
+      "UseJunction is open-source AI coding observability for teams. It shows which tools and models your team uses, estimated cost and latency, plan and seat utilization, and device health—self-hosted under the UseJunction Community License, with privacy-first controls over how much work detail is visible.",
   },
   {
     question: "How do I see my team’s AI coding plan usage and waste?",

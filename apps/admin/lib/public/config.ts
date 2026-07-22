@@ -5,13 +5,13 @@ import {
 
 export const siteConfig = {
   name: "UseJunction",
-  tagline: "Open-source observability for AI coding tools",
+  tagline: "Open-source AI coding observability for teams",
   /** Secondary promise for SEO / AEO (plan usage + team insights) */
   promise:
     "See AI coding tool usage, plan utilization, and team insights—before you try to control it.",
   description:
     "Open-source AI coding observability for teams. Track Cursor, Claude Code, and Copilot usage, cost, plan seat waste, and device health. Self-hosted.",
-  seoTitle: "UseJunction — AI Coding Observability for Teams | Plan Usage & Tool Insights",
+  seoTitle: "UseJunction — AI Coding Observability for Teams",
   url: process.env.NEXTAUTH_URL ?? "https://usejunction.dev",
   githubUrl: "https://github.com/Dinuda/usejunction",
   docsUrl: "https://github.com/Dinuda/usejunction#readme",
@@ -30,6 +30,7 @@ export const navAnchors = [{ id: "pricing", label: "Pricing" }] as const;
 /** Primary page links (product lines, guides, etc.). */
 export const navLinks: ReadonlyArray<{ href: string; label: string }> = [
   { href: "/", label: "For Coders" },
+  { href: "/blog", label: "Blog" },
 ];
 
 export const SUPPORTED_TOOLS = [
@@ -221,6 +222,7 @@ export const FOOTER_COLUMNS = {
   product: [
     { label: "Overview", href: "/" },
     { label: "Pricing", href: "/#pricing" },
+    { label: "Blog", href: "/blog" },
     { label: "Changelog", href: siteConfig.changelogUrl },
     { label: "Contact", href: "/contact" },
   ],
