@@ -117,6 +117,35 @@ export function isDueForDailyReport(now: Date, timeZone: string): boolean {
   return localHour(now, timeZone) === DAILY_REPORT_SEND_HOUR;
 }
 
+/**
+ * Mid-hour UTC probe for a Vercel "once per day per UTC hour" cron.
+ * Hobby may fire anytime within the hour; sampling :30 keeps half-hour
+ * offsets (e.g. Asia/Colombo) stable regardless of drift within the hour.
+ */
+export function utcHourProbeDate(now: Date, utcHour: number): Date {
+  const hour = ((Math.trunc(utcHour) % 24) + 24) % 24;
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, 30, 0, 0),
+  );
+}
+
+/** Parse hour from expressions like `5 14 * * *` (minute hour …). */
+export function parseUtcHourFromCronSchedule(schedule: string | null | undefined): number | null {
+  if (!schedule) return null;
+  const parts = schedule.trim().split(/\s+/);
+  if (parts.length < 2) return null;
+  const hour = Number(parts[1]);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return null;
+  return hour;
+}
+
+export function parseUtcHourParam(value: string | null | undefined): number | null {
+  if (value == null || value === "") return null;
+  const hour = Number(value);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return null;
+  return hour;
+}
+
 /** Weekday 0 (Sun) … 6 (Sat) in the given IANA timezone. */
 export function localWeekday(now: Date, timeZone: string): number {
   const short = new Intl.DateTimeFormat("en-US", {
@@ -157,4 +186,21 @@ export function isDueForWeeklyOrgReport(now: Date, timeZone: string): boolean {
     localWeekday(now, timeZone) === WEEKLY_ORG_REPORT_WEEKDAY &&
     localHour(now, timeZone) === DAILY_REPORT_SEND_HOUR
   );
+}
+
+/** Whether this timezone's 19:00 local falls in the given UTC hour bucket. */
+export function isDueForDailyReportAtUtcHour(
+  utcHour: number,
+  timeZone: string,
+  now = new Date(),
+): boolean {
+  return isDueForDailyReport(utcHourProbeDate(now, utcHour), timeZone);
+}
+
+export function isDueForWeeklyOrgReportAtUtcHour(
+  utcHour: number,
+  timeZone: string,
+  now = new Date(),
+): boolean {
+  return isDueForWeeklyOrgReport(utcHourProbeDate(now, utcHour), timeZone);
 }

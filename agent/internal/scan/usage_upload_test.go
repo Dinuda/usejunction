@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,14 +12,22 @@ import (
 	"github.com/usejunction/agent/internal/types"
 )
 
-func TestFilterUsageUploadDelta(t *testing.T) {
+func setupUsageUploadHome(t *testing.T) {
+	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	t.Setenv("USERPROFILE", dir)
-	_ = os.MkdirAll(filepath.Join(dir, ".usejunction", "cache", "cost-usage"), 0700)
+	if err := os.MkdirAll(filepath.Join(dir, ".usejunction", "cache", "cost-usage"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	if config.CacheDir() == "" {
 		t.Fatal("cache dir empty")
 	}
+}
+
+func TestFilterUsageUploadDelta(t *testing.T) {
+	setupUsageUploadHome(t)
+	org, device := "org-1", "device-1"
 
 	now := time.Date(2026, 7, 17, 15, 0, 0, 0, time.UTC)
 	today := types.DailyUsage{Date: "2026-07-17", ToolName: "cursor", Model: "composer", InputTokens: 10, Source: "cursor_local"}
@@ -26,23 +35,23 @@ func TestFilterUsageUploadDelta(t *testing.T) {
 	oldChanged := types.DailyUsage{Date: "2026-07-10", ToolName: "claude", Model: "sonnet", InputTokens: 9, Source: "local_scan"}
 	tooOld := types.DailyUsage{Date: "2026-04-01", ToolName: "codex", Model: "gpt", InputTokens: 100, Source: "local_scan"}
 
-	first := FilterUsageUploadDelta([]types.DailyUsage{today, old, tooOld}, now)
+	first := FilterUsageUploadDelta([]types.DailyUsage{today, old, tooOld}, now, org, device)
 	if len(first) != 2 {
 		t.Fatalf("first = %#v (too-old row must be dropped)", first)
 	}
 	if first[0].Date != "2026-07-17" {
 		t.Fatalf("expected newest-first, got %#v", first)
 	}
-	if err := RememberUsageUpload(first); err != nil {
+	if err := RememberUsageUpload(first, org, device); err != nil {
 		t.Fatal(err)
 	}
 
-	second := FilterUsageUploadDelta([]types.DailyUsage{today, old, tooOld}, now)
+	second := FilterUsageUploadDelta([]types.DailyUsage{today, old, tooOld}, now, org, device)
 	if len(second) != 1 || second[0].Date != "2026-07-17" {
 		t.Fatalf("second = %#v", second)
 	}
 
-	third := FilterUsageUploadDelta([]types.DailyUsage{today, oldChanged}, now)
+	third := FilterUsageUploadDelta([]types.DailyUsage{today, oldChanged}, now, org, device)
 	if len(third) != 2 {
 		t.Fatalf("third = %#v", third)
 	}
@@ -106,5 +115,67 @@ func TestSplitUsageUploadBatches(t *testing.T) {
 	}
 	if SplitUsageUploadBatches(nil, 50) != nil {
 		t.Fatal("nil input should yield nil")
+	}
+}
+
+func TestFingerprintsAreEnrollmentScoped(t *testing.T) {
+	setupUsageUploadHome(t)
+	now := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	row := types.DailyUsage{
+		Date: "2026-07-19", ToolName: "cursor", Model: "composer-2.5",
+		InputTokens: 1000, EstimatedCost: 2.87, Source: "cursor_usage_events",
+	}
+
+	if err := RememberUsageUpload([]types.DailyUsage{row}, "org-a", "device-a"); err != nil {
+		t.Fatal(err)
+	}
+	// Same enrollment: historical row is skipped.
+	pending := FilterUsageUploadDelta([]types.DailyUsage{row}, now, "org-a", "device-a")
+	if len(pending) != 0 {
+		t.Fatalf("same device should skip unchanged history, got %#v", pending)
+	}
+	// Re-enroll / new device: must re-queue (this is the Jul 15–20 data-loss bug).
+	pending = FilterUsageUploadDelta([]types.DailyUsage{row}, now, "org-b", "device-b")
+	if len(pending) != 1 {
+		t.Fatalf("new enrollment must re-upload history, got %#v", pending)
+	}
+}
+
+func TestClearUsageUploadStoreDropsFingerprints(t *testing.T) {
+	setupUsageUploadHome(t)
+	row := types.DailyUsage{Date: "2026-07-19", ToolName: "codex", Model: "gpt", InputTokens: 5, Source: "local_scan"}
+	if err := RememberUsageUpload([]types.DailyUsage{row}, "org-a", "device-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClearUsageUploadStore(); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	pending := FilterUsageUploadDelta([]types.DailyUsage{row}, now, "org-a", "device-a")
+	if len(pending) != 1 {
+		t.Fatalf("after clear, row must be pending again, got %#v", pending)
+	}
+}
+
+func TestLegacyFingerprintFileWithoutDeviceIsIgnored(t *testing.T) {
+	setupUsageUploadHome(t)
+	// Simulate pre-fix usage-upload.json with fingerprints but no device binding.
+	legacy := map[string]any{
+		"fingerprints": map[string]string{
+			"cursor|2026-07-19|composer-2.5|cursor_usage_events": "in:1000,out:0,cr:0,cw:0,r:0,cost:2.870000,sug:0,acc:0,add:0,del:0,com:0,ai:,req:0,v:false,mk:",
+		},
+	}
+	b, _ := json.Marshal(legacy)
+	if err := os.WriteFile(usageUploadPath(), b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	row := types.DailyUsage{
+		Date: "2026-07-19", ToolName: "cursor", Model: "composer-2.5",
+		InputTokens: 1000, EstimatedCost: 2.87, Source: "cursor_usage_events",
+	}
+	pending := FilterUsageUploadDelta([]types.DailyUsage{row}, now, "org-new", "device-new")
+	if len(pending) != 1 {
+		t.Fatalf("legacy unbound fingerprints must not block new device, got %#v", pending)
 	}
 }

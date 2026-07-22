@@ -31,7 +31,7 @@ function authorizeCron(req: NextRequest): NextResponse | null {
  * Seals the UTC day for agent full usage rescans, marks active orgs' today/yesterday
  * dirty, rematerializes those snapshots, and refreshes analytics query caches.
  */
-export async function POST(req: NextRequest) {
+async function handle(req: NextRequest) {
   const denied = authorizeCron(req);
   if (denied) return denied;
 
@@ -67,4 +67,13 @@ export async function POST(req: NextRequest) {
     logServerError("cron/usage-daily-refresh", error);
     return NextResponse.json({ error: "usage daily refresh failed" }, { status: 500 });
   }
+}
+
+/** Vercel Cron invokes GET. */
+export async function GET(req: NextRequest) {
+  return handle(req);
+}
+
+export async function POST(req: NextRequest) {
+  return handle(req);
 }

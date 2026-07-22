@@ -49,7 +49,13 @@ func SplitUsageUploadBatches(rows []types.DailyUsage, batchSize int) [][]types.D
 	return out
 }
 
+// usageUploadStore tracks which aggregates were accepted by the control plane
+// for a specific enrolled device. Fingerprints are never global across
+// re-enrolls — a stale store from a revoked device would skip re-upload into
+// an empty database.
 type usageUploadStore struct {
+	OrgID        string            `json:"orgId,omitempty"`
+	DeviceID     string            `json:"deviceId,omitempty"`
 	Fingerprints map[string]string `json:"fingerprints"`
 }
 
@@ -117,6 +123,30 @@ func saveUsageUploadStore(store usageUploadStore) error {
 	return os.WriteFile(path, b, 0600)
 }
 
+// ClearUsageUploadStore deletes upload fingerprints. Call on enroll so a new
+// device never inherits "already uploaded" state from a prior enrollment.
+func ClearUsageUploadStore() error {
+	path := usageUploadPath()
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// bindUsageUploadStore returns fingerprints only when they belong to this
+// enrollment. A device/org mismatch (re-enroll, workspace switch) starts clean
+// so history is re-uploaded into the new device rows.
+func bindUsageUploadStore(orgID, deviceID string) usageUploadStore {
+	store := loadUsageUploadStore()
+	if orgID == "" || deviceID == "" {
+		return usageUploadStore{OrgID: orgID, DeviceID: deviceID, Fingerprints: map[string]string{}}
+	}
+	if store.OrgID != orgID || store.DeviceID != deviceID {
+		return usageUploadStore{OrgID: orgID, DeviceID: deviceID, Fingerprints: map[string]string{}}
+	}
+	return store
+}
+
 // UsageLookbackStart returns the inclusive UTC calendar day for the lookback
 // window (today minus UsageLookbackDays).
 func UsageLookbackStart(now time.Time) time.Time {
@@ -141,16 +171,17 @@ func FilterUsageLookback(rows []types.DailyUsage, now time.Time) []types.DailyUs
 }
 
 // FilterUsageUploadDelta returns aggregates that should be uploaded:
-// every row for today (UTC), plus older in-window rows whose fingerprint changed.
-// Fingerprints live at ~/.usejunction/cache/cost-usage/usage-upload.json.
+// every row for today (UTC), plus older in-window rows whose fingerprint changed
+// for this org/device. Fingerprints live at
+// ~/.usejunction/cache/cost-usage/usage-upload.json and are enrollment-scoped.
 // Rows outside the 2-month lookback are never queued.
-func FilterUsageUploadDelta(rows []types.DailyUsage, now time.Time) []types.DailyUsage {
+func FilterUsageUploadDelta(rows []types.DailyUsage, now time.Time, orgID, deviceID string) []types.DailyUsage {
 	rows = FilterUsageLookback(rows, now)
 	if len(rows) == 0 {
 		return nil
 	}
 	today := now.UTC().Format("2006-01-02")
-	store := loadUsageUploadStore()
+	store := bindUsageUploadStore(orgID, deviceID)
 	out := make([]types.DailyUsage, 0, len(rows))
 	for _, row := range rows {
 		key := usageRowKey(row)
@@ -186,12 +217,14 @@ func TakeUsageUploadBatch(pending []types.DailyUsage, batchSize, maxBatches int)
 }
 
 // RememberUsageUpload marks successfully uploaded rows so unchanged history
-// is skipped on the next collect.
-func RememberUsageUpload(rows []types.DailyUsage) error {
+// is skipped on the next collect for this enrollment only.
+func RememberUsageUpload(rows []types.DailyUsage, orgID, deviceID string) error {
 	if len(rows) == 0 {
 		return nil
 	}
-	store := loadUsageUploadStore()
+	store := bindUsageUploadStore(orgID, deviceID)
+	store.OrgID = orgID
+	store.DeviceID = deviceID
 	cutoff := UsageLookbackStart(time.Now().UTC()).Format("2006-01-02")
 	for key := range store.Fingerprints {
 		// key = tool|date|model|source — drop fingerprints outside lookback.

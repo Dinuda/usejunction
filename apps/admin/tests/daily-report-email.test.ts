@@ -145,7 +145,10 @@ describe("daily report PDF document", () => {
     assert.match(pdf.html, /Acceptance/);
     assert.match(pdf.html, /Breakdown/);
     assert.match(pdf.html, /ChatGPT/);
-    assert.match(pdf.html, /@page \{ size: A4/);
+    assert.match(pdf.html, /Spend by hour/);
+    assert.match(pdf.html, /Today's spend/);
+    assert.match(pdf.html, /class="actions"/);
+    assert.match(pdf.html, /margin-left: auto/);
   });
 
   test("SVG area chart includes peak halo", () => {

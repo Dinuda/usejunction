@@ -29,7 +29,7 @@ function authorizeCron(req: NextRequest): NextResponse | null {
  * Catch up org-day snapshots: dirty days from ingest, plus today/yesterday for
  * orgs that already have dirty work or recent activity.
  */
-export async function POST(req: NextRequest) {
+async function handle(req: NextRequest) {
   const denied = authorizeCron(req);
   if (denied) return denied;
 
@@ -86,4 +86,13 @@ export async function POST(req: NextRequest) {
     logServerError("cron/materialize-org-day-snapshots", error);
     return NextResponse.json({ error: "materialize failed" }, { status: 500 });
   }
+}
+
+/** Vercel Cron invokes GET. */
+export async function GET(req: NextRequest) {
+  return handle(req);
+}
+
+export async function POST(req: NextRequest) {
+  return handle(req);
 }

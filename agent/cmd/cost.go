@@ -118,7 +118,7 @@ daemon (today UTC always, unchanged historical rows skipped).`,
 			for _, u := range all {
 				aggs = append(aggs, usageToAggregate(u))
 			}
-			_, _, _ = reportLocalUsageDelta(api, aggs, nil)
+			_, _, _ = reportLocalUsageDelta(api, cfg, aggs, nil)
 		}
 
 		if format == "json" {
@@ -152,17 +152,23 @@ daemon (today UTC always, unchanged historical rows skipped).`,
 // reportLocalUsageDelta drains a bounded slice of the pending usage queue.
 // History older than scan.UsageLookbackDays is dropped. Batches within the
 // sync budget are uploaded concurrently (UsageUploadConcurrency). Each
-// successful batch is fingerprinted so later syncs continue the queue without
-// re-uploading accepted rows. Leftover rows after the budget are not an error.
-func reportLocalUsageDelta(api *client.APIClient, rows []client.UsageAggregate, beforeUpload func(drain, pending, scanned int)) (uploaded int, remaining int, err error) {
+// successful batch is fingerprinted for this enrollment only so later syncs
+// continue the queue without re-uploading accepted rows. Failed POSTs
+// (413/4xx/5xx/timeout) never fingerprint. Leftover rows after the budget are
+// not an error.
+func reportLocalUsageDelta(api *client.APIClient, cfg *config.Config, rows []client.UsageAggregate, beforeUpload func(drain, pending, scanned int)) (uploaded int, remaining int, err error) {
 	if len(rows) == 0 {
 		return 0, 0, nil
+	}
+	orgID, deviceID := "", ""
+	if cfg != nil {
+		orgID, deviceID = cfg.OrgID, cfg.DeviceID
 	}
 	usageRows := make([]types.DailyUsage, 0, len(rows))
 	for _, row := range rows {
 		usageRows = append(usageRows, aggregateToUsage(row))
 	}
-	pending := scan.FilterUsageUploadDelta(usageRows, time.Now().UTC())
+	pending := scan.FilterUsageUploadDelta(usageRows, time.Now().UTC(), orgID, deviceID)
 	if len(pending) == 0 {
 		return 0, 0, nil
 	}
@@ -213,7 +219,7 @@ func reportLocalUsageDelta(api *client.APIClient, rows []client.UsageAggregate, 
 		accepted = append(accepted, result.rows...)
 	}
 	if len(accepted) > 0 {
-		if rememberErr := scan.RememberUsageUpload(accepted); rememberErr != nil && firstErr == nil {
+		if rememberErr := scan.RememberUsageUpload(accepted, orgID, deviceID); rememberErr != nil && firstErr == nil {
 			firstErr = rememberErr
 		}
 	}

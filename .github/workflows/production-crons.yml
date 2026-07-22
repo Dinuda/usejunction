@@ -1,0 +1,51 @@
+# Hobby Vercel only allows once-per-day native crons. Hourly report fan-out is
+# triggered here (POST + CRON_SECRET). Requires repo secrets:
+#   CRON_SECRET   — same value as Vercel Production
+#   CRON_BASE_URL — e.g. https://usejunction.dev (no trailing slash)
+name: Production crons
+
+on:
+  schedule:
+    # Daily report fan-out; app gates on local 19:00
+    - cron: "5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-crons-daily-report-send
+  cancel-in-progress: false
+
+jobs:
+  daily-report-send:
+    name: Daily report send
+    runs-on: ubuntu-latest
+    # PDF generation can approach the route maxDuration (300s)
+    timeout-minutes: 8
+    steps:
+      - name: Require secrets
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          CRON_BASE_URL: ${{ secrets.CRON_BASE_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ] || [ -z "$CRON_BASE_URL" ]; then
+            echo "::error::Set repository secrets CRON_SECRET and CRON_BASE_URL"
+            exit 1
+          fi
+      - name: POST /api/cron/daily-report-send
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          CRON_BASE_URL: ${{ secrets.CRON_BASE_URL }}
+        run: |
+          set -euo pipefail
+          base="${CRON_BASE_URL%/}"
+          code=$(curl -sS -o /tmp/cron-body.json -w "%{http_code}" \
+            -X POST "$base/api/cron/daily-report-send" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            --max-time 300)
+          echo "HTTP $code"
+          cat /tmp/cron-body.json || true
+          echo
+          test "$code" = "200"

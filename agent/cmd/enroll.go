@@ -8,6 +8,7 @@ import (
 	"github.com/usejunction/agent/internal/client"
 	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/configure"
+	"github.com/usejunction/agent/internal/scan"
 )
 
 var (
@@ -60,6 +61,11 @@ var enrollCmd = &cobra.Command{
 		}
 		if _, err := cfg.EnsureLocalSyncCredentials(); err != nil {
 			return fmt.Errorf("local sync credentials: %w", err)
+		}
+		// Drop prior-enrollment upload fingerprints so history is re-uploaded
+		// into this device instead of being skipped against an empty DB.
+		if err := scan.ClearUsageUploadStore(); err != nil {
+			return fmt.Errorf("clear usage upload cache: %w", err)
 		}
 		if err := config.Save(cfg); err != nil {
 			return fmt.Errorf("saving config: %w", err)

@@ -44,9 +44,10 @@ function metricValue(point: DailyReportSeriesPoint, metric: "cost" | "requests")
 export function buildPdfAreaChartSvg(
   series: DailyReportSeriesPoint[],
   metric: "cost" | "requests",
+  options?: { height?: number },
 ): string {
   const width = 720;
-  const height = 260;
+  const height = options?.height ?? 200;
   const padL = 44;
   const padR = 16;
   const padT = 20;
@@ -229,11 +230,18 @@ export function buildDailyReportPdfHtml(input: {
   const chartSvg = buildPdfAreaChartSvg(
     report.series.length ? report.series : [{ label: "—", requests: 0, tokens: 0, cost: 0 }],
     metric,
+    { height: isTeamWeek ? 200 : 180 },
   );
-  const chartLegend = metric === "cost" ? "Daily spend · key moments" : "Requests · key moments";
+  const chartLegend = isTeamWeek
+    ? metric === "cost"
+      ? "Daily spend this week"
+      : "Requests this week"
+    : metric === "cost"
+      ? "Spend by hour"
+      : "Requests by hour";
 
   const tiles = [
-    { value: spend, label: "Period spend" },
+    { value: spend, label: isTeamWeek ? "Period spend" : "Today's spend" },
     { value: planUsed, label: "Plans used" },
     { value: acceptance, label: "Acceptance" },
     { value: fourthValue, label: fourthLabel },
@@ -243,6 +251,7 @@ export function buildDailyReportPdfHtml(input: {
     report.topTools.length === 0
       ? `<p class="muted">No tool breakdown for this period.</p>`
       : report.topTools
+          .slice(0, isTeamWeek ? 6 : 4)
           .map((tool) => {
             const width = Math.max(3, Math.min(100, Math.round(tool.sharePercent)));
             return `<div class="break-row">
@@ -267,30 +276,37 @@ export function buildDailyReportPdfHtml(input: {
     html, body {
       margin: 0;
       padding: 0;
+      width: 210mm;
+      height: 297mm;
+      overflow: hidden;
       background: ${brand.page};
       color: ${brand.charcoal};
       font-family: ${FONT};
       -webkit-font-smoothing: antialiased;
     }
-    body { padding: 28px 24px; }
+    body { padding: 18px 20px; }
     .card {
-      max-width: 720px;
+      width: 100%;
+      height: calc(297mm - 36px);
       margin: 0 auto;
       background: ${brand.white};
       border: 1px solid ${brand.border};
-      border-radius: 20px;
-      padding: 36px 40px 40px;
+      border-radius: 16px;
+      padding: 24px 28px 22px;
+      display: flex;
+      flex-direction: column;
     }
     .top {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 16px;
-      margin-bottom: 28px;
+      margin-bottom: 18px;
+      flex-shrink: 0;
     }
-    .logo { height: 28px; width: auto; display: block; }
+    .logo { height: 24px; width: auto; display: block; }
     .context {
-      font-size: 11px;
+      font-size: 10px;
       letter-spacing: 0.14em;
       text-transform: uppercase;
       color: ${brand.muted};
@@ -298,17 +314,19 @@ export function buildDailyReportPdfHtml(input: {
     }
     h1 {
       margin: 0;
-      font-size: 32px;
+      font-size: 26px;
       font-weight: 600;
       letter-spacing: -0.025em;
       line-height: 1.15;
+      flex-shrink: 0;
     }
     .insight {
-      margin: 14px 0 0;
-      font-size: 15px;
-      line-height: 1.65;
+      margin: 10px 0 0;
+      font-size: 13px;
+      line-height: 1.55;
       color: ${brand.muted};
-      max-width: 560px;
+      max-width: 100%;
+      flex-shrink: 0;
     }
     .underline {
       color: ${brand.charcoal};
@@ -316,110 +334,124 @@ export function buildDailyReportPdfHtml(input: {
       text-underline-offset: 3px;
       text-decoration-color: ${brand.border};
     }
-    .chart { margin-top: 28px; }
+    .chart { margin-top: 16px; flex-shrink: 0; }
     .chart svg { width: 100%; height: auto; display: block; }
     .legend {
-      margin-top: 10px;
+      margin-top: 6px;
       text-align: center;
-      font-size: 12px;
+      font-size: 11px;
       color: ${brand.muted};
     }
     .legend-dot {
       display: inline-block;
-      width: 7px;
-      height: 7px;
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
       background: ${brand.teal};
-      margin-right: 7px;
+      margin-right: 6px;
       vertical-align: middle;
     }
     .kpis {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 12px;
-      margin-top: 28px;
+      gap: 10px;
+      margin-top: 16px;
+      flex-shrink: 0;
     }
     .kpi {
       background: ${brand.wash};
-      border-radius: 12px;
-      padding: 22px 12px;
+      border-radius: 10px;
+      padding: 14px 8px;
       text-align: center;
     }
     .kpi-value {
-      font-size: 20px;
+      font-size: 17px;
       font-weight: 600;
       letter-spacing: -0.01em;
       font-variant-numeric: tabular-nums;
       word-break: break-word;
     }
     .kpi-label {
-      margin-top: 8px;
-      font-size: 11px;
+      margin-top: 6px;
+      font-size: 10px;
       color: ${brand.muted};
     }
     .summary {
-      margin-top: 32px;
-      padding-top: 28px;
+      margin-top: 16px;
+      padding-top: 16px;
       border-top: 1px solid ${brand.border};
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
     }
     .summary h2 {
       margin: 0;
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 600;
       letter-spacing: -0.01em;
       line-height: 1.35;
     }
     .summary p {
-      margin: 12px 0 0;
-      font-size: 14px;
-      line-height: 1.65;
+      margin: 8px 0 0;
+      font-size: 13px;
+      line-height: 1.5;
       color: ${brand.muted};
     }
     .section-label {
-      margin-top: 28px;
-      font-size: 11px;
+      margin-top: 14px;
+      font-size: 10px;
       letter-spacing: 0.12em;
       text-transform: uppercase;
       color: ${brand.muted};
       font-weight: 600;
     }
-    .break-row { padding: 16px 0; border-bottom: 1px solid ${brand.border}; }
+    .break-row { padding: 10px 0; border-bottom: 1px solid ${brand.border}; }
     .break-row:last-child { border-bottom: none; }
     .break-top { display: flex; justify-content: space-between; gap: 12px; }
-    .break-name, .break-cost { font-size: 15px; font-weight: 600; }
-    .break-meta { margin-top: 5px; font-size: 13px; color: ${brand.muted}; }
+    .break-name, .break-cost { font-size: 14px; font-weight: 600; }
+    .break-meta { margin-top: 4px; font-size: 12px; color: ${brand.muted}; }
     .bar-track {
-      margin-top: 10px;
-      height: 6px;
+      margin-top: 8px;
+      height: 5px;
       background: ${brand.track};
       border-radius: 999px;
       overflow: hidden;
     }
     .bar-fill {
-      height: 6px;
+      height: 5px;
       background: ${brand.teal};
       border-radius: 999px;
     }
+    .actions {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: auto;
+      padding-top: 14px;
+      flex-shrink: 0;
+    }
     .cta {
       display: inline-block;
-      margin-top: 28px;
       background: ${brand.yellow};
       color: ${brand.charcoal};
       text-decoration: none;
-      padding: 13px 20px;
+      padding: 11px 18px;
       font-weight: 600;
-      font-size: 14px;
+      font-size: 13px;
       border: 1px solid ${brand.yellowDark};
       border-radius: 8px;
+      white-space: nowrap;
+      margin-left: auto;
     }
     .footer {
-      margin-top: 20px;
-      font-size: 12px;
-      line-height: 1.6;
+      font-size: 11px;
+      line-height: 1.5;
       color: ${brand.muted};
+      max-width: 55%;
     }
     .footer a { color: ${brand.teal}; }
-    .muted { color: ${brand.muted}; font-size: 14px; }
+    .muted { color: ${brand.muted}; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -455,10 +487,12 @@ export function buildDailyReportPdfHtml(input: {
       ${breakdown}
     </div>
 
-    <a class="cta" href="${escapeHtml(url)}">${escapeHtml(isTeamWeek ? "Open this week's report" : "Open today's report")}</a>
-    <div class="footer">
-      ${escapeHtml(isTeamWeek ? `Sent Sundays at 19:00 in ${report.timeZone}.` : `Sent at 19:00 in ${report.timeZone}.`)}
-      <a href="${escapeHtml(settingsUrl)}">Manage email reports</a>
+    <div class="actions">
+      <div class="footer">
+        ${escapeHtml(isTeamWeek ? `Sent Sundays at 19:00 in ${report.timeZone}.` : `Sent at 19:00 in ${report.timeZone}.`)}
+        <a href="${escapeHtml(settingsUrl)}">Manage email reports</a>
+      </div>
+      <a class="cta" href="${escapeHtml(url)}">${escapeHtml(isTeamWeek ? "Open this week's report" : "Open today's report")}</a>
     </div>
   </div>
 </body>

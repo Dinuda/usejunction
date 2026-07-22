@@ -477,8 +477,16 @@ const localUsageMaxPayloadBytes = 900 * 1024
 
 func (c *APIClient) ReportLocalUsage(aggregates []UsageAggregate) error {
 	for _, batch := range chunkUsageAggregates(aggregates, localUsageBatchSize, localUsageMaxPayloadBytes) {
-		if err := c.post("/api/ingest/local-usage", map[string]any{"aggregates": batch}); err != nil {
+		var out struct {
+			Upserted int `json:"upserted"`
+		}
+		if err := c.postJSON("/api/ingest/local-usage", map[string]any{"aggregates": batch}, &out); err != nil {
 			return err
+		}
+		// HTTP 200 with upserted=0 means nothing landed (all rows dropped).
+		// Treat as failure so the caller does not fingerprint those rows.
+		if len(batch) > 0 && out.Upserted <= 0 {
+			return fmt.Errorf("POST /api/ingest/local-usage upserted 0 of %d aggregates", len(batch))
 		}
 	}
 	return nil

@@ -142,7 +142,7 @@ func collectAndReportWithProgress(
 		}
 	}
 	if len(usageReports) > 0 {
-		uploaded, remaining, uploadErr := reportLocalUsageDelta(api, usageReports, func(drain, pending, scanned int) {
+		uploaded, remaining, uploadErr := reportLocalUsageDelta(api, cfg, usageReports, func(drain, pending, scanned int) {
 			progress("upload-usage", fmt.Sprintf("Uploading %d of %d queued usage rows (scanned %d, last %d days)", drain, pending, scanned, scan.UsageLookbackDays))
 		})
 		if uploadErr != nil && uploaded == 0 {

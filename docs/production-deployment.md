@@ -94,13 +94,26 @@ After changing env vars, **redeploy** Production so the new values are picked up
 
 ## Cron jobs
 
-| Route | Purpose | Schedule |
-|-------|---------|----------|
-| `POST /api/cron/usage-daily-refresh` | Seal UTC day for agent full usage rescans + invalidate analytics caches | `15 0 * * *` (Vercel cron in `apps/admin/vercel.json`) |
-| `POST /api/cron/materialize-org-day-snapshots` | Materialize org day analytics snapshots | `*/15 * * * *` |
-| `POST /api/cron/daily-report-send` | Email daily report teasers at 19:00 in each user’s timezone | `5 * * * *` |
+Hobby Vercel only allows **once-per-day** native crons. The hourly report fan-out runs via GitHub Actions (`.github/workflows/production-crons.yml`).
 
-These routes exist but are **not** scheduled by default (no Actions schedule; add Vercel cron or external ping if needed):
+| Route | Purpose | Scheduler | Schedule |
+|-------|---------|-----------|----------|
+| `GET/POST /api/cron/usage-daily-refresh` | Seal UTC day for agent full usage rescans + invalidate analytics caches | Vercel (`apps/admin/vercel.json`) | `15 0 * * *` |
+| `GET/POST /api/cron/materialize-org-day-snapshots` | Materialize org day analytics snapshots | Vercel (`apps/admin/vercel.json`) | `45 0 * * *` |
+| `POST /api/cron/daily-report-send` | Email daily report teasers at 19:00 in each user’s timezone | GitHub Actions | `5 * * * *` |
+
+### GitHub Actions secrets (required for hourly report send)
+
+Add these as **repository** secrets (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|--------|--------|
+| `CRON_SECRET` | Same value as Vercel Production `CRON_SECRET` |
+| `CRON_BASE_URL` | `https://usejunction.dev` (no trailing slash) |
+
+You can also run **Actions → Production crons → Run workflow** to invoke report send manually.
+
+These routes exist but are **not** scheduled by default (add a Vercel daily cron, extend the Actions workflow, or an external ping if needed):
 
 | Route | Purpose | When to schedule |
 |-------|---------|------------------|
@@ -108,11 +121,13 @@ These routes exist but are **not** scheduled by default (no Actions schedule; ad
 | `POST /api/cron/provider-sync` | Sync due provider connections | Only if you rely on automatic provider pulls |
 | `POST /api/cron/litellm-budget` | Reset LiteLLM budgets | Only if LiteLLM runs in production |
 
-Authenticate with `Authorization: Bearer $CRON_SECRET`.
+Authenticate with `Authorization: Bearer $CRON_SECRET`. Vercel Cron invokes **GET**; Actions and local curl use **POST**.
 
 The usage daily refresh stores `fullUsageRescanDay` (UTC `YYYY-MM-DD`) in `app_runtime_settings`. Enrolled agents receive that day on heartbeat and run one full 60-day local usage rescan, then return to incremental snapshot syncs.
 
 Daily report emails are **separate** from the usage seal. The hourly `daily-report-send` job selects users whose local clock is 19:00, sends a branded HTML teaser (personal + owner/admin org rollup), and deep-links to `/reports/daily` (React + shadcn charts). Users opt out under Settings → Email reports. Timezone is captured from the browser and agent heartbeat (`User.timeZone`).
+
+**Note:** GitHub Actions schedules can drift by a few minutes (and occasionally longer on free plans). That is acceptable for the timezone-gated report send.
 
 **Local dev:** how to trigger the report cron, test the UI without email, and interpret `due` / `skipped` — [daily-reports.md](./daily-reports.md#run-the-report-job-locally).
 

@@ -249,8 +249,57 @@ async function hourlySeries(input: {
       break;
     }
   }
-  if (lastActive < 0) return points.slice(0, Math.max(1, new Date().getHours()));
+  if (lastActive < 0) {
+    const endHour = Number(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: input.timeZone,
+        hour: "numeric",
+        hourCycle: "h23",
+      })
+        .formatToParts(new Date())
+        .find((p) => p.type === "hour")?.value ?? "23",
+    );
+    return points.slice(0, Math.max(1, endHour + 1));
+  }
   return points.slice(0, lastActive + 1);
+}
+
+function dailySeriesForDay(input: {
+  hourly: DailyReportSeriesPoint[];
+  totals: { requests: number; tokens: number; cost: number };
+  timeZone: string;
+  now: Date;
+}): DailyReportSeriesPoint[] {
+  if (input.hourly.some((p) => p.requests > 0 || p.tokens > 0 || p.cost > 0)) {
+    return input.hourly;
+  }
+  if (input.totals.requests <= 0 && input.totals.cost <= 0 && input.totals.tokens <= 0) {
+    return input.hourly;
+  }
+
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: input.timeZone,
+      hour: "numeric",
+      hourCycle: "h23",
+    })
+      .formatToParts(input.now)
+      .find((p) => p.type === "hour")?.value ?? "0",
+  );
+  const points: DailyReportSeriesPoint[] = [];
+  for (let h = 0; h <= hour; h++) {
+    points.push({
+      label: `${String(h).padStart(2, "0")}:00`,
+      requests: 0,
+      tokens: 0,
+      cost: 0,
+    });
+  }
+  const peak = points[points.length - 1]!;
+  peak.requests = input.totals.requests;
+  peak.tokens = input.totals.tokens;
+  peak.cost = input.totals.cost;
+  return points;
 }
 
 async function recentDailySeries(input: {
@@ -390,7 +439,7 @@ export async function getDailyReportPayload(input: {
   const uniqueToday = [...new Map(todayDates.map((d) => [d.toISOString(), d])).values()];
   const prevDates = [dateOnlyUtc(new Date(`${previousDate}T00:00:00.000Z`))];
 
-  const [todayRows, prevRows, hourly, recent, org, planUsedPercent, acceptancePercent] = await Promise.all([
+  const [todayRows, prevRows, hourly, org, planUsedPercent, acceptancePercent] = await Promise.all([
     usageForUtcDates({ orgId: input.orgId, developerId, dates: uniqueToday }),
     usageForUtcDates({ orgId: input.orgId, developerId, dates: prevDates }),
     hourlySeries({
@@ -399,11 +448,6 @@ export async function getDailyReportPayload(input: {
       from: window.from,
       to: window.to,
       timeZone,
-    }),
-    recentDailySeries({
-      orgId: input.orgId,
-      developerId,
-      localDate,
     }),
     prisma.organization.findUnique({
       where: { id: input.orgId },
@@ -418,8 +462,12 @@ export async function getDailyReportPayload(input: {
   const today = sumRows(exact.length > 0 ? exact : todayRows);
   const previous = sumRows(prevRows);
 
-  const series =
-    hourly.some((p) => p.requests > 0 || p.tokens > 0) ? hourly : recent;
+  const series = dailySeriesForDay({
+    hourly,
+    totals: { requests: today.requests, tokens: today.tokens, cost: today.cost },
+    timeZone,
+    now,
+  });
 
   let membersActive: number | undefined;
   if (input.kind === "org") {

@@ -27,14 +27,16 @@ Emails link to the in-app report (`period=week` for team). Charts live in the pr
 
 ## Production cron
 
-| Route | Schedule | Role |
-|-------|----------|------|
-| `POST /api/cron/daily-report-send` | `5 * * * *` (hourly at :05) | Personal at local 19:00; team weekly on Sunday 19:00 |
-| `POST /api/cron/usage-daily-refresh` | `15 0 * * *` | UTC day seal + agent full rescan (separate job) |
+Hobby Vercel cannot run hourly crons, so report send is triggered from GitHub Actions.
+
+| Route | Schedule | Scheduler | Role |
+|-------|----------|-----------|------|
+| `POST /api/cron/daily-report-send` | `5 * * * *` (hourly at :05) | GitHub Actions (`production-crons.yml`) | Personal at local 19:00; team weekly on Sunday 19:00 |
+| `GET/POST /api/cron/usage-daily-refresh` | `15 0 * * *` | Vercel (`vercel.json`) | UTC day seal + agent full rescan (separate job) |
 
 Auth: `Authorization: Bearer $CRON_SECRET`
 
-See [production-deployment.md](./production-deployment.md#cron-jobs) for env vars and Vercel schedule.
+See [production-deployment.md](./production-deployment.md#cron-jobs) for secrets (`CRON_SECRET`, `CRON_BASE_URL`) and the Hobby/Actions split.
 
 ## Run the report job locally
 

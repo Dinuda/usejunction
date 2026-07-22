@@ -7,9 +7,12 @@ import {
 } from "@/lib/reports/daily-report";
 import {
   isDueForDailyReport,
+  isDueForDailyReportAtUtcHour,
   isDueForWeeklyOrgReport,
+  isDueForWeeklyOrgReportAtUtcHour,
   localDateString,
   normalizeTimeZone,
+  utcHourProbeDate,
   weekRangeEndingOnOrBefore,
 } from "@/lib/timezone";
 import { logServerError } from "@/lib/errors/public";
@@ -22,6 +25,7 @@ export type DailyReportSendResult = {
   sent: number;
   skipped: number;
   failed: number;
+  utcHour?: number;
 };
 
 async function alreadyDelivered(input: {
@@ -81,6 +85,11 @@ export type DailyReportSendOptions = {
   ignoreHour?: boolean;
   /** Dev/test only: send even if already delivered for localDate. */
   resend?: boolean;
+  /**
+   * UTC hour bucket (0–23) for Hobby-compatible once-daily Vercel crons.
+   * When set, due checks use a mid-hour probe so half-hour offsets stay stable.
+   */
+  utcHour?: number;
 };
 
 async function sendOne(input: {
@@ -137,44 +146,102 @@ async function sendOne(input: {
   }
 }
 
+const membershipInclude = {
+  user: {
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      timeZone: true,
+      notificationPreferences: true,
+      developerProfiles: {
+        where: { removedAt: null },
+        select: { id: true, orgId: true },
+      },
+    },
+  },
+} as const;
+
+async function loadMembershipsForUtcHour(utcHour: number, now: Date) {
+  const zoneRows = await prisma.user.findMany({
+    where: { memberships: { some: {} } },
+    distinct: ["timeZone"],
+    select: { timeZone: true },
+  });
+  const dueZones = new Set<string>();
+  for (const row of zoneRows) {
+    const tz = normalizeTimeZone(row.timeZone);
+    if (
+      isDueForDailyReportAtUtcHour(utcHour, tz, now) ||
+      isDueForWeeklyOrgReportAtUtcHour(utcHour, tz, now)
+    ) {
+      dueZones.add(tz);
+    }
+  }
+
+  if (dueZones.size === 0) return [];
+
+  const zoneList = [...dueZones];
+  return prisma.organizationMembership.findMany({
+    where: {
+      OR: [
+        { user: { timeZone: { in: zoneList } } },
+        // unset timeZone normalizes to UTC
+        ...(dueZones.has("UTC")
+          ? [{ user: { OR: [{ timeZone: null }, { timeZone: "" }] } }]
+          : []),
+      ],
+    },
+    include: membershipInclude,
+  });
+}
+
 /**
  * Fan out report emails:
  * - Personal: daily at 19:00 local
  * - Team/org: weekly on Sunday at 19:00 local (Mon–Sun numbers)
+ *
+ * Pass `utcHour` when invoked from the 24 once-daily Vercel crons so each
+ * bucket only loads memberships whose timezone is due in that UTC hour.
  */
 export async function runDailyReportSend(
   now = new Date(),
   options: DailyReportSendOptions = {},
 ): Promise<DailyReportSendResult> {
-  const { ignoreHour = false, resend = false } = options;
-  const memberships = await prisma.organizationMembership.findMany({
-    include: {
-      user: {
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          timeZone: true,
-          notificationPreferences: true,
-          developerProfiles: {
-            where: { removedAt: null },
-            select: { id: true, orgId: true },
-          },
-        },
-      },
-    },
-  });
+  const { ignoreHour = false, resend = false, utcHour } = options;
+  const probe =
+    utcHour != null && !ignoreHour ? utcHourProbeDate(now, utcHour) : now;
 
-  const result: DailyReportSendResult = { scanned: memberships.length, due: 0, sent: 0, skipped: 0, failed: 0 };
+  const memberships =
+    utcHour != null && !ignoreHour
+      ? await loadMembershipsForUtcHour(utcHour, now)
+      : await prisma.organizationMembership.findMany({ include: membershipInclude });
+
+  const result: DailyReportSendResult = {
+    scanned: memberships.length,
+    due: 0,
+    sent: 0,
+    skipped: 0,
+    failed: 0,
+    ...(utcHour != null ? { utcHour } : {}),
+  };
 
   for (const membership of memberships) {
     const timeZone = normalizeTimeZone(membership.user.timeZone);
-    const dailyDue = ignoreHour || isDueForDailyReport(now, timeZone);
-    const weeklyDue = ignoreHour || isDueForWeeklyOrgReport(now, timeZone);
+    const dailyDue =
+      ignoreHour ||
+      (utcHour != null
+        ? isDueForDailyReportAtUtcHour(utcHour, timeZone, now)
+        : isDueForDailyReport(probe, timeZone));
+    const weeklyDue =
+      ignoreHour ||
+      (utcHour != null
+        ? isDueForWeeklyOrgReportAtUtcHour(utcHour, timeZone, now)
+        : isDueForWeeklyOrgReport(probe, timeZone));
     if (!dailyDue && !weeklyDue) continue;
     result.due += 1;
 
-    const localDate = localDateString(now, timeZone);
+    const localDate = localDateString(probe, timeZone);
     const prefs =
       membership.user.notificationPreferences.find((p) => p.orgId === membership.orgId) ?? null;
     const personalEnabled = prefs?.dailyPersonalEnabled ?? true;

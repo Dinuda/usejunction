@@ -7,11 +7,7 @@
     },
     {
       "path": "/api/cron/materialize-org-day-snapshots",
-      "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/cron/daily-report-send",
-      "schedule": "5 * * * *"
+      "schedule": "45 0 * * *"
     }
   ]
 }
