@@ -25,6 +25,6 @@ export default function ForgotPasswordPage() {
 
   return <AuthShell title="Reset your password." description="Enter your email and we’ll send a reset link if an account exists.">
     {sent ? <Alert><AlertDescription>Check your email for next steps. If you don’t see it, check your spam folder.</AlertDescription></Alert> : <form onSubmit={submit} className="space-y-4" aria-busy={loading}><div className="space-y-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="you@company.com" /></div><Button className="w-full" disabled={loading}>{loading ? "Sending…" : "Send reset link"}</Button></form>}
-    <a href="/login" className="mt-6 block text-sm text-muted-foreground underline underline-offset-4">Back to sign in</a>
+    <a href="/login" className="mt-6 block text-center text-sm text-muted-foreground !underline underline-offset-4">Back to sign in</a>
   </AuthShell>;
 }

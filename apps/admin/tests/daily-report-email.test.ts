@@ -18,6 +18,7 @@ const report: DailyReportPayload = {
     cost: 1.25,
     tools: 2,
     requestsDeltaPct: 10,
+    tokensDeltaPct: 8,
     costDeltaPct: -5,
     planUsedPercent: 42,
     acceptancePercent: 61,
@@ -35,6 +36,7 @@ const report: DailyReportPayload = {
       tokens: 2000,
       cost: 0.9,
       sharePercent: 72,
+      tokenSharePercent: 59,
     },
     {
       toolName: "cursor",
@@ -43,6 +45,7 @@ const report: DailyReportPayload = {
       tokens: 1400,
       cost: 0.35,
       sharePercent: 28,
+      tokenSharePercent: 41,
     },
   ],
 };
@@ -57,25 +60,24 @@ describe("daily report email", () => {
     assert.match(built.text, /Manage email reports|Turn off daily emails/);
   });
 
-  test("includes plans used, acceptance, breakdown, logo, and email-safe chart", () => {
+  test("includes tokens, requests, breakdown, logo, and email-safe chart", () => {
     const built = buildDailyReportEmail({ report, recipientName: "Dinuda" });
     assert.match(built.html, /Good evening, Dinuda/);
     assert.match(built.html, /usejunction\.png/);
     assert.match(built.html, /alt="UseJunction"/);
-    assert.match(built.html, /Plans used/);
-    assert.match(built.html, /42%/);
-    assert.match(built.html, /Acceptance/);
-    assert.match(built.html, /61%/);
-    assert.match(built.html, /productive effectivity/);
-    assert.match(built.html, /Breakdown/);
+    assert.match(built.html, /Tokens/);
+    assert.match(built.html, /3\.4K|3400/);
+    assert.match(built.html, /Requests/);
+    assert.match(built.html, /Breakdown by tool/);
     assert.match(built.html, /ChatGPT/);
-    assert.match(built.html, /72% of spend/);
-    assert.match(built.html, /#e5ec67/);
+    assert.match(built.html, /59% of tokens/);
+    assert.doesNotMatch(built.html, /Plans used/);
+    assert.doesNotMatch(built.html, /#e5ec67/);
     assert.doesNotMatch(built.html, /<svg/);
   });
 
   test("column chart encodes peak bar", () => {
-    const html = buildEmailColumnChartHtml(report.series, "cost");
+    const html = buildEmailColumnChartHtml(report.series, "tokens");
     assert.match(html, /height="\d+"/);
     assert.match(html, /14:00|18:00/);
   });
@@ -141,18 +143,20 @@ describe("daily report PDF document", () => {
     assert.match(pdf.html, /Good evening, Dinuda/);
     assert.match(pdf.html, /<svg/);
     assert.match(pdf.html, /linearGradient/);
-    assert.match(pdf.html, /Plans used/);
-    assert.match(pdf.html, /Acceptance/);
-    assert.match(pdf.html, /Breakdown/);
+    assert.match(pdf.html, /Tokens/);
+    assert.match(pdf.html, /Requests/);
+    assert.match(pdf.html, /Breakdown by tool/);
     assert.match(pdf.html, /ChatGPT/);
-    assert.match(pdf.html, /Spend by hour/);
+    assert.match(pdf.html, /Tokens by hour/);
     assert.match(pdf.html, /Today's spend/);
+    assert.doesNotMatch(pdf.html, /Plans used/);
+    assert.doesNotMatch(pdf.html, /#e5ec67/);
     assert.match(pdf.html, /class="actions"/);
     assert.match(pdf.html, /margin-left: auto/);
   });
 
   test("SVG area chart includes peak halo", () => {
-    const svg = buildPdfAreaChartSvg(report.series, "cost");
+    const svg = buildPdfAreaChartSvg(report.series, "tokens");
     assert.match(svg, /<svg/);
     assert.match(svg, /circle/);
     assert.match(svg, /#08758a/);

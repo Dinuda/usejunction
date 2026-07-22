@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 /** Legacy workspace report URL. */
-export default function DailyWorkspaceReportRedirectPage({
+export default async function DailyWorkspaceReportRedirectPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;

@@ -8,6 +8,18 @@ Open-source observability for AI coding tools. Track usage, cost, latency, plan/
 
 UseJunction is currently maintained by a single independent developer. The project is open for evaluation, feedback, and self-hosted use today, with a fuller community contribution setup coming soon.
 
+## Tested & verified coverage
+
+UseJunction separates **verified usage** (vendor-reported charges, e.g. Cursor usage events) from **estimated usage** (local scans and pricing models). The combinations below have been tested on real machines and confirmed to surface verified usage correctly in the admin UI.
+
+| Tool | Platform | Verified usage |
+|------|----------|----------------|
+| Cursor | macOS | ✓ |
+| Codex | macOS | ✓ |
+| Cursor | Windows | ✓ |
+
+Other tools and platforms are supported by the agent collector; this table will grow as additional stacks are validated end-to-end.
+
 ## Quick start
 
 ### Full Docker

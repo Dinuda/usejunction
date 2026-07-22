@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test";
+import { setOnboardingState } from "./onboarding-state";
+
+const ownerEmail = process.env.E2E_OWNER_EMAIL ?? "owner@example.com";
 
 const workspaceRoutes = [
   "/dashboard",
@@ -104,7 +107,7 @@ test("owner Team | You switcher scopes Dashboard, Activity, and Signals", async 
   await page.goto("/activity");
   const activityAudience = page.getByRole("tablist", { name: "Audience" });
   await expect(activityAudience.getByRole("tab", { name: "Team" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { name: "Activity." })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Activity." })).toBeVisible();
   await activityAudience.getByRole("tab", { name: "You" }).click();
   await expect(page).toHaveURL(/\/activity\?.*scope=you/);
   await expect(page.getByRole("heading", { name: "Your activity." })).toBeVisible();
@@ -132,7 +135,7 @@ test("owner Team | You switcher scopes Dashboard, Activity, and Signals", async 
 
 test("owner Activity Team|You share layout and Reports section", async ({ page }) => {
   await page.goto("/activity");
-  await expect(page.getByRole("heading", { name: "Activity." })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Activity." })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Reports." })).toBeVisible();
   await expect(page.getByRole("heading", { name: "By tool." })).toBeVisible();
   await expect(page.getByRole("heading", { name: "By model." })).toBeVisible();
@@ -352,8 +355,13 @@ test("classic Signals journey routes redirect to Activity", async ({ page }) => 
 });
 
 test("onboarding resume shows workspace setup choices", async ({ page }) => {
-  await page.goto("/onboarding?resume=1");
-  await expect(page.getByText("Workspace setup").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: /Connect this computer/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Invite the team/i })).toBeVisible();
+  setOnboardingState(ownerEmail, "incomplete");
+  try {
+    await page.goto("/onboarding?resume=1");
+    await expect(page.getByText("Workspace setup").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Connect this computer/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Invite the team/i })).toBeVisible();
+  } finally {
+    setOnboardingState(ownerEmail, "complete");
+  }
 });

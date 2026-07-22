@@ -55,7 +55,7 @@ async function renderWithPuppeteer(html: string): Promise<Buffer> {
   const page = await browser.newPage();
   try {
     await page.setViewport({ width: 1240, height: 1754, deviceScaleFactor: 1 });
-    await page.setContent(html, { waitUntil: "networkidle0", timeout: 30_000 });
+    await page.setContent(html, { waitUntil: "load", timeout: 30_000 });
     await page.evaluate(async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const fonts = (document as any).fonts;

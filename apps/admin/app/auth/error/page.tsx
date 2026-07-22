@@ -85,7 +85,6 @@ export default function AuthErrorPage() {
         size="md"
         accent="cyan"
         contentAlign="top"
-        eyebrow="Auth"
         title={
           signedIn
             ? "You’re signed in to a different account."
@@ -121,7 +120,6 @@ export default function AuthErrorPage() {
       size="md"
       accent="cyan"
       contentAlign="top"
-      eyebrow="Auth"
       title={copy.title}
       description={copy.description}
       statement="Visibility before control."
@@ -129,7 +127,7 @@ export default function AuthErrorPage() {
       <Alert variant="destructive">
         <AlertDescription>{copy.detail}</AlertDescription>
       </Alert>
-      <a href="/login" className="mt-6 block text-sm text-muted-foreground underline underline-offset-4">
+      <a href="/login" className="mt-6 block text-center text-sm text-muted-foreground !underline underline-offset-4">
         Back to sign in
       </a>
     </AuthShell>

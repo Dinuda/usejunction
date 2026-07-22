@@ -13,5 +13,5 @@ test("developer drawer only shows permitted mobile navigation", async ({ page })
   await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(page.getByRole("link", { name: /My tools|Tools/i }).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Team", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Settings", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
 });

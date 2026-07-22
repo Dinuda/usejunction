@@ -20,9 +20,10 @@ function Delta({ value, priorLabel }: { value: number | null; priorLabel: string
   );
 }
 
-function chartMetric(report: DailyReportPayload): "cost" | "requests" {
-  const hasSpend = report.series.some((p) => p.cost > 0);
-  return hasSpend ? "cost" : "requests";
+function chartMetric(report: DailyReportPayload): "tokens" | "cost" | "requests" {
+  if (report.series.some((p) => p.tokens > 0)) return "tokens";
+  if (report.series.some((p) => p.cost > 0)) return "cost";
+  return "requests";
 }
 
 export function DailyReportView({
@@ -81,13 +82,17 @@ export function DailyReportView({
         <SignalsSectionHeader
           title="Usage."
           description={
-            metric === "cost"
+            metric === "tokens"
               ? isWeek
-                ? "Spend across the week."
-                : "Spend through the day."
-              : isWeek
-                ? "Requests across the week."
-                : "Requests through the day."
+                ? "Tokens across the week."
+                : "Tokens through the day."
+              : metric === "cost"
+                ? isWeek
+                  ? "Spend across the week."
+                  : "Spend through the day."
+                : isWeek
+                  ? "Requests across the week."
+                  : "Requests through the day."
           }
         />
         <DailyUsageAreaChart data={report.series} metric={metric} />
@@ -98,7 +103,7 @@ export function DailyReportView({
           title="Tools."
           description={
             report.topTools[0]
-              ? `${report.topTools[0].displayName} led with ${formatCompactNumber(report.topTools[0].requests)} requests · ${formatUsd(report.topTools[0].cost)}.`
+              ? `${report.topTools[0].displayName} led with ${formatCompactNumber(report.topTools[0].tokens)} tokens · ${formatUsd(report.topTools[0].cost)}.`
               : isWeek
                 ? "No usage recorded for this week yet."
                 : "No usage recorded for this local day yet."
@@ -115,7 +120,8 @@ export function DailyReportView({
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium leading-5">{tool.displayName}</p>
                     <p className="mt-1 text-xs leading-4 text-muted-foreground">
-                      {formatCompactNumber(tool.requests)} requests · {formatCompactNumber(tool.tokens)} tokens
+                      {formatCompactNumber(tool.requests)} requests · {formatCompactNumber(tool.tokens)} tokens ·{" "}
+                      {tool.tokenSharePercent.toFixed(0)}% of tokens
                     </p>
                   </div>
                 </div>

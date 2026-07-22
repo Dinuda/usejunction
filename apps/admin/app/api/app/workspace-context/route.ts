@@ -6,6 +6,7 @@ import { appData, appError, timingHeader } from "@/lib/api/app-response";
 import { ACTIVE_ORG_COOKIE } from "@/lib/require-organization";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
 import { computeOrgBillingStatus } from "@/lib/saas-billing/status";
+import { buildSyncWatermark } from "@/lib/workspace-sync-watermark";
 
 function latestIso(...values: Array<Date | null | undefined>): string | null {
   let latest: Date | null = null;
@@ -14,26 +15,6 @@ function latestIso(...values: Array<Date | null | undefined>): string | null {
     if (!latest || value > latest) latest = value;
   }
   return latest?.toISOString() ?? null;
-}
-
-/**
- * Compact token that advances whenever agent ingest lands new device/tool/usage
- * facts. The workspace layout watches this to invalidate stale page caches.
- */
-export function buildSyncWatermark(input: {
-  deviceCount: number;
-  toolCount: number;
-  lastSeenAt: string | null;
-  lastUsageSyncAt: string | null;
-  lastAccountSyncAt: string | null;
-}): string {
-  return [
-    input.deviceCount,
-    input.toolCount,
-    input.lastSeenAt ?? "",
-    input.lastUsageSyncAt ?? "",
-    input.lastAccountSyncAt ?? "",
-  ].join("|");
 }
 
 export async function GET(_request: NextRequest) {

@@ -18,6 +18,9 @@ export type DailyReportSeriesPoint = {
   cost: number;
 };
 
+/** Chart series metric — tokens preferred so the curve reads as activity, not a rising bill. */
+export type ReportChartMetric = "tokens" | "cost" | "requests";
+
 export type DailyReportToolRow = {
   toolName: string;
   displayName: string;
@@ -26,6 +29,8 @@ export type DailyReportToolRow = {
   cost: number;
   /** Share of period spend, 0–100. */
   sharePercent: number;
+  /** Share of period tokens, 0–100. */
+  tokenSharePercent: number;
 };
 
 export type DailyReportPayload = {
@@ -45,8 +50,9 @@ export type DailyReportPayload = {
     cost: number;
     tools: number;
     requestsDeltaPct: number | null;
+    tokensDeltaPct: number | null;
     costDeltaPct: number | null;
-    /** Avg plan/quota used across assignments (0–100+). */
+    /** Avg plan/quota used across assignments (0–100+). Kept for API compat; not shown in report UI. */
     planUsedPercent: number | null;
     /**
      * Accepted / suggested lines from productivity ingest (0–100).
@@ -111,15 +117,19 @@ function sumRows(
       tokens: 0,
       cost: 0,
       sharePercent: 0,
+      tokenSharePercent: 0,
     };
     existing.requests += row.requests;
     existing.tokens += rowTokens;
     existing.cost += rowCost;
     byTool.set(key, existing);
   }
-  const topTools = [...byTool.values()].sort((a, b) => b.cost - a.cost || b.requests - a.requests).slice(0, 6);
+  const topTools = [...byTool.values()]
+    .sort((a, b) => b.tokens - a.tokens || b.cost - a.cost || b.requests - a.requests)
+    .slice(0, 6);
   for (const tool of topTools) {
     tool.sharePercent = cost > 0 ? (tool.cost / cost) * 100 : 0;
+    tool.tokenSharePercent = tokens > 0 ? (tool.tokens / tokens) * 100 : 0;
   }
   return {
     requests,
@@ -397,6 +407,7 @@ async function getWeeklyOrgReportPayload(input: {
       cost: week.cost,
       tools: week.tools,
       requestsDeltaPct: pctDelta(week.requests, previous.requests),
+      tokensDeltaPct: pctDelta(week.tokens, previous.tokens),
       costDeltaPct: pctDelta(week.cost, previous.cost),
       planUsedPercent,
       acceptancePercent,
@@ -500,6 +511,7 @@ export async function getDailyReportPayload(input: {
       cost: today.cost,
       tools: today.tools,
       requestsDeltaPct: pctDelta(today.requests, previous.requests),
+      tokensDeltaPct: pctDelta(today.tokens, previous.tokens),
       costDeltaPct: pctDelta(today.cost, previous.cost),
       planUsedPercent,
       acceptancePercent,

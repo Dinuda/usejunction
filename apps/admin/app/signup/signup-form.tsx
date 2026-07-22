@@ -129,7 +129,7 @@ export function SignupForm() {
         Already have an account?{" "}
         <a
           href={`/login?from=${encodeURIComponent(from)}${email ? `&email=${encodeURIComponent(email)}` : ""}`}
-          className="text-foreground underline underline-offset-4"
+          className="text-foreground !underline underline-offset-4"
         >
           Sign in
         </a>
