@@ -157,6 +157,19 @@ func ReplaceToolNamesAggregates(existing []types.DailyUsage, toolNames []string,
 	return out
 }
 
+func pathUnderRoot(path, root string) bool {
+	path = filepath.Clean(path)
+	root = filepath.Clean(root)
+	if path == root {
+		return true
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 // SourcesUnchanged reports whether every path in want matches the snapshot.
 func SourcesUnchanged(snap ScanSnapshot, keys []string, current map[string]SourceWatermark) bool {
 	if len(keys) == 0 {
@@ -183,7 +196,7 @@ func JSONLSourcesUnchanged(snap ScanSnapshot, roots []string, current map[string
 		}
 		underRoot := false
 		for _, root := range roots {
-			if wm.Path == root || strings.HasPrefix(wm.Path, root+string(filepath.Separator)) {
+			if pathUnderRoot(wm.Path, root) {
 				underRoot = true
 				break
 			}

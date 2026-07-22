@@ -14,7 +14,9 @@
     "test": "pnpm --filter @usejunction/admin test",
     "test:coverage": "pnpm --filter @usejunction/admin test:coverage",
     "test:e2e": "pnpm --filter @usejunction/admin test:e2e",
-    "test:all": "pnpm --filter @usejunction/admin test:all"
+    "test:all": "pnpm --filter @usejunction/admin test:all",
+    "verify": "./scripts/verify-work.sh",
+    "verify:e2e": "./scripts/verify-work.sh --e2e"
   },
   "engines": {
     "node": ">=20"

@@ -45,6 +45,10 @@ test("release cohort, escalation, ownership, idempotency, and confirmation", {
   const pendingDevice = await createDevice("pending-linux", "linux", "amd64", "0.1.0");
   const currentDevice = await createDevice("current-mac", "darwin", "arm64", version);
   const windowsDevice = await createDevice("pending-windows", "windows", "amd64", "0.1.0");
+  const orgCohortDeployments = (releaseId: string, cohortMember = true) =>
+    prisma.agentUpdateDeployment.findMany({
+      where: { releaseId, orgId: org.id, cohortMember },
+    });
   const artifacts = Object.fromEntries(
     ["darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"].map((key) => [key, {
       url: `https://example.com/${key}`,
@@ -65,17 +69,16 @@ test("release cohort, escalation, ownership, idempotency, and confirmation", {
 
   try {
     const promoted = await promoteAgentRelease(manifest, started);
-    assert.equal(promoted.cohortSize, 3, "all compatible enrolled devices belong to the fixed cohort");
-    const initial = await prisma.agentUpdateDeployment.findMany({ where: { releaseId: promoted.release.id } });
+    const initialOrgCohort = await orgCohortDeployments(promoted.release.id);
+    assert.equal(initialOrgCohort.length, 3, "all compatible enrolled devices in this org belong to the fixed cohort");
+    const initial = await prisma.agentUpdateDeployment.findMany({ where: { releaseId: promoted.release.id, orgId: org.id } });
     assert.equal(initial.length, 3);
     assert.equal(initial.find((row) => row.deviceId === currentDevice.id)?.state, "confirmed");
 
     const postActivation = await createDevice("post-activation", "linux", "arm64", "0.1.0");
     const critical = await promoteAgentRelease({ ...manifest, urgency: "critical", rolloutHours: 0 }, escalated);
-    assert.equal(critical.cohortSize, 3);
-    const escalatedRows = await prisma.agentUpdateDeployment.findMany({
-      where: { releaseId: promoted.release.id, cohortMember: true },
-    });
+    assert.equal((await orgCohortDeployments(critical.release.id)).length, 3);
+    const escalatedRows = await orgCohortDeployments(promoted.release.id);
     assert.equal(escalatedRows.length, 3, "critical escalation must not add post-activation devices to cohort");
     assert.equal(escalatedRows.find((row) => row.deviceId === pendingDevice.id)?.eligibleAt.toISOString(), escalated.toISOString());
     await assert.rejects(

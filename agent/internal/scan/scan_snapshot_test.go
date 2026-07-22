@@ -50,16 +50,39 @@ func TestSourcesUnchanged(t *testing.T) {
 	}
 }
 
+func TestPathUnderRootAcceptsForwardSlashPathsOnWindows(t *testing.T) {
+	if filepath.Separator != '\\' {
+		t.Skip("windows-only regression")
+	}
+	if !pathUnderRoot(`/root/b.jsonl`, `/root`) {
+		t.Fatal("forward-slash jsonl paths must match scan roots on Windows")
+	}
+}
+
+func TestPathUnderRoot(t *testing.T) {
+	root := filepath.Join("data", "codex")
+	child := filepath.Join(root, "session.jsonl")
+	if !pathUnderRoot(child, root) {
+		t.Fatalf("expected %q under %q", child, root)
+	}
+	if pathUnderRoot(filepath.Join("data", "other", "x.jsonl"), root) {
+		t.Fatal("expected sibling path to be outside root")
+	}
+}
+
 func TestJSONLSourcesUnchangedDetectsDeletedFile(t *testing.T) {
-	wmA := SourceWatermark{Path: "/root/a.jsonl", Size: 1, ModTime: 1}
-	wmB := SourceWatermark{Path: "/root/b.jsonl", Size: 2, ModTime: 2}
+	dir := t.TempDir()
+	pathA := filepath.Join(dir, "a.jsonl")
+	pathB := filepath.Join(dir, "b.jsonl")
+	wmA := SourceWatermark{Path: pathA, Size: 1, ModTime: 1}
+	wmB := SourceWatermark{Path: pathB, Size: 2, ModTime: 2}
 	snap := ScanSnapshot{Sources: map[string]SourceWatermark{
-		"jsonl:/root/a.jsonl": wmA,
-		"jsonl:/root/b.jsonl": wmB,
+		"jsonl:" + pathA: wmA,
+		"jsonl:" + pathB: wmB,
 	}}
-	current := map[string]SourceWatermark{"jsonl:/root/a.jsonl": wmA}
-	keys := []string{"jsonl:/root/a.jsonl"}
-	if JSONLSourcesUnchanged(snap, []string{"/root"}, current, keys) {
+	current := map[string]SourceWatermark{"jsonl:" + pathA: wmA}
+	keys := []string{"jsonl:" + pathA}
+	if JSONLSourcesUnchanged(snap, []string{dir}, current, keys) {
 		t.Fatal("deleted b.jsonl must invalidate snapshot")
 	}
 }
