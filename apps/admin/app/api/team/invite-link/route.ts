@@ -128,6 +128,11 @@ export async function PUT(req: NextRequest) {
   const existingEmails = new Set(link.allowlist.map((row) => row.email));
   const inviteUrl = serializeLink({ ...link, allowlist: link.allowlist }).url;
   const organizationName = await orgName(auth.orgId);
+  const inviter = await prisma.user.findUnique({
+    where: { id: auth.userId },
+    select: { name: true, email: true },
+  });
+  const invitedBy = { name: inviter?.name, email: inviter?.email ?? auth.email };
   const added = [];
   const emailResults: Array<{ email: string; status: "sent" | "skipped" | "email_failed"; error?: string }> = [];
 
@@ -169,7 +174,7 @@ export async function PUT(req: NextRequest) {
     }
 
     try {
-      await sendTeamInviteEmail({ to: email, organizationName, inviteUrl });
+      await sendTeamInviteEmail({ to: email, organizationName, inviteUrl, invitedBy });
       emailResults.push({ email, status: "sent" });
     } catch (cause) {
       logServerError("team/invite-link", cause);
@@ -180,6 +185,11 @@ export async function PUT(req: NextRequest) {
       });
     }
   }
+
+  // Clear invited emails from the allowlist so the UI list does not linger after success.
+  await prisma.teamInviteAllowlist.deleteMany({
+    where: { linkId: link.id, email: { in: emails } },
+  });
 
   const allowlist = await prisma.teamInviteAllowlist.findMany({
     where: { linkId: link.id },
@@ -236,6 +246,11 @@ export async function PATCH(req: NextRequest) {
   const allowlisted = new Set(link.allowlist.map((row) => row.email));
   const inviteUrl = buildTeamInviteLinkUrl(link.tokenReveal, getPublicAppUrl());
   const organizationName = await orgName(auth.orgId);
+  const inviter = await prisma.user.findUnique({
+    where: { id: auth.userId },
+    select: { name: true, email: true },
+  });
+  const invitedBy = { name: inviter?.name, email: inviter?.email ?? auth.email };
   const emailResults: Array<{ email: string; status: "sent" | "email_failed" | "not_allowlisted"; error?: string }> =
     [];
 
@@ -245,7 +260,7 @@ export async function PATCH(req: NextRequest) {
       continue;
     }
     try {
-      await sendTeamInviteEmail({ to: email, organizationName, inviteUrl });
+      await sendTeamInviteEmail({ to: email, organizationName, inviteUrl, invitedBy });
       emailResults.push({ email, status: "sent" });
     } catch (cause) {
       logServerError("team/invite-link", cause);
@@ -271,6 +286,14 @@ export async function DELETE(req: NextRequest) {
   if (!link) return NextResponse.json({ error: "invite link not found" }, { status: 404 });
 
   await prisma.teamInviteAllowlist.deleteMany({ where: { linkId: link.id, email } });
+  // Revoke pending invite access for this email; leave accepted invites alone.
+  await prisma.organizationInvite.deleteMany({
+    where: {
+      orgId: auth.orgId,
+      email,
+      acceptedAt: null,
+    },
+  });
   const allowlist = await prisma.teamInviteAllowlist.findMany({
     where: { linkId: link.id },
     select: { email: true, createdAt: true },

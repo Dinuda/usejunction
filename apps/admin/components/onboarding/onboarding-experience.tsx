@@ -76,7 +76,7 @@ function ChoiceCard({
         primary
           ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
           : dark
-            ? "border-foreground bg-foreground text-background hover:bg-foreground/90"
+            ? "border-neutral-500 border-1 text-black hover:bg-neutral-200/90 transparent"
             : "border-border bg-card hover:border-primary/40 hover:bg-muted/40",
       )}
     >
@@ -90,7 +90,7 @@ function ChoiceCard({
               primary
                 ? "text-primary-foreground/80"
                 : dark
-                  ? "text-background/80"
+                  ? "text-black/80"
                   : "text-muted-foreground",
             )}
           />
@@ -101,7 +101,7 @@ function ChoiceCard({
             primary
               ? "text-primary-foreground/80"
               : dark
-                ? "text-background/80"
+                ? "text-black/80"
                 : "text-muted-foreground",
           )}
         >

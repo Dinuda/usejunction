@@ -80,7 +80,10 @@ describe("loadDashboardPage personal period window", () => {
       "org-1",
       "user-1",
       "owner",
-      expect.objectContaining({ reportWindow: expect.any(Object) }),
+      expect.objectContaining({
+        reportWindow: expect.any(Object),
+        cycleView: "last_30_days",
+      }),
     );
     const reportWindow = mocks.getMeOverview.mock.calls[0][3].reportWindow as {
       from: Date;
@@ -114,7 +117,10 @@ describe("loadDashboardPage personal period window", () => {
       "org-1",
       "user-2",
       "user",
-      expect.objectContaining({ reportWindow: expect.any(Object) }),
+      expect.objectContaining({
+        reportWindow: expect.any(Object),
+        cycleView: "last_30_days",
+      }),
     );
     const reportWindow = mocks.getMeOverview.mock.calls[0][3].reportWindow as {
       from: Date;

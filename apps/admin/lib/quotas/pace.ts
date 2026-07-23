@@ -1,8 +1,13 @@
 import { quotaWindowLabel } from "@/lib/quotas/display";
 import {
+  PLAN_UTILIZATION_POLICY_VERSION,
   dedupeQuotaUtilizations,
+  evaluatePlanUtilization,
   mapQuotaSnapshots,
   selectPrimaryQuota,
+  type IncludedAllowanceUtilization,
+  type PlanVerdict,
+  type PlanVerdictCode,
   type QuotaSnapshotInput,
   type QuotaUtilization,
 } from "@/lib/quotas/plan-utilization-policy";
@@ -10,6 +15,11 @@ import { toolDisplayName } from "@/lib/tools/catalog";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
+
+export type PaceCycleWindow = {
+  startsAt: string;
+  endsAt: string;
+};
 
 /** Pace vs the quota window: will they exhaust before reset? */
 export type QuotaPaceCode =
@@ -99,9 +109,15 @@ export function projectQuotaPace(
     };
   }
 
-  const windowMs = inferQuotaWindowMs(quota.windowType);
   const resetMs = quota.resetsAt ? new Date(quota.resetsAt).getTime() : NaN;
-  if (!windowMs || Number.isNaN(resetMs)) {
+  const periodStartMs = quota.periodStartsAt ? new Date(quota.periodStartsAt).getTime() : NaN;
+  const inferredWindowMs = inferQuotaWindowMs(quota.windowType);
+  const hasExactWindow =
+    !Number.isNaN(periodStartMs) && !Number.isNaN(resetMs) && resetMs > periodStartMs;
+  const windowMs = hasExactWindow ? resetMs - periodStartMs : inferredWindowMs;
+  const startMs = hasExactWindow ? periodStartMs : Number.isNaN(resetMs) || !windowMs ? NaN : resetMs - windowMs;
+
+  if (!windowMs || Number.isNaN(resetMs) || Number.isNaN(startMs)) {
     const pct = Math.round(quota.rawRatio * 100);
     return {
       ...base,
@@ -111,7 +127,6 @@ export function projectQuotaPace(
   }
 
   const nowMs = now.getTime();
-  const startMs = resetMs - windowMs;
   if (resetMs <= nowMs || startMs > nowMs) {
     return {
       ...base,
@@ -209,4 +224,82 @@ export function paceVerdictLabel(code: QuotaPaceCode): string {
     default:
       return "Pace unavailable";
   }
+}
+
+export function paceToPlanVerdictCode(code: QuotaPaceCode): PlanVerdictCode | null {
+  switch (code) {
+    case "ALREADY_EXCEEDED":
+      return "LIMIT_EXCEEDED";
+    case "EXCESS":
+      return "NEAR_LIMIT";
+    case "ON_TRACK":
+      return "HEALTHY";
+    case "UNDER":
+      return "LIGHT_USE";
+    default:
+      return null;
+  }
+}
+
+function synthesizeIncludedQuota(
+  included: IncludedAllowanceUtilization,
+  cycleWindow: PaceCycleWindow,
+  now: Date,
+): QuotaUtilization | null {
+  if (included.rawRatio == null) return null;
+  return {
+    quotaKey: "included:month",
+    label: "month",
+    unit: "percent",
+    limit: null,
+    consumed: null,
+    remaining: null,
+    rawRatio: included.rawRatio,
+    displayRatio: included.displayRatio,
+    periodStartsAt: cycleWindow.startsAt,
+    resetsAt: cycleWindow.endsAt,
+    source: "estimated",
+    observedAt: now.toISOString(),
+    stale: false,
+    toolKey: "included",
+    windowType: "month",
+    developerId: null,
+  };
+}
+
+/**
+ * Team / plan-usage verdict: prefer burn-rate projection when timing is known,
+ * otherwise keep static ratio thresholds from evaluatePlanUtilization.
+ */
+export function paceAwarePlanVerdict(input: {
+  primaryQuota: QuotaUtilization | null;
+  included: IncludedAllowanceUtilization | null;
+  cycleWindow?: PaceCycleWindow | null;
+  now?: Date;
+}): PlanVerdict {
+  const now = input.now ?? new Date();
+  const base = evaluatePlanUtilization({
+    primaryQuota: input.primaryQuota,
+    included: input.included,
+  });
+  if (base.code === "DATA_STALE") return base;
+
+  const quotaForPace =
+    input.primaryQuota?.rawRatio != null
+      ? input.primaryQuota
+      : input.included && input.cycleWindow
+        ? synthesizeIncludedQuota(input.included, input.cycleWindow, now)
+        : null;
+  if (!quotaForPace) return base;
+
+  const pace = projectQuotaPace(quotaForPace, now);
+  const code = paceToPlanVerdictCode(pace.code);
+  if (!code) return base;
+
+  return {
+    code,
+    severity: code === "LIMIT_EXCEEDED" ? "critical" : code === "NEAR_LIMIT" ? "warning" : "info",
+    reasons: [...base.reasons, `pace_${pace.code.toLowerCase()}`],
+    policyVersion: PLAN_UTILIZATION_POLICY_VERSION,
+  };
 }

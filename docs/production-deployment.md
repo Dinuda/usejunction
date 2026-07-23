@@ -82,6 +82,8 @@ Enable matching `NEXT_PUBLIC_*_AUTH_ENABLED=true` only when credentials are set:
 See [saas-billing-lemon.md](./saas-billing-lemon.md):
 
 - `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_VARIANT_ID_TEAM`, `LEMONSQUEEZY_WEBHOOK_SECRET`
+- Set all four together on hosted production; omit all four for self-hosted Community-only installs
+- Production builds fail fast if any Lemon variable is set without the full validated set (`assertSecureProductionEnv`)
 - Webhook URL: `https://usejunction.dev/api/webhooks/lemonsqueezy`
 
 ### Optional ops / SEO

@@ -128,8 +128,8 @@ func GeminiAntigravityRoots() []string {
 	}
 	home := GeminiHome()
 	return []string{
-		filepath.Join(home, "antigravity"),
 		filepath.Join(home, "antigravity-ide"),
+		filepath.Join(home, "antigravity"),
 		filepath.Join(home, "antigravity-cli"),
 	}
 }

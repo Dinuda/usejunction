@@ -64,6 +64,16 @@ export const forCursor = toolPage({
   extras: ["Personal vs company key signals on enrolled devices.", "Coverage gaps when Cursor is installed but the agent is unhealthy."],
 });
 
+export const forAntigravity = toolPage({
+  slug: "antigravity",
+  name: "Antigravity",
+  primaryKeyword: "Antigravity usage tracking for teams",
+  secondaryKeywords: ["Google Antigravity plan usage", "Antigravity cost per developer", "Gemini Antigravity team analytics"],
+  answer:
+    "UseJunction tracks Google Antigravity usage across your engineering org: who is active, which models run, estimated token cost, and Google AI plan pressure—self-hosted with privacy-first Signals work sessions.",
+  extras: ["Local conversation DB usage from ~/.gemini plus account/plan signals from the Antigravity app.", "Optional work session titles from trajectory summaries without reading prompts."],
+});
+
 export const forClaudeCode = toolPage({
   slug: "claude-code",
   name: "Claude Code",
@@ -156,6 +166,7 @@ export const forLmStudio = toolPage({
 
 export const FOR_PAGES: ContentPage[] = [
   forCursor,
+  forAntigravity,
   forClaudeCode,
   forCodex,
   forCopilot,

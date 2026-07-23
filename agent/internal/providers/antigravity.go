@@ -92,6 +92,13 @@ func (p *AntigravityProvider) ProbeQuota(ctx context.Context) ([]types.QuotaSnap
 }
 
 func (p *AntigravityProvider) ScanLocalUsage(ctx context.Context, refresh bool) ([]types.DailyUsage, error) {
-	_ = ctx
-	return scan.ScanAntigravityLocal(refresh)
+	local, err := scan.ScanAntigravityLocal(refresh)
+	if err != nil {
+		return nil, err
+	}
+	lsRows, _ := probe.ScanAntigravityUsageFromLS(ctx)
+	if len(lsRows) == 0 {
+		return local, nil
+	}
+	return scan.MergeAntigravityUsage(local, lsRows), nil
 }

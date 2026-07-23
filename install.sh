@@ -227,7 +227,7 @@ install_agent() {
 
     local tmp_dir
     tmp_dir="$(mktemp -d)"
-    trap 'rm -rf "$tmp_dir"' EXIT
+    trap 'if [ -n "${tmp_dir:-}" ]; then rm -rf "$tmp_dir"; fi' EXIT
 
     local control_base="${CONTROL_PLANE_URL}/releases/download/v${VERSION}"
     local github_base="https://github.com/Dinuda/usejunction/releases/download/agent-v${VERSION}"
@@ -264,7 +264,7 @@ install_agent() {
 
     local tmp_dir
     tmp_dir="$(mktemp -d)"
-    trap 'rm -rf "$tmp_dir"' EXIT
+    trap 'if [ -n "${tmp_dir:-}" ]; then rm -rf "$tmp_dir"; fi' EXIT
 
     local control_base="${CONTROL_PLANE_URL}/releases/download/v${VERSION}"
     local github_base="https://github.com/Dinuda/usejunction/releases/download/agent-v${VERSION}"

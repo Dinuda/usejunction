@@ -2,6 +2,27 @@ import { writeFileSync } from "node:fs";
 import { buildDailyReportPdfHtml } from "../lib/email/daily-report-pdf";
 import { closePdfBrowser, renderHtmlToPdf } from "../lib/email/render-pdf";
 import type { DailyReportPayload } from "../lib/reports/daily-report";
+import { buildWowWeekStrip, type WowDayTotals } from "../lib/reports/wow-week-strip";
+
+const currentByDate = new Map<string, WowDayTotals>([
+  ["2026-07-20", { tokens: 12_000_000, cost: 2, requests: 10 }],
+  ["2026-07-21", { tokens: 141_000_000, cost: 112.34, requests: 1200 }],
+]);
+const priorByDate = new Map<string, WowDayTotals>([
+  ["2026-07-13", { tokens: 8_000_000, cost: 1.5, requests: 8 }],
+  ["2026-07-14", { tokens: 70_000_000, cost: 40, requests: 400 }],
+]);
+
+const wowStrip = buildWowWeekStrip({
+  asOfLocalDate: "2026-07-21",
+  timeZone: "Asia/Colombo",
+  weekStart: "2026-07-20",
+  weekEnd: "2026-07-26",
+  currentByDate,
+  priorByDate,
+  topToolDisplayName: "ChatGPT",
+  todayPartial: true,
+});
 
 const report: DailyReportPayload = {
   kind: "personal",
@@ -43,15 +64,13 @@ const report: DailyReportPayload = {
       },
     ],
   },
-  series: [
-    { label: "07:00", requests: 10, tokens: 12_000_000, cost: 2 },
-    { label: "09:00", requests: 12, tokens: 18_000_000, cost: 3 },
-    { label: "11:00", requests: 8, tokens: 9_000_000, cost: 2 },
-    { label: "13:00", requests: 15, tokens: 42_000_000, cost: 4 },
-    { label: "15:00", requests: 20, tokens: 88_000_000, cost: 5 },
-    { label: "17:00", requests: 18, tokens: 64_000_000, cost: 6 },
-    { label: "19:00", requests: 1200, tokens: 141_000_000, cost: 112.34 },
-  ],
+  series: wowStrip.cells.map((c) => ({
+    label: c.label,
+    requests: c.requests,
+    tokens: c.tokens,
+    cost: c.cost,
+  })),
+  wowStrip,
   topTools: [
     {
       toolName: "chatgpt",

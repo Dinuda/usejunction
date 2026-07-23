@@ -16,7 +16,12 @@ import {
   type QuotaSnapshotInput,
   type QuotaUtilization,
 } from "@/lib/quotas/plan-utilization-policy";
-import { canonicalToolKey, toolDisplayName } from "@/lib/tools/catalog";
+import {
+  canonicalToolKey,
+  findCatalogPlan,
+  findCatalogTool,
+  toolDisplayName,
+} from "@/lib/tools/catalog";
 
 export type PlanWindowKind = "plan" | "promo" | "credits" | "other";
 
@@ -82,6 +87,20 @@ function toWindow(row: QuotaUtilization): MemberPlanWindow {
   };
 }
 
+function catalogPlanDisplayName(toolKey: string, planKey: string | null | undefined): string | null {
+  const raw = planKey?.trim();
+  if (!raw) return null;
+  const tool = findCatalogTool(toolKey);
+  if (!tool) return raw;
+  const direct = findCatalogPlan(toolKey, raw);
+  if (direct?.name) return direct.name;
+  const normalized = raw.toLowerCase().replace(/[_\s]+/g, "-");
+  const byKey = tool.plans.find((plan) => plan.key === normalized);
+  if (byKey?.name) return byKey.name;
+  const byName = tool.plans.find((plan) => plan.name.toLowerCase() === raw.toLowerCase());
+  return byName?.name ?? raw;
+}
+
 function pickPlanName(
   toolKey: string,
   accounts: Array<{ toolName: string; plan: string | null; email: string | null }>,
@@ -89,14 +108,21 @@ function pickPlanName(
 ): { planName: string | null; accountEmail: string | null } {
   const account = accounts.find((row) => canonicalToolKey(row.toolName) === toolKey);
   if (account?.plan?.trim()) {
-    return { planName: account.plan.trim(), accountEmail: account.email };
+    return {
+      planName: catalogPlanDisplayName(toolKey, account.plan),
+      accountEmail: account.email,
+    };
   }
   const assigned = assignedPlans.find((row) => {
     const hay = `${row.provider} ${row.product} ${row.plan ?? ""}`.toLowerCase();
     return hay.includes(toolKey.replace(/-/g, " ")) || hay.includes(toolKey);
   });
   return {
-    planName: assigned?.plan?.trim() || assigned?.product || null,
+    planName:
+      catalogPlanDisplayName(toolKey, assigned?.plan) ||
+      assigned?.plan?.trim() ||
+      assigned?.product ||
+      null,
     accountEmail: account?.email ?? null,
   };
 }

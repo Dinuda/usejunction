@@ -3,7 +3,30 @@ import { describe, test } from "vitest";
 import { buildDailyReportEmail, buildReportEmailText, reportsEmailFrom } from "@/lib/email/daily-report";
 import { buildEmailColumnChartHtml } from "@/lib/email/daily-report-html";
 import { buildDailyReportPdfHtml, buildPdfAreaChartSvg } from "@/lib/email/daily-report-pdf";
+import { buildEmailWowWeekStripHtml, buildPdfWowWeekStripSvg } from "@/lib/email/wow-week-strip-render";
 import type { DailyReportPayload } from "@/lib/reports/daily-report";
+import { buildWowWeekStrip, type WowDayTotals } from "@/lib/reports/wow-week-strip";
+
+function sampleStrip() {
+  const currentByDate = new Map<string, WowDayTotals>([
+    ["2026-07-20", { tokens: 10, cost: 0.1, requests: 2 }],
+    ["2026-07-21", { tokens: 3400, cost: 1.25, requests: 12 }],
+  ]);
+  const priorByDate = new Map<string, WowDayTotals>([
+    ["2026-07-13", { tokens: 8, cost: 0.1, requests: 2 }],
+    ["2026-07-14", { tokens: 2000, cost: 0.8, requests: 8 }],
+  ]);
+  return buildWowWeekStrip({
+    asOfLocalDate: "2026-07-21",
+    timeZone: "Asia/Colombo",
+    weekStart: "2026-07-20",
+    weekEnd: "2026-07-26",
+    currentByDate,
+    priorByDate,
+    topToolDisplayName: "ChatGPT",
+    todayPartial: true,
+  });
+}
 
 const report: DailyReportPayload = {
   kind: "personal",
@@ -39,10 +62,15 @@ const report: DailyReportPayload = {
     ],
   },
   series: [
-    { label: "10:00", requests: 3, tokens: 100, cost: 0.1 },
-    { label: "14:00", requests: 5, tokens: 200, cost: 0.5 },
-    { label: "18:00", requests: 4, tokens: 150, cost: 0.65 },
+    { label: "Mon", requests: 2, tokens: 10, cost: 0.1 },
+    { label: "Tue", requests: 12, tokens: 3400, cost: 1.25 },
+    { label: "Wed", requests: 0, tokens: 0, cost: 0 },
+    { label: "Thu", requests: 0, tokens: 0, cost: 0 },
+    { label: "Fri", requests: 0, tokens: 0, cost: 0 },
+    { label: "Sat", requests: 0, tokens: 0, cost: 0 },
+    { label: "Sun", requests: 0, tokens: 0, cost: 0 },
   ],
+  wowStrip: sampleStrip(),
   topTools: [
     {
       toolName: "chatgpt",
@@ -80,11 +108,11 @@ describe("daily report email", () => {
     assert.match(built.html, /Good evening, Dinuda/);
     assert.match(built.html, /usejunction\.png/);
     assert.match(built.html, /alt="UseJunction"/);
-    assert.match(built.html, /Plan status/);
+    assert.match(built.html, /Plan status · billing cycle/);
     assert.match(built.html, /Within allowance/);
     assert.match(built.html, /Plan usage/);
     assert.match(built.html, /42%/);
-    assert.match(built.html, /Usage by tool/);
+    assert.match(built.html, /Usage by tool · today/);
     assert.match(built.html, /ChatGPT/);
     assert.doesNotMatch(built.html, /Today · You/);
     assert.doesNotMatch(built.html, /750K tokens and/);
@@ -92,10 +120,56 @@ describe("daily report email", () => {
     assert.doesNotMatch(built.html, /<svg/);
   });
 
+  test("labels request-only tools without inventing token share", () => {
+    const built = buildDailyReportEmail({
+      report: {
+        ...report,
+        kpis: { ...report.kpis, tokens: 0, cost: 0, requests: 47, tokensDeltaPct: -100 },
+        topTools: [
+          {
+            toolName: "antigravity",
+            displayName: "Antigravity",
+            requests: 47,
+            tokens: 0,
+            cost: 0,
+            sharePercent: 0,
+            tokenSharePercent: 0,
+          },
+        ],
+      },
+      recipientName: "Dinuda",
+    });
+    assert.match(built.html, /tokens not reported/);
+    assert.match(built.html, /-100% tokens vs the prior day/);
+    assert.match(built.html, /47 req/);
+  });
+
   test("column chart encodes peak bar", () => {
-    const html = buildEmailColumnChartHtml(report.series, "tokens");
+    const html = buildEmailColumnChartHtml(
+      [
+        { label: "10:00", requests: 3, tokens: 100, cost: 0.1 },
+        { label: "14:00", requests: 5, tokens: 200, cost: 0.5 },
+        { label: "18:00", requests: 4, tokens: 150, cost: 0.65 },
+      ],
+      "tokens",
+    );
     assert.match(html, /height="\d+"/);
     assert.match(html, /14:00|18:00/);
+  });
+
+  test("email prefers WOW week strip over hourly chart", () => {
+    const built = buildDailyReportEmail({ report, recipientName: "Dinuda" });
+    assert.match(built.html, /Mon|Tue|Wed/);
+    assert.match(built.html, /vs last week|Peak:/);
+    assert.doesNotMatch(built.html, /Tokens · key moments/);
+    assert.doesNotMatch(built.html, /<svg/);
+  });
+
+  test("email WOW strip render includes weekday cells", () => {
+    const html = buildEmailWowWeekStripHtml(report.wowStrip!);
+    assert.match(html, /Mon/);
+    assert.match(html, /Tue/);
+    assert.match(html, /Bar height = daily/);
   });
 
   test("team weekly report links with period=week", () => {
@@ -125,11 +199,11 @@ describe("daily report send email", () => {
     const text = buildReportEmailText({
       report,
       recipientName: "Dinuda",
-      settingsUrl: "https://app.usejunction.com/settings",
     });
     assert.match(text, /^Hi Dinuda,/);
-    assert.match(text, /attached as a PDF/);
-    assert.match(text, /Manage email reports: https:\/\/app\.usejunction\.com\/settings/);
+    assert.match(text, /Please find your AI use report for today attached as a PDF\./);
+    assert.match(text, /Best regards,\nJunction AI Assistant\nAI Analytics Team/);
+    assert.doesNotMatch(text, /Manage email reports/);
     assert.doesNotMatch(text, /<html/i);
     assert.doesNotMatch(text, /Open today's report/);
   });
@@ -147,7 +221,7 @@ describe("daily report send email", () => {
 });
 
 describe("daily report PDF document", () => {
-  test("builds polished PDF HTML with SVG area chart, plan status, and KPIs", () => {
+  test("builds polished PDF HTML with WOW strip, plan status, and KPIs", () => {
     const pdf = buildDailyReportPdfHtml({
       report,
       recipientName: "Dinuda",
@@ -157,13 +231,13 @@ describe("daily report PDF document", () => {
     assert.match(pdf.subject, /Your UseJunction day/);
     assert.match(pdf.html, /Good evening, Dinuda/);
     assert.match(pdf.html, /<svg/);
-    assert.match(pdf.html, /linearGradient/);
     assert.match(pdf.html, /Plan status/);
     assert.match(pdf.html, /Within allowance/);
     assert.match(pdf.html, /Plan usage/);
     assert.match(pdf.html, /Usage by tool/);
-    assert.match(pdf.html, /Tokens by hour/);
+    assert.match(pdf.html, /Tokens this week · vs last week/);
     assert.match(pdf.html, /Today's spend/);
+    assert.doesNotMatch(pdf.html, /Tokens by hour/);
     assert.doesNotMatch(pdf.html, /Today · You/);
     assert.doesNotMatch(pdf.html, /#e5ec67/);
     assert.match(pdf.html, /class="actions"/);
@@ -171,9 +245,23 @@ describe("daily report PDF document", () => {
   });
 
   test("SVG area chart includes peak halo", () => {
-    const svg = buildPdfAreaChartSvg(report.series, "tokens");
+    const svg = buildPdfAreaChartSvg(
+      [
+        { label: "10:00", requests: 3, tokens: 100, cost: 0.1 },
+        { label: "14:00", requests: 5, tokens: 200, cost: 0.5 },
+        { label: "18:00", requests: 4, tokens: 150, cost: 0.65 },
+      ],
+      "tokens",
+    );
     assert.match(svg, /<svg/);
     assert.match(svg, /circle/);
     assert.match(svg, /#08758a/);
+  });
+
+  test("PDF WOW strip SVG includes weekday labels", () => {
+    const svg = buildPdfWowWeekStripSvg(report.wowStrip!);
+    assert.match(svg, /<svg/);
+    assert.match(svg, /Mon/);
+    assert.match(svg, /Tue/);
   });
 });

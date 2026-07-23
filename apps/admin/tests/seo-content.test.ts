@@ -21,7 +21,7 @@ test("seo registry includes priority guides and compare pages", () => {
 
 test("all SUPPORTED_TOOLS-adjacent /for pages are published", () => {
   const paths = new Set(ALL_CONTENT_PAGES.map((page) => page.path));
-  for (const slug of ["cursor", "claude-code", "codex", "github-copilot", "ollama", "continue", "cline", "roo-code", "opencode", "lm-studio"]) {
+  for (const slug of ["cursor", "antigravity", "claude-code", "codex", "github-copilot", "ollama", "continue", "cline", "roo-code", "opencode", "lm-studio"]) {
     assert.ok(paths.has(`/for/${slug}`), `missing /for/${slug}`);
   }
 });

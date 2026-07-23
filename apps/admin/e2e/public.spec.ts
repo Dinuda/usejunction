@@ -28,6 +28,15 @@ for (const route of publicRoutes) {
   });
 }
 
+test("unknown routes show branded 404 recovery", async ({ page }) => {
+  const response = await page.goto("/this-route-does-not-exist");
+  expect(response?.status()).toBe(404);
+  await expect(page.getByRole("heading", { name: /This page isn’t here/i })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Go to home" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open dashboard" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Helpful links" })).toBeVisible();
+});
+
 test("landing page shows brand and primary CTA", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("link", { name: "UseJunction home" }).first()).toBeVisible();
@@ -72,7 +81,7 @@ test("homepage shows current pricing", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Community" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Managed", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Get Started" }).first()).toBeVisible();
-  await expect(page.getByRole("link", { name: "Talk to us" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Talk to us" })).toBeVisible();
 });
 
 test("login form rejects bad credentials and links to recovery", async ({ page }) => {

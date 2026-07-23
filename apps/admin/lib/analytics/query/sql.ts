@@ -88,6 +88,8 @@ function canonicalUsageCtes(scope: AnalyticsScope, query: NormalizedUsageQueryV1
         CASE source
           WHEN 'local_scan' THEN 'device_observed'
           WHEN 'cursor_local' THEN 'device_observed'
+          WHEN 'antigravity_local' THEN 'device_observed'
+          WHEN 'antigravity_usage' THEN 'device_observed'
           WHEN 'cursor_usage_events' THEN 'vendor_verified'
           WHEN 'cursor_plan_percent' THEN 'device_observed'
           ELSE source
@@ -105,7 +107,7 @@ function canonicalUsageCtes(scope: AnalyticsScope, query: NormalizedUsageQueryV1
         CASE
           WHEN source IN ('vendor_verified', 'cursor_usage_events') THEN 0
           WHEN source = 'otel_observed' THEN 1
-          WHEN source IN ('device_observed', 'local_scan', 'cursor_local', 'cursor_plan_percent') THEN 2
+          WHEN source IN ('device_observed', 'local_scan', 'cursor_local', 'antigravity_local', 'antigravity_usage', 'cursor_plan_percent') THEN 2
           WHEN source = 'gateway_observed' THEN 3
           WHEN source = 'estimated' THEN 4
           ELSE 99
@@ -113,7 +115,7 @@ function canonicalUsageCtes(scope: AnalyticsScope, query: NormalizedUsageQueryV1
         CASE
           WHEN source IN ('vendor_verified', 'cursor_usage_events', 'invoice_imported') THEN 0
           WHEN source = 'gateway_observed' THEN 1
-          WHEN source IN ('estimated', 'device_observed', 'local_scan', 'cursor_local', 'cursor_plan_percent') THEN 2
+          WHEN source IN ('estimated', 'device_observed', 'local_scan', 'cursor_local', 'antigravity_local', 'antigravity_usage', 'cursor_plan_percent') THEN 2
           WHEN source = 'otel_observed' THEN 3
           ELSE 99
         END AS cost_priority

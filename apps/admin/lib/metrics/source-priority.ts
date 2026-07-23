@@ -23,6 +23,8 @@ const SOURCE_ALIASES: Record<string, string> = {
   cursor_local: "device_observed",
   cursor_usage_events: "vendor_verified",
   cursor_plan_percent: "device_observed",
+  antigravity_local: "device_observed",
+  antigravity_usage: "device_observed",
 };
 
 export function normalizeSource(source: string): string {

@@ -209,7 +209,7 @@ export function InviteTeamForm({
       return;
     }
     setAllowlist(data.allowlist ?? []);
-    if (data.url) applyLinkPayload(data);
+    if (data.url) applyLinkPayload({ ...data, allowlist: data.allowlist ?? [] });
     const added = (data.added ?? []) as AllowlistRow[];
     const emailResults = (data.emailResults ?? []) as Array<{ email: string; status: string }>;
     const emailed = emailResults.filter((row) => row.status === "sent").length;

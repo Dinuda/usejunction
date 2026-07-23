@@ -29,18 +29,40 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-test("upgrade opens the in-app Team checkout page", async () => {
-  const fetchMock = vi.fn();
+test("upgrade opens checkout directly without an intermediate dialog", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ url: "https://lemon.test/checkout" }),
+  });
   vi.stubGlobal("fetch", fetchMock);
+  let href = "http://localhost/dashboard";
+  Object.defineProperty(window, "location", {
+    configurable: true,
+    value: {
+      get href() {
+        return href;
+      },
+      set href(next: string) {
+        href = next;
+      },
+    },
+  });
 
   render(<PlanStatusCard billing={upgradeBilling} />);
   expect(screen.getByText("5 / 5 users")).toBeTruthy();
   expect(screen.queryByText(/devices?/i)).toBeNull();
 
-  const upgrade = screen.getByRole("link", { name: /Upgrade to Team/i });
-  expect(upgrade.getAttribute("href")).toBe("/settings/upgrade");
-  expect(fetchMock).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: /Upgrade to Team/i }));
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+  expect(init.method).toBe("POST");
+  expect(JSON.parse(String(init.body))).toEqual({});
   expect(screen.queryByRole("dialog")).toBeNull();
+  expect(href).toBe("https://lemon.test/checkout");
 });
 
 test("Team card shows organization coverage and billing management", () => {

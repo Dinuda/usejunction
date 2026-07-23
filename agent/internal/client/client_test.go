@@ -2,9 +2,14 @@ package client
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
+
 
 func TestChunkUsageAggregatesByCount(t *testing.T) {
 	makeAggs := func(n int) []UsageAggregate {
@@ -129,5 +134,79 @@ func TestChunkUsageAggregatesOversizedRowAlone(t *testing.T) {
 	}
 	if !foundAlone {
 		t.Fatal("oversized row was not sent in its own batch")
+	}
+}
+
+func TestReportLocalUsageBisectsOn413(t *testing.T) {
+	var posts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/ingest/local-usage" {
+			http.NotFound(w, r)
+			return
+		}
+		posts.Add(1)
+		var body struct {
+			Aggregates []UsageAggregate `json:"aggregates"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad json", 400)
+			return
+		}
+		// Reject multi-row posts; accept singles so bisect can succeed.
+		if len(body.Aggregates) > 1 {
+			http.Error(w, `{"error":"request body too large"}`, http.StatusRequestEntityTooLarge)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"upserted": len(body.Aggregates)})
+	}))
+	defer server.Close()
+
+	api := &APIClient{
+		baseURL: server.URL,
+		token:   "tok",
+		http:    server.Client(),
+	}
+	rows := []UsageAggregate{
+		{Date: "2026-07-20", ToolName: "codex", Model: "a", Source: "local_scan"},
+		{Date: "2026-07-20", ToolName: "codex", Model: "b", Source: "local_scan"},
+		{Date: "2026-07-20", ToolName: "codex", Model: "c", Source: "local_scan"},
+		{Date: "2026-07-20", ToolName: "codex", Model: "d", Source: "local_scan"},
+	}
+	if err := api.ReportLocalUsage(rows); err != nil {
+		t.Fatalf("ReportLocalUsage: %v", err)
+	}
+	if posts.Load() < 4 {
+		t.Fatalf("expected bisect down to single-row POSTs, got %d posts", posts.Load())
+	}
+}
+
+func TestReportLocalUsageSingleRow413(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"request body too large"}`, http.StatusRequestEntityTooLarge)
+	}))
+	defer server.Close()
+
+	api := &APIClient{
+		baseURL: server.URL,
+		token:   "tok",
+		http:    server.Client(),
+	}
+	err := api.ReportLocalUsage([]UsageAggregate{
+		{Date: "2026-07-20", ToolName: "codex", Model: "huge", Source: "local_scan"},
+	})
+	if err == nil {
+		t.Fatal("expected 413 error for single oversized row")
+	}
+	if !isPayloadTooLarge(err) {
+		t.Fatalf("want payload-too-large error, got %v", err)
+	}
+}
+
+func TestIsPayloadTooLarge(t *testing.T) {
+	if !isPayloadTooLarge(fmt.Errorf(`POST /api/ingest/local-usage returned 413: {"error":"request body too large"}`)) {
+		t.Fatal("413 status should match")
+	}
+	if isPayloadTooLarge(fmt.Errorf("POST /api/ingest/local-usage returned 500: boom")) {
+		t.Fatal("500 should not match")
 	}
 }

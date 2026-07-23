@@ -11,14 +11,34 @@ import { readQuotas } from "@/lib/insights/readers/quotas";
 import {
   addLocalDays,
   localDateString,
-  localDayUtcWindow,
   normalizeTimeZone,
   weekRangeEndingOnOrBefore,
 } from "@/lib/timezone";
 import { canonicalToolKey, toolDisplayName } from "@/lib/tools/catalog";
+import {
+  getWowWeekStrip,
+  wowStripToSeries,
+  type WowWeekStripV1,
+} from "@/lib/reports/wow-week-strip";
+import { readCanonicalReportUsage } from "@/lib/reports/canonical-usage";
+
+/**
+ * Agent ingest stores `usageDaily.date` as the local calendar YYYY-MM-DD
+ * (UTC midnight of that calendar day). Never spill into adjacent days —
+ * that reattributes yesterday as "today" when today's key is still empty.
+ */
+export function usageDateKeysForLocalDates(localDates: string[]): Date[] {
+  const unique = new Map<string, Date>();
+  for (const localDate of localDates) {
+    const date = dateOnlyUtc(new Date(`${localDate}T00:00:00.000Z`));
+    unique.set(date.toISOString(), date);
+  }
+  return [...unique.values()];
+}
 
 export type DailyReportKind = "personal" | "org";
 export type DailyReportPeriod = "day" | "week";
+export type { WowWeekStripV1 };
 
 export type DailyReportSeriesPoint = {
   label: string;
@@ -91,6 +111,8 @@ export type DailyReportPayload = {
   /** Live provider quota + plan-allowance verdict (primary windows only). */
   plan: DailyReportPlanStatus | null;
   series: DailyReportSeriesPoint[];
+  /** Mon–Sun intensity strip with week-over-week deltas (preferred chart). */
+  wowStrip: WowWeekStripV1 | null;
   topTools: DailyReportToolRow[];
   membersActive?: number;
 };
@@ -112,62 +134,6 @@ function dateOnlyUtc(date: Date): Date {
 function pctDelta(current: number, previous: number): number | null {
   if (previous <= 0) return current > 0 ? 100 : null;
   return ((current - previous) / previous) * 100;
-}
-
-function sumRows(
-  rows: Array<{
-    requests: number;
-    inputTokens: bigint;
-    outputTokens: bigint;
-    cacheReadTokens: bigint;
-    cacheWriteTokens: bigint;
-    costMicros: bigint;
-    toolName: string;
-  }>,
-) {
-  let requests = 0;
-  let tokens = 0;
-  let cost = 0;
-  const byTool = new Map<string, DailyReportToolRow>();
-  for (const row of rows) {
-    const rowTokens =
-      Number(row.inputTokens) +
-      Number(row.outputTokens) +
-      Number(row.cacheReadTokens) +
-      Number(row.cacheWriteTokens);
-    const rowCost = Number(row.costMicros) / 1_000_000;
-    requests += row.requests;
-    tokens += rowTokens;
-    cost += rowCost;
-    const key = row.toolName || "unknown";
-    const existing = byTool.get(key) ?? {
-      toolName: key,
-      displayName: toolDisplayName(key),
-      requests: 0,
-      tokens: 0,
-      cost: 0,
-      sharePercent: 0,
-      tokenSharePercent: 0,
-    };
-    existing.requests += row.requests;
-    existing.tokens += rowTokens;
-    existing.cost += rowCost;
-    byTool.set(key, existing);
-  }
-  const topTools = [...byTool.values()]
-    .sort((a, b) => b.tokens - a.tokens || b.cost - a.cost || b.requests - a.requests)
-    .slice(0, 6);
-  for (const tool of topTools) {
-    tool.sharePercent = cost > 0 ? (tool.cost / cost) * 100 : 0;
-    tool.tokenSharePercent = tokens > 0 ? (tool.tokens / tokens) * 100 : 0;
-  }
-  return {
-    requests,
-    tokens,
-    cost,
-    tools: byTool.size,
-    topTools,
-  };
 }
 
 async function readAcceptancePercent(input: {
@@ -294,175 +260,6 @@ async function readPlanStatus(input: {
   };
 }
 
-async function usageForUtcDates(input: {
-  orgId: string;
-  developerId?: string | null;
-  dates: Date[];
-}) {
-  if (input.dates.length === 0) return [];
-  return prisma.usageDaily.findMany({
-    where: {
-      orgId: input.orgId,
-      date: { in: input.dates },
-      metricKind: "usage",
-      ...(input.developerId ? { developerId: input.developerId } : {}),
-    },
-    select: {
-      requests: true,
-      inputTokens: true,
-      outputTokens: true,
-      cacheReadTokens: true,
-      cacheWriteTokens: true,
-      costMicros: true,
-      toolName: true,
-      date: true,
-    },
-  });
-}
-
-async function hourlySeries(input: {
-  orgId: string;
-  developerId?: string | null;
-  from: Date;
-  to: Date;
-  timeZone: string;
-}): Promise<DailyReportSeriesPoint[]> {
-  const rows = await prisma.requestMetadata.findMany({
-    where: {
-      orgId: input.orgId,
-      createdAt: { gte: input.from, lt: input.to },
-      ...(input.developerId ? { userId: input.developerId } : {}),
-    },
-    select: {
-      createdAt: true,
-      totalTokens: true,
-      estimatedCost: true,
-    },
-  });
-
-  const buckets = new Map<number, DailyReportSeriesPoint>();
-  for (let h = 0; h < 24; h++) {
-    buckets.set(h, { label: `${String(h).padStart(2, "0")}:00`, requests: 0, tokens: 0, cost: 0 });
-  }
-  for (const row of rows) {
-    const hour = Number(
-      new Intl.DateTimeFormat("en-US", {
-        timeZone: input.timeZone,
-        hour: "numeric",
-        hourCycle: "h23",
-      })
-        .formatToParts(row.createdAt)
-        .find((p) => p.type === "hour")?.value ?? "0",
-    );
-    const bucket = buckets.get(hour);
-    if (!bucket) continue;
-    bucket.requests += 1;
-    bucket.tokens += row.totalTokens;
-    bucket.cost += row.estimatedCost;
-  }
-
-  const points = [...buckets.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([, point]) => point);
-  // Drop trailing empty hours after last activity for a cleaner chart.
-  let lastActive = -1;
-  for (let i = points.length - 1; i >= 0; i--) {
-    if (points[i].requests > 0 || points[i].tokens > 0) {
-      lastActive = i;
-      break;
-    }
-  }
-  if (lastActive < 0) {
-    const endHour = Number(
-      new Intl.DateTimeFormat("en-US", {
-        timeZone: input.timeZone,
-        hour: "numeric",
-        hourCycle: "h23",
-      })
-        .formatToParts(new Date())
-        .find((p) => p.type === "hour")?.value ?? "23",
-    );
-    return points.slice(0, Math.max(1, endHour + 1));
-  }
-  return points.slice(0, lastActive + 1);
-}
-
-function dailySeriesForDay(input: {
-  hourly: DailyReportSeriesPoint[];
-  totals: { requests: number; tokens: number; cost: number };
-  timeZone: string;
-  now: Date;
-}): DailyReportSeriesPoint[] {
-  if (input.hourly.some((p) => p.requests > 0 || p.tokens > 0 || p.cost > 0)) {
-    return input.hourly;
-  }
-  if (input.totals.requests <= 0 && input.totals.cost <= 0 && input.totals.tokens <= 0) {
-    return input.hourly;
-  }
-
-  const hour = Number(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: input.timeZone,
-      hour: "numeric",
-      hourCycle: "h23",
-    })
-      .formatToParts(input.now)
-      .find((p) => p.type === "hour")?.value ?? "0",
-  );
-  const points: DailyReportSeriesPoint[] = [];
-  for (let h = 0; h <= hour; h++) {
-    points.push({
-      label: `${String(h).padStart(2, "0")}:00`,
-      requests: 0,
-      tokens: 0,
-      cost: 0,
-    });
-  }
-  const peak = points[points.length - 1]!;
-  peak.requests = input.totals.requests;
-  peak.tokens = input.totals.tokens;
-  peak.cost = input.totals.cost;
-  return points;
-}
-
-async function recentDailySeries(input: {
-  orgId: string;
-  developerId?: string | null;
-  localDate: string;
-  days?: number;
-}): Promise<DailyReportSeriesPoint[]> {
-  const days = input.days ?? 7;
-  const dates: Date[] = [];
-  const labels: string[] = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const day = addLocalDays(input.localDate, -i);
-    labels.push(day.slice(5));
-    dates.push(dateOnlyUtc(new Date(`${day}T00:00:00.000Z`)));
-  }
-  const rows = await usageForUtcDates({
-    orgId: input.orgId,
-    developerId: input.developerId,
-    dates,
-  });
-  const byDate = new Map<string, DailyReportSeriesPoint>();
-  for (const label of labels) {
-    byDate.set(label, { label, requests: 0, tokens: 0, cost: 0 });
-  }
-  for (const row of rows) {
-    const label = row.date.toISOString().slice(5, 10);
-    const point = byDate.get(label);
-    if (!point) continue;
-    point.requests += row.requests;
-    point.tokens +=
-      Number(row.inputTokens) +
-      Number(row.outputTokens) +
-      Number(row.cacheReadTokens) +
-      Number(row.cacheWriteTokens);
-    point.cost += Number(row.costMicros) / 1_000_000;
-  }
-  return labels.map((label) => byDate.get(label)!);
-}
-
 async function getWeeklyOrgReportPayload(input: {
   orgId: string;
   timeZone: string;
@@ -471,39 +268,36 @@ async function getWeeklyOrgReportPayload(input: {
   const { start, end } = weekRangeEndingOnOrBefore(input.localDate);
   const prevEnd = addLocalDays(start, -1);
   const prevStart = addLocalDays(prevEnd, -6);
-  const weekDates = localDatesInclusive(start, end).map((d) => dateOnlyUtc(new Date(`${d}T00:00:00.000Z`)));
-  const prevDates = localDatesInclusive(prevStart, prevEnd).map((d) =>
-    dateOnlyUtc(new Date(`${d}T00:00:00.000Z`)),
-  );
+  const weekDates = usageDateKeysForLocalDates(localDatesInclusive(start, end));
 
-  const [weekRows, prevRows, series, org, active, plan, acceptancePercent] = await Promise.all([
-    usageForUtcDates({ orgId: input.orgId, dates: weekDates }),
-    usageForUtcDates({ orgId: input.orgId, dates: prevDates }),
-    recentDailySeries({
+  const [week, previous, wowStrip, org, plan, acceptancePercent] = await Promise.all([
+    readCanonicalReportUsage({
+      orgId: input.orgId,
+      fromLocalDate: start,
+      toLocalDate: end,
+    }),
+    readCanonicalReportUsage({
+      orgId: input.orgId,
+      fromLocalDate: prevStart,
+      toLocalDate: prevEnd,
+    }),
+    getWowWeekStrip({
       orgId: input.orgId,
       localDate: end,
-      days: 7,
+      timeZone: input.timeZone,
+      weekStart: start,
+      weekEnd: end,
+      todayPartial: false,
     }),
     prisma.organization.findUnique({
       where: { id: input.orgId },
       select: { name: true },
     }),
-    prisma.usageDaily.findMany({
-      where: {
-        orgId: input.orgId,
-        date: { in: weekDates },
-        metricKind: "usage",
-        developerId: { not: null },
-      },
-      select: { developerId: true },
-      distinct: ["developerId"],
-    }),
     readPlanStatus({ orgId: input.orgId }),
     readAcceptancePercent({ orgId: input.orgId, dates: weekDates }),
   ]);
 
-  const week = sumRows(weekRows);
-  const previous = sumRows(prevRows);
+  const series = wowStripToSeries(wowStrip);
 
   return {
     kind: "org",
@@ -527,8 +321,9 @@ async function getWeeklyOrgReportPayload(input: {
     },
     plan,
     series,
+    wowStrip,
     topTools: week.topTools,
-    membersActive: active.length,
+    membersActive: week.activeDevelopers,
   };
 }
 
@@ -551,63 +346,40 @@ export async function getDailyReportPayload(input: {
     return getWeeklyOrgReportPayload({ orgId: input.orgId, timeZone, localDate });
   }
 
-  const window = localDayUtcWindow({ localDate, timeZone, now, throughNow: true });
   const previousDate = addLocalDays(localDate, -1);
-
   const developerId = input.kind === "personal" ? input.developerId ?? null : null;
-  const todayDates = [
-    dateOnlyUtc(new Date(`${localDate}T00:00:00.000Z`)),
-    // Include adjacent UTC dates that the local day may spill into.
-    dateOnlyUtc(window.from),
-    dateOnlyUtc(new Date(window.to.getTime() - 1)),
-  ];
-  const uniqueToday = [...new Map(todayDates.map((d) => [d.toISOString(), d])).values()];
-  const prevDates = [dateOnlyUtc(new Date(`${previousDate}T00:00:00.000Z`))];
+  const todayDates = usageDateKeysForLocalDates([localDate]);
 
-  const [todayRows, prevRows, hourly, org, plan, acceptancePercent] = await Promise.all([
-    usageForUtcDates({ orgId: input.orgId, developerId, dates: uniqueToday }),
-    usageForUtcDates({ orgId: input.orgId, developerId, dates: prevDates }),
-    hourlySeries({
+  const [today, previous, wowStrip, org, plan, acceptancePercent] = await Promise.all([
+    readCanonicalReportUsage({
       orgId: input.orgId,
-      developerId: developerId ?? undefined,
-      from: window.from,
-      to: window.to,
+      developerId,
+      fromLocalDate: localDate,
+      toLocalDate: localDate,
+    }),
+    readCanonicalReportUsage({
+      orgId: input.orgId,
+      developerId,
+      fromLocalDate: previousDate,
+      toLocalDate: previousDate,
+    }),
+    getWowWeekStrip({
+      orgId: input.orgId,
+      developerId,
+      localDate,
       timeZone,
+      todayPartial: true,
     }),
     prisma.organization.findUnique({
       where: { id: input.orgId },
       select: { name: true },
     }),
     readPlanStatus({ orgId: input.orgId, developerId, now }),
-    readAcceptancePercent({ orgId: input.orgId, developerId, dates: uniqueToday }),
+    readAcceptancePercent({ orgId: input.orgId, developerId, dates: todayDates }),
   ]);
 
-  // Prefer exact localDate UTC key rows when present; else all overlapping.
-  const exact = todayRows.filter((r) => r.date.toISOString().slice(0, 10) === localDate);
-  const today = sumRows(exact.length > 0 ? exact : todayRows);
-  const previous = sumRows(prevRows);
-
-  const series = dailySeriesForDay({
-    hourly,
-    totals: { requests: today.requests, tokens: today.tokens, cost: today.cost },
-    timeZone,
-    now,
-  });
-
-  let membersActive: number | undefined;
-  if (input.kind === "org") {
-    const active = await prisma.usageDaily.findMany({
-      where: {
-        orgId: input.orgId,
-        date: { in: uniqueToday },
-        metricKind: "usage",
-        developerId: { not: null },
-      },
-      select: { developerId: true },
-      distinct: ["developerId"],
-    });
-    membersActive = active.length;
-  }
+  // Prefer WOW week strip for chart series — avoids fake hourly dumps from daily totals.
+  const series = wowStripToSeries(wowStrip);
 
   return {
     kind: input.kind,
@@ -632,7 +404,8 @@ export async function getDailyReportPayload(input: {
     },
     plan,
     series,
+    wowStrip,
     topTools: today.topTools,
-    membersActive,
+    membersActive: input.kind === "org" ? today.activeDevelopers : undefined,
   };
 }

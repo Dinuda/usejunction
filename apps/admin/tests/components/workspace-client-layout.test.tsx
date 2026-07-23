@@ -187,6 +187,33 @@ describe("WorkspaceClientLayout", () => {
     expect(mocks.useAppQuery).toHaveBeenCalledTimes(1);
   });
 
+  it("polls workspace context while devices remain connected after first usage sync", async () => {
+    mockWorkspaceContext(readyContext("1|2|seen|usage|"));
+
+    await renderLayout();
+
+    const options = mocks.useAppQuery.mock.calls[0]?.[2] as {
+      refetchInterval?: (query: { state: { data: WorkspaceContextData } }) => number | false;
+    };
+    expect(options?.refetchInterval).toEqual(expect.any(Function));
+    const interval = options.refetchInterval!({
+      state: { data: readyContext("1|2|seen|usage|") },
+    });
+    expect(interval).toBe(15_000);
+
+    const noDeviceInterval = options.refetchInterval!({
+      state: {
+        data: readyContext("0|0|||", {
+          deviceCount: 0,
+          toolCount: 0,
+          lastSeenAt: null,
+          lastUsageSyncAt: null,
+        }),
+      },
+    });
+    expect(noDeviceInterval).toBe(false);
+  });
+
   it("invalidates app queries when the sync watermark advances", async () => {
     let sync = readyContext("1|0|seen||", {
       toolCount: 0,

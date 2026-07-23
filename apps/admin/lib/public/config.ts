@@ -18,6 +18,13 @@ export const siteConfig = {
   changelogUrl: "https://github.com/Dinuda/usejunction/releases",
   signupUrl: "/signup",
   license: "UseJunction Community License",
+  /**
+   * Calendly scheduling URL for Enterprise "Talk to us" popup.
+   * Override via NEXT_PUBLIC_CALENDLY_URL.
+   */
+  calendlyUrl:
+    process.env.NEXT_PUBLIC_CALENDLY_URL ??
+    "https://calendly.com/y-dinuda/usejunction-for-teams",
   /** X/Twitter handle (with @). Override via NEXT_PUBLIC_TWITTER_HANDLE. */
   twitterHandle: process.env.NEXT_PUBLIC_TWITTER_HANDLE ?? "@usejunction",
 } as const;
@@ -29,14 +36,14 @@ export const navAnchors = [{ id: "pricing", label: "Pricing" }] as const;
 
 /** Primary page links (product lines, guides, etc.). */
 export const navLinks: ReadonlyArray<{ href: string; label: string }> = [
-  { href: "/", label: "For Coders" },
-  { href: "/blog", label: "Blog" },
+  { href: "/", label: "For Coders" }
 ];
 
 export const SUPPORTED_TOOLS = [
   { name: "Codex", initials: "CX" },
   { name: "Claude Code", initials: "CC" },
   { name: "Cursor", initials: "CR" },
+  { name: "Antigravity", initials: "AG" },
   { name: "Continue", initials: "CO" },
   { name: "Cline", initials: "CL" },
   { name: "Roo Code", initials: "RC" },
@@ -186,7 +193,11 @@ export const PRICING_PLANS = [
     description: "Full control",
     price: "Custom",
     period: "contact us",
-    cta: { label: "Talk to us", href: "/contact?intent=enterprise" },
+    cta: {
+      label: "Talk to us",
+      href: siteConfig.calendlyUrl || "/contact?intent=enterprise",
+      calendly: true,
+    },
     featured: false,
     features: [
       "Everything in Managed",

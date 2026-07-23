@@ -58,6 +58,7 @@ export async function loadDashboardPage(principal: AppPrincipal, search: Dashboa
   if (isDeveloper) {
     const personal = await getMeOverview(principal.orgId, principal.userId, principal.role, {
       reportWindow,
+      cycleView,
     });
     return jsonSafe({
       kind: "personal" as const,
@@ -77,7 +78,10 @@ export async function loadDashboardPage(principal: AppPrincipal, search: Dashboa
       getLocalSyncContext(principal.orgId, principal.userId),
     ]);
     const personal = linkedId
-      ? await getMeOverview(principal.orgId, principal.userId, principal.role, { reportWindow })
+      ? await getMeOverview(principal.orgId, principal.userId, principal.role, {
+          reportWindow,
+          cycleView,
+        })
       : null;
     return jsonSafe({
       kind: "personal" as const,

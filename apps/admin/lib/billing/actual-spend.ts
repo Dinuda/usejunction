@@ -1,5 +1,10 @@
-import { utcDateOnly, usageInclusiveEnd } from "@/lib/metrics/date-range";
-import { resolveBillingCycle, type BillingCycle } from "@/lib/billing/cycles";
+import { DAY_MS, utcDateOnly, usageExclusiveEnd, usageInclusiveEnd } from "@/lib/metrics/date-range";
+import {
+  addCycles,
+  resolveBillingCycle,
+  resolveBillingCycleOffset,
+  type BillingCycle,
+} from "@/lib/billing/cycles";
 
 export type SubscriptionSeatRow = {
   id?: string;
@@ -110,4 +115,57 @@ export function observationCoverage(input: {
     firstActivityDate: input.firstActivityDate,
     partialWindow,
   };
+}
+
+/**
+ * Personal subscription commitment from a developer's assigned seats.
+ * Mirrors org cycle commitment: full cycle cost for current/previous views,
+ * calendar-prorated for last_30_days windows.
+ */
+export function computePersonalSeatCommitment(input: {
+  assignments: SubscriptionSeatRow[];
+  view: "current_cycles" | "previous_cycles" | "last_30_days";
+  from: Date;
+  to: Date;
+}): number {
+  const from = utcDateOnly(input.from);
+  const toExclusive = usageExclusiveEnd(input.to);
+  let total = BigInt(0);
+
+  for (const row of input.assignments) {
+    if (row.seatCount <= 0 || row.cycleSeatMicros <= BigInt(0)) continue;
+    const fullSpend = row.cycleSeatMicros * BigInt(row.seatCount);
+
+    if (input.view !== "last_30_days") {
+      if (!subscriptionActiveInPeriod(row, input.from, input.to)) continue;
+      total += fullSpend;
+      continue;
+    }
+
+    let cursor = resolveBillingCycleOffset(row, from, 0);
+    while (cursor.cycleStart < toExclusive) {
+      const overlapStart = Math.max(cursor.cycleStart.getTime(), from.getTime());
+      const overlapEnd = Math.min(cursor.cycleEnd.getTime(), toExclusive.getTime());
+      const overlapDays = Math.max(0, Math.round((overlapEnd - overlapStart) / DAY_MS));
+      if (
+        overlapDays > 0 &&
+        subscriptionActiveInPeriod(row, new Date(overlapStart), new Date(overlapEnd - DAY_MS))
+      ) {
+        const ratio = overlapDays / Math.max(1, cursor.totalDays);
+        total += BigInt(Math.round(Number(fullSpend) * ratio));
+      }
+      const nextStart = cursor.cycleEnd;
+      const nextEnd = addCycles(nextStart, row.billingCadence, 1, row.billingCycleDays);
+      cursor = {
+        cycleStart: nextStart,
+        cycleEnd: nextEnd,
+        nextRenewalDate: nextEnd,
+        elapsedPercent: 1,
+        remainingDays: 0,
+        totalDays: Math.max(1, Math.round((nextEnd.getTime() - nextStart.getTime()) / DAY_MS)),
+      };
+    }
+  }
+
+  return microsToDollars(total);
 }

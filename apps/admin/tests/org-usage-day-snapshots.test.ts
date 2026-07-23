@@ -6,6 +6,7 @@ import {
   markOrgUsageDaysDirty,
   materializeOrgUsageDay,
   materializeOrgUsageRange,
+  readDeveloperUsageFromSnapshots,
   readOrgUsageFromSnapshots,
 } from "@/lib/analytics/snapshots";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
@@ -53,11 +54,30 @@ test("org day snapshots materialize and sum without rescanning history", { skip:
     assert.ok(written >= 1);
 
     const snapshot = await prisma.orgUsageDaySnapshot.findFirst({
-      where: { orgId: org.id, date: day, toolName: "", metricVersion: ORG_DAY_SNAPSHOT_VERSION },
+      where: {
+        orgId: org.id,
+        date: day,
+        toolName: "",
+        developerId: "",
+        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+      },
     });
     assert.ok(snapshot);
     assert.equal(snapshot.requests, 10);
     assert.equal(Number(snapshot.estimatedApiCostMicros), 1_500_000);
+
+    const developerSnap = await prisma.orgUsageDaySnapshot.findFirst({
+      where: {
+        orgId: org.id,
+        date: day,
+        toolName: "",
+        developerId: developer.id,
+        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+      },
+    });
+    assert.ok(developerSnap);
+    assert.equal(developerSnap.requests, 10);
+    assert.equal(Number(developerSnap.estimatedApiCostMicros), 1_500_000);
 
     const dirty = await prisma.analyticsDirtyDay.count({
       where: { orgId: org.id, date: day, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
@@ -74,6 +94,103 @@ test("org day snapshots materialize and sum without rescanning history", { skip:
     assert.equal(overview.tools.length, 1);
     assert.equal(overview.tools[0]?.toolName, "cursor");
     assert.equal(overview.activeDevelopers, 1);
+  } finally {
+    await prisma.organization.delete({ where: { id: org.id } });
+  }
+});
+
+test("developer snapshot costs roll up under org tool costs", { skip: !runDb }, async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const org = await prisma.organization.create({
+    data: { name: `DevGrain Org ${suffix}`, slug: `devgrain-${suffix}` },
+  });
+  const day = new Date("2026-07-11T00:00:00.000Z");
+  const [devA, devB] = await Promise.all([
+    prisma.developer.create({
+      data: {
+        orgId: org.id,
+        email: `deva-${suffix}@example.com`,
+        name: "Dev A",
+        role: "user",
+      },
+    }),
+    prisma.developer.create({
+      data: {
+        orgId: org.id,
+        email: `devb-${suffix}@example.com`,
+        name: "Dev B",
+        role: "user",
+      },
+    }),
+  ]);
+
+  try {
+    await prisma.usageDaily.createMany({
+      data: [
+        {
+          orgId: org.id,
+          developerId: devA.id,
+          date: day,
+          provider: "openai",
+          product: "codex",
+          toolName: "codex",
+          model: "gpt-5",
+          source: "device_observed",
+          requests: 3,
+          inputTokens: BigInt(100),
+          outputTokens: BigInt(20),
+          costMicros: BigInt(2_000_000),
+          costKind: "estimated_api",
+          dedupeKey: `devgrain:${suffix}:a`,
+          observedAt: day,
+        },
+        {
+          orgId: org.id,
+          developerId: devB.id,
+          date: day,
+          provider: "openai",
+          product: "codex",
+          toolName: "codex",
+          model: "gpt-5",
+          source: "device_observed",
+          requests: 2,
+          inputTokens: BigInt(80),
+          outputTokens: BigInt(10),
+          costMicros: BigInt(1_000_000),
+          costKind: "estimated_api",
+          dedupeKey: `devgrain:${suffix}:b`,
+          observedAt: day,
+        },
+      ],
+    });
+
+    await materializeOrgUsageDay(org.id, day);
+
+    const orgSnap = await readOrgUsageFromSnapshots(
+      org.id,
+      { from: day, to: day, timezone: UTC_TIMEZONE, grain: "day" },
+      { includeTools: true, ensure: false },
+    );
+    const youA = await readDeveloperUsageFromSnapshots(
+      org.id,
+      devA.id,
+      { from: day, to: day, timezone: UTC_TIMEZONE, grain: "day" },
+      { includeTools: true, ensure: false },
+    );
+    const youB = await readDeveloperUsageFromSnapshots(
+      org.id,
+      devB.id,
+      { from: day, to: day, timezone: UTC_TIMEZONE, grain: "day" },
+      { includeTools: true, ensure: false },
+    );
+
+    assert.ok(youA.kpis.estimatedApiCost <= orgSnap.kpis.estimatedApiCost + 0.001);
+    assert.ok(youB.kpis.estimatedApiCost <= orgSnap.kpis.estimatedApiCost + 0.001);
+    assert.ok(
+      youA.kpis.estimatedApiCost + youB.kpis.estimatedApiCost <= orgSnap.kpis.estimatedApiCost + 0.001,
+    );
+    assert.equal(orgSnap.kpis.modelCalls, 5);
+    assert.equal(youA.kpis.modelCalls + youB.kpis.modelCalls, 5);
   } finally {
     await prisma.organization.delete({ where: { id: org.id } });
   }
@@ -125,7 +242,12 @@ test("range materialize seals 30 days in one pass under 3s", { skip: !runDb }, a
     assert.ok(durationMs < 3000, `range materialize took ${durationMs}ms`);
 
     const totals = await prisma.orgUsageDaySnapshot.count({
-      where: { orgId: org.id, toolName: "", metricVersion: ORG_DAY_SNAPSHOT_VERSION },
+      where: {
+        orgId: org.id,
+        toolName: "",
+        developerId: "",
+        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+      },
     });
     assert.equal(totals, 30);
   } finally {

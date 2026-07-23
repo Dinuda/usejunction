@@ -1,12 +1,22 @@
 import { prisma } from "@usejunction/db";
-import { usageWindowDays } from "@/lib/metrics/date-range";
+import { inclusiveDayCount, usageWindowDays } from "@/lib/metrics/date-range";
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
-import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
+import {
+  ensureDeveloperUsageDaySnapshots,
+  ensureOrgUsageDaySnapshots,
+  readDeveloperUsageFromSnapshots,
+} from "@/lib/analytics/snapshots";
 import { orgNeedsPlanSync } from "@/lib/queries/me/local-sync-context";
-import { canonicalToolKey, findCatalogTool } from "@/lib/tools/catalog";
+import { canonicalToolKey, findCatalogTool, isCodingTool } from "@/lib/tools/catalog";
 import type { OrganizationRole } from "@/lib/workspace-context";
 import { rollupPersonalToolsUsage } from "@/lib/queries/me/tools-usage-rollup";
+import {
+  computePersonalSeatCommitment,
+  type SubscriptionSeatRow,
+} from "@/lib/billing/actual-spend";
+import type { CycleView } from "@/lib/dashboard/cycle-view";
+import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 
 export interface AiCodingMetrics {
   suggestedLines: number;
@@ -99,6 +109,16 @@ export interface MeOverviewData {
     /** Modeled API-equivalent dollars when vendor cost is missing. */
     estimatedApiCost: number;
   };
+  /** Personal spend KPIs aligned with the team dashboard strip. */
+  kpis: {
+    subscriptionCommitment: number;
+    verifiedUsageCost: number;
+    estimatedApiCost: number;
+    tokens: number;
+  };
+  observation: {
+    rangeDays: number;
+  };
   toolsUsage30d: Array<{
     toolName: string;
     requests: number;
@@ -166,7 +186,11 @@ export async function getMeOverview(
   orgId: string,
   userId: string,
   role: OrganizationRole,
-  options: { reportWindow?: MetricWindow; includeOrgPlanSync?: boolean } = {},
+  options: {
+    reportWindow?: MetricWindow;
+    includeOrgPlanSync?: boolean;
+    cycleView?: CycleView;
+  } = {},
 ): Promise<MeOverviewData> {
   const developer = await prisma.developer.findFirst({
     where: { orgId, authUserId: userId },
@@ -179,6 +203,7 @@ export async function getMeOverview(
 
   return buildMeOverview(orgId, developer, role, options.reportWindow, {
     includeOrgPlanSync: options.includeOrgPlanSync,
+    cycleView: options.cycleView,
   });
 }
 
@@ -186,14 +211,16 @@ export async function getMeOverview(
 export async function getDeveloperOverview(
   orgId: string,
   developerId: string,
-  options: { reportWindow?: MetricWindow } = {},
+  options: { reportWindow?: MetricWindow; cycleView?: CycleView } = {},
 ): Promise<MeOverviewData | null> {
   const developer = await prisma.developer.findFirst({
     where: { orgId, id: developerId },
     include: overviewInclude,
   });
   if (!developer) return null;
-  return buildMeOverview(orgId, developer, developer.role as OrganizationRole, options.reportWindow);
+  return buildMeOverview(orgId, developer, developer.role as OrganizationRole, options.reportWindow, {
+    cycleView: options.cycleView,
+  });
 }
 
 async function buildMeOverview(
@@ -201,57 +228,122 @@ async function buildMeOverview(
   developer: OverviewDeveloper,
   role: OrganizationRole,
   reportWindow?: MetricWindow,
-  options: { includeOrgPlanSync?: boolean } = {},
+  options: { includeOrgPlanSync?: boolean; cycleView?: CycleView } = {},
 ): Promise<MeOverviewData> {
   const usage30d = reportWindow ?? usageWindowDays(30);
-  const measures = [
-    "requests", "sessions", "inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens",
-    "reasoningTokens", "suggestedLines", "acceptedLines", "addedLines", "deletedLines", "commits", "costMicros",
+  const cycleView = options.cycleView ?? "last_30_days";
+  const snapshotWindow: MetricWindow = {
+    from: usage30d.from,
+    to: usage30d.to,
+    timezone: UTC_TIMEZONE,
+    grain: "day",
+  };
+  // Dashboard spend KPIs + plan-card $ come from sealed developer snapshots (same
+  // generation as Team). Productivity / model breakdowns stay on live usage_daily.
+  const productivityMeasures = [
+    "sessions",
+    "cacheReadTokens",
+    "cacheWriteTokens",
+    "reasoningTokens",
+    "suggestedLines",
+    "acceptedLines",
+    "addedLines",
+    "deletedLines",
+    "commits",
   ] as const;
-  const [summary, tools, models, costs] = await Promise.all([
-    readUsageMetrics({ orgId, developerId: developer.id, window: usage30d, measures: [...measures], limit: 1 }),
-    readUsageMetrics({
-      orgId,
-      developerId: developer.id,
-      window: usage30d,
-      measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
-      dimensions: ["tool"],
+  await ensureOrgUsageDaySnapshots(orgId, snapshotWindow.from, snapshotWindow.to);
+  await ensureDeveloperUsageDaySnapshots(orgId, developer.id, snapshotWindow.from, snapshotWindow.to);
+
+  const [snapshotUsage, summary, models, planAssignments] = await Promise.all([
+    readDeveloperUsageFromSnapshots(orgId, developer.id, snapshotWindow, {
+      includeTools: true,
+      ensure: false,
     }),
     readUsageMetrics({
       orgId,
       developerId: developer.id,
       window: usage30d,
-      measures: [...measures],
+      measures: [...productivityMeasures],
+      limit: 1,
+    }),
+    readUsageMetrics({
+      orgId,
+      developerId: developer.id,
+      window: usage30d,
+      measures: [
+        "requests",
+        "sessions",
+        "inputTokens",
+        "outputTokens",
+        "cacheReadTokens",
+        "cacheWriteTokens",
+        "reasoningTokens",
+        "suggestedLines",
+        "acceptedLines",
+        "addedLines",
+        "deletedLines",
+        "commits",
+        "costMicros",
+      ],
       dimensions: ["tool", "model", "source"],
     }),
-    readUsageMetrics({
-      orgId,
-      developerId: developer.id,
-      window: usage30d,
-      measures: ["costMicros"],
-      dimensions: ["source", "costKind"],
+    prisma.developerPlanAssignment.findMany({
+      where: {
+        orgId,
+        developerId: developer.id,
+        active: true,
+        seatStatus: "active",
+      },
+      select: {
+        id: true,
+        toolName: true,
+        billingCadence: true,
+        billingCycleAnchorDate: true,
+        billingCycleDays: true,
+        cycleSeatMicros: true,
+        seatCount: true,
+        startDate: true,
+        endDate: true,
+      },
     }),
   ]);
 
   const summaryRow = summary.data.rows[0];
-  const costSummary = summarizeCanonicalCosts(
-    costs.data.rows.map((row) => ({
-      costMicros: metricNumber(row, "costMicros"),
-      costKind: dimension(row, "costKind"),
-    })),
-  );
-  const verifiedUsageCost = costSummary.verifiedUsageCost;
-  const estimatedApiCost = costSummary.estimatedApiCost;
+  const verifiedUsageCost = snapshotUsage.kpis.verifiedUsageCost;
+  const estimatedApiCost = snapshotUsage.kpis.estimatedApiCost;
+  const tokens = snapshotUsage.kpis.tokens;
+  const inputTokens = snapshotUsage.dayTotals.reduce((sum, row) => sum + row.inputTokens, 0);
+  const outputTokens = snapshotUsage.dayTotals.reduce((sum, row) => sum + row.outputTokens, 0);
+  const rangeDays = inclusiveDayCount(usage30d.from, usage30d.to);
+  const seatRows: SubscriptionSeatRow[] = planAssignments
+    .filter((row) => isCodingTool(row.toolName))
+    .map((row) => ({
+      id: row.id,
+      toolName: row.toolName,
+      billingCadence: row.billingCadence,
+      billingCycleAnchorDate: row.billingCycleAnchorDate,
+      billingCycleDays: row.billingCycleDays,
+      cycleSeatMicros: row.cycleSeatMicros,
+      seatCount: row.seatCount,
+      startDate: row.startDate,
+      endDate: row.endDate,
+    }));
+  const subscriptionCommitment = computePersonalSeatCommitment({
+    assignments: seatRows,
+    view: cycleView,
+    from: usage30d.from,
+    to: usage30d.to,
+  });
 
   const detectedToolNames = developer.devices.flatMap((device) =>
     device.toolInstallations.map((tool) => tool.toolName),
   );
   const toolsUsage30d = rollupPersonalToolsUsage(
-    tools.data.rows.map((row) => ({
-      toolName: dimension(row, "tool") || "unknown",
-      requests: metricNumber(row, "requests"),
-      tokens: metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens"),
-      cost: metricNumber(row, "costMicros") / 1_000_000,
+    snapshotUsage.tools.map((row) => ({
+      toolName: row.toolName || "unknown",
+      requests: row.requests,
+      tokens: 0,
+      cost: row.cost,
     })),
     detectedToolNames,
   );
@@ -259,13 +351,13 @@ async function buildMeOverview(
   const modelUsageRows: ModelUsageRow[] = models.data.rows.flatMap((row) => {
     const source = dimension(row, "source");
     const requests = metricNumber(row, "requests");
-    const inputTokens = metricNumber(row, "inputTokens");
-    const outputTokens = metricNumber(row, "outputTokens");
+    const rowInputTokens = metricNumber(row, "inputTokens");
+    const rowOutputTokens = metricNumber(row, "outputTokens");
     const cost = metricNumber(row, "costMicros") / 1_000_000;
     const suggestedLines = metricNumber(row, "suggestedLines");
     const acceptedLines = metricNumber(row, "acceptedLines");
     const productivity = suggestedLines > 0 || acceptedLines > 0 || metricNumber(row, "commits") > 0;
-    const usage = requests > 0 || inputTokens > 0 || outputTokens > 0 || cost > 0;
+    const usage = requests > 0 || rowInputTokens > 0 || rowOutputTokens > 0 || cost > 0;
     const common = {
       toolName: dimension(row, "tool") || "unknown",
       model: dimension(row, "model") || "unknown",
@@ -274,8 +366,8 @@ async function buildMeOverview(
     const output: ModelUsageRow[] = [];
     if (usage) output.push({
       ...common,
-      inputTokens,
-      outputTokens,
+      inputTokens: rowInputTokens,
+      outputTokens: rowOutputTokens,
       cacheReadTokens: metricNumber(row, "cacheReadTokens"),
       cacheWriteTokens: metricNumber(row, "cacheWriteTokens"),
       reasoningTokens: metricNumber(row, "reasoningTokens"),
@@ -312,8 +404,8 @@ async function buildMeOverview(
     deletedLines: metricNumber(summaryRow, "deletedLines"),
     commits: metricNumber(summaryRow, "commits"),
     aiPercent: null,
-    inputTokens: metricNumber(summaryRow, "inputTokens"),
-    outputTokens: metricNumber(summaryRow, "outputTokens"),
+    inputTokens,
+    outputTokens,
     cacheReadTokens: metricNumber(summaryRow, "cacheReadTokens"),
     cacheWriteTokens: metricNumber(summaryRow, "cacheWriteTokens"),
     reasoningTokens: metricNumber(summaryRow, "reasoningTokens"),
@@ -370,13 +462,22 @@ async function buildMeOverview(
       reportedTools: developer.toolClaims,
     },
     usage30d: {
-      requests: metricNumber(summaryRow, "requests"),
+      requests: snapshotUsage.kpis.modelCalls,
       sessions: metricNumber(summaryRow, "sessions"),
-      inputTokens: String(metricNumber(summaryRow, "inputTokens")),
-      outputTokens: String(metricNumber(summaryRow, "outputTokens")),
+      inputTokens: String(inputTokens),
+      outputTokens: String(outputTokens),
       costMicros: String(Math.round((verifiedUsageCost + estimatedApiCost) * 1_000_000)),
       verifiedUsageCost,
       estimatedApiCost,
+    },
+    kpis: {
+      subscriptionCommitment,
+      verifiedUsageCost,
+      estimatedApiCost,
+      tokens,
+    },
+    observation: {
+      rangeDays,
     },
     toolsUsage30d,
     aiCoding30d,

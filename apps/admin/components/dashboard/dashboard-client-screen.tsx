@@ -325,18 +325,15 @@ function PersonalHome({
   allowPeriodControls,
   cycleView,
   rollingPeriod,
-  periodLabel,
 }: {
   data: Awaited<ReturnType<typeof getMeOverview>>;
   audienceSwitcher?: ReactNode;
   allowPeriodControls: boolean;
   cycleView: CycleView;
   rollingPeriod: RollingPeriod;
-  periodLabel: string;
 }) {
   const usage = data.usage30d;
-  const tokens = Number(BigInt(usage.inputTokens) + BigInt(usage.outputTokens));
-  const usageCost = usage.verifiedUsageCost + usage.estimatedApiCost;
+  const usageCost = data.kpis.verifiedUsageCost + data.kpis.estimatedApiCost;
   const empty = !data.developer.devices.length;
   const accounts = data.developer.devices.flatMap((device) => device.accounts);
   const quotaSnapshots = data.developer.devices.flatMap((device) =>
@@ -390,24 +387,42 @@ function PersonalHome({
               lastAccountSyncAt={data.sync.lastAccountSyncAt}
             />
           </div>
-          <div className="grid items-start gap-y-8 sm:grid-cols-3">
+          <div className="grid grid-cols-2 items-stretch gap-y-5 sm:gap-y-8 xl:grid-cols-4">
+            <Kpi
+              label="Subscription commitment"
+              value={formatUsd(data.kpis.subscriptionCommitment)}
+              hero
+              accent
+              compactMobile
+              sub={
+                cycleView === "last_30_days"
+                  ? "prorated for selected window"
+                  : cycleView === "previous_cycles"
+                    ? "your seats · previous cycle"
+                    : "your seats · current cycle"
+              }
+            />
+            <Kpi
+              label="Estimated usage"
+              value={formatUsd(usageCost)}
+              inverse
+              compactMobile
+              className="border-l-2 border-border-strong pl-3 pr-2 sm:pl-4 sm:pr-3"
+              sub={usageCostBreakdownSub(usage.verifiedUsageCost, usage.estimatedApiCost)}
+            />
+            <Kpi
+              label="Est. spend/day"
+              value={formatEstSpendPerDay(usageCost, data.observation.rangeDays)}
+              compactMobile
+              className="border-l-2 border-border-strong pl-3 pr-2 sm:pl-4 sm:pr-3"
+              sub={`${data.observation.rangeDays} days · ${cycleViewPeriodLabel(cycleView, rollingPeriod)}`}
+            />
             <Kpi
               label="Price per 1M tokens"
-              value={formatPricePerMillionTokens(usageCost, tokens)}
-              hero
-              sub={`verified + estimated · ${periodLabel}`}
-              className="border-l-2 border-border-strong py-3 pl-4 pr-3"
-            />
-            <Kpi
-              label="Sessions"
-              value={formatCompactNumber(usage.sessions)}
-              className="border-l-2 border-border-strong py-3 pl-4 pr-3"
-            />
-            <Kpi
-              label="Devices"
-              value={String(data.developer.devices.length)}
-              accent
-              sub="Enrolled"
+              value={formatPricePerMillionTokens(usageCost, data.kpis.tokens)}
+              compactMobile
+              className="border-l-2 border-border-strong pl-3 pr-2 sm:pl-4 sm:pr-3"
+              sub={verifiedEstimatedWindowSub(cycleView)}
             />
           </div>
 
@@ -630,7 +645,6 @@ export default function DashboardPage() {
         allowPeriodControls={query.data.allowPeriodControls}
         cycleView={query.data.cycleView}
         rollingPeriod={query.data.rollingPeriod}
-        periodLabel={query.data.periodLabel}
       />
     );
   }
@@ -741,6 +755,7 @@ export default function DashboardPage() {
                 {data.subscriptionCycles.map((row) => {
                   const toolKey = canonicalToolKey(row.toolKey ?? row.toolName);
                   const href = findCatalogTool(toolKey) ? `/tools/${toolKey}` : null;
+                  const usageCost = row.verifiedUsageCost + row.estimatedApiCost;
                   const body = (
                     <>
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -752,11 +767,16 @@ export default function DashboardPage() {
                             </p>
                             <p className="mt-1 text-xs text-muted-foreground">
                               {cycleWindowLabel(row, data.cycleView)}
+                              {usageCost > 0
+                                ? ` · Seat ${formatUsd(row.cycleSpend)}`
+                                : null}
                             </p>
                           </div>
                         </div>
                         <div className="flex items-start gap-2">
-                          <p className="text-sm font-semibold tabular-nums">{formatUsd(row.cycleSpend)}</p>
+                          <p className="text-sm font-semibold tabular-nums">
+                            {formatUsd(usageCost > 0 ? usageCost : row.cycleSpend)}
+                          </p>
                           {href ? (
                             <ArrowUpRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
                           ) : null}
@@ -770,7 +790,18 @@ export default function DashboardPage() {
                           label={toolDisplayName(row.toolKey ?? row.toolName)}
                         />
                       </div>
-                      {row.verdictCode ? <CycleStatus code={row.verdictCode} /> : null}
+                      {row.verdictCode && row.verdictCode !== "UNKNOWN" ? (
+                        <CycleStatus code={row.verdictCode} />
+                      ) : usageCost > 0 ? (
+                        <div className="mt-1.5">
+                          <p className="text-xs font-medium text-muted-foreground">Estimated usage</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            Token cost this cycle · plan seat is {formatUsd(row.cycleSpend)}/mo
+                          </p>
+                        </div>
+                      ) : row.verdictCode ? (
+                        <CycleStatus code={row.verdictCode} />
+                      ) : null}
                     </>
                   );
 

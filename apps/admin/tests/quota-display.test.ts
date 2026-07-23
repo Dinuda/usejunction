@@ -25,6 +25,9 @@ test("quota window labels distinguish Codex five-hour and weekly limits", () => 
   assert.equal(quotaWindowLabel("copilot_completions"), "Copilot completions");
   assert.equal(quotaWindowLabel("extra_usage"), "Extra usage");
   assert.equal(quotaWindowLabel("plan"), "Plan");
+  assert.equal(quotaWindowLabel("claude_5h"), "Claude · 5-hour");
+  assert.equal(quotaWindowLabel("gemini_weekly"), "Gemini · Weekly");
+  assert.equal(quotaWindowLabel("gpt_monthly"), "GPT · Monthly");
 });
 
 test("quota reset labels include the exact UTC reset time", () => {

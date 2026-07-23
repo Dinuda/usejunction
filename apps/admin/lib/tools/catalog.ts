@@ -26,7 +26,7 @@ export type CatalogTool = {
 
 const usd = (dollars: number) => BigInt(Math.round(dollars * 1_000_000));
 const zero = BigInt(0);
-const verified = "2026-07-10";
+const verified = "2026-07-23";
 
 export const TOOL_CATALOG: readonly CatalogTool[] = [
   {
@@ -37,7 +37,7 @@ export const TOOL_CATALOG: readonly CatalogTool[] = [
     product: "codex",
     toolName: "codex",
     // Work (desktop agent) shares the same OpenAI subscription as ChatGPT / Codex.
-    aliases: ["chatgpt", "codex", "codex-work", "codex_work"],
+    aliases: ["chatgpt", "codex", "codex-work", "codex_work", "openai-api"],
     sourceUrl: "https://chatgpt.com/pricing/",
     lastVerifiedAt: verified,
     plans: [
@@ -86,6 +86,26 @@ export const TOOL_CATALOG: readonly CatalogTool[] = [
       { key: "ultra", name: "Ultra", tier: "Ultra", description: "Maximum individual usage", prices: { monthly: usd(200) }, includedCycleMicros: usd(400) },
       { key: "teams", name: "Teams", tier: "Teams", description: "Centralized billing and team controls", prices: { monthly: usd(40), annual: usd(32) }, includedCycleMicros: usd(20) },
       { key: "enterprise", name: "Enterprise", tier: "Enterprise", description: "Enterprise security and negotiated pricing", prices: {}, includedCycleMicros: zero, customPrice: true },
+    ],
+  },
+  {
+    key: "antigravity",
+    name: "Antigravity",
+    shortName: "Antigravity",
+    provider: "google",
+    product: "antigravity",
+    toolName: "antigravity",
+    aliases: ["antigravity", "agy", "gemini-antigravity"],
+    sourceUrl: "https://antigravity.google/pricing",
+    lastVerifiedAt: verified,
+    plans: [
+      { key: "individual", name: "Individual", tier: "Individual", description: "Free tier with basic weekly rate limits", prices: { monthly: zero }, includedCycleMicros: zero },
+      { key: "google-ai-plus", name: "Google AI Plus", tier: "Plus", description: "Entry paid tier with higher Gemini limits", prices: { monthly: usd(7.99) }, includedCycleMicros: zero },
+      // Official Google AI / Google One list prices (I/O 2026): Pro $19.99, Ultra $99.99, Ultra 20x $199.99.
+      { key: "google-ai-pro", name: "Google AI Pro", tier: "Pro", description: "Higher rate limits and flexible AI credit pool", prices: { monthly: usd(19.99) }, includedCycleMicros: zero },
+      { key: "google-ai-ultra", name: "Google AI Ultra", tier: "Ultra", description: "5× Pro Antigravity / Gemini limits", prices: { monthly: usd(99.99) }, includedCycleMicros: zero },
+      { key: "google-ai-ultra-max", name: "Google AI Ultra Max", tier: "Ultra Max", description: "20× Pro Antigravity / Gemini limits", prices: { monthly: usd(199.99) }, includedCycleMicros: zero },
+      { key: "organization", name: "Organization", tier: "Organization", description: "Google Cloud consumption-based access", prices: {}, includedCycleMicros: zero, customPrice: true },
     ],
   },
   {

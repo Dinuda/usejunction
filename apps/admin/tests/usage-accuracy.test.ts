@@ -12,8 +12,12 @@ import {
 test("canonical source aliases retain accounting priority", () => {
   assert.equal(normalizeSource("cursor_usage_events"), "vendor_verified");
   assert.equal(normalizeSource("cursor_local"), "device_observed");
+  assert.equal(normalizeSource("antigravity_local"), "device_observed");
+  assert.equal(normalizeSource("antigravity_usage"), "device_observed");
   assert.equal(activityPriority("cursor_usage_events"), activityPriority("vendor_verified"));
   assert.equal(costPriority("local_scan"), costPriority("device_observed"));
+  assert.equal(activityPriority("antigravity_local"), activityPriority("device_observed"));
+  assert.equal(activityPriority("antigravity_usage"), activityPriority("device_observed"));
 });
 
 test("activity and cost use independent source priorities", () => {

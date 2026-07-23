@@ -210,45 +210,109 @@ func scanCursorScoredCommits(buckets map[string]*types.DailyUsage) error {
 	defer db.Close()
 
 	rows, err := db.Query(`
-		SELECT COALESCE(substr(commitDate, 1, 10), date(scoredAt/1000, 'unixepoch')) AS day,
-		       SUM(composerLinesAdded) AS added,
-		       SUM(composerLinesDeleted) AS deleted,
-		       SUM(tabLinesAdded) AS tabAdded,
-		       COUNT(*) AS commits,
-		       AVG(CAST(v2AiPercentage AS REAL)) AS aiPct
+		SELECT commitDate, scoredAt,
+		       composerLinesAdded, composerLinesDeleted, tabLinesAdded,
+		       v2AiPercentage
 		FROM scored_commits
-		GROUP BY day
 	`)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 
+	type dayAgg struct {
+		added, deleted, tabAdded, commits int
+		aiPctSum                          float64
+		aiPctN                            int
+	}
+	byDay := map[string]*dayAgg{}
+
 	for rows.Next() {
-		var day string
-		var added, deleted, tabAdded, commits sql.NullInt64
+		var commitDate sql.NullString
+		var scoredAt sql.NullInt64
+		var added, deleted, tabAdded sql.NullInt64
 		var aiPct sql.NullFloat64
-		if err := rows.Scan(&day, &added, &deleted, &tabAdded, &commits, &aiPct); err != nil {
+		if err := rows.Scan(&commitDate, &scoredAt, &added, &deleted, &tabAdded, &aiPct); err != nil {
 			continue
 		}
-		day = strings.TrimSpace(day)
-		if len(day) >= 10 {
-			day = day[:10]
-		}
+		day := cursorCommitDay(commitDate.String, scoredAt.Int64)
 		if day == "" {
 			continue
 		}
-		b := cursorBucket(buckets, day, "commits")
-		b.AddedLines += int(added.Int64 + tabAdded.Int64)
-		b.DeletedLines += int(deleted.Int64)
-		b.Commits += int(commits.Int64)
+		agg := byDay[day]
+		if agg == nil {
+			agg = &dayAgg{}
+			byDay[day] = agg
+		}
+		agg.added += int(added.Int64)
+		agg.deleted += int(deleted.Int64)
+		agg.tabAdded += int(tabAdded.Int64)
+		agg.commits++
 		if aiPct.Valid {
-			v := aiPct.Float64
+			agg.aiPctSum += aiPct.Float64
+			agg.aiPctN++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for day, agg := range byDay {
+		b := cursorBucket(buckets, day, "commits")
+		b.AddedLines += agg.added + agg.tabAdded
+		b.DeletedLines += agg.deleted
+		b.Commits += agg.commits
+		if agg.aiPctN > 0 {
+			v := agg.aiPctSum / float64(agg.aiPctN)
 			b.AiPercent = &v
 		}
 		b.Requests = 0
 	}
-	return rows.Err()
+	return nil
+}
+
+// cursorCommitDay returns YYYY-MM-DD for a scored commit. Cursor stores git-style
+// commitDate values (e.g. "Wed Jul 22 21:55:05 2026 +0530"); substr(1,10) is wrong.
+func cursorCommitDay(commitDate string, scoredAtMs int64) string {
+	commitDate = strings.TrimSpace(commitDate)
+	if day := parseCursorCommitDate(commitDate); day != "" {
+		return day
+	}
+	if scoredAtMs > 0 {
+		sec := scoredAtMs
+		if scoredAtMs > 1_000_000_000_000 { // ms
+			sec = scoredAtMs / 1000
+		}
+		return time.Unix(sec, 0).UTC().Format("2006-01-02")
+	}
+	return ""
+}
+
+func parseCursorCommitDate(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if len(raw) >= 10 && raw[4] == '-' && raw[7] == '-' {
+		day := raw[:10]
+		if _, err := time.Parse("2006-01-02", day); err == nil {
+			return day
+		}
+	}
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"Mon Jan _2 15:04:05 2006 -0700",
+		"Mon Jan 2 15:04:05 2006 -0700",
+		"Mon Jan _2 15:04:05 MST 2006",
+		"Mon Jan 2 15:04:05 MST 2006",
+	}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, raw); err == nil {
+			return t.UTC().Format("2006-01-02")
+		}
+	}
+	return ""
 }
 
 // MergeCursorUsage merges local AI-line rows with verified usage-event rows.

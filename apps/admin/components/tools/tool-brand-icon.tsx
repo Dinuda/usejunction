@@ -22,6 +22,7 @@ const icons = {
   "chatgpt-codex": OpenAI,
   claude: ClaudeCode,
   cursor: Cursor,
+  antigravity: Gemini,
   "github-copilot": GithubCopilot,
   copilot: GithubCopilot,
   cline: Cline,

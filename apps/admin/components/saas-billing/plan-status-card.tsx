@@ -69,7 +69,7 @@ function statusLine(billing: OrgBillingStatus) {
 }
 
 export function PlanStatusCard({ billing }: PlanStatusCardProps) {
-  const { error, loading, openPortal } = useBillingNavigation();
+  const { error, loading, openCheckout, openPortal } = useBillingNavigation();
 
   const paid = billing.effectivePlan === "team" || billing.effectivePlan === "enterprise";
   const usageLabel = paid
@@ -117,16 +117,16 @@ export function PlanStatusCard({ billing }: PlanStatusCardProps) {
 
         {billing.canUpgrade && (
           <Button
-            asChild
+            type="button"
             size="sm"
             variant="outline"
             className="relative z-20 h-9 w-full border-0 bg-white font-semibold shadow-sm hover:bg-[var(--brand-orange-pale)] [background-image:none]"
             style={{ color: "var(--brand-orange-dark)" }}
+            disabled={loading}
+            onClick={openCheckout}
           >
-            <Link href="/settings/upgrade">
-              Upgrade to Team
-              <ArrowRight className="size-4" />
-            </Link>
+            {loading ? <Loader2 className="size-4 animate-spin" /> : "Upgrade to Team"}
+            {!loading && <ArrowRight className="size-4" />}
           </Button>
         )}
 

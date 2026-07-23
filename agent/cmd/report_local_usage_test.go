@@ -145,6 +145,53 @@ func TestReportLocalUsageDeltaDoesNotFingerprintOn413(t *testing.T) {
 	}
 }
 
+func TestReportLocalUsageDeltaBisectsMultiRow413(t *testing.T) {
+	cfg := setupCmdUsageHome(t)
+	var posts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		posts.Add(1)
+		var body struct {
+			Aggregates []client.UsageAggregate `json:"aggregates"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad json", 400)
+			return
+		}
+		if len(body.Aggregates) > 1 {
+			http.Error(w, `{"error":"request body too large"}`, http.StatusRequestEntityTooLarge)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"upserted": len(body.Aggregates)})
+	}))
+	defer server.Close()
+	cfg.ControlPlaneURL = server.URL
+	api := client.New(cfg)
+
+	rows := []client.UsageAggregate{
+		{Date: "2026-07-18", ToolName: "codex", Model: "a", EstimatedCost: 1, InputTokens: 10, Source: "local_scan"},
+		{Date: "2026-07-18", ToolName: "codex", Model: "b", EstimatedCost: 2, InputTokens: 20, Source: "local_scan"},
+		{Date: "2026-07-18", ToolName: "codex", Model: "c", EstimatedCost: 3, InputTokens: 30, Source: "local_scan"},
+	}
+	uploaded, remaining, err := reportLocalUsageDelta(api, cfg, rows, nil)
+	if err != nil {
+		t.Fatalf("expected bisect to succeed: %v", err)
+	}
+	if uploaded != 3 || remaining != 0 {
+		t.Fatalf("uploaded=%d remaining=%d want 3/0", uploaded, remaining)
+	}
+	if posts.Load() < 3 {
+		t.Fatalf("expected bisect POSTs, got %d", posts.Load())
+	}
+	pending := scan.FilterUsageUploadDelta([]types.DailyUsage{
+		{Date: "2026-07-18", ToolName: "codex", Model: "a", EstimatedCost: 1, InputTokens: 10, Source: "local_scan"},
+		{Date: "2026-07-18", ToolName: "codex", Model: "b", EstimatedCost: 2, InputTokens: 20, Source: "local_scan"},
+		{Date: "2026-07-18", ToolName: "codex", Model: "c", EstimatedCost: 3, InputTokens: 30, Source: "local_scan"},
+	}, time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC), cfg.OrgID, cfg.DeviceID)
+	if len(pending) != 0 {
+		t.Fatalf("accepted rows should be fingerprinted, pending=%#v", pending)
+	}
+}
+
 func TestReportLocalUsageDeltaDoesNotFingerprintOn500(t *testing.T) {
 	cfg := setupCmdUsageHome(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

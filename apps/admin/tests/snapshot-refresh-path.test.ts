@@ -60,6 +60,7 @@ test("ensure stubs missing days without rematerializing sealed days", { skip: !r
         orgId: org.id,
         date: midFrom,
         toolName: "",
+        developerId: "",
         metricVersion: ORG_DAY_SNAPSHOT_VERSION,
       },
     });
@@ -80,6 +81,7 @@ test("ensure stubs missing days without rematerializing sealed days", { skip: !r
         orgId: org.id,
         date: midFrom,
         toolName: "",
+        developerId: "",
         metricVersion: ORG_DAY_SNAPSHOT_VERSION,
       },
     });
@@ -92,6 +94,7 @@ test("ensure stubs missing days without rematerializing sealed days", { skip: !r
         orgId: org.id,
         date: earlyFrom,
         toolName: "",
+        developerId: "",
         metricVersion: ORG_DAY_SNAPSHOT_VERSION,
       },
     });
@@ -124,6 +127,7 @@ test("ensure does not rematerialize today based on snapshot age", { skip: !runDb
         orgId: org.id,
         date: today,
         toolName: "",
+        developerId: "",
         metricVersion: ORG_DAY_SNAPSHOT_VERSION,
         requests: 42,
         inputTokens: BigInt(0),
@@ -148,6 +152,7 @@ test("ensure does not rematerialize today based on snapshot age", { skip: !runDb
         orgId: org.id,
         date: today,
         toolName: "",
+        developerId: "",
         metricVersion: ORG_DAY_SNAPSHOT_VERSION,
       },
     });
@@ -206,6 +211,7 @@ test("materializeDirtyOrgUsageDays rematerializes contiguous ranges only", { ski
         orgId: org.id,
         date: day2,
         toolName: "",
+        developerId: "",
         metricVersion: ORG_DAY_SNAPSHOT_VERSION,
       },
       data: {
@@ -225,6 +231,7 @@ test("materializeDirtyOrgUsageDays rematerializes contiguous ranges only", { ski
       where: {
         orgId: org.id,
         toolName: "",
+        developerId: "",
         metricVersion: ORG_DAY_SNAPSHOT_VERSION,
         date: { in: [day1, day2, day3] },
       },
@@ -347,6 +354,7 @@ test("ensure recovers when snapshots were wiped but usage_daily remains", { skip
         orgId: org.id,
         date: from,
         toolName: "",
+        developerId: "",
         metricVersion: ORG_DAY_SNAPSHOT_VERSION,
       },
     });
@@ -357,6 +365,65 @@ test("ensure recovers when snapshots were wiped but usage_daily remains", { skip
     const again = await ensureOrgUsageDaySnapshots(org.id, from, to);
     assert.equal(again.recovered, 0);
     assert.equal(again.stubbed, 0);
+  } finally {
+    await prisma.organization.delete({ where: { id: org.id } });
+  }
+});
+
+test("ensure recovers token/cost-only stubs after first ingest (requests=0)", { skip: !runDb }, async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const org = await prisma.organization.create({
+    data: { name: `Token Stub Org ${suffix}`, slug: `token-stub-${suffix}` },
+  });
+  const day = new Date("2026-07-21T00:00:00.000Z");
+  const developer = await prisma.developer.create({
+    data: {
+      orgId: org.id,
+      email: `token-stub-${suffix}@example.com`,
+      name: "Token Stub Dev",
+      role: "user",
+    },
+  });
+
+  try {
+    // Codex local_scan shape: tokens + estimated cost, but requests stay 0.
+    await prisma.usageDaily.create({
+      data: {
+        orgId: org.id,
+        developerId: developer.id,
+        date: day,
+        provider: "openai",
+        product: "codex",
+        toolName: "codex",
+        model: "gpt-5.6-sol",
+        source: "device_observed",
+        requests: 0,
+        inputTokens: BigInt(7_225_706),
+        outputTokens: BigInt(30_733),
+        costMicros: BigInt(18_371_595),
+        costKind: "estimated_api",
+        dedupeKey: `token-stub-test:${suffix}`,
+        observedAt: day,
+      },
+    });
+
+    // Read-path seal after ingest — same race as post-onboarding dashboard load.
+    const stubbed = await ensureOrgUsageDaySnapshots(org.id, day, day);
+    assert.ok(stubbed.recovered > 0, "expected fail-safe rematerialize for token/cost-only usage");
+
+    const total = await prisma.orgUsageDaySnapshot.findFirst({
+      where: {
+        orgId: org.id,
+        date: day,
+        toolName: "",
+        developerId: "",
+        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+      },
+    });
+    assert.ok(total);
+    assert.equal(total.requests, 0);
+    assert.equal(total.inputTokens, BigInt(7_225_706));
+    assert.equal(total.estimatedApiCostMicros, BigInt(18_371_595));
   } finally {
     await prisma.organization.delete({ where: { id: org.id } });
   }

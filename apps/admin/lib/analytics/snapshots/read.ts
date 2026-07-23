@@ -3,6 +3,7 @@ import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import {
   ORG_DAY_SNAPSHOT_VERSION,
   ensureOrgUsageDaySnapshots,
+  snapshotEachDay,
   snapshotIsoDay,
   snapshotUtcDay,
 } from "./materialize";
@@ -47,15 +48,60 @@ function parseIds(value: unknown): string[] {
 }
 
 /**
- * Sum ready org-day snapshots for a window.
- * Callers that need multiple windows should call `ensureOrgUsageDaySnapshots`
- * once for the union range first, then pass `{ ensure: false }` here.
+ * Read-path seal for one developer's day totals: stub missing days with zeros.
+ * Does not rematerialize — Sync / cron own freshness.
  */
-export async function readOrgUsageFromSnapshots(
+export async function ensureDeveloperUsageDaySnapshots(
   orgId: string,
-  window: MetricWindow,
-  options: { includeTools?: boolean; toolNames?: string[]; ensure?: boolean } = {},
-): Promise<{
+  developerId: string,
+  from: Date,
+  to: Date,
+  options: { metricVersion?: string } = {},
+): Promise<{ stubbed: number }> {
+  if (!developerId) return { stubbed: 0 };
+  const metricVersion = options.metricVersion ?? ORG_DAY_SNAPSHOT_VERSION;
+  const fromDay = snapshotUtcDay(from);
+  const toDay = snapshotUtcDay(to);
+
+  const existing = await prisma.orgUsageDaySnapshot.findMany({
+    where: {
+      orgId,
+      metricVersion,
+      toolName: "",
+      developerId,
+      date: { gte: fromDay, lte: toDay },
+    },
+    select: { date: true },
+  });
+  const have = new Set(existing.map((row) => snapshotIsoDay(row.date)));
+  const missing = snapshotEachDay(fromDay, toDay).filter((day) => !have.has(snapshotIsoDay(day)));
+  if (!missing.length) return { stubbed: 0 };
+
+  const now = new Date();
+  await prisma.orgUsageDaySnapshot.createMany({
+    data: missing.map((day) => ({
+      orgId,
+      date: day,
+      toolName: "",
+      developerId,
+      metricVersion,
+      requests: 0,
+      inputTokens: BigInt(0),
+      outputTokens: BigInt(0),
+      verifiedUsageCostMicros: BigInt(0),
+      estimatedApiCostMicros: BigInt(0),
+      actualSpendCostMicros: BigInt(0),
+      activeDevelopers: 0,
+      activeDeveloperIds: [],
+      computedAt: now,
+      sourceObservedThrough: null,
+    })),
+    skipDuplicates: true,
+  });
+  return { stubbed: missing.length };
+}
+
+type SnapshotReadResult = {
   dataThrough: Date | null;
   kpis: {
     modelCalls: number;
@@ -69,25 +115,24 @@ export async function readOrgUsageFromSnapshots(
   activeDevelopers: number;
   toolDays: SnapshotToolDay[];
   dayTotals: SnapshotDayTotals[];
-}> {
-  if (options.ensure !== false) {
-    await ensureOrgUsageDaySnapshots(orgId, window.from, window.to);
-  }
+};
 
-  const from = snapshotUtcDay(window.from);
-  const to = snapshotUtcDay(window.to);
-  const rows = await prisma.orgUsageDaySnapshot.findMany({
-    where: {
-      orgId,
-      metricVersion: ORG_DAY_SNAPSHOT_VERSION,
-      date: { gte: from, lte: to },
-      ...(options.toolNames?.length
-        ? { OR: [{ toolName: "" }, { toolName: { in: options.toolNames } }] }
-        : {}),
-    },
-    orderBy: [{ date: "asc" }, { toolName: "asc" }],
-  });
-
+function foldSnapshotRows(
+  rows: Array<{
+    date: Date;
+    toolName: string;
+    requests: number;
+    inputTokens: bigint;
+    outputTokens: bigint;
+    verifiedUsageCostMicros: bigint;
+    estimatedApiCostMicros: bigint;
+    actualSpendCostMicros: bigint;
+    activeDevelopers: number;
+    activeDeveloperIds: unknown;
+    sourceObservedThrough: Date | null;
+  }>,
+  options: { includeTools?: boolean; toolNames?: string[] },
+): SnapshotReadResult {
   const dayTotals: SnapshotDayTotals[] = [];
   const toolAcc = new Map<string, SnapshotToolTotals>();
   const toolDays: SnapshotToolDay[] = [];
@@ -143,13 +188,11 @@ export async function readOrgUsageFromSnapshots(
       existing.verifiedUsageCost += verified;
       existing.estimatedApiCost += estimated;
       existing.cost += verified + estimated;
-      // Window-level active developers for a tool: track via ids if present
       existing.activeDevelopers = Math.max(existing.activeDevelopers, row.activeDevelopers);
       toolAcc.set(row.toolName, existing);
     }
   }
 
-  // Better tool activeDevelopers: union ids across days when available
   if (options.includeTools) {
     const toolDevIds = new Map<string, Set<string>>();
     for (const row of rows) {
@@ -186,4 +229,69 @@ export async function readOrgUsageFromSnapshots(
     toolDays,
     dayTotals,
   };
+}
+
+/**
+ * Sum ready org-day snapshots for a window (`developerId = ""` rollups only).
+ * Callers that need multiple windows should call `ensureOrgUsageDaySnapshots`
+ * once for the union range first, then pass `{ ensure: false }` here.
+ */
+export async function readOrgUsageFromSnapshots(
+  orgId: string,
+  window: MetricWindow,
+  options: { includeTools?: boolean; toolNames?: string[]; ensure?: boolean } = {},
+): Promise<SnapshotReadResult> {
+  if (options.ensure !== false) {
+    await ensureOrgUsageDaySnapshots(orgId, window.from, window.to);
+  }
+
+  const from = snapshotUtcDay(window.from);
+  const to = snapshotUtcDay(window.to);
+  const rows = await prisma.orgUsageDaySnapshot.findMany({
+    where: {
+      orgId,
+      developerId: "",
+      metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+      date: { gte: from, lte: to },
+      ...(options.toolNames?.length
+        ? { OR: [{ toolName: "" }, { toolName: { in: options.toolNames } }] }
+        : {}),
+    },
+    orderBy: [{ date: "asc" }, { toolName: "asc" }],
+  });
+
+  return foldSnapshotRows(rows, options);
+}
+
+/**
+ * Sum sealed developer-day snapshots for You / member dashboards.
+ * Same generation as org rollups — never queries usage_daily on the read path.
+ */
+export async function readDeveloperUsageFromSnapshots(
+  orgId: string,
+  developerId: string,
+  window: MetricWindow,
+  options: { includeTools?: boolean; toolNames?: string[]; ensure?: boolean } = {},
+): Promise<SnapshotReadResult> {
+  if (options.ensure !== false) {
+    await ensureOrgUsageDaySnapshots(orgId, window.from, window.to);
+    await ensureDeveloperUsageDaySnapshots(orgId, developerId, window.from, window.to);
+  }
+
+  const from = snapshotUtcDay(window.from);
+  const to = snapshotUtcDay(window.to);
+  const rows = await prisma.orgUsageDaySnapshot.findMany({
+    where: {
+      orgId,
+      developerId,
+      metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+      date: { gte: from, lte: to },
+      ...(options.toolNames?.length
+        ? { OR: [{ toolName: "" }, { toolName: { in: options.toolNames } }] }
+        : {}),
+    },
+    orderBy: [{ date: "asc" }, { toolName: "asc" }],
+  });
+
+  return foldSnapshotRows(rows, options);
 }

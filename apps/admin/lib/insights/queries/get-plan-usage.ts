@@ -28,10 +28,18 @@ import type {
 import { readAssignments } from "@/lib/insights/readers/assignments";
 import { readQuotas } from "@/lib/insights/readers/quotas";
 import { readSubscriptions } from "@/lib/insights/readers/subscriptions";
+import { paceAwarePlanVerdict } from "@/lib/quotas/pace";
 import { canonicalToolKey } from "@/lib/tools/catalog";
 
 function emptyVerdict(): PlanVerdict {
   return evaluatePlanUtilization({ primaryQuota: null, included: null });
+}
+
+function cycleWindowFromBilling(cycle: { cycleStart: Date; cycleEnd: Date }) {
+  return {
+    startsAt: cycle.cycleStart.toISOString(),
+    endsAt: cycle.cycleEnd.toISOString(),
+  };
 }
 
 function summarize(rows: Array<{ primaryRatio: number | null; verdict: PlanVerdict }>, seat: {
@@ -117,7 +125,12 @@ export async function getPlanUsage(
     });
     const primaryQuota = selectPrimaryQuota(quotas);
     const primaryRatio = primaryUtilizationRatio({ primaryQuota, included });
-    const verdict = evaluatePlanUtilization({ primaryQuota, included });
+    const verdict = paceAwarePlanVerdict({
+      primaryQuota,
+      included,
+      cycleWindow: cycleWindowFromBilling(billingCycle),
+      now: context.now,
+    });
     return {
       planTemplateId: subscription.id,
       toolKey: subscription.toolKey,
@@ -173,7 +186,13 @@ export async function getPlanUsage(
     });
     const primaryQuota = selectPrimaryQuota(quotas);
     const primaryRatio = primaryUtilizationRatio({ primaryQuota, included });
-    const verdict = evaluatePlanUtilization({ primaryQuota, included });
+    const assignmentCycle = resolveBillingCycle(assignment, input.reportWindow.to);
+    const verdict = paceAwarePlanVerdict({
+      primaryQuota,
+      included,
+      cycleWindow: cycleWindowFromBilling(assignmentCycle),
+      now: context.now,
+    });
     const serialized = line ? serializeBillingLine(line) : null;
 
     existing.plans.push({
@@ -184,7 +203,7 @@ export async function getPlanUsage(
       planName: assignment.planName,
       seatCount: assignment.seatCount,
       billingCadence: assignment.billingCadence,
-      billingCycle: cycleToJson(resolveBillingCycle(assignment, input.reportWindow.to)),
+      billingCycle: cycleToJson(assignmentCycle),
       cycleSeatMicros: assignment.cycleSeatMicros.toString(),
       includedCycleMicros: assignment.includedCycleMicros.toString(),
       primaryQuota,
@@ -211,9 +230,18 @@ export async function getPlanUsage(
     const primaryRatio = ratios.length ? Math.max(...ratios) : null;
     const worst =
       developer.plans.find((plan) => plan.primaryRatio === primaryRatio)?.verdict ??
-      evaluatePlanUtilization({
+      paceAwarePlanVerdict({
         primaryQuota: null,
-        included: primaryRatio == null ? null : { includedCycleMicros: "0", grossUsageMicros: "0", rawRatio: primaryRatio, displayRatio: Math.min(primaryRatio, 1) },
+        included:
+          primaryRatio == null
+            ? null
+            : {
+                includedCycleMicros: "0",
+                grossUsageMicros: "0",
+                rawRatio: primaryRatio,
+                displayRatio: Math.min(primaryRatio, 1),
+              },
+        now: context.now,
       });
     return { ...developer, primaryRatio, verdict: worst };
   });

@@ -16,6 +16,16 @@ test("opaque token comparisons operate on fixed length hashes", () => {
   assert.equal(constantTimeHashMatch("wrong", hash), false);
 });
 
+const secureProductionEnv = {
+  NODE_ENV: "production",
+  AUTH_SECRET: "a".repeat(32),
+  INGEST_SECRET: "b".repeat(32),
+  CRON_SECRET: "c".repeat(32),
+  AGENT_RELEASE_OPERATIONS_TOKEN: "d".repeat(32),
+  NEXT_PUBLIC_APP_URL: "https://app.example.com",
+  NEXTAUTH_URL: "https://app.example.com",
+} as NodeJS.ProcessEnv;
+
 test("production env guard rejects insecure defaults", () => {
   assert.throws(() => assertSecureProductionEnv({
     NODE_ENV: "production",
@@ -25,6 +35,29 @@ test("production env guard rejects insecure defaults", () => {
     AGENT_RELEASE_OPERATIONS_TOKEN: "short",
     USEJUNCTION_ALLOW_INSECURE_DEVELOPMENT: "true",
   } as NodeJS.ProcessEnv), /Insecure production configuration/);
+});
+
+test("production env guard rejects partial Lemon billing configuration", () => {
+  assert.throws(
+    () =>
+      assertSecureProductionEnv({
+        ...secureProductionEnv,
+        LEMONSQUEEZY_API_KEY: "x".repeat(32),
+      }),
+    /LEMONSQUEEZY_WEBHOOK_SECRET/,
+  );
+});
+
+test("production env guard accepts complete Lemon billing configuration", () => {
+  assert.doesNotThrow(() =>
+    assertSecureProductionEnv({
+      ...secureProductionEnv,
+      LEMONSQUEEZY_API_KEY: "x".repeat(32),
+      LEMONSQUEEZY_WEBHOOK_SECRET: "w".repeat(32),
+      LEMONSQUEEZY_STORE_ID: "12345",
+      LEMONSQUEEZY_VARIANT_ID_TEAM: "67890",
+    }),
+  );
 });
 
 test("remote HTTP URLs are rejected while loopback HTTP is allowed", () => {

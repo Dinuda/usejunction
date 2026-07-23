@@ -1,6 +1,13 @@
 import { createHash, randomBytes } from "crypto";
+import { readFile } from "fs/promises";
+import path from "path";
 import { Resend } from "resend";
 import { prisma } from "@usejunction/db";
+import {
+  TEAM_INVITE_HERO_CID,
+  TEAM_INVITE_LOGO_CID,
+  buildTeamInviteEmailDocument,
+} from "@/lib/email/team-invite-html";
 import { getPublicAppUrl } from "@/lib/public-url";
 import { credentialFingerprint } from "@/lib/security";
 import { logServerError } from "@/lib/errors/public";
@@ -36,12 +43,19 @@ export async function sendAuthEmail({
   url,
   text,
   html,
+  attachments,
 }: {
   to: string;
   subject: string;
   url: string;
   text?: string;
   html?: string;
+  attachments?: Array<{
+    filename: string;
+    content: Buffer;
+    contentType?: string;
+    contentId?: string;
+  }>;
 }) {
   const key = process.env.RESEND_API_KEY;
   const bodyText = text ?? `Use this link to continue: ${url}`;
@@ -60,6 +74,7 @@ export async function sendAuthEmail({
     subject,
     text: bodyText,
     html: bodyHtml,
+    ...(attachments?.length ? { attachments } : {}),
   });
 
   if (error) {
@@ -70,53 +85,64 @@ export async function sendAuthEmail({
   console.info(`[auth email] sent id=${data?.id} to=${to} from=${from}`);
 }
 
+async function loadTeamInviteInlineAssets() {
+  const publicDir = path.join(process.cwd(), "public");
+  const [logo, hero] = await Promise.all([
+    readFile(path.join(publicDir, "usejunction.png")),
+    readFile(path.join(publicDir, "images", "team-invite.png")),
+  ]);
+  return [
+    {
+      filename: "usejunction.png",
+      content: logo,
+      contentType: "image/png",
+      contentId: TEAM_INVITE_LOGO_CID,
+    },
+    {
+      filename: "team-invite.png",
+      content: hero,
+      contentType: "image/png",
+      contentId: TEAM_INVITE_HERO_CID,
+    },
+  ];
+}
+
 export async function sendTeamInviteEmail({
   to,
   organizationName,
   inviteUrl,
+  invitedBy,
 }: {
   to: string;
   organizationName: string;
   inviteUrl: string;
+  invitedBy?: { name?: string | null; email?: string | null } | null;
 }) {
-  const subject = `Join ${organizationName} on UseJunction`;
-  const text = [
-    `You've been invited to join ${organizationName} on UseJunction.`,
-    "",
-    "1. Open this invite link (sign up or sign in with this email):",
+  const { subject, text, html: inlineHtml } = buildTeamInviteEmailDocument({
+    organizationName,
     inviteUrl,
-    "",
-    "2. After you're in, install UseJunction on your machine from the page (copy the command or download the macOS installer).",
-    "",
-    "If you weren't expecting this, you can ignore this email.",
-  ].join("\n");
+    recipientEmail: to,
+    invitedBy,
+    inlineAssets: true,
+  });
 
-  const html = `
-    <div style="font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;line-height:1.5;color:#18181b;max-width:520px">
-      <p>You've been invited to join <strong>${escapeHtml(organizationName)}</strong> on UseJunction.</p>
-      <ol>
-        <li style="margin-bottom:8px">Open your invite link and <strong>sign up or sign in</strong> with <strong>${escapeHtml(to)}</strong>.</li>
-        <li style="margin-bottom:8px">On the page, install UseJunction on your machine by copying the Terminal command.</li>
-      </ol>
-      <p style="margin:24px 0">
-        <a href="${escapeHtml(inviteUrl)}" style="display:inline-block;background:#18181b;color:#fff;padding:10px 16px;text-decoration:none;border-radius:6px;font-weight:600">
-          Open invite
-        </a>
-      </p>
-      <p style="font-size:13px;color:#71717a;word-break:break-all">${escapeHtml(inviteUrl)}</p>
-      <p style="font-size:12px;color:#a1a1aa">If you weren't expecting this, you can ignore this email.</p>
-    </div>
-  `;
+  let attachments: Awaited<ReturnType<typeof loadTeamInviteInlineAssets>> | undefined;
+  let html = inlineHtml;
+  try {
+    attachments = await loadTeamInviteInlineAssets();
+  } catch (cause) {
+    logServerError("team invite email assets", cause);
+    // Fall back to absolute URLs if local files are unavailable.
+    html = buildTeamInviteEmailDocument({
+      organizationName,
+      inviteUrl,
+      recipientEmail: to,
+      invitedBy,
+      inlineAssets: false,
+    }).html;
+  }
 
-  await sendAuthEmail({ to, subject, url: inviteUrl, text, html });
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+  await sendAuthEmail({ to, subject, url: inviteUrl, text, html, attachments });
 }
 
 export async function createAuthActionToken(userId: string, type: string, ttlMs: number) {

@@ -2,7 +2,8 @@
 // AI coding tools when Signals work extraction is enabled.
 //
 // Supported today: Cursor (composer headers in state.vscdb + agent transcripts),
-// Codex (~/.codex/sessions JSONL), Claude Code (~/.claude/projects JSONL).
+// Codex (~/.codex/sessions JSONL), Claude Code (~/.claude/projects JSONL),
+// Antigravity (trajectorySummaries in state.vscdb + optional brain metadata).
 // Copilot / Cline / OpenCode / Continue are usage-scanned elsewhere but do not
 // yet emit work sessions.
 //
@@ -49,6 +50,7 @@ func Collect(opts Options) []client.WorkSession {
 	out = append(out, extractCursor(cursorLimitIncremental)...)
 	out = append(out, extractCodex()...)
 	out = append(out, extractClaude()...)
+	out = append(out, extractAntigravity()...)
 
 	if !opts.NotBefore.IsZero() {
 		out = FilterAtOrAfter(out, opts.NotBefore)

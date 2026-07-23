@@ -19,6 +19,7 @@ var aiTextTools = []struct {
 	{"openai", "chatgpt"},
 	{"claude", "claude"},
 	{"gemini", "gemini"},
+	{"antigravity", "antigravity"},
 	{"perplexity", "perplexity"},
 	{"copilot", "copilot"},
 	{"cursor", "cursor"},

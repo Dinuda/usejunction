@@ -194,6 +194,87 @@ function independentOrgUsage(rows: RawRow[], from: Date, to: Date) {
   };
 }
 
+/** Developer slice using org-wide cost winners (matches sealed developer snapshots). */
+function independentDeveloperSnapshotUsage(rows: RawRow[], developerId: string, from: Date, to: Date) {
+  const scoped = rows.filter((r) => inWindow(r.date, from, to));
+  const mine = scoped.filter((r) => r.developerId === developerId);
+
+  const activityBest = new Map<string, number>();
+  for (const row of mine) {
+    if (isProductivityRow(row)) continue;
+    const source = normalizeSource(row.source);
+    if (!isObservedSource(source)) continue;
+    if (row.requests <= 0 && row.inputTokens <= BigInt(0) && row.outputTokens <= BigInt(0)) continue;
+    const key = [
+      isoDay(row.date),
+      row.developerId ?? "",
+      row.provider,
+      row.product,
+      row.toolName,
+      row.model ?? "",
+    ].join("|");
+    const priority = activityPriority(source);
+    const prev = activityBest.get(key);
+    if (prev === undefined || priority < prev) activityBest.set(key, priority);
+  }
+
+  let requests = 0;
+  let tokens = BigInt(0);
+  for (const row of mine) {
+    if (isProductivityRow(row)) continue;
+    const source = normalizeSource(row.source);
+    if (!isObservedSource(source)) continue;
+    if (row.requests <= 0 && row.inputTokens <= BigInt(0) && row.outputTokens <= BigInt(0)) continue;
+    const key = [
+      isoDay(row.date),
+      row.developerId ?? "",
+      row.provider,
+      row.product,
+      row.toolName,
+      row.model ?? "",
+    ].join("|");
+    if (activityPriority(source) !== activityBest.get(key)) continue;
+    requests += row.requests;
+    tokens += row.inputTokens + row.outputTokens;
+  }
+
+  // Org-wide cost priority, then attribute only this developer's winning rows.
+  const costBest = new Map<string, number>();
+  for (const row of scoped) {
+    if (row.costMicros <= BigInt(0)) continue;
+    const key = `${isoDay(row.date)}|${row.provider}`;
+    const priority = costPriority(normalizeSource(row.source));
+    const prev = costBest.get(key);
+    if (prev === undefined || priority < prev) costBest.set(key, priority);
+  }
+
+  let verified = BigInt(0);
+  let estimated = BigInt(0);
+  for (const row of mine) {
+    if (row.costMicros <= BigInt(0)) continue;
+    const source = normalizeSource(row.source);
+    const key = `${isoDay(row.date)}|${row.provider}`;
+    if (costPriority(source) !== costBest.get(key)) continue;
+    const kind =
+      row.costKind ??
+      costKindForRow({
+        verified: row.verified,
+        source,
+        costMicros: row.costMicros,
+      });
+    if (kind === "verified_usage") verified += row.costMicros;
+    else if (kind === "estimated_api") estimated += row.costMicros;
+  }
+
+  return {
+    requests,
+    tokens: Number(tokens),
+    verified: money(verified),
+    estimated: money(estimated),
+    totalUsage: money(verified + estimated),
+  };
+}
+
 function filterTool(rows: RawRow[], toolNames: string[]) {
   const set = new Set(toolNames.map((t) => t.toLowerCase()));
   return rows.filter((r) => set.has(r.toolName.toLowerCase()));
@@ -478,8 +559,9 @@ async function main() {
       reportWindow.from,
       reportWindow.to,
     );
-    const memberIndep = independentOrgUsage(
-      rawRows.filter((r) => r.developerId === primaryDeveloper.id),
+    const memberIndep = independentDeveloperSnapshotUsage(
+      rawRows,
+      primaryDeveloper.id,
       reportWindow.from,
       reportWindow.to,
     );
@@ -515,6 +597,31 @@ async function main() {
         "kpis.commitment$",
         roundMoney(expectedCommitment),
         roundMoney(d.kpis.actualSpend.value),
+      ),
+      // You (member snapshots) must never exceed Team (org snapshots) for the same window.
+      check(
+        "you≤team",
+        view.label,
+        "verified$",
+        true,
+        roundMoney(member.usage30d.verifiedUsageCost) <= roundMoney(d.kpis.verifiedUsageCost.value) + 0.02,
+        `you ${roundMoney(member.usage30d.verifiedUsageCost)} ≤ team ${roundMoney(d.kpis.verifiedUsageCost.value)}`,
+      ),
+      check(
+        "you≤team",
+        view.label,
+        "estimated$",
+        true,
+        roundMoney(member.usage30d.estimatedApiCost) <= roundMoney(d.kpis.estimatedApiCost.value) + 0.02,
+        `you ${roundMoney(member.usage30d.estimatedApiCost)} ≤ team ${roundMoney(d.kpis.estimatedApiCost.value)}`,
+      ),
+      check(
+        "you≤team",
+        view.label,
+        "tokens",
+        true,
+        Number(member.usage30d.inputTokens) + Number(member.usage30d.outputTokens) <= d.kpis.tokens.value,
+        `you tokens ≤ team tokens`,
       ),
       check("/activity", view.label, "modelCalls", indep.requests, activity.kpis.modelCalls),
       check("/activity", view.label, "verified$", roundMoney(indep.verified), roundMoney(activity.kpis.verifiedUsageCost)),

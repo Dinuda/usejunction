@@ -29,21 +29,26 @@ export function buildDailyReportEmail(input: {
 export function buildReportEmailText(input: {
   report: DailyReportPayload;
   recipientName?: string | null;
-  settingsUrl: string;
 }) {
   const { report } = input;
   const isTeamWeek = report.kind === "org" && report.period === "week";
   const first = input.recipientName?.trim().split(/\s+/)[0];
   const greeting = first ? `Hi ${first},` : "Hi,";
   const blurb = isTeamWeek
-    ? "Your team week report is attached as a PDF."
+    ? "Please find your team's AI use report for this week attached as a PDF."
     : report.kind === "org"
-      ? "Your team day report is attached as a PDF."
-      : "Your day report is attached as a PDF.";
+      ? "Please find your team's AI use report for today attached as a PDF."
+      : "Please find your AI use report for today attached as a PDF.";
 
-  return [greeting, "", blurb, "", `Manage email reports: ${input.settingsUrl}`].join(
-    "\n",
-  );
+  return [
+    greeting,
+    "",
+    blurb,
+    "",
+    "Best regards,",
+    "Junction AI Assistant",
+    "AI Analytics Team",
+  ].join("\n");
 }
 
 export async function sendDailyReportEmail(input: {
@@ -58,11 +63,9 @@ export async function sendDailyReportEmail(input: {
     appOrigin,
   });
   const pdfBuffer = await renderHtmlToPdf(pdfDoc.html);
-  const settingsUrl = `${appOrigin}/settings`;
   const text = buildReportEmailText({
     report: input.report,
     recipientName: input.recipientName,
-    settingsUrl,
   });
 
   const key = process.env.RESEND_API_KEY;

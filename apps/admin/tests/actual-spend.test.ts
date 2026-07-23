@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import {
   computeActualSpend,
+  computePersonalSeatCommitment,
   cycleSubscriptionMicros,
   filterCycleCodingSubscriptions,
   subscriptionActiveInPeriod,
@@ -94,5 +95,35 @@ test("filterCycleCodingSubscriptions keeps all coding cadences", () => {
   assert.deepEqual(
     filtered.map((row) => row.toolKey),
     ["cursor", "cursor", "claude", "github-copilot"],
+  );
+});
+
+test("computePersonalSeatCommitment uses full cycle for current view and prorates last_30_days", () => {
+  const assignment = {
+    ...base,
+    billingCadence: "monthly" as const,
+    cycleSeatMicros: BigInt(310_000_000),
+    seatCount: 1,
+  };
+
+  assert.equal(
+    computePersonalSeatCommitment({
+      assignments: [assignment],
+      view: "current_cycles",
+      from: new Date("2026-07-08T00:00:00.000Z"),
+      to: new Date("2026-08-07T00:00:00.000Z"),
+    }),
+    310,
+  );
+
+  // 10 of 31 days in the July cycle → ~$100
+  assert.equal(
+    computePersonalSeatCommitment({
+      assignments: [assignment],
+      view: "last_30_days",
+      from: new Date("2026-07-08T00:00:00.000Z"),
+      to: new Date("2026-07-17T00:00:00.000Z"),
+    }),
+    100,
   );
 });

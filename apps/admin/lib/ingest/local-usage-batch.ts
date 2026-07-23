@@ -73,11 +73,14 @@ export function providerForTool(toolName: string): string {
   if (toolName === "claude") return "anthropic";
   if (toolName === "codex" || toolName === "codex-work") return "openai";
   if (toolName === "copilot") return "github";
+  if (toolName === "antigravity") return "google";
   return toolName;
 }
 
 export function normalizeCanonicalSource(source: string): string {
-  if (source === "local_scan" || source === "cursor_local") return "device_observed";
+  if (source === "local_scan" || source === "cursor_local" || source === "antigravity_local" || source === "antigravity_usage") {
+    return "device_observed";
+  }
   if (source === "cursor_usage_events") return "vendor_verified";
   return source;
 }

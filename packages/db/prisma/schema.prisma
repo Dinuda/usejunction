@@ -857,13 +857,15 @@ model AnalyticsQueryCache {
   @@map("analytics_query_cache")
 }
 
-/// Source-priority-resolved org/tool daily rollup for dashboard reads.
-/// `toolName = ""` is the org-day total; other rows are per-tool slices.
+/// Source-priority-resolved org/tool/developer daily rollup for dashboard reads.
+/// `developerId = ""` is the org rollup; non-empty is that developer's sealed slice.
+/// `toolName = ""` is the day total for that developer (or org); other rows are per-tool.
 model OrgUsageDaySnapshot {
   id                        String   @id @default(cuid())
   orgId                     String   @map("org_id")
   date                      DateTime @db.Date
   toolName                  String   @default("") @map("tool_name")
+  developerId               String   @default("") @map("developer_id")
   metricVersion             String   @map("metric_version")
   requests                  Int      @default(0)
   inputTokens               BigInt   @default(0) @map("input_tokens")
@@ -878,8 +880,9 @@ model OrgUsageDaySnapshot {
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@unique([orgId, date, toolName, metricVersion])
+  @@unique([orgId, date, toolName, developerId, metricVersion])
   @@index([orgId, date, metricVersion])
+  @@index([orgId, developerId, date, metricVersion])
   @@map("org_usage_day_snapshots")
 }
 

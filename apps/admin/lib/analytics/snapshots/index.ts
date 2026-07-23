@@ -12,5 +12,9 @@ export {
   snapshotIsoDay,
   snapshotEachDay,
 } from "./materialize";
-export { readOrgUsageFromSnapshots } from "./read";
+export {
+  ensureDeveloperUsageDaySnapshots,
+  readOrgUsageFromSnapshots,
+  readDeveloperUsageFromSnapshots,
+} from "./read";
 export type { SnapshotDayTotals, SnapshotToolDay, SnapshotToolTotals } from "./read";

@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import {
   inferQuotaWindowMs,
+  paceAwarePlanVerdict,
+  paceToPlanVerdictCode,
   paceVerdictLabel,
   projectMemberQuotaPaces,
   projectQuotaPace,
 } from "../lib/quotas/pace";
-import { mapQuotaSnapshots } from "../lib/quotas/plan-utilization-policy";
+import { mapQuotaSnapshots, STALE_QUOTA_MS } from "../lib/quotas/plan-utilization-policy";
 
 test("inferQuotaWindowMs covers common vendor windows", () => {
   assert.equal(inferQuotaWindowMs("monthly"), 30 * 24 * 60 * 60 * 1000);
@@ -18,6 +20,40 @@ test("inferQuotaWindowMs covers common vendor windows", () => {
   assert.equal(inferQuotaWindowMs("weekly"), 7 * 24 * 60 * 60 * 1000);
   assert.equal(inferQuotaWindowMs("daily"), 24 * 60 * 60 * 1000);
   assert.equal(inferQuotaWindowMs("session_5h"), 5 * 60 * 60 * 1000);
+  assert.equal(inferQuotaWindowMs("claude_5h"), 5 * 60 * 60 * 1000);
+  assert.equal(inferQuotaWindowMs("gemini_weekly"), 7 * 24 * 60 * 60 * 1000);
+});
+
+test("projectQuotaPace computes Antigravity model-family windows", () => {
+  const now = new Date("2026-07-22T21:00:00.000Z");
+  const [quota] = mapQuotaSnapshots(
+    [
+      {
+        toolName: "antigravity",
+        windowType: "claude_5h",
+        usedPercent: 40,
+        creditsRemaining: null,
+        resetAt: new Date("2026-07-23T00:00:00.000Z"),
+        source: "oauth_api",
+        updatedAt: now,
+      },
+      {
+        toolName: "antigravity",
+        windowType: "credits",
+        usedPercent: null,
+        creditsRemaining: 12,
+        resetAt: null,
+        source: "antigravity_model_credits",
+        updatedAt: now,
+      },
+    ],
+    now,
+  );
+  const pace = projectQuotaPace(quota!, now);
+  assert.notEqual(pace.code, "UNKNOWN");
+  assert.equal(pace.usedPercent, 40);
+  assert.ok(pace.daysToReset != null && pace.daysToReset > 0);
+  assert.notEqual(paceVerdictLabel(pace.code), "Pace unavailable");
 });
 
 test("projectQuotaPace flags excess when burn empties before reset", () => {
@@ -43,6 +79,32 @@ test("projectQuotaPace flags excess when burn empties before reset", () => {
   assert.ok(pace.daysToExhaust != null && pace.daysToExhaust < (pace.daysToReset ?? 999));
   assert.match(pace.summary, /above pace/i);
   assert.equal(paceVerdictLabel(pace.code), "Above pace");
+});
+
+test("projectQuotaPace prefers periodStartsAt over inferred window length", () => {
+  const now = new Date("2026-07-16T00:00:00.000Z");
+  // Exact 10-day window: day 5 of 10 at 60% → excess (would be mid-month under 30d inference).
+  const [quota] = mapQuotaSnapshots(
+    [
+      {
+        toolName: "cursor",
+        windowType: "monthly",
+        usedPercent: 60,
+        creditsRemaining: null,
+        resetAt: new Date("2026-07-21T00:00:00.000Z"),
+        source: "cli_rpc",
+        updatedAt: now,
+      },
+    ],
+    now,
+  );
+  const withPeriod = {
+    ...quota!,
+    periodStartsAt: "2026-07-11T00:00:00.000Z",
+  };
+  const pace = projectQuotaPace(withPeriod, now);
+  assert.equal(pace.code, "EXCESS");
+  assert.equal(pace.expectedPercent, 50);
 });
 
 test("projectQuotaPace marks under-pace when usage lags the window", () => {
@@ -209,4 +271,124 @@ test("projectMemberQuotaPaces returns one primary row per tool, excess first", (
   assert.equal(paces[0]?.toolKey, "cursor");
   assert.equal(paces[0]?.code, "EXCESS");
   assert.equal(paces[0]?.windowType, "monthly");
+});
+
+test("paceToPlanVerdictCode maps pace codes to plan verdicts", () => {
+  assert.equal(paceToPlanVerdictCode("EXCESS"), "NEAR_LIMIT");
+  assert.equal(paceToPlanVerdictCode("ALREADY_EXCEEDED"), "LIMIT_EXCEEDED");
+  assert.equal(paceToPlanVerdictCode("ON_TRACK"), "HEALTHY");
+  assert.equal(paceToPlanVerdictCode("UNDER"), "LIGHT_USE");
+  assert.equal(paceToPlanVerdictCode("UNKNOWN"), null);
+});
+
+test("paceAwarePlanVerdict projects low mid-cycle usage as near limit when burn will exhaust", () => {
+  // Early in a short window: 22% used after ~1 day of a ~30 day window is above pace
+  // when projected linearly (exhausts ~3.5 days in, reset ~29 days away).
+  const now = new Date("2026-07-16T12:00:00.000Z");
+  const [quota] = mapQuotaSnapshots(
+    [
+      {
+        toolName: "cursor",
+        windowType: "monthly",
+        usedPercent: 22,
+        creditsRemaining: null,
+        resetAt: new Date("2026-08-15T00:00:00.000Z"),
+        source: "cli_rpc",
+        updatedAt: now,
+      },
+    ],
+    now,
+  );
+  // Force a short elapsed window so 22% is clearly above linear pace.
+  const hot = {
+    ...quota!,
+    periodStartsAt: "2026-07-15T12:00:00.000Z",
+    resetsAt: "2026-08-15T00:00:00.000Z",
+  };
+  const verdict = paceAwarePlanVerdict({ primaryQuota: hot, included: null, now });
+  assert.equal(verdict.code, "NEAR_LIMIT");
+  assert.ok(verdict.reasons.includes("pace_excess"));
+});
+
+test("paceAwarePlanVerdict keeps light use when burn is under pace", () => {
+  const now = new Date("2026-07-18T12:00:00.000Z");
+  const [quota] = mapQuotaSnapshots(
+    [
+      {
+        toolName: "cursor",
+        windowType: "monthly",
+        usedPercent: 10,
+        creditsRemaining: null,
+        resetAt: new Date("2026-08-01T00:00:00.000Z"),
+        source: "cli_rpc",
+        updatedAt: now,
+      },
+    ],
+    now,
+  );
+  const verdict = paceAwarePlanVerdict({ primaryQuota: quota!, included: null, now });
+  assert.equal(verdict.code, "LIGHT_USE");
+  assert.ok(verdict.reasons.includes("pace_under"));
+});
+
+test("paceAwarePlanVerdict projects included-allowance burn via billing cycle window", () => {
+  const now = new Date("2026-07-16T12:00:00.000Z");
+  const verdict = paceAwarePlanVerdict({
+    primaryQuota: null,
+    included: {
+      includedCycleMicros: "1000000",
+      grossUsageMicros: "220000",
+      rawRatio: 0.22,
+      displayRatio: 0.22,
+    },
+    cycleWindow: {
+      startsAt: "2026-07-15T12:00:00.000Z",
+      endsAt: "2026-08-15T00:00:00.000Z",
+    },
+    now,
+  });
+  assert.equal(verdict.code, "NEAR_LIMIT");
+  assert.ok(verdict.reasons.includes("pace_excess"));
+});
+
+test("paceAwarePlanVerdict keeps DATA_STALE and falls back when pace timing is unknown", () => {
+  const now = new Date("2026-07-18T12:00:00.000Z");
+  const [stale] = mapQuotaSnapshots(
+    [
+      {
+        toolName: "cursor",
+        windowType: "monthly",
+        usedPercent: 50,
+        creditsRemaining: null,
+        resetAt: new Date("2026-08-01T00:00:00.000Z"),
+        source: "cli_rpc",
+        updatedAt: new Date(now.getTime() - STALE_QUOTA_MS - 1),
+      },
+    ],
+    now,
+  );
+  assert.equal(
+    paceAwarePlanVerdict({ primaryQuota: stale!, included: null, now }).code,
+    "DATA_STALE",
+  );
+
+  const [noReset] = mapQuotaSnapshots(
+    [
+      {
+        toolName: "cursor",
+        windowType: "unknown_window",
+        usedPercent: 10,
+        creditsRemaining: null,
+        resetAt: null,
+        source: "cli_rpc",
+        updatedAt: now,
+      },
+    ],
+    now,
+  );
+  // Pace UNKNOWN → static LIGHT_USE (<25%).
+  assert.equal(
+    paceAwarePlanVerdict({ primaryQuota: noReset!, included: null, now }).code,
+    "LIGHT_USE",
+  );
 });

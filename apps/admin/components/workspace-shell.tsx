@@ -165,8 +165,8 @@ export function WorkspaceShell({
       className="h-dvh min-h-dvh overflow-hidden"
     >
       <AppSidebar active={pathname} role={role} billing={billing} />
-      <SidebarInset className="h-dvh min-h-0 min-w-0 overflow-y-auto overscroll-contain">
-        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-2 border-none bg-white px-3 backdrop-blur-sm sm:gap-4 sm:px-6 lg:px-8">
+      <SidebarInset className="h-dvh min-h-0 min-w-0 overflow-hidden">
+        <header className="z-20 flex h-14 shrink-0 items-center justify-between gap-2 border-none bg-white px-3 backdrop-blur-sm sm:gap-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-3">
             <SidebarTrigger className="-ml-1 size-11 shrink-0 md:hidden" />
             <Link
@@ -187,7 +187,7 @@ export function WorkspaceShell({
             <WorkspaceUserMenu name={name} email={email} image={image} role={role} />
           </div>
         </header>
-        <div className="min-w-0 flex-1 px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
           <div className="mx-auto w-full max-w-[1440px]">{children}</div>
         </div>
       </SidebarInset>

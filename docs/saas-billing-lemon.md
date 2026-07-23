@@ -3,22 +3,28 @@
 UseJunction SaaS billing is how **Junction charges customers** for the product.
 It is separate from reporting a customer's Cursor/Codex/Claude subscriptions.
 
+Billing integration code lives in the open-source repo. **Secrets never do** — API
+keys, webhook signing secrets, and Lemon store/variant IDs are read from server
+environment variables at runtime only.
+
 ## Plans
 
-| Plan | Devices | Developer seats | Notes |
-|------|---------|-----------------|--------|
-| `trial` | Unlimited for `TRIAL_DAYS` (14) | Not metered | Default for new workspaces |
-| `community` | `DEVICE_LIMIT_FREE` (10) | Not metered | After trial ends, or unpaid |
-| `team` | Unlimited | Active roster via Lemon quantity | Lemon Squeezy subscription |
-| `enterprise` | Unlimited | Contract-managed | Manual |
+| Plan | Developer seats | Devices | Notes |
+|------|-----------------|---------|--------|
+| `community` | `USER_LIMIT_FREE` (5) | Not metered by SaaS billing | Default for new workspaces |
+| `team` | Active roster via Lemon quantity | Not metered by SaaS billing | Lemon Squeezy subscription |
+| `enterprise` | Contract-managed | Not metered by SaaS billing | Manual |
+
+Legacy `trial` rows are treated as `community` after the workspace-trial removal
+migration.
 
 **Billed unit on Team:** each active developer (`Developer.removedAt IS NULL`).
 Invitations do not count until accepted. The minimum checkout quantity is one.
 
-The Team price is represented in application copy by `TEAM_PRICE_PER_DEV_USD`
-($12 / active developer / month). The configured Lemon variant is the source of
-truth for the amount charged and must use **quantity-based**, not usage-based,
-billing.
+Marketing copy uses `TEAM_PRICE_PER_DEV_USD` ($8 / active developer / month) from
+`apps/admin/lib/saas-billing/entitlements.ts`. The configured Lemon variant is the
+source of truth for the amount charged and must use **quantity-based**, not
+usage-based, billing.
 
 ## Checkout and automatic quantity
 
@@ -61,6 +67,9 @@ response or webhook. A difference from the active roster appears to admins as
 
 ## Environment
 
+Set all four Lemon variables together when selling Team on a hosted deployment.
+Leave them unset for self-hosted installs that do not use Lemon checkout.
+
 ```text
 LEMONSQUEEZY_API_KEY=
 LEMONSQUEEZY_STORE_ID=
@@ -82,6 +91,21 @@ Subscribe at least to:
 Checkout custom data must include `org_id` so webhook events can resolve the
 workspace.
 
+### Production hardening
+
+`assertSecureProductionEnv()` runs at Next.js build/start when `NODE_ENV=production`.
+If **any** Lemon billing variable is set, **all four** must be present and valid:
+
+| Variable | Requirement |
+|----------|-------------|
+| `LEMONSQUEEZY_API_KEY` | ≥ 32 characters, not a known default |
+| `LEMONSQUEEZY_WEBHOOK_SECRET` | ≥ 16 characters, not a known default |
+| `LEMONSQUEEZY_STORE_ID` | Non-empty |
+| `LEMONSQUEEZY_VARIANT_ID_TEAM` | Non-empty |
+
+Omit every Lemon variable to run production without SaaS checkout (typical for
+self-hosted Community installs).
+
 ## HTTP surface
 
 | Method | Path | Role |
@@ -92,15 +116,18 @@ workspace.
 | POST | `/api/cron/billing-seat-sync` | cron secret — reconcile active Team quantities |
 | POST | `/api/webhooks/lemonsqueezy` | Lemon HMAC — update status and confirmed quantity |
 
+Webhook requests are rejected unless `x-signature` matches an HMAC-SHA256 digest
+of the raw body using `LEMONSQUEEZY_WEBHOOK_SECRET`.
+
 ## Lifecycle
 
-1. Workspace creation starts a 14-day trial.
+1. New workspaces start on Community (5 developer seats).
 2. Upgrade checkout uses the current active roster quantity.
 3. The creation webhook activates Team and immediately reconciles roster drift.
 4. Accepted joins and provider-imported developers increase quantity; removals
    decrease it. Lemon displays the resulting active seat count.
 5. Deferred prorated debits or credits appear on the next renewal invoice.
-6. Trial expiry without payment resolves to Community and its device cap.
+6. Unpaid or expired Team subscriptions resolve to Community and its seat cap.
 
 Dashboard `?upgraded=1` shows “Subscription updating…” until Team status is
 visible.

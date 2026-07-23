@@ -18,6 +18,7 @@ test("catalog contains the supported branded tools and stable aliases", () => {
     "chatgpt-codex",
     "claude",
     "cursor",
+    "antigravity",
     "github-copilot",
   ]);
   assert.equal(canonicalToolKey("chatgpt"), "chatgpt-codex");
@@ -26,8 +27,10 @@ test("catalog contains the supported branded tools and stable aliases", () => {
   assert.equal(canonicalToolKey("codex_work"), "chatgpt-codex");
   assert.equal(canonicalToolKey("claude-code"), "claude");
   assert.equal(canonicalToolKey("github-copilot"), "github-copilot");
+  assert.equal(canonicalToolKey("agy"), "antigravity");
+  assert.equal(canonicalToolKey("gemini-antigravity"), "antigravity");
   for (const tool of TOOL_CATALOG) {
-    assert.equal(tool.lastVerifiedAt, "2026-07-10");
+    assert.equal(tool.lastVerifiedAt, "2026-07-23");
     assert.match(tool.sourceUrl, /^https:\/\//);
     assert.ok(tool.plans.length >= 4);
   }
@@ -48,15 +51,20 @@ test("tool display names cover catalog keys, aliases, and fallbacks", () => {
 });
 
 test("usage queries include all catalog aliases for a subscription tool", () => {
+  assert.equal(canonicalToolKey("openai-api"), "chatgpt-codex");
+  assert.equal(toolDisplayName("openai-api"), "ChatGPT");
   assert.deepEqual(
     toolUsageNames("chatgpt-codex").sort(),
-    ["chatgpt-codex", "chatgpt", "codex", "codex-work", "codex_work"].sort(),
+    ["chatgpt-codex", "chatgpt", "codex", "codex-work", "codex_work", "openai-api"].sort(),
   );
   assert.deepEqual(
     toolUsageNames("codex-work").sort(),
-    ["chatgpt-codex", "chatgpt", "codex", "codex-work", "codex_work"].sort(),
+    ["chatgpt-codex", "chatgpt", "codex", "codex-work", "codex_work", "openai-api"].sort(),
   );
-  assert.deepEqual(toolUsageNames("codex").sort(), ["chatgpt-codex", "chatgpt", "codex", "codex-work", "codex_work"].sort());
+  assert.deepEqual(
+    toolUsageNames("codex").sort(),
+    ["chatgpt-codex", "chatgpt", "codex", "codex-work", "codex_work", "openai-api"].sort(),
+  );
   assert.deepEqual(toolUsageNames("github-copilot").sort(), ["copilot", "github-copilot"].sort());
   assert.deepEqual(toolUsageNames("unknown-tool"), ["unknown-tool"]);
 });
@@ -75,6 +83,10 @@ test("catalog prices and annual monthly-equivalent prices remain versioned", () 
   assert.equal(findCatalogPlan("claude", "team-premium")?.prices.annual, BigInt(100_000_000));
   assert.equal(findCatalogPlan("cursor", "pro-plus")?.prices.monthly, BigInt(60_000_000));
   assert.equal(findCatalogPlan("github-copilot", "pro-plus")?.includedCycleMicros, BigInt(70_000_000));
+  assert.equal(findCatalogPlan("antigravity", "google-ai-pro")?.prices.monthly, BigInt(19_990_000));
+  assert.equal(findCatalogPlan("antigravity", "google-ai-ultra")?.prices.monthly, BigInt(99_990_000));
+  assert.equal(findCatalogPlan("antigravity", "google-ai-ultra-max")?.prices.monthly, BigInt(199_990_000));
+  assert.equal(findCatalogPlan("antigravity", "google-ai-plus")?.prices.monthly, BigInt(7_990_000));
   assert.equal(findCatalogPlan("github-copilot", "max")?.prices.monthly, BigInt(100_000_000));
 });
 
@@ -134,5 +146,9 @@ test("vendor plan strings map onto catalog plan keys with safe defaults", () => 
   assert.equal(mapVendorPlanToCatalog("chatgpt-codex", undefined), "free");
   assert.equal(mapVendorPlanToCatalog("claude", "max"), "max-5x");
   assert.equal(mapVendorPlanToCatalog("github-copilot", "Pro Plus"), "pro-plus");
+  assert.equal(mapVendorPlanToCatalog("antigravity", null), "individual");
+	assert.equal(mapVendorPlanToCatalog("antigravity", "g1-pro-tier"), "google-ai-pro");
+  assert.equal(mapVendorPlanToCatalog("antigravity", "Google AI Ultra"), "google-ai-ultra");
+  assert.equal(mapVendorPlanToCatalog("antigravity", "g1-plus-tier"), "google-ai-plus");
   assert.equal(mapVendorPlanToCatalog("unknown-tool", "pro"), "free");
 });

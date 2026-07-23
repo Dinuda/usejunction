@@ -41,25 +41,20 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
   const { data: session, status: sessionStatus } = useSession();
   const pathname = usePathname();
   const queryString = useSearchParams().toString();
-  const awaitingFirstUsage = useRef(false);
-  const awaitingSince = useRef<number | null>(null);
   const lastWatermark = useRef<string | null>(null);
   const contextQuery = useAppQuery<WorkspaceContext>(
     workspaceContextKey,
     "/api/app/workspace-context",
     {
-      // Poll while a device is connected but usage has not landed yet so Team /
-      // Tools / Activity do not keep empty responses after the first agent sync.
+      // Keep polling while a device is enrolled so later agent heartbeats
+      // advance the sync watermark and refresh dashboard metrics without a
+      // hard reload.
       refetchInterval: (query) => {
         const data = query.state.data;
         if (!data?.current?.onboardingCompleted) return false;
         const syncState = data.sync;
-        if (!syncState) return false;
-        const waiting =
-          (syncState.deviceCount > 0 && !syncState.lastUsageSyncAt) || awaitingFirstUsage.current;
-        if (!waiting) return false;
-        if (awaitingSince.current && Date.now() - awaitingSince.current > 3 * 60_000) return false;
-        return 5_000;
+        if (!syncState || syncState.deviceCount <= 0) return false;
+        return 15_000;
       },
     },
   );
@@ -105,14 +100,6 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
   useEffect(() => {
     const syncState = contextQuery.data?.sync;
     if (!syncState) return;
-
-    if (syncState.deviceCount > 0 && !syncState.lastUsageSyncAt) {
-      awaitingFirstUsage.current = true;
-      if (awaitingSince.current === null) awaitingSince.current = Date.now();
-    } else if (syncState.lastUsageSyncAt) {
-      awaitingFirstUsage.current = false;
-      awaitingSince.current = null;
-    }
 
     if (lastWatermark.current === null) {
       lastWatermark.current = syncState.watermark;

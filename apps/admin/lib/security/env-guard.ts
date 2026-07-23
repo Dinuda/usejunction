@@ -40,6 +40,30 @@ function secretProblem(name: string, value: string | undefined, minLength = 32):
   return null;
 }
 
+function requiredNonEmpty(name: string, value: string | undefined): string | null {
+  if (!value?.trim()) return `${name} is required`;
+  return null;
+}
+
+function lemonBillingConfigured(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(
+    env.LEMONSQUEEZY_API_KEY?.trim() ||
+      env.LEMONSQUEEZY_WEBHOOK_SECRET?.trim() ||
+      env.LEMONSQUEEZY_STORE_ID?.trim() ||
+      env.LEMONSQUEEZY_VARIANT_ID_TEAM?.trim(),
+  );
+}
+
+function lemonBillingProblems(env: NodeJS.ProcessEnv): Array<string | null> {
+  if (!lemonBillingConfigured(env)) return [];
+  return [
+    secretProblem("LEMONSQUEEZY_API_KEY", env.LEMONSQUEEZY_API_KEY),
+    secretProblem("LEMONSQUEEZY_WEBHOOK_SECRET", env.LEMONSQUEEZY_WEBHOOK_SECRET, 16),
+    requiredNonEmpty("LEMONSQUEEZY_STORE_ID", env.LEMONSQUEEZY_STORE_ID),
+    requiredNonEmpty("LEMONSQUEEZY_VARIANT_ID_TEAM", env.LEMONSQUEEZY_VARIANT_ID_TEAM),
+  ];
+}
+
 export function assertSecureProductionEnv(env = process.env) {
   if (env.NODE_ENV !== "production") return;
   const problems = [
@@ -55,6 +79,7 @@ export function assertSecureProductionEnv(env = process.env) {
     env.DEMO_ENROLLMENT_TOKEN ? secretProblem("DEMO_ENROLLMENT_TOKEN", env.DEMO_ENROLLMENT_TOKEN, 24) : null,
     validateHttpsUnlessLoopback("NEXT_PUBLIC_APP_URL", env.NEXT_PUBLIC_APP_URL),
     validateHttpsUnlessLoopback("NEXTAUTH_URL", env.NEXTAUTH_URL),
+    ...lemonBillingProblems(env),
   ].filter(Boolean);
 
   if (problems.length) {

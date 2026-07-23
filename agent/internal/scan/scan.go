@@ -3,6 +3,7 @@
 //
 //   - Codex / Claude Code: ~/.codex/sessions and ~/.claude/projects JSONL
 //   - Cursor: state.vscdb + ai-code-tracking.db (sqlite)
+//   - Antigravity: ~/.gemini/antigravity*/conversations/*.db (sqlite UsageMetadata)
 //   - Copilot Chat: agent-traces.db (sqlite) and optional debug JSONL
 //   - Cline / Roo / OpenCode: VS Code/Cursor globalStorage extension task JSON
 //     (not standalone ~/.local/share/opencode history)

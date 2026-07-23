@@ -6,8 +6,9 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { HeroSection } from "@/components/public/hero-section";
 import { HomeWorldClass } from "@/components/public/home-world-class";
 import { ToolLogosStrip } from "@/components/public/tool-logos-strip";
+import { CalendlyTalkButton } from "@/components/public/calendly-talk-button";
 import { SiteFooter } from "@/components/public/site-footer";
-import { PRICING_PLANS, siteConfig } from "@/lib/public/config";
+import { PRICING_PLANS } from "@/lib/public/config";
 import { buildHomeJsonLd } from "@/lib/public/json-ld";
 import { HOME_FAQS } from "@/lib/public/home-faqs";
 import { cn } from "@/lib/utils";
@@ -69,18 +70,25 @@ export function UseJunctionHomeContent() {
                     <p className="mt-1 text-sm text-muted-foreground">{plan.period}</p>
                   </div>
 
-                  <a
-                    href={plan.cta.href}
-                    className={cn(
-                      "public-btn mt-6 w-full rounded-none font-semibold",
-                      featured
-                        ? "public-btn-yellow"
-                        : "public-btn-outline hover:border-[#08a8c4] hover:text-[#08a8c4]",
-                    )}
-                  >
-                    {plan.cta.label}
-                    {featured ? <ArrowRight className="h-4 w-4" /> : null}
-                  </a>
+                  {"calendly" in plan.cta && plan.cta.calendly ? (
+                    <CalendlyTalkButton
+                      label={plan.cta.label}
+                      className="mt-6 public-btn-outline hover:border-[#08a8c4] hover:text-[#08a8c4]"
+                    />
+                  ) : (
+                    <a
+                      href={plan.cta.href}
+                      className={cn(
+                        "public-btn mt-6 w-full rounded-none font-semibold",
+                        featured
+                          ? "public-btn-yellow"
+                          : "public-btn-outline hover:border-[#08a8c4] hover:text-[#08a8c4]",
+                      )}
+                    >
+                      {plan.cta.label}
+                      {featured ? <ArrowRight className="h-4 w-4" /> : null}
+                    </a>
+                  )}
 
                   <ul className="mt-8 space-y-3">
                     {plan.features.map((feature) => (

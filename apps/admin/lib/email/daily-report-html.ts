@@ -4,6 +4,11 @@ import type {
   ReportChartMetric,
 } from "@/lib/reports/daily-report";
 import { formatCompactNumber, formatUsd } from "@/lib/format";
+import {
+  buildEmailWowWeekStripHtml,
+  wowStripMetricLabel,
+} from "@/lib/email/wow-week-strip-render";
+import type { RhythmMetric } from "@/lib/reports/wow-week-strip";
 
 /** Brand tokens mirrored from globals.css — email-safe solid colors only. */
 const brand = {
@@ -49,6 +54,7 @@ export function reportEmailDeepLink(report: DailyReportPayload) {
 
 /** Prefer tokens so the chart reads as activity over time, not a rising bill. */
 export function seriesMetric(report: DailyReportPayload): ReportChartMetric {
+  if (report.wowStrip) return report.wowStrip.metricDefault;
   if (report.series.some((p) => p.tokens > 0)) return "tokens";
   if (report.series.some((p) => p.cost > 0)) return "cost";
   return "requests";
@@ -158,6 +164,17 @@ function breakdownRow(
 </tr>`;
 }
 
+function toolUsageMeta(tool: {
+  requests: number;
+  tokens: number;
+  tokenSharePercent: number;
+}): string {
+  if (tool.tokens <= 0 && tool.requests > 0) {
+    return `${formatCompactNumber(tool.requests)} requests · tokens not reported`;
+  }
+  return `${formatCompactNumber(tool.requests)} requests · ${formatPct(tool.tokenSharePercent, 0)} of tokens`;
+}
+
 function buildInsightBits(report: DailyReportPayload, isTeamWeek: boolean): string[] {
   const prior = isTeamWeek ? "week" : "day";
   const bits: string[] = [];
@@ -167,6 +184,8 @@ function buildInsightBits(report: DailyReportPayload, isTeamWeek: boolean): stri
   } else if (report.kpis.costDeltaPct != null) {
     const d = report.kpis.costDeltaPct;
     bits.push(`${d >= 0 ? "+" : ""}${d.toFixed(0)}% spend vs the prior ${prior}`);
+  } else if (!isTeamWeek && report.kpis.tokens <= 0 && report.kpis.requests <= 0) {
+    bits.push("Quiet day so far");
   }
   if (report.plan) {
     const pct = report.plan.usedPercent != null ? ` at ${report.plan.usedPercent.toFixed(0)}% used` : "";
@@ -221,12 +240,16 @@ export function buildDailyReportEmailDocument(input: {
     : `Sent at 19:00 in ${report.timeZone}.`;
 
   const metric = seriesMetric(report);
-  const chartHtml = buildEmailColumnChartHtml(
-    report.series.length ? report.series : [{ label: "—", requests: 0, tokens: 0, cost: 0 }],
-    metric,
-  );
-  const chartLegend =
-    metric === "tokens"
+  const useStrip = report.wowStrip != null;
+  const chartHtml = useStrip
+    ? buildEmailWowWeekStripHtml(report.wowStrip!, metric as RhythmMetric)
+    : buildEmailColumnChartHtml(
+        report.series.length ? report.series : [{ label: "—", requests: 0, tokens: 0, cost: 0 }],
+        metric,
+      );
+  const chartLegend = useStrip
+    ? wowStripMetricLabel(metric as RhythmMetric)
+    : metric === "tokens"
       ? "Tokens · key moments"
       : metric === "cost"
         ? "Spend · key moments"
@@ -238,7 +261,7 @@ export function buildDailyReportEmailDocument(input: {
           .map((tool, index) =>
             breakdownRow(
               tool.displayName,
-              "Primary quota window",
+              "Billing cycle quota",
               tool.statusLabel,
               tool.usedPercent != null ? formatPct(tool.usedPercent, 0) : "—",
               tool.usedPercent ?? 0,
@@ -249,29 +272,34 @@ export function buildDailyReportEmailDocument(input: {
       : "";
 
   const planBlock = report.plan
-    ? `<div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${brand.muted};font-weight:600;">Plan status</div>
+    ? `<div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${brand.muted};font-weight:600;">Plan status · billing cycle</div>
               <div style="margin-top:10px;font-size:18px;font-weight:600;color:${brand.charcoal};line-height:1.4;letter-spacing:-0.015em;font-family:Inter,Helvetica,Arial,sans-serif;">${escapeHtml(planStatus)}${report.plan.usedPercent != null ? ` · ${escapeHtml(planPct)} used` : ""}.</div>
               <p style="margin:12px 0 0;font-size:14px;line-height:1.65;color:${brand.muted};">${escapeHtml(report.plan.hint ?? (report.plan.withinAllowance ? "Usage is within your included plan allowance." : "Check seats and quotas before the next cycle."))}</p>
               ${planToolRows ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:8px;">${planToolRows}</table>` : ""}`
-    : `<div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${brand.muted};font-weight:600;">Plan status</div>
+    : `<div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${brand.muted};font-weight:600;">Plan status · billing cycle</div>
               <div style="margin-top:10px;font-size:18px;font-weight:600;color:${brand.charcoal};line-height:1.4;">No plan signal yet.</div>
               <p style="margin:12px 0 0;font-size:14px;line-height:1.65;color:${brand.muted};">Connect a device or wait for the next quota reading to see if you’re within allowance.</p>`;
 
+  const usagePeriodLabel = isTeamWeek ? "this week" : "today";
   const breakdownRows =
     report.topTools.length > 0
       ? report.topTools
           .map((tool, index) =>
             breakdownRow(
               tool.displayName,
-              `${formatCompactNumber(tool.requests)} requests · ${formatPct(tool.tokenSharePercent, 0)} of tokens`,
-              `${formatCompactNumber(tool.tokens)} tok`,
+              toolUsageMeta(tool),
+              tool.tokens > 0
+                ? `${formatCompactNumber(tool.tokens)} tok`
+                : tool.requests > 0
+                  ? `${formatCompactNumber(tool.requests)} req`
+                  : "0 tok",
               formatUsd(tool.cost),
-              tool.tokenSharePercent || tool.sharePercent,
+              tool.tokenSharePercent || tool.sharePercent || (tool.requests > 0 ? 3 : 0),
               index === report.topTools.length - 1,
             ),
           )
           .join("")
-      : `<tr><td style="padding:16px 0;color:${brand.muted};font-size:14px;">No tool activity this period.</td></tr>`;
+      : `<tr><td style="padding:16px 0;color:${brand.muted};font-size:14px;">No tool activity ${escapeHtml(usagePeriodLabel)}.</td></tr>`;
 
   const insightHtml = insightBits
     .map((bit, i) => {
@@ -342,9 +370,13 @@ export function buildDailyReportEmailDocument(input: {
         <tr>
           <td style="padding:32px 40px 4px;">
             ${chartHtml}
-            <div style="text-align:center;margin-top:16px;font-size:12px;color:${brand.muted};letter-spacing:0.01em;">
+            ${
+              useStrip
+                ? ""
+                : `<div style="text-align:center;margin-top:16px;font-size:12px;color:${brand.muted};letter-spacing:0.01em;">
               <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${brand.teal};margin-right:7px;vertical-align:middle;"></span>${escapeHtml(chartLegend)}
-            </div>
+            </div>`
+            }
           </td>
         </tr>
 
@@ -367,7 +399,7 @@ export function buildDailyReportEmailDocument(input: {
           <td style="padding:32px 40px 8px;">
             <div style="border-top:1px solid ${brand.border};padding-top:32px;">
               ${planBlock}
-              <div style="margin-top:32px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${brand.muted};font-weight:600;">Usage by tool</div>
+              <div style="margin-top:32px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${brand.muted};font-weight:600;">Usage by tool · ${escapeHtml(usagePeriodLabel)}</div>
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:4px;">
                 ${breakdownRows}
               </table>

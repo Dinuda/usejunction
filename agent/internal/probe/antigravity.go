@@ -1,8 +1,10 @@
 package probe
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,23 +18,30 @@ import (
 )
 
 const (
-	antigravityUserStatusKey     = "antigravityUnifiedStateSync.userStatus"
-	antigravityModelCreditsKey   = "antigravityUnifiedStateSync.modelCredits"
-	antigravityOAuthTokenKey     = "antigravityUnifiedStateSync.oauthToken"
-	antigravityTrajectoryKey     = "antigravityUnifiedStateSync.trajectorySummaries"
-	antigravityAuthStatusKey     = "antigravityAuthStatus"
+	antigravityUserStatusKey   = "antigravityUnifiedStateSync.userStatus"
+	antigravityModelCreditsKey = "antigravityUnifiedStateSync.modelCredits"
+	antigravityOAuthTokenKey   = "antigravityUnifiedStateSync.oauthToken"
+	antigravityTrajectoryKey   = "antigravityUnifiedStateSync.trajectorySummaries"
+	antigravityAuthStatusKey   = "antigravityAuthStatus"
 )
 
 // antigravityStateDBPathOverride is set by tests to point at a fixture state.vscdb.
 var antigravityStateDBPathOverride string
 
+// SetAntigravityStateDBPathForTest points account/quota/trajectory reads at a fixture DB.
+func SetAntigravityStateDBPathForTest(path string) (restore func()) {
+	prev := antigravityStateDBPathOverride
+	antigravityStateDBPathOverride = path
+	return func() { antigravityStateDBPathOverride = prev }
+}
+
 var (
-	emailRe           = regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
-	planTierRe        = regexp.MustCompile(`(?i)\bg1-(?:pro|ultra|plus|free)(?:-tier)?\b`)
-	planDisplayRe     = regexp.MustCompile(`(?i)Google AI (?:Pro|Ultra(?: Max)?|Plus)|Individual`)
-	uuidRe            = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
-	githubRepoRe      = regexp.MustCompile(`(?i)(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9_.\-]+)/([A-Za-z0-9_.\-]+)(?:\.git)?`)
-	fileURIRe         = regexp.MustCompile(`file://[^\s"'<>]+`)
+	emailRe       = regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
+	planTierRe    = regexp.MustCompile(`(?i)\bg1-(?:pro|ultra|plus|free)(?:-tier)?\b`)
+	planDisplayRe = regexp.MustCompile(`(?i)Google AI (?:Pro|Ultra(?: Max)?|Plus)|Individual`)
+	uuidRe        = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
+	githubRepoRe  = regexp.MustCompile(`(?i)(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9_.\-]+)/([A-Za-z0-9_.\-]+)(?:\.git)?`)
+	fileURIRe     = regexp.MustCompile(`file://[^\s"'<>]+`)
 )
 
 func antigravityStateDBPaths() []string {
@@ -127,9 +136,12 @@ func AntigravityAccountIdentity(ctx context.Context) (*types.ToolAccount, error)
 	return AntigravityAccountFromLocal()
 }
 
-// ProbeAntigravityQuota reads local credit remaining from state.vscdb.
+// ProbeAntigravityQuota prefers Cloud Code model quotas (used% + reset) for pace,
+// and always folds in local credit-remaining when present.
 func ProbeAntigravityQuota(ctx context.Context) ([]types.QuotaSnapshot, *types.ToolAccount, error) {
-	_ = ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	account, err := AntigravityAccountFromLocal()
 	if err != nil {
 		return nil, nil, err
@@ -137,7 +149,12 @@ func ProbeAntigravityQuota(ctx context.Context) ([]types.QuotaSnapshot, *types.T
 	if account == nil || !account.AuthPresent {
 		return nil, account, nil
 	}
+
 	var snapshots []types.QuotaSnapshot
+	if apiSnaps, apiErr := probeAntigravityCloudCodeQuota(ctx); apiErr == nil {
+		snapshots = append(snapshots, apiSnaps...)
+	}
+
 	if raw, err := antigravityStateDBValue(antigravityModelCreditsKey); err == nil {
 		if credits := parseAntigravityModelCredits(raw); credits != nil {
 			snapshots = append(snapshots, types.QuotaSnapshot{
@@ -207,21 +224,171 @@ func normalizeAntigravityPlan(raw string) string {
 }
 
 func parseAntigravityModelCredits(raw string) *float64 {
-	for _, layer := range peelAntigravityLayers(raw, 4) {
-		// Prefer explicit numeric strings first.
+	if n := parseAntigravityCreditsSentinel(raw, "availableCreditsSentinelKey"); n != nil {
+		return n
+	}
+	layers := peelAntigravityLayers(raw, 4)
+	for _, layer := range layers {
 		for _, s := range extractPrintableStrings(layer, 1) {
 			if n, err := strconv.ParseFloat(s, 64); err == nil && n >= 0 && n < 1e9 {
 				v := n
 				return &v
 			}
 		}
-		// Fallback: largest plausible protobuf varint in the blob.
+	}
+	for _, layer := range layers {
+		ascii := 0
+		for _, b := range layer {
+			if b >= 32 && b < 127 {
+				ascii++
+			}
+		}
+		if len(layer) > 0 && float64(ascii)/float64(len(layer)) > 0.85 {
+			continue // skip mostly-ascii base64 wrappers
+		}
 		if n, ok := largestVarint(layer, 1, 1_000_000_000); ok {
 			v := float64(n)
 			return &v
 		}
 	}
 	return nil
+}
+
+// parseAntigravityCreditsSentinel reads the IDE's sentinel-keyed credit envelope:
+// availableCreditsSentinelKey → length-delimited payload (often base64) → protobuf field 2 varint.
+func parseAntigravityCreditsSentinel(raw, sentinel string) *float64 {
+	needle := []byte(sentinel)
+	for _, layer := range peelAntigravityLayers(raw, 4) {
+		idx := bytes.Index(layer, needle)
+		if idx < 0 {
+			continue
+		}
+		rest := layer[idx+len(needle):]
+		payload := nextProtoBytesField(rest)
+		if payload == nil {
+			continue
+		}
+		candidates := [][]byte{payload}
+		if nested := nextProtoBytesField(payload); nested != nil {
+			candidates = append(candidates, nested)
+		}
+		for _, cand := range candidates {
+			text := strings.TrimSpace(string(cand))
+			if decoded, err := base64.StdEncoding.DecodeString(text); err == nil && len(decoded) > 0 {
+				if n, ok := protoFieldVarint(decoded, 2); ok {
+					v := float64(n)
+					return &v
+				}
+				if n, ok := protoFieldVarint(decoded, 1); ok {
+					v := float64(n)
+					return &v
+				}
+			}
+			if decoded, err := base64.RawStdEncoding.DecodeString(text); err == nil && len(decoded) > 0 {
+				if n, ok := protoFieldVarint(decoded, 2); ok {
+					v := float64(n)
+					return &v
+				}
+			}
+			if n, ok := protoFieldVarint(cand, 2); ok {
+				v := float64(n)
+				return &v
+			}
+		}
+	}
+	return nil
+}
+
+func nextProtoBytesField(buf []byte) []byte {
+	i := 0
+	for i < len(buf) {
+		tag, n := binary.Uvarint(buf[i:])
+		if n <= 0 {
+			return nil
+		}
+		i += n
+		kind := tag & 7
+		switch kind {
+		case 0: // varint
+			_, n := binary.Uvarint(buf[i:])
+			if n <= 0 {
+				return nil
+			}
+			i += n
+		case 1: // fixed64
+			if i+8 > len(buf) {
+				return nil
+			}
+			i += 8
+		case 2: // bytes
+			l, n := binary.Uvarint(buf[i:])
+			if n <= 0 {
+				return nil
+			}
+			i += n
+			end := i + int(l)
+			if end > len(buf) || end < i {
+				return nil
+			}
+			return buf[i:end]
+		case 5: // fixed32
+			if i+4 > len(buf) {
+				return nil
+			}
+			i += 4
+		default:
+			return nil
+		}
+	}
+	return nil
+}
+
+func protoFieldVarint(buf []byte, field uint64) (uint64, bool) {
+	i := 0
+	for i < len(buf) {
+		tag, n := binary.Uvarint(buf[i:])
+		if n <= 0 {
+			return 0, false
+		}
+		i += n
+		found := tag >> 3
+		kind := tag & 7
+		switch kind {
+		case 0:
+			v, n := binary.Uvarint(buf[i:])
+			if n <= 0 {
+				return 0, false
+			}
+			i += n
+			if found == field {
+				return v, true
+			}
+		case 1:
+			if i+8 > len(buf) {
+				return 0, false
+			}
+			i += 8
+		case 2:
+			l, n := binary.Uvarint(buf[i:])
+			if n <= 0 {
+				return 0, false
+			}
+			i += n
+			end := i + int(l)
+			if end > len(buf) || end < i {
+				return 0, false
+			}
+			i = end
+		case 5:
+			if i+4 > len(buf) {
+				return 0, false
+			}
+			i += 4
+		default:
+			return 0, false
+		}
+	}
+	return 0, false
 }
 
 // AntigravityTrajectorySummary is a privacy-safe session index entry.

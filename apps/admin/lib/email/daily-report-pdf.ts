@@ -7,6 +7,11 @@ import type {
 } from "@/lib/reports/daily-report";
 import { formatCompactNumber, formatUsd } from "@/lib/format";
 import { reportEmailDeepLink } from "@/lib/email/daily-report-html";
+import {
+  buildPdfWowWeekStripSvg,
+  wowStripMetricLabel,
+} from "@/lib/email/wow-week-strip-render";
+import type { RhythmMetric } from "@/lib/reports/wow-week-strip";
 
 const brand = {
   teal: "#08758a",
@@ -38,6 +43,7 @@ function formatPct(value: number | null | undefined, digits = 0): string {
 
 /** Prefer tokens so the chart reads as activity over time, not a rising bill. */
 export function seriesMetric(report: DailyReportPayload): ReportChartMetric {
+  if (report.wowStrip) return report.wowStrip.metricDefault;
   if (report.series.some((p) => p.tokens > 0)) return "tokens";
   if (report.series.some((p) => p.cost > 0)) return "cost";
   return "requests";
@@ -189,6 +195,8 @@ function buildInsightLine(report: DailyReportPayload, isTeamWeek: boolean): stri
     parts.push(
       `<span class="underline">${escapeHtml(`${d >= 0 ? "+" : ""}${d.toFixed(0)}% spend vs the prior ${prior}`)}</span>`,
     );
+  } else if (!isTeamWeek && report.kpis.tokens <= 0 && report.kpis.requests <= 0) {
+    parts.push("Quiet day so far");
   }
 
   if (report.plan) {
@@ -249,22 +257,29 @@ export function buildDailyReportPdfHtml(input: {
   const insightHtml = buildInsightLine(report, isTeamWeek);
 
   const metric = seriesMetric(report);
-  const chartSvg = buildPdfAreaChartSvg(
-    report.series.length ? report.series : [{ label: "—", requests: 0, tokens: 0, cost: 0 }],
-    metric,
-    { height: isTeamWeek ? 180 : 160 },
-  );
-  const chartLegend = isTeamWeek
-    ? metric === "tokens"
-      ? "Daily tokens · key moments"
-      : metric === "cost"
-        ? "Daily spend · key moments"
-        : "Requests · key moments"
-    : metric === "tokens"
-      ? "Tokens by hour · key moments"
-      : metric === "cost"
-        ? "Spend by hour · key moments"
-        : "Requests by hour · key moments";
+  const useStrip = report.wowStrip != null;
+  const chartSvg = useStrip
+    ? buildPdfWowWeekStripSvg(report.wowStrip!, metric as RhythmMetric, {
+        height: isTeamWeek ? 150 : 140,
+      })
+    : buildPdfAreaChartSvg(
+        report.series.length ? report.series : [{ label: "—", requests: 0, tokens: 0, cost: 0 }],
+        metric,
+        { height: isTeamWeek ? 180 : 160 },
+      );
+  const chartLegend = useStrip
+    ? wowStripMetricLabel(metric as RhythmMetric)
+    : isTeamWeek
+      ? metric === "tokens"
+        ? "Daily tokens · key moments"
+        : metric === "cost"
+          ? "Daily spend · key moments"
+          : "Requests · key moments"
+      : metric === "tokens"
+        ? "Tokens by hour · key moments"
+        : metric === "cost"
+          ? "Spend by hour · key moments"
+          : "Requests by hour · key moments";
 
   const tiles = [
     { value: spend, label: isTeamWeek ? "Period spend" : "Today's spend" },
@@ -275,7 +290,7 @@ export function buildDailyReportPdfHtml(input: {
 
   const planSection = report.plan
     ? `<div class="plan-block">
-  <div class="section-label">Plan status</div>
+  <div class="section-label">Plan status · billing cycle</div>
   <h2>${escapeHtml(planStatus)}${report.plan.usedPercent != null ? ` · ${escapeHtml(planPct)} used` : ""}.</h2>
   <p>${escapeHtml(report.plan.hint ?? (report.plan.withinAllowance ? "Usage is within your included plan allowance." : "Check seats and quotas before the next cycle."))}</p>
   ${
@@ -302,30 +317,44 @@ export function buildDailyReportPdfHtml(input: {
   }
 </div>`
     : `<div class="plan-block">
-  <div class="section-label">Plan status</div>
+  <div class="section-label">Plan status · billing cycle</div>
   <h2>No plan signal yet.</h2>
   <p>Connect a device or wait for the next quota reading to see if you’re within allowance.</p>
 </div>`;
 
+  const usagePeriodLabel = isTeamWeek ? "this week" : "today";
   const breakdown =
     report.topTools.length === 0
-      ? `<p class="muted">No tool activity this period.</p>`
+      ? `<p class="muted">No tool activity ${escapeHtml(usagePeriodLabel)}.</p>`
       : report.topTools
           .slice(0, isTeamWeek ? 6 : 5)
           .map((tool) => {
             const barPct = Math.max(
               3,
-              Math.min(100, Math.round(tool.tokenSharePercent || tool.sharePercent)),
+              Math.min(
+                100,
+                Math.round(tool.tokenSharePercent || tool.sharePercent || (tool.requests > 0 ? 3 : 0)),
+              ),
             );
+            const meta =
+              tool.tokens <= 0 && tool.requests > 0
+                ? `${formatCompactNumber(tool.requests)} requests · tokens not reported`
+                : `${formatCompactNumber(tool.requests)} requests · ${formatPct(tool.tokenSharePercent, 0)} of tokens`;
+            const tokensLabel =
+              tool.tokens > 0
+                ? `${formatCompactNumber(tool.tokens)} tok`
+                : tool.requests > 0
+                  ? `${formatCompactNumber(tool.requests)} req`
+                  : "0 tok";
             return `<div class="break-row">
   <div class="break-top">
     <span class="break-name">${escapeHtml(tool.displayName)}</span>
     <span class="break-metrics">
-      <span class="break-tokens">${escapeHtml(formatCompactNumber(tool.tokens))} tok</span>
+      <span class="break-tokens">${escapeHtml(tokensLabel)}</span>
       <span class="break-cost">${escapeHtml(formatUsd(tool.cost))}</span>
     </span>
   </div>
-  <div class="break-meta">${escapeHtml(formatCompactNumber(tool.requests))} requests · ${escapeHtml(formatPct(tool.tokenSharePercent, 0))} of tokens</div>
+  <div class="break-meta">${escapeHtml(meta)}</div>
   <div class="bar-track"><div class="bar-fill" style="width:${barPct}%"></div></div>
 </div>`;
           })
@@ -553,7 +582,7 @@ export function buildDailyReportPdfHtml(input: {
 
     <div class="summary">
       ${planSection}
-      <div class="section-label">Usage by tool</div>
+      <div class="section-label">Usage by tool · ${escapeHtml(usagePeriodLabel)}</div>
       ${breakdown}
     </div>
 

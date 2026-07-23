@@ -105,7 +105,9 @@ export async function markOrgUsageDaysDirty(
 type RangeAggregateRow = {
   date: Date;
   toolName: string;
-  isOrgTotal: number;
+  developerId: string;
+  isDayTotal: number;
+  isDeveloperGrain: number;
   requests: number;
   inputTokens: bigint;
   outputTokens: bigint;
@@ -156,6 +158,8 @@ export async function materializeOrgUsageRange(
         CASE source
           WHEN 'local_scan' THEN 'device_observed'
           WHEN 'cursor_local' THEN 'device_observed'
+          WHEN 'antigravity_local' THEN 'device_observed'
+          WHEN 'antigravity_usage' THEN 'device_observed'
           WHEN 'cursor_usage_events' THEN 'vendor_verified'
           WHEN 'cursor_plan_percent' THEN 'device_observed'
           ELSE source
@@ -173,7 +177,7 @@ export async function materializeOrgUsageRange(
         CASE
           WHEN source IN ('vendor_verified', 'cursor_usage_events') THEN 0
           WHEN source = 'otel_observed' THEN 1
-          WHEN source IN ('device_observed', 'local_scan', 'cursor_local', 'cursor_plan_percent') THEN 2
+          WHEN source IN ('device_observed', 'local_scan', 'cursor_local', 'antigravity_local', 'antigravity_usage', 'cursor_plan_percent') THEN 2
           WHEN source = 'gateway_observed' THEN 3
           WHEN source = 'estimated' THEN 4
           ELSE 99
@@ -181,7 +185,7 @@ export async function materializeOrgUsageRange(
         CASE
           WHEN source IN ('vendor_verified', 'cursor_usage_events', 'invoice_imported') THEN 0
           WHEN source = 'gateway_observed' THEN 1
-          WHEN source IN ('estimated', 'device_observed', 'local_scan', 'cursor_local', 'cursor_plan_percent') THEN 2
+          WHEN source IN ('estimated', 'device_observed', 'local_scan', 'cursor_local', 'antigravity_local', 'antigravity_usage', 'cursor_plan_percent') THEN 2
           WHEN source = 'otel_observed' THEN 3
           ELSE 99
         END AS cost_priority
@@ -217,7 +221,9 @@ export async function materializeOrgUsageRange(
       SELECT
         date,
         CASE WHEN GROUPING(COALESCE(tool_name, '')) = 1 THEN '' ELSE COALESCE(tool_name, '') END AS tool_name_value,
-        GROUPING(COALESCE(tool_name, '')) AS is_org_total,
+        CASE WHEN GROUPING(COALESCE(developer_id, '')) = 1 THEN '' ELSE COALESCE(developer_id, '') END AS developer_id_value,
+        GROUPING(COALESCE(tool_name, '')) AS is_day_total,
+        CASE WHEN GROUPING(COALESCE(developer_id, '')) = 0 THEN 1 ELSE 0 END AS is_developer_grain,
         COALESCE(SUM(CASE WHEN selected_activity THEN requests ELSE 0 END), 0)::int AS requests,
         COALESCE(SUM(CASE WHEN selected_activity THEN input_tokens ELSE 0 END), 0)::bigint AS "inputTokens",
         COALESCE(SUM(CASE WHEN selected_activity THEN output_tokens ELSE 0 END), 0)::bigint AS "outputTokens",
@@ -231,12 +237,19 @@ export async function materializeOrgUsageRange(
         ) AS "activeDeveloperIds",
         MAX(observed_at) AS "sourceObservedThrough"
       FROM selected
-      GROUP BY GROUPING SETS ((date, COALESCE(tool_name, '')), (date))
+      GROUP BY GROUPING SETS (
+        (date),
+        (date, COALESCE(tool_name, '')),
+        (date, COALESCE(developer_id, '')),
+        (date, COALESCE(developer_id, ''), COALESCE(tool_name, ''))
+      )
     )
     SELECT
       date,
       tool_name_value AS "toolName",
-      is_org_total AS "isOrgTotal",
+      developer_id_value AS "developerId",
+      is_day_total AS "isDayTotal",
+      is_developer_grain AS "isDeveloperGrain",
       requests,
       "inputTokens",
       "outputTokens",
@@ -253,6 +266,7 @@ export async function materializeOrgUsageRange(
     orgId: string;
     date: Date;
     toolName: string;
+    developerId: string;
     metricVersion: string;
     requests: number;
     inputTokens: bigint;
@@ -266,18 +280,35 @@ export async function materializeOrgUsageRange(
     sourceObservedThrough: Date | null;
   }> = [];
 
-  const daysWithData = new Set<string>();
+  const daysWithOrgTotal = new Set<string>();
   for (const row of rows) {
     const day = utcDay(row.date);
     const dayKey = isoDay(day);
-    daysWithData.add(dayKey);
-    const isOrgTotal = Number(row.isOrgTotal) === 1;
-    const toolName = isOrgTotal ? "" : (row.toolName ?? "");
-    if (!isOrgTotal && toolName === "") continue;
+    const isDayTotal = Number(row.isDayTotal) === 1;
+    const isDeveloperGrain = Number(row.isDeveloperGrain) === 1;
+    const toolName = isDayTotal ? "" : (row.toolName ?? "");
+    const developerId = row.developerId ?? "";
+    if (!isDayTotal && toolName === "") continue;
+    // Null/empty developer_id costs stay on org rollups only — skip colliding developer grains.
+    if (isDeveloperGrain && developerId === "") continue;
+    // Skip empty developer+tool grains with no signal (keeps write volume down).
+    if (
+      isDeveloperGrain &&
+      Number(row.requests) === 0 &&
+      BigInt(row.verifiedUsageCostMicros) === BigInt(0) &&
+      BigInt(row.estimatedApiCostMicros) === BigInt(0) &&
+      BigInt(row.actualSpendCostMicros) === BigInt(0) &&
+      BigInt(row.inputTokens) === BigInt(0) &&
+      BigInt(row.outputTokens) === BigInt(0)
+    ) {
+      continue;
+    }
+    if (!isDeveloperGrain && isDayTotal) daysWithOrgTotal.add(dayKey);
     writeRows.push({
       orgId,
       date: day,
       toolName,
+      developerId: isDeveloperGrain ? developerId : "",
       metricVersion,
       requests: Number(row.requests),
       inputTokens: BigInt(row.inputTokens),
@@ -292,13 +323,14 @@ export async function materializeOrgUsageRange(
     });
   }
 
-  // Seal empty days so readers do not keep treating them as missing.
+  // Seal empty org-total days so readers do not keep treating them as missing.
   for (const day of rangeDays) {
-    if (daysWithData.has(isoDay(day))) continue;
+    if (daysWithOrgTotal.has(isoDay(day))) continue;
     writeRows.push({
       orgId,
       date: day,
       toolName: "",
+      developerId: "",
       metricVersion,
       requests: 0,
       inputTokens: BigInt(0),
@@ -313,6 +345,14 @@ export async function materializeOrgUsageRange(
     });
   }
 
+  // Dedupe by unique key in case GROUPING SETS emit overlapping empty grains.
+  const deduped = new Map<string, (typeof writeRows)[number]>();
+  for (const row of writeRows) {
+    const key = `${isoDay(row.date)}|${row.toolName}|${row.developerId}`;
+    deduped.set(key, row);
+  }
+  const finalRows = [...deduped.values()];
+
   await prisma.$transaction(async (tx) => {
     await tx.orgUsageDaySnapshot.deleteMany({
       where: {
@@ -321,11 +361,11 @@ export async function materializeOrgUsageRange(
         date: { gte: fromDay, lte: toDay },
       },
     });
-    if (writeRows.length > 0) {
+    if (finalRows.length > 0) {
       // createMany has a practical bind limit; chunk large windows.
       const chunkSize = 500;
-      for (let i = 0; i < writeRows.length; i += chunkSize) {
-        await tx.orgUsageDaySnapshot.createMany({ data: writeRows.slice(i, i + chunkSize) });
+      for (let i = 0; i < finalRows.length; i += chunkSize) {
+        await tx.orgUsageDaySnapshot.createMany({ data: finalRows.slice(i, i + chunkSize) });
       }
     }
     await tx.analyticsDirtyDay.deleteMany({
@@ -358,7 +398,7 @@ export async function materializeOrgUsageRange(
     });
   });
 
-  return writeRows.length;
+  return finalRows.length;
 }
 
 export async function materializeOrgUsageDay(
@@ -411,6 +451,7 @@ export async function materializeDirtyOrgUsageDays(
 /**
  * Cron / Sync-now entry point: rematerialize dirty days, and always refresh today
  * (plus yesterday) so rolling dashboards advance without hot-path rematerialize.
+ * Loops until no dirty days remain (or a safety cap) so one Sync clears backlogs.
  */
 export async function rematerializeOrgSnapshots(
   orgId: string,
@@ -424,16 +465,28 @@ export async function rematerializeOrgSnapshots(
     await markOrgUsageDaysDirty(orgId, [yesterday, today], metricVersion);
   }
 
-  const result = await materializeDirtyOrgUsageDays(orgId, {
-    metricVersion,
-    limit: 90,
-  });
-  return { dirtyDays: result.days, rows: result.rows };
+  let dirtyDays = 0;
+  let rows = 0;
+  // Cap passes so a runaway dirty set cannot hang Sync forever (90 days × 20 = 1800).
+  for (let pass = 0; pass < 20; pass += 1) {
+    const result = await materializeDirtyOrgUsageDays(orgId, {
+      metricVersion,
+      limit: 90,
+    });
+    dirtyDays += result.days;
+    rows += result.rows;
+    if (result.days === 0) break;
+  }
+  return { dirtyDays, rows };
 }
 
 /**
- * Empty stub days (requests=0, no observed-through) that still have usage_daily —
- * typically after someone wiped snapshots. Fail-safe rematerializes only those days.
+ * Empty stub days (no observed-through, zero activity/cost) that still have
+ * usage_daily — typically after someone wiped snapshots, or after first ingest
+ * when the read path sealed zeros before Sync now rematerialized.
+ *
+ * Local scans (especially Codex) often report tokens/cost with requests=0, so
+ * conflict detection must treat any of those signals as real usage.
  */
 async function findEmptyStubDaysWithUsage(
   orgId: string,
@@ -446,8 +499,14 @@ async function findEmptyStubDaysWithUsage(
       orgId,
       metricVersion,
       toolName: "",
+      developerId: "",
       date: { gte: fromDay, lte: toDay },
       requests: 0,
+      inputTokens: BigInt(0),
+      outputTokens: BigInt(0),
+      verifiedUsageCostMicros: BigInt(0),
+      estimatedApiCostMicros: BigInt(0),
+      actualSpendCostMicros: BigInt(0),
       sourceObservedThrough: null,
     },
     select: { date: true },
@@ -455,12 +514,20 @@ async function findEmptyStubDaysWithUsage(
   if (!stubs.length) return [];
 
   const stubKeys = new Set(stubs.map((row) => isoDay(row.date)));
+  // Any non-empty usage row conflicts with a zero stub — not just request counts.
   const usageDays = await prisma.usageDaily.groupBy({
     by: ["date"],
     where: {
       orgId,
       date: { gte: fromDay, lte: toDay },
-      requests: { gt: 0 },
+      OR: [
+        { requests: { gt: 0 } },
+        { sessions: { gt: 0 } },
+        { inputTokens: { gt: 0 } },
+        { outputTokens: { gt: 0 } },
+        { costMicros: { gt: 0 } },
+        { activeSeconds: { gt: 0 } },
+      ],
     },
   });
 
@@ -496,6 +563,7 @@ export async function ensureOrgUsageDaySnapshots(
           orgId,
           metricVersion,
           toolName: "",
+          developerId: "",
           date: { gte: fromDay, lte: toDay },
         },
         select: { date: true },
@@ -511,6 +579,7 @@ export async function ensureOrgUsageDaySnapshots(
             orgId,
             date: day,
             toolName: "",
+            developerId: "",
             metricVersion,
             requests: 0,
             inputTokens: BigInt(0),

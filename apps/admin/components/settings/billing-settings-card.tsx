@@ -11,8 +11,6 @@ import { TEAM_PRICE_PER_DEV_USD } from "@/lib/saas-billing/entitlements";
 import type { OrgBillingStatus } from "@/lib/saas-billing/status";
 import { cn } from "@/lib/utils";
 
-const TEAM_UPGRADE_HREF = "/settings/upgrade";
-
 export type BillingSettingsMember = {
   id: string;
   name: string;
@@ -83,7 +81,7 @@ function statusTone(billing: OrgBillingStatus) {
 }
 
 export function BillingSettingsCard({ billing, members }: BillingSettingsCardProps) {
-  const { error, loading, pendingDestination, openPortal } = useBillingNavigation();
+  const { error, loading, pendingDestination, openCheckout, openPortal } = useBillingNavigation();
   const pricing = priceSummary(billing);
   const paid = billing.effectivePlan === "team" || billing.effectivePlan === "enterprise";
 
@@ -105,11 +103,20 @@ export function BillingSettingsCard({ billing, members }: BillingSettingsCardPro
           </p>
         </div>
         {billing.canUpgrade ? (
-          <Button asChild className="w-full rounded-none [&::before]:hidden sm:w-auto">
-            <Link href={TEAM_UPGRADE_HREF}>
-              Upgrade to Team
+          <Button
+            type="button"
+            className="w-full rounded-none [&::before]:hidden sm:w-auto"
+            disabled={loading}
+            aria-busy={pendingDestination === "checkout"}
+            onClick={openCheckout}
+          >
+            {pendingDestination === "checkout" ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : null}
+            {pendingDestination === "checkout" ? "Opening checkout…" : "Upgrade to Team"}
+            {pendingDestination !== "checkout" ? (
               <ArrowRight className="size-4" aria-hidden="true" />
-            </Link>
+            ) : null}
           </Button>
         ) : billing.canManage ? (
           <Button

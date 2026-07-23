@@ -159,14 +159,22 @@ test("paid workspaces without a Lemon portal show a non-actionable state", () =>
   expect(screen.queryByRole("button", { name: /Manage billing/i })).toBeNull();
 });
 
-test("upgrade links to the in-app Team checkout page", () => {
-  const fetchMock = vi.fn();
+test("upgrade opens Lemon checkout", async () => {
+  const currentHref = stubLocation();
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ url: "https://lemon.test/checkout" }),
+  });
   vi.stubGlobal("fetch", fetchMock);
   render(<BillingSettingsCard billing={baseBilling} members={members} />);
 
-  const upgrade = screen.getByRole("link", { name: /Upgrade to Team/i });
-  expect(upgrade.getAttribute("href")).toBe("/settings/upgrade");
-  expect(fetchMock).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: /Upgrade to Team/i }));
+
+  await waitFor(() => expect(currentHref()).toBe("https://lemon.test/checkout"));
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/billing/checkout",
+    expect.objectContaining({ method: "POST", body: "{}" }),
+  );
 });
 
 test("manage billing opens the Lemon portal and surfaces API failures", async () => {

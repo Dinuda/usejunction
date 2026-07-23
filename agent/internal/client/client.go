@@ -477,19 +477,47 @@ const localUsageMaxPayloadBytes = 900 * 1024
 
 func (c *APIClient) ReportLocalUsage(aggregates []UsageAggregate) error {
 	for _, batch := range chunkUsageAggregates(aggregates, localUsageBatchSize, localUsageMaxPayloadBytes) {
-		var out struct {
-			Upserted int `json:"upserted"`
-		}
-		if err := c.postJSON("/api/ingest/local-usage", map[string]any{"aggregates": batch}, &out); err != nil {
+		if err := c.reportLocalUsageBatch(batch); err != nil {
 			return err
-		}
-		// HTTP 200 with upserted=0 means nothing landed (all rows dropped).
-		// Treat as failure so the caller does not fingerprint those rows.
-		if len(batch) > 0 && out.Upserted <= 0 {
-			return fmt.Errorf("POST /api/ingest/local-usage upserted 0 of %d aggregates", len(batch))
 		}
 	}
 	return nil
+}
+
+// reportLocalUsageBatch POSTs one aggregate slice. On HTTP 413 with more than
+// one row it bisects and retries so oversized multi-row batches still land.
+func (c *APIClient) reportLocalUsageBatch(batch []UsageAggregate) error {
+	if len(batch) == 0 {
+		return nil
+	}
+	var out struct {
+		Upserted int `json:"upserted"`
+	}
+	err := c.postJSON("/api/ingest/local-usage", map[string]any{"aggregates": batch}, &out)
+	if err != nil {
+		if isPayloadTooLarge(err) && len(batch) > 1 {
+			mid := len(batch) / 2
+			if err := c.reportLocalUsageBatch(batch[:mid]); err != nil {
+				return err
+			}
+			return c.reportLocalUsageBatch(batch[mid:])
+		}
+		return err
+	}
+	// HTTP 200 with upserted=0 means nothing landed (all rows dropped).
+	// Treat as failure so the caller does not fingerprint those rows.
+	if out.Upserted <= 0 {
+		return fmt.Errorf("POST /api/ingest/local-usage upserted 0 of %d aggregates", len(batch))
+	}
+	return nil
+}
+
+func isPayloadTooLarge(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "returned 413") || strings.Contains(msg, "request body too large")
 }
 
 // chunkUsageAggregates packs rows until either maxRows or maxBytes would be

@@ -37,6 +37,24 @@ export function quotaWindowLabel(windowType: string): string {
       return "Extra usage";
     case "plan":
       return "Plan";
+    case "claude_5h":
+      return "Claude · 5-hour";
+    case "claude_weekly":
+      return "Claude · Weekly";
+    case "claude_monthly":
+      return "Claude · Monthly";
+    case "gemini_5h":
+      return "Gemini · 5-hour";
+    case "gemini_weekly":
+      return "Gemini · Weekly";
+    case "gemini_monthly":
+      return "Gemini · Monthly";
+    case "gpt_5h":
+      return "GPT · 5-hour";
+    case "gpt_weekly":
+      return "GPT · Weekly";
+    case "gpt_monthly":
+      return "GPT · Monthly";
     default:
       return windowType.replaceAll("_", " ");
   }
