@@ -1,6 +1,6 @@
 /**
  * Server-orchestrated usage sync sessions (UUS v1).
- * start → chunk(s) → commit, with server-side delta + per-day reconciliation.
+ * start → chunk* (facts) → commit + settle (projections).
  */
 import { createHash } from "crypto";
 import { prisma } from "@usejunction/db";
@@ -8,7 +8,7 @@ import { normalizeUusWireRecord, uusContentFingerprint, uusPartitionKey } from "
 import { ingestLocalUsageBatch, type LocalUsageInputRow } from "@/lib/ingest/local-usage-batch";
 import { invalidateAnalyticsCache } from "@/lib/analytics/query/invalidation";
 import { markOrgUsageDaysDirty, ORG_DAY_SNAPSHOT_VERSION } from "@/lib/analytics/snapshots";
-import { enqueueMaterializationJob } from "@/lib/analytics/snapshots/jobs";
+import { materializeOrgNow } from "@/lib/analytics/snapshots/jobs";
 import { logServerError } from "@/lib/errors/public";
 import {
   applyDeviceToolInventory,
@@ -29,6 +29,14 @@ import {
 } from "@/lib/sync/quotas-inventory";
 import { repairDetectedPlanCycles, syncDetectedPlansForDevice } from "@/lib/tools/sync-detected";
 
+/**
+ * Sync-pipeline settle: project dirty usage_daily days into org_usage_day_snapshots.
+ * Chunks only mark dirty; commit (and empty-delta start) call this once.
+ */
+export async function settleSyncProjections(orgId: string): Promise<{ dirtyRemaining: number }> {
+  const result = await materializeOrgNow(orgId, { includeToday: true });
+  return { dirtyRemaining: result.dirtyRemaining };
+}
 export type ManifestPartition = {
   partitionKey: string;
   date: string;
@@ -278,7 +286,8 @@ export async function startUsageSync(params: {
       windowFrom,
       windowTo,
     });
-    await enqueueMaterializationJob(params.orgId);
+    // Empty delta can still dirty days via reconcile — settle projections now.
+    await settleSyncProjections(params.orgId);
   }
 
   return {
@@ -370,11 +379,10 @@ export async function ingestUsageSyncChunk(params: {
   const dirtyDates = params.rows
     .map((row) => (typeof row.date === "string" ? row.date.slice(0, 10) : null))
     .filter((value): value is string => Boolean(value));
+  // Facts only: mark dirty + enqueue. Commit settles projections once.
   await invalidateAnalyticsCache(params.orgId, {
     dirtyDates: dirtyDates.length ? dirtyDates : [new Date()],
-    // Match legacy /api/ingest/local-usage: first/small syncs rematerialize inline
-    // so dashboards do not sit on empty stubs waiting for cron.
-    preferFirstSyncRematerialize: true,
+    rematerialize: false,
   });
 
   await prisma.syncChunk.create({
@@ -453,16 +461,17 @@ export async function commitUsageSync(params: {
       where: { id: run.id },
       data: { status: "receiving", error: `missing ${missingPartitions.length} partitions` },
     });
-    // Partial progress still landed in usage_daily — enqueue materialize so the
-    // dashboard improves incrementally instead of waiting for a perfect commit.
+    // Partial progress still landed in usage_daily — settle so the dashboard
+    // improves immediately while the agent continues uploading.
+    let dirtyRemaining = 0;
     try {
-      await enqueueMaterializationJob(params.orgId);
+      dirtyRemaining = (await settleSyncProjections(params.orgId)).dirtyRemaining;
     } catch (error) {
-      logServerError("sync/partial-commit-materialize", error, { orgId: params.orgId, syncRunId: run.id });
+      logServerError("sync/partial-commit-settle", error, { orgId: params.orgId, syncRunId: run.id });
+      dirtyRemaining = await prisma.analyticsDirtyDay.count({
+        where: { orgId: params.orgId, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
+      });
     }
-    const dirtyRemaining = await prisma.analyticsDirtyDay.count({
-      where: { orgId: params.orgId, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
-    });
     return {
       status: "receiving",
       receivedChunks: run.receivedChunks,
@@ -509,11 +518,9 @@ export async function commitUsageSync(params: {
     data: { status: "committed", committedAt: new Date(), error: null },
   });
 
-  await enqueueMaterializationJob(params.orgId);
-
-  const dirtyRemaining = await prisma.analyticsDirtyDay.count({
-    where: { orgId: params.orgId, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
-  });
+  // Sync-pipeline settle: project dirty days before commit returns.
+  // dirtyRemaining === 0 means dashboard history is caught up; cron is fallback.
+  const { dirtyRemaining } = await settleSyncProjections(params.orgId);
 
   return {
     status: "committed",

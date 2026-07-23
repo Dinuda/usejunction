@@ -1,5 +1,6 @@
 import type { PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
 import type { BillingCycleInfo, PlanUsageSubscriptionRow } from "@/lib/insights/contracts/plan-usage.v1";
+import { projectQuotaPace } from "@/lib/quotas/pace";
 
 export type SubscriptionCycleSliceRow = {
   id: string;
@@ -32,6 +33,8 @@ export type ToolSubscriptionCycleRow = {
   utilizationPercent: number | null;
   utilizationDisplayPercent: number | null;
   verdictCode: PlanVerdictCode | null;
+  /** Earliest projected allowance exhaustion among near-limit plans. */
+  expectedEndAt: string | null;
   billingCycle: BillingCycleInfo;
 };
 
@@ -60,7 +63,20 @@ function planPrimaryRatio(plan: PlanUsageSubscriptionRow, includeLiveQuota: bool
   return plan.primaryRatio;
 }
 
-function aggregateUtilization(plans: PlanUsageSubscriptionRow[], includeLiveQuota: boolean) {
+function planExpectedEndAt(
+  plan: PlanUsageSubscriptionRow,
+  now: Date,
+): string | null {
+  if (plan.verdict.code !== "NEAR_LIMIT") return null;
+  if (!plan.primaryQuota || plan.primaryQuota.rawRatio == null) return null;
+  return projectQuotaPace(plan.primaryQuota, now).exhaustAt;
+}
+
+function aggregateUtilization(
+  plans: PlanUsageSubscriptionRow[],
+  includeLiveQuota: boolean,
+  now: Date,
+) {
   const withSignal = plans.filter((plan) => planPrimaryRatio(plan, includeLiveQuota) != null);
   const withDisplay = plans
     .map((plan) => planDisplayRatio(plan, includeLiveQuota))
@@ -78,7 +94,12 @@ function aggregateUtilization(plans: PlanUsageSubscriptionRow[], includeLiveQuot
 
   // Previous cycles must not reuse live quota pace verdicts.
   if (!includeLiveQuota) {
-    return { utilizationPercent, utilizationDisplayPercent, verdictCode: null };
+    return {
+      utilizationPercent,
+      utilizationDisplayPercent,
+      verdictCode: null,
+      expectedEndAt: null,
+    };
   }
 
   const verdict =
@@ -86,16 +107,30 @@ function aggregateUtilization(plans: PlanUsageSubscriptionRow[], includeLiveQuot
       if (!worst) return plan;
       return VERDICT_RANK[plan.verdict.code] > VERDICT_RANK[worst.verdict.code] ? plan : worst;
     }, null)?.verdict ?? null;
-  return { utilizationPercent, utilizationDisplayPercent, verdictCode: verdict?.code ?? null };
+
+  let expectedEndAt: string | null = null;
+  for (const plan of plans) {
+    const at = planExpectedEndAt(plan, now);
+    if (!at) continue;
+    if (expectedEndAt == null || at < expectedEndAt) expectedEndAt = at;
+  }
+
+  return {
+    utilizationPercent,
+    utilizationDisplayPercent,
+    verdictCode: verdict?.code ?? null,
+    expectedEndAt,
+  };
 }
 
 /** Attach quota / allowance utilization from plan-usage rows. */
 export function enrichSubscriptionCyclesWithUtilization(
   cycles: ToolSubscriptionCycleRow[],
   planSubscriptions: PlanUsageSubscriptionRow[],
-  options: { includeLiveQuota?: boolean } = {},
+  options: { includeLiveQuota?: boolean; now?: Date } = {},
 ): ToolSubscriptionCycleRow[] {
   const includeLiveQuota = options.includeLiveQuota !== false;
+  const now = options.now ?? new Date();
   const plansByTool = new Map<string, PlanUsageSubscriptionRow[]>();
   for (const plan of planSubscriptions) {
     const key = toolGroupKey(plan.toolKey, plan.toolName);
@@ -105,7 +140,7 @@ export function enrichSubscriptionCyclesWithUtilization(
   }
   return cycles.map((row) => ({
     ...row,
-    ...aggregateUtilization(plansByTool.get(row.id) ?? [], includeLiveQuota),
+    ...aggregateUtilization(plansByTool.get(row.id) ?? [], includeLiveQuota, now),
   }));
 }
 
@@ -203,6 +238,7 @@ export function rollupSubscriptionCyclesByTool(slices: SubscriptionCycleSliceRow
         utilizationPercent: null,
         utilizationDisplayPercent: null,
         verdictCode: null,
+        expectedEndAt: null,
         billingCycle: row.billingCycle,
       };
     })

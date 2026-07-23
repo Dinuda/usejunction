@@ -30,6 +30,83 @@ export async function enqueueMaterializationJob(orgId: string): Promise<void> {
   });
 }
 
+/**
+ * Rematerialize one org immediately — the sync-pipeline settle step.
+ * Called from usage sync commit (and empty-delta start after reconcile).
+ * Cron still drains the queue for stranded jobs / version bumps.
+ * Falls back to enqueue on failure so dirty days are not stranded forever.
+ */
+export async function materializeOrgNow(
+  orgId: string,
+  options: { includeToday?: boolean } = {},
+): Promise<{ dirtyDays: number; rows: number; dirtyRemaining: number }> {
+  await enqueueMaterializationJob(orgId);
+  try {
+    const result = await rematerializeOrgSnapshots(orgId, {
+      metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+      includeToday: options.includeToday !== false,
+    });
+    const status = result.dirtyRemaining > 0 ? "pending" : "idle";
+    await prisma.analyticsWatermark.upsert({
+      where: {
+        orgId_kind_metricVersion: {
+          orgId,
+          kind: JOB_KIND,
+          metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+        },
+      },
+      create: {
+        orgId,
+        kind: JOB_KIND,
+        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+        status,
+        cursorDate: new Date(),
+      },
+      update: {
+        status,
+        cursorDate: new Date(),
+        lastError: null,
+      },
+    });
+    await prisma.analyticsWatermark.upsert({
+      where: {
+        orgId_kind_metricVersion: {
+          orgId,
+          kind: ORG_DAY_WATERMARK_KIND,
+          metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+        },
+      },
+      create: {
+        orgId,
+        kind: ORG_DAY_WATERMARK_KIND,
+        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+        status,
+        cursorDate: new Date(),
+      },
+      update: {
+        status,
+        cursorDate: new Date(),
+      },
+    });
+    return result;
+  } catch (error) {
+    logServerError("snapshots/materialize_now", error, { orgId });
+    await prisma.analyticsWatermark.updateMany({
+      where: { orgId, kind: JOB_KIND, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
+      data: {
+        status: "error",
+        lastError: error instanceof Error ? error.message.slice(0, 500) : "materialize failed",
+      },
+    });
+    // Leave the job pending/error for cron to retry.
+    await enqueueMaterializationJob(orgId);
+    const dirtyRemaining = await prisma.analyticsDirtyDay.count({
+      where: { orgId, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
+    });
+    return { dirtyDays: 0, rows: 0, dirtyRemaining };
+  }
+}
+
 /** Mark all active orgs pending after a calculation/pricing version bump. */
 export async function enqueueVersionBumpRematerialize(): Promise<number> {
   const orgs = await prisma.organization.findMany({

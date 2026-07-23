@@ -311,6 +311,56 @@ test("invalidateAnalyticsCache rematerializes small dirty sets inline", { skip: 
   }
 });
 
+test("invalidateAnalyticsCache rematerialize:false never settles inline", { skip: !runDb }, async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const org = await prisma.organization.create({
+    data: { name: `Inv Defer ${suffix}`, slug: `invd-${suffix}` },
+  });
+  const developer = await prisma.developer.create({
+    data: {
+      orgId: org.id,
+      email: `invd-${suffix}@example.com`,
+      name: "Inv Defer Dev",
+      role: "user",
+    },
+  });
+  const day = new Date("2026-07-10T00:00:00.000Z");
+
+  try {
+    await prisma.usageDaily.create({
+      data: {
+        orgId: org.id,
+        developerId: developer.id,
+        date: day,
+        provider: "cursor",
+        product: "cursor",
+        toolName: "cursor",
+        model: "gpt-4.1",
+        source: "device_observed",
+        requests: 1,
+        inputTokens: BigInt(10),
+        outputTokens: BigInt(2),
+        costMicros: BigInt(1_000),
+        costKind: "estimated_api",
+        dedupeKey: `invd-test:${suffix}`,
+        observedAt: day,
+      },
+    });
+
+    const result = await invalidateAnalyticsCache(org.id, {
+      dirtyDates: [day],
+      rematerialize: false,
+    });
+    assert.equal(result.rematerialized, false);
+    assert.ok(result.marked.length >= 1);
+
+    const dirty = await prisma.analyticsDirtyDay.count({ where: { orgId: org.id } });
+    assert.ok(dirty >= 1);
+  } finally {
+    await prisma.organization.delete({ where: { id: org.id } });
+  }
+});
+
 test("invalidateAnalyticsCache keeps large dirty sets dirty-only", { skip: !runDb }, async () => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const org = await prisma.organization.create({

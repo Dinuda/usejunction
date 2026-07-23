@@ -40,7 +40,9 @@ export type WowWeekStripV1 = {
   timeZone: string;
   weekStart: string;
   weekEnd: string;
+  /** @deprecated Prior calendar day before weekStart — kept for API compat. */
   priorWeekStart: string;
+  /** @deprecated Same as priorWeekStart — strip compares each day to the prior calendar day. */
   priorWeekEnd: string;
   cells: WowWeekdayCell[];
   insight: WowWeekInsight;
@@ -84,19 +86,17 @@ export function pctDelta(current: number, previous: number): number | null {
   return ((current - previous) / previous) * 100;
 }
 
-/** Delta safe to show on the strip — null when prior baseline is noise. */
-export function displayWowDeltaPct(current: number, previous: number): number | null {
-  const raw = pctDelta(current, previous);
-  if (raw == null) return null;
+/** Delta safe to show on the strip — null when prior baseline is noise or missing. */
+export function displayWowDeltaPct(prior: number, current: number): number | null {
+  if (prior <= 0 && current <= 0) return null;
+  if (prior <= 0) return null;
   if (
-    previous > 0 &&
     current > 0 &&
-    previous / current < WOW_MIN_PRIOR_SHARE &&
-    Math.abs(raw) > 200
+    Math.min(prior, current) / Math.max(prior, current) < WOW_MIN_PRIOR_SHARE
   ) {
     return null;
   }
-  return raw;
+  return pctDelta(prior, current);
 }
 
 export function metricOf(totals: WowDayTotals, metric: RhythmMetric): number {
@@ -122,32 +122,27 @@ export function buildWowWeekInsight(input: {
 }): WowWeekInsight {
   const { cells, metric, topToolDisplayName } = input;
   let weekCurrent = 0;
-  let weekPrior = 0;
   let peakWeekday: WowWeekday | null = null;
   let peakValue = 0;
 
   for (const cell of cells) {
     const current = metricOf(cell, metric);
-    const prior = metricOf(
-      { tokens: cell.priorTokens, cost: cell.priorCost, requests: cell.priorRequests },
-      metric,
-    );
     weekCurrent += current;
-    weekPrior += prior;
     if (current > peakValue) {
       peakValue = current;
       peakWeekday = cell.weekday;
     }
   }
 
-  const weekDeltaPct = pctDelta(weekCurrent, weekPrior);
+  const todayCell = cells.find((c) => c.isToday);
+  const todayDeltaPct = todayCell?.deltaPct ?? null;
   const peakSharePct =
     weekCurrent > 0 && peakValue > 0 ? (peakValue / weekCurrent) * 100 : null;
 
   const parts: string[] = [];
-  if (weekDeltaPct != null && (weekCurrent > 0 || weekPrior > 0)) {
+  if (todayDeltaPct != null) {
     const unit = metric === "cost" ? "spend" : metric;
-    parts.push(`${formatSignedPct(weekDeltaPct)} ${unit} vs last week`);
+    parts.push(`${formatSignedPct(todayDeltaPct)} ${unit} vs yesterday`);
   }
   if (peakWeekday != null && peakValue > 0) {
     parts.push(`Peak: ${WOW_WEEKDAY_LABELS[peakWeekday]}`);
@@ -163,12 +158,12 @@ export function buildWowWeekInsight(input: {
     headline: parts.join(" · "),
     peakWeekday,
     peakSharePct,
-    weekDeltaPct,
+    weekDeltaPct: todayDeltaPct,
   };
 }
 
 /**
- * Pure builder: 7 Mon→Sun cells with WOW deltas from day totals maps.
+ * Pure builder: 7 Mon→Sun cells with day-over-day deltas from day totals maps.
  * Days after `asOfLocalDate` are zeroed and marked partial (future).
  */
 export function buildWowWeekStrip(input: {
@@ -181,19 +176,23 @@ export function buildWowWeekStrip(input: {
   topToolDisplayName?: string | null;
   /** When true, `asOfLocalDate` is still in progress (daily personal report). */
   todayPartial?: boolean;
+  /** Optional send-time baseline for today's prior day (yesterday at report hour). */
+  todayPriorOverride?: WowDayTotals | null;
 }): WowWeekStripV1 {
-  const priorWeekStart = addLocalDays(input.weekStart, -7);
-  const priorWeekEnd = addLocalDays(input.weekEnd, -7);
+  const dayBeforeWeek = addLocalDays(input.weekStart, -1);
   const cells: WowWeekdayCell[] = [];
 
   for (let i = 0; i < 7; i++) {
     const localDate = addLocalDays(input.weekStart, i);
-    const priorDate = addLocalDays(priorWeekStart, i);
+    const priorDate = addLocalDays(localDate, -1);
     const weekday = i as WowWeekday;
     const isFuture = localDate > input.asOfLocalDate;
     const isToday = localDate === input.asOfLocalDate;
     const current = isFuture ? EMPTY : (input.currentByDate.get(localDate) ?? EMPTY);
-    const prior = input.priorByDate.get(priorDate) ?? EMPTY;
+    const prior =
+      isToday && input.todayPriorOverride
+        ? input.todayPriorOverride
+        : (input.priorByDate.get(priorDate) ?? EMPTY);
     const deltaMetric: RhythmMetric =
       current.tokens > 0 || prior.tokens > 0
         ? "tokens"
@@ -202,7 +201,7 @@ export function buildWowWeekStrip(input: {
           : "requests";
     const currentMetric = metricOf(current, deltaMetric);
     const priorMetric = metricOf(prior, deltaMetric);
-    const deltaPct = isFuture ? null : displayWowDeltaPct(currentMetric, priorMetric);
+    const deltaPct = isFuture ? null : displayWowDeltaPct(priorMetric, currentMetric);
     const isOutlier =
       !isFuture &&
       deltaPct != null &&
@@ -243,8 +242,8 @@ export function buildWowWeekStrip(input: {
     timeZone: input.timeZone,
     weekStart: input.weekStart,
     weekEnd: input.weekEnd,
-    priorWeekStart,
-    priorWeekEnd,
+    priorWeekStart: dayBeforeWeek,
+    priorWeekEnd: dayBeforeWeek,
     cells,
     insight: buildWowWeekInsight({
       cells,
@@ -276,7 +275,7 @@ function fillMissingDays(
   return out;
 }
 
-/** Load Mon–Sun WOW strip ending on/containing `localDate`. */
+/** Load Mon–Sun strip ending on/containing `localDate` (day-over-day deltas). */
 export async function getWowWeekStrip(input: {
   orgId: string;
   developerId?: string | null;
@@ -287,22 +286,23 @@ export async function getWowWeekStrip(input: {
   weekEnd?: string;
   /** Mark today as partial (personal mid-day / evening report). */
   todayPartial?: boolean;
+  /** Send-time baseline for yesterday when comparing today's cell. */
+  todayPriorOverride?: WowDayTotals | null;
 }): Promise<WowWeekStripV1> {
   const range =
     input.weekStart && input.weekEnd
       ? { start: input.weekStart, end: input.weekEnd }
       : weekRangeContaining(input.localDate);
-  const priorStart = addLocalDays(range.start, -7);
-  const priorEnd = addLocalDays(range.end, -7);
+  const dayBeforeWeek = addLocalDays(range.start, -1);
   const currentDates = localDatesInclusive(range.start, range.end);
+  const spanDates = localDatesInclusive(dayBeforeWeek, range.end);
 
-  // One canonical read spanning prior + current week (source-priority, same as dashboard).
   const asOfEnd = input.localDate < range.end ? input.localDate : range.end;
   const [spanUsage, currentWeekUsage] = await Promise.all([
     readCanonicalReportUsage({
       orgId: input.orgId,
       developerId: input.developerId,
-      fromLocalDate: priorStart,
+      fromLocalDate: dayBeforeWeek,
       toLocalDate: range.end,
     }),
     readCanonicalReportUsage({
@@ -313,13 +313,13 @@ export async function getWowWeekStrip(input: {
     }),
   ]);
 
+  const spanByDate = fillMissingDays(
+    spanDates,
+    sliceDayTotals(spanUsage.byDay, dayBeforeWeek, range.end),
+  );
   const currentByDate = fillMissingDays(
     currentDates,
     sliceDayTotals(spanUsage.byDay, range.start, range.end),
-  );
-  const priorByDate = fillMissingDays(
-    localDatesInclusive(priorStart, priorEnd),
-    sliceDayTotals(spanUsage.byDay, priorStart, priorEnd),
   );
 
   return buildWowWeekStrip({
@@ -328,9 +328,10 @@ export async function getWowWeekStrip(input: {
     weekStart: range.start,
     weekEnd: range.end,
     currentByDate,
-    priorByDate,
+    priorByDate: spanByDate,
     topToolDisplayName: currentWeekUsage.topTools[0]?.displayName ?? null,
     todayPartial: input.todayPartial,
+    todayPriorOverride: input.todayPriorOverride,
   });
 }
 

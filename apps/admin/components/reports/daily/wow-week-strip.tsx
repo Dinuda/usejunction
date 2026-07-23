@@ -38,7 +38,7 @@ function cellTitle(cell: WowWeekdayCell, metric: RhythmMetric) {
     return `${cell.label} ${cell.localDate.slice(5)} · ${value} ${unit}`;
   }
   const sign = cell.deltaPct >= 0 ? "+" : "";
-  return `${cell.label} ${cell.localDate.slice(5)} · ${value} ${unit} · ${sign}${cell.deltaPct.toFixed(0)}% vs last ${cell.label}`;
+  return `${cell.label} ${cell.localDate.slice(5)} · ${value} ${unit} · ${sign}${cell.deltaPct.toFixed(0)}% vs prior day`;
 }
 
 export function WowWeekStrip({
@@ -63,7 +63,7 @@ export function WowWeekStrip({
       <div
         className="mt-5 grid grid-cols-7 gap-2 sm:gap-3"
         role="img"
-        aria-label={`Week-over-week ${activeMetric} strip from ${strip.weekStart} to ${strip.weekEnd}`}
+        aria-label={`Day-over-day ${activeMetric} strip from ${strip.weekStart} to ${strip.weekEnd}`}
       >
         {strip.cells.map((cell) => {
           const value = cellValue(cell, activeMetric);
@@ -81,7 +81,7 @@ export function WowWeekStrip({
               >
                 <div
                   className={cn(
-                    "w-full rounded-md",
+                    "w-full",
                     heightPct > 0 ? intensityClass(value, max) : "border border-border bg-transparent",
                     cell.isOutlier && "ring-2 ring-primary ring-offset-2 ring-offset-background",
                     cell.isToday && "outline outline-1 outline-offset-2 outline-foreground/30",
@@ -114,7 +114,7 @@ export function WowWeekStrip({
 
       <div className="mt-4 flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
         <span>Bar height = daily {activeMetric}</span>
-        <span>Ring = ±{WOW_OUTLIER_DELTA_PCT}% vs last week</span>
+        <span>Ring = ±{WOW_OUTLIER_DELTA_PCT}% vs prior day</span>
       </div>
     </div>
   );

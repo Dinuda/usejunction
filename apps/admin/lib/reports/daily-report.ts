@@ -1,26 +1,30 @@
 import { prisma } from "@usejunction/db";
 import {
-  dedupeQuotaUtilizations,
-  evaluatePlanUtilization,
-  mapQuotaSnapshots,
-  selectPrimaryQuota,
   verdictHint,
+  verdictLabel,
   type PlanVerdictCode,
 } from "@/lib/billing/plan-utilization-policy";
 import { readQuotas } from "@/lib/insights/readers/quotas";
+import { buildMemberPlanBoard } from "@/lib/quotas/plan-board";
+import type { QuotaPaceCode } from "@/lib/quotas/pace";
 import {
   addLocalDays,
   localDateString,
   normalizeTimeZone,
   weekRangeEndingOnOrBefore,
 } from "@/lib/timezone";
-import { canonicalToolKey, toolDisplayName } from "@/lib/tools/catalog";
 import {
   getWowWeekStrip,
   wowStripToSeries,
   type WowWeekStripV1,
 } from "@/lib/reports/wow-week-strip";
 import { readCanonicalReportUsage } from "@/lib/reports/canonical-usage";
+import {
+  isReportDeltaComparable,
+  maybeCaptureDailyReportUsageSnapshot,
+  readDailyReportUsageSnapshot,
+} from "@/lib/reports/send-time-snapshot";
+import { attachCyclePlanPercentToTools } from "@/lib/reports/day-plan-usage";
 
 /**
  * Agent ingest stores `usageDaily.date` as the local calendar YYYY-MM-DD
@@ -60,6 +64,13 @@ export type DailyReportToolRow = {
   sharePercent: number;
   /** Share of period tokens, 0–100. */
   tokenSharePercent: number;
+  /**
+   * Cycle plan used % for this tool (same signal as dashboard “Your plans”).
+   * Null when the tool has no live quota reading.
+   */
+  planUsedPercent?: number | null;
+  /** Pace-aware plan status for this tool (Near limit / Within allowance / …). */
+  planStatusLabel?: string | null;
 };
 
 export type DailyReportPlanTool = {
@@ -136,6 +147,11 @@ function pctDelta(current: number, previous: number): number | null {
   return ((current - previous) / previous) * 100;
 }
 
+/** Yesterday-over-today delta: positive when yesterday was higher. */
+function priorDayDeltaPct(prior: number, current: number): number | null {
+  return pctDelta(prior, current);
+}
+
 async function readAcceptancePercent(input: {
   orgId: string;
   developerId?: string | null;
@@ -170,6 +186,17 @@ const VERDICT_RANK: Record<PlanVerdictCode, number> = {
   HEALTHY: 0,
 };
 
+/** Map dashboard pace codes to the same plan verdicts the UI uses. */
+function paceToPlanVerdictCode(code: QuotaPaceCode, usedPercent: number | null): PlanVerdictCode {
+  if (code === "ALREADY_EXCEEDED" || (usedPercent != null && usedPercent >= 100)) {
+    return "LIMIT_EXCEEDED";
+  }
+  if (code === "EXCESS") return "NEAR_LIMIT";
+  if (code === "ON_TRACK") return "HEALTHY";
+  if (code === "UNDER") return "LIGHT_USE";
+  return "UNKNOWN";
+}
+
 /** Fleet-style status: HEALTHY and LIGHT_USE both count as within allowance. */
 export function reportPlanStatusLabel(code: PlanVerdictCode): {
   statusLabel: string;
@@ -177,62 +204,63 @@ export function reportPlanStatusLabel(code: PlanVerdictCode): {
 } {
   switch (code) {
     case "LIGHT_USE":
+      return { statusLabel: verdictLabel(code), withinAllowance: true };
     case "HEALTHY":
+      // Match dashboard fleet badge copy for on-pace plans.
       return { statusLabel: "Within allowance", withinAllowance: true };
     case "NEAR_LIMIT":
-      return { statusLabel: "Near limit", withinAllowance: false };
+      return { statusLabel: verdictLabel(code), withinAllowance: false };
     case "LIMIT_EXCEEDED":
-      return { statusLabel: "Over quota", withinAllowance: false };
+      return { statusLabel: verdictLabel(code), withinAllowance: false };
     case "DATA_STALE":
-      return { statusLabel: "No quota data", withinAllowance: null };
+      return { statusLabel: verdictLabel(code), withinAllowance: null };
     default:
-      return { statusLabel: "No quota data", withinAllowance: null };
+      return { statusLabel: verdictLabel(code), withinAllowance: null };
   }
 }
 
 /**
- * Primary-window plan utilization — same policy as dashboard / roster.
- * Avoids averaging every quota window (which made “plans used” misleading).
+ * Plan utilization — same board + pace projection as dashboard “Your plans”.
  */
 async function readPlanStatus(input: {
   orgId: string;
   developerId?: string | null;
   now?: Date;
 }): Promise<DailyReportPlanStatus | null> {
+  const now = input.now ?? new Date();
   const quotaRows = await readQuotas(input.orgId, {
     developerId: input.developerId ?? undefined,
   });
   if (quotaRows.length === 0) return null;
 
-  const allQuotas = dedupeQuotaUtilizations(mapQuotaSnapshots(quotaRows, input.now ?? new Date()));
-  const byTool = new Map<string, typeof allQuotas>();
-  for (const quota of allQuotas) {
-    const key = quota.toolKey || canonicalToolKey(quota.windowType);
-    const list = byTool.get(key) ?? [];
-    list.push(quota);
-    byTool.set(key, list);
-  }
+  const cards = buildMemberPlanBoard({
+    snapshots: quotaRows.map((row) => ({
+      toolName: row.toolName,
+      windowType: row.windowType,
+      usedPercent: row.usedPercent,
+      creditsRemaining: row.creditsRemaining,
+      resetAt: row.resetAt,
+      source: row.source,
+      updatedAt: row.updatedAt,
+      developerId: row.developerId,
+      deviceId: row.deviceId,
+    })),
+    now,
+  });
+  if (cards.length === 0) return null;
 
-  const tools: DailyReportPlanTool[] = [];
-  let worstCode: PlanVerdictCode = "UNKNOWN";
-  for (const [toolKey, quotas] of byTool) {
-    const primaryQuota = selectPrimaryQuota(quotas);
-    const verdict = evaluatePlanUtilization({ primaryQuota, included: null });
-    if (VERDICT_RANK[verdict.code] > VERDICT_RANK[worstCode]) {
-      worstCode = verdict.code;
-    }
-    const { statusLabel, withinAllowance } = reportPlanStatusLabel(verdict.code);
-    const usedPercent = primaryQuota?.rawRatio != null ? primaryQuota.rawRatio * 100 : null;
-    tools.push({
-      toolName: toolKey,
-      displayName: toolDisplayName(toolKey),
+  const tools: DailyReportPlanTool[] = cards.slice(0, 6).map((card) => {
+    const usedPercent = card.pace.usedPercent;
+    const code = paceToPlanVerdictCode(card.pace.code, usedPercent);
+    const { statusLabel, withinAllowance } = reportPlanStatusLabel(code);
+    return {
+      toolName: card.toolKey,
+      displayName: card.toolLabel,
       usedPercent,
       statusLabel,
       withinAllowance,
-    });
-  }
-
-  tools.sort((a, b) => (b.usedPercent ?? -1) - (a.usedPercent ?? -1));
+    };
+  });
 
   const withSignal = tools.filter((t) => t.usedPercent != null);
   const usedPercent =
@@ -240,23 +268,45 @@ async function readPlanStatus(input: {
       ? withSignal.reduce((sum, t) => sum + (t.usedPercent ?? 0), 0) / withSignal.length
       : null;
 
-  // Fleet badge: every signaled tool within allowance → Within allowance.
-  const signaledWithinAllowance = withSignal.map((t) => t.withinAllowance);
+  let worstCode: PlanVerdictCode = "UNKNOWN";
+  for (const tool of tools) {
+    const code = paceToPlanVerdictCode(
+      cards.find((c) => c.toolKey === tool.toolName)?.pace.code ?? "UNKNOWN",
+      tool.usedPercent,
+    );
+    if (VERDICT_RANK[code] > VERDICT_RANK[worstCode]) worstCode = code;
+  }
+
+  const nearLimitCount = tools.filter((t) => t.statusLabel === "Near limit").length;
+  const overCount = tools.filter((t) => t.statusLabel === "Over quota").length;
   let statusLabel: string;
   let withinAllowance: boolean | null;
-  if (signaledWithinAllowance.length > 0 && signaledWithinAllowance.every((v) => v === true)) {
+  if (overCount > 0) {
+    statusLabel = overCount === tools.filter((t) => t.usedPercent != null).length
+      ? "Over quota"
+      : `${overCount} over quota`;
+    withinAllowance = false;
+  } else if (nearLimitCount > 0) {
+    statusLabel = nearLimitCount === 1 ? "1 near limit" : `${nearLimitCount} near limit`;
+    withinAllowance = false;
+  } else if (withSignal.length > 0 && withSignal.every((t) => t.withinAllowance === true)) {
     statusLabel = "Within allowance";
     withinAllowance = true;
   } else {
     ({ statusLabel, withinAllowance } = reportPlanStatusLabel(worstCode));
   }
 
+  const hintExhaust = cards.find((c) => c.pace.code === "EXCESS")?.pace.exhaustAt;
+  const expectedEndDateLabel = hintExhaust
+    ? new Date(hintExhaust).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    : null;
+
   return {
     usedPercent,
     statusLabel,
     withinAllowance,
-    hint: verdictHint(worstCode),
-    tools: tools.slice(0, 4),
+    hint: verdictHint(worstCode, { expectedEndDateLabel }),
+    tools,
   };
 }
 
@@ -349,26 +399,19 @@ export async function getDailyReportPayload(input: {
   const previousDate = addLocalDays(localDate, -1);
   const developerId = input.kind === "personal" ? input.developerId ?? null : null;
   const todayDates = usageDateKeysForLocalDates([localDate]);
+  const deltaComparable = isReportDeltaComparable({ localDate, timeZone, now });
 
-  const [today, previous, wowStrip, org, plan, acceptancePercent] = await Promise.all([
+  const [today, priorSnapshot, org, plan, acceptancePercent] = await Promise.all([
     readCanonicalReportUsage({
       orgId: input.orgId,
       developerId,
       fromLocalDate: localDate,
       toLocalDate: localDate,
     }),
-    readCanonicalReportUsage({
+    readDailyReportUsageSnapshot({
       orgId: input.orgId,
       developerId,
-      fromLocalDate: previousDate,
-      toLocalDate: previousDate,
-    }),
-    getWowWeekStrip({
-      orgId: input.orgId,
-      developerId,
-      localDate,
-      timeZone,
-      todayPartial: true,
+      localDate: previousDate,
     }),
     prisma.organization.findUnique({
       where: { id: input.orgId },
@@ -378,8 +421,48 @@ export async function getDailyReportPayload(input: {
     readAcceptancePercent({ orgId: input.orgId, developerId, dates: todayDates }),
   ]);
 
+  const todayPriorOverride = priorSnapshot
+    ? { tokens: priorSnapshot.tokens, cost: priorSnapshot.cost, requests: priorSnapshot.requests }
+    : null;
+  const wowStrip = await getWowWeekStrip({
+    orgId: input.orgId,
+    developerId,
+    localDate,
+    timeZone,
+    todayPartial: true,
+    todayPriorOverride,
+  });
+
+  await maybeCaptureDailyReportUsageSnapshot({
+    orgId: input.orgId,
+    developerId,
+    localDate,
+    timeZone,
+    totals: { tokens: today.tokens, cost: today.cost, requests: today.requests },
+    now,
+  });
+
+  const requestsDeltaPct =
+    deltaComparable && priorSnapshot
+      ? priorDayDeltaPct(priorSnapshot.requests, today.requests)
+      : null;
+  const tokensDeltaPct =
+    deltaComparable && priorSnapshot
+      ? priorDayDeltaPct(priorSnapshot.tokens, today.tokens)
+      : null;
+  const costDeltaPct =
+    deltaComparable && priorSnapshot
+      ? priorDayDeltaPct(priorSnapshot.cost, today.cost)
+      : null;
+
   // Prefer WOW week strip for chart series — avoids fake hourly dumps from daily totals.
   const series = wowStripToSeries(wowStrip);
+  const topTools = await enrichTopToolsWithDayPlanPercent({
+    orgId: input.orgId,
+    developerId,
+    tools: today.topTools,
+    now,
+  });
 
   return {
     kind: input.kind,
@@ -396,16 +479,16 @@ export async function getDailyReportPayload(input: {
       tokens: today.tokens,
       cost: today.cost,
       tools: today.tools,
-      requestsDeltaPct: pctDelta(today.requests, previous.requests),
-      tokensDeltaPct: pctDelta(today.tokens, previous.tokens),
-      costDeltaPct: pctDelta(today.cost, previous.cost),
+      requestsDeltaPct,
+      tokensDeltaPct,
+      costDeltaPct,
       planUsedPercent: plan?.usedPercent ?? null,
       acceptancePercent,
     },
     plan,
     series,
     wowStrip,
-    topTools: today.topTools,
+    topTools,
     membersActive: input.kind === "org" ? today.activeDevelopers : undefined,
   };
 }

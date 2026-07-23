@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Plus, UserPlus } from "lucide-react";
+import { Plus, UserPlus, X } from "lucide-react";
 import { DeviceConnectCard } from "@/components/onboarding/device-connect-card";
 import { InviteTeamForm } from "@/components/onboarding/invite-team-form";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -40,20 +42,37 @@ export function InvitePeopleDialog() {
           Invite teammates
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-xl gap-5 sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Invite teammates.</DialogTitle>
-          <DialogDescription>
-            Share the invite link (or email it). Teammates sign up or sign in, then install on their machine.
-          </DialogDescription>
-        </DialogHeader>
-        <InviteTeamForm
-          key={formKey}
-          onInvited={() => {
-            void invalidateAppData();
-            router.refresh();
-          }}
-        />
+      <DialogContent showCloseButton={false} className="w-full max-w-xl gap-0 overflow-hidden p-0 sm:max-w-xl sm:p-0">
+        <div className="relative h-40 w-full shrink-0 overflow-hidden border-b border-border bg-muted" aria-hidden>
+          <Image
+            src="/images/team-invite.png"
+            alt=""
+            fill
+            sizes="(min-width: 640px) 36rem, 100vw"
+            className="object-cover object-center"
+            priority
+          />
+        </div>
+        <DialogClose className="absolute top-3 right-3 z-10 rounded-md bg-background/80 p-1.5 text-foreground opacity-80 shadow-sm backdrop-blur-sm transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:outline-hidden">
+          <X className="size-4" />
+          <span className="sr-only">Close</span>
+        </DialogClose>
+        <div className="flex w-full min-w-0 flex-col gap-5 px-5 py-5 sm:gap-6 sm:px-6 sm:py-6">
+          <DialogHeader className="gap-1.5 space-y-0">
+            <DialogTitle className="text-xl font-semibold tracking-tight">Invite teammates.</DialogTitle>
+            <DialogDescription className="text-sm leading-6">
+              Invite someone else to help you build out the workspace.
+            </DialogDescription>
+          </DialogHeader>
+          <InviteTeamForm
+            key={formKey}
+            variant="dashboard"
+            onInvited={() => {
+              void invalidateAppData();
+              router.refresh();
+            }}
+          />
+        </div>
       </DialogContent>
     </Dialog>
   );

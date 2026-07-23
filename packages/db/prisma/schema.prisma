@@ -67,7 +67,8 @@ model Organization {
   activitySettings       ActivitySettings?
   deviceActivityEvents   DeviceActivityEvent[]
   notificationPreferences UserNotificationPreference[]
-  dailyReportDeliveries  DailyReportDelivery[]
+  dailyReportDeliveries      DailyReportDelivery[]
+  dailyReportUsageSnapshots  DailyReportUsageSnapshot[]
 
   @@map("organizations")
 }
@@ -1327,4 +1328,25 @@ model DailyReportDelivery {
   @@unique([userId, orgId, kind, localDate])
   @@index([orgId, localDate])
   @@map("daily_report_deliveries")
+}
+
+/// Cumulative usage captured at daily-report send time (19:00 local) for fair deltas.
+model DailyReportUsageSnapshot {
+  id          String   @id @default(cuid())
+  orgId       String   @map("org_id")
+  /// Empty string = org-wide team report; otherwise personal developer scope.
+  developerId String   @default("") @map("developer_id")
+  localDate   String   @map("local_date")
+  sendHour    Int      @default(19) @map("send_hour")
+  tokens      BigInt   @default(0)
+  costMicros  BigInt   @default(0) @map("cost_micros")
+  requests    Int      @default(0)
+  capturedAt  DateTime @map("captured_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, developerId, localDate])
+  @@index([orgId, localDate])
+  @@map("daily_report_usage_snapshots")
 }

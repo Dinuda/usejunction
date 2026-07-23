@@ -318,8 +318,12 @@ test("team roster lists seeded members and opens invite dialog", async ({ page }
   await expect(page.getByRole("meter", { name: /Average plan use/i })).toBeVisible();
   await page.getByRole("button", { name: "Invite teammates" }).click();
   await expect(page.getByRole("heading", { name: "Invite teammates." })).toBeVisible();
-  await expect(page.getByText(/Share the invite link/i)).toBeVisible();
-  await expect(page.getByText(/\/i\//).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/Invite someone else to help you build out the workspace/i)).toBeVisible();
+  await expect(page.getByLabel(/Email addresses/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: /Copy invite link|Copied/i })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByRole("button", { name: "Send" })).toBeVisible();
 });
 
 test("member hub tabs expose work, coding, and fleet", async ({ page }) => {

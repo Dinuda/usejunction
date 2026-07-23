@@ -294,14 +294,20 @@ export function verdictLabel(code: PlanVerdictCode): string {
 }
 
 /** Short manager hint under the status chip. */
-export function verdictHint(code: PlanVerdictCode): string | null {
+export function verdictHint(
+  code: PlanVerdictCode,
+  options?: { expectedEndDateLabel?: string | null },
+): string | null {
+  const expectedEnd = options?.expectedEndDateLabel?.trim() || null;
   switch (code) {
     case "LIGHT_USE":
       return "Usage is well within the included plan allowance";
     case "HEALTHY":
       return "Usage is within the included plan allowance";
     case "NEAR_LIMIT":
-      return "Likely to hit the plan cap before renewal";
+      return expectedEnd
+        ? `Likely to hit the plan cap by ${expectedEnd}`
+        : "Likely to hit the plan cap before renewal";
     case "LIMIT_EXCEEDED":
       return "Included plan quota is already used up";
     case "DATA_STALE":

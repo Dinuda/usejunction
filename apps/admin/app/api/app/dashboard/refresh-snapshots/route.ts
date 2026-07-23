@@ -7,8 +7,9 @@ import { getDashboardReadiness, rematerializeOrgSnapshots } from "@/lib/analytic
 export const maxDuration = 60;
 
 /**
- * Manual Sync now completion: rematerialize dirty snapshot days for the active org
- * (including today/yesterday). Background ingest only marks dirty by default.
+ * Manual Sync now completion: rematerialize leftover dirty days for the active org.
+ * Primary settle is usage sync commit (settleSyncProjections); this covers browser
+ * Sync now and any backlog that commit could not finish.
  */
 export async function POST(request: NextRequest) {
   const started = performance.now();

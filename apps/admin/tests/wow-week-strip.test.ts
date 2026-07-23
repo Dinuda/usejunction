@@ -33,18 +33,18 @@ describe("wow week strip", () => {
     });
   });
 
-  test("builds 7 cells with WOW outlier when prior day exists", () => {
+  test("builds 7 cells with day-over-day outlier when prior day exists", () => {
     const weekStart = "2026-07-20";
     const weekEnd = "2026-07-26";
     const currentByDate = new Map<string, WowDayTotals>([
       ["2026-07-20", totals(10)],
       ["2026-07-21", totals(20)],
-      ["2026-07-22", totals(100)], // Wed — big spike
+      ["2026-07-22", totals(100)],
     ]);
     const priorByDate = new Map<string, WowDayTotals>([
-      ["2026-07-13", totals(10)],
-      ["2026-07-14", totals(20)],
-      ["2026-07-15", totals(50)], // prior Wed
+      ["2026-07-19", totals(8)],
+      ["2026-07-20", totals(10)],
+      ["2026-07-21", totals(20)],
     ]);
 
     const strip = buildWowWeekStrip({
@@ -62,14 +62,14 @@ describe("wow week strip", () => {
     assert.equal(strip.grain, "day");
     assert.equal(strip.cells.length, 7);
     assert.equal(strip.weekStart, weekStart);
-    assert.equal(strip.priorWeekStart, "2026-07-13");
+    assert.equal(strip.priorWeekStart, "2026-07-19");
     assert.equal(strip.metricDefault, "tokens");
 
     const wed = strip.cells[2]!;
     assert.equal(wed.label, "Wed");
     assert.equal(wed.tokens, 100);
-    assert.equal(wed.priorTokens, 50);
-    assert.equal(wed.deltaPct, 100);
+    assert.equal(wed.priorTokens, 20);
+    assert.equal(wed.deltaPct, -80);
     assert.equal(wed.isOutlier, true);
     assert.equal(wed.isToday, true);
     assert.equal(wed.isPartial, true);
@@ -77,15 +77,15 @@ describe("wow week strip", () => {
     const thu = strip.cells[3]!;
     assert.equal(thu.label, "Thu");
     assert.equal(thu.tokens, 0);
-    assert.equal(thu.isPartial, true); // future
+    assert.equal(thu.isPartial, true);
     assert.equal(thu.isToday, false);
     assert.equal(thu.deltaPct, null);
 
-    assert.match(strip.insight.headline, /vs last week/);
+    assert.match(strip.insight.headline, /vs yesterday/);
     assert.match(strip.insight.headline, /Peak: Wed/);
     assert.match(strip.insight.headline, /mostly Cursor/);
     assert.equal(strip.insight.peakWeekday, 2);
-    assert.equal(strip.availability, "partial"); // only 3 prior days with data
+    assert.equal(strip.availability, "partial");
   });
 
   test("does not mark outlier when prior is zero", () => {
@@ -98,13 +98,13 @@ describe("wow week strip", () => {
       priorByDate: new Map(),
     });
     const wed = strip.cells[2]!;
-    assert.equal(wed.deltaPct, 100);
+    assert.equal(wed.deltaPct, null);
     assert.equal(wed.isOutlier, false);
   });
 
-  test("suppresses absurd WOW % when prior weekend was near-empty", () => {
-    assert.equal(displayWowDeltaPct(100_000, 50), null); // +199900% noise
-    assert.equal(displayWowDeltaPct(100, 50), 100); // meaningful prior
+  test("suppresses absurd day-over-day % when prior day was near-empty", () => {
+    assert.equal(displayWowDeltaPct(50, 100_000), null);
+    assert.equal(displayWowDeltaPct(100, 50), 100);
     assert.equal(pctDelta(100_000, 50), 199900);
 
     const strip = buildWowWeekStrip({
@@ -117,8 +117,8 @@ describe("wow week strip", () => {
         ["2026-07-26", totals(90_000)],
       ]),
       priorByDate: new Map([
-        ["2026-07-18", totals(40)], // tiny prior Sat
-        ["2026-07-19", totals(30)], // tiny prior Sun
+        ["2026-07-24", totals(40)],
+        ["2026-07-25", totals(30)],
       ]),
     });
     assert.equal(strip.cells[5]!.deltaPct, null);
@@ -147,13 +147,13 @@ describe("wow week strip", () => {
         ["2026-07-26", totals(7)],
       ]),
       priorByDate: new Map([
-        ["2026-07-13", totals(1)],
-        ["2026-07-14", totals(2)],
-        ["2026-07-15", totals(3)],
-        ["2026-07-16", totals(4)],
-        ["2026-07-17", totals(5)],
-        ["2026-07-18", totals(6)],
-        ["2026-07-19", totals(7)],
+        ["2026-07-19", totals(1)],
+        ["2026-07-20", totals(1)],
+        ["2026-07-21", totals(2)],
+        ["2026-07-22", totals(3)],
+        ["2026-07-23", totals(4)],
+        ["2026-07-24", totals(5)],
+        ["2026-07-25", totals(6)],
       ]),
     });
     assert.equal(strip.availability, "complete");
@@ -161,5 +161,20 @@ describe("wow week strip", () => {
     assert.equal(series.length, 7);
     assert.equal(series[0]?.label, "Mon");
     assert.equal(series[6]?.tokens, 7);
+  });
+
+  test("uses send-time override for today's prior baseline", () => {
+    const strip = buildWowWeekStrip({
+      asOfLocalDate: "2026-07-22",
+      timeZone: "UTC",
+      weekStart: "2026-07-20",
+      weekEnd: "2026-07-26",
+      currentByDate: new Map([["2026-07-22", totals(50)]]),
+      priorByDate: new Map([["2026-07-21", totals(200)]]),
+      todayPriorOverride: totals(80),
+    });
+    const wed = strip.cells[2]!;
+    assert.equal(wed.priorTokens, 80);
+    assert.equal(wed.deltaPct, 60);
   });
 });

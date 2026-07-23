@@ -403,6 +403,10 @@ test("verdictLabel and verdictHint describe within-allowance vs near-limit state
   assert.equal(verdictLabel("NEAR_LIMIT"), "Near limit");
   assert.equal(verdictLabel("LIMIT_EXCEEDED"), "Over quota");
   assert.match(verdictHint("NEAR_LIMIT") ?? "", /plan cap before renewal/i);
+  assert.equal(
+    verdictHint("NEAR_LIMIT", { expectedEndDateLabel: "Aug 3" }),
+    "Likely to hit the plan cap by Aug 3",
+  );
   assert.match(verdictHint("LIGHT_USE") ?? "", /within the included plan allowance/i);
 });
 

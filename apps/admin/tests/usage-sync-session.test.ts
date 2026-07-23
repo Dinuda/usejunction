@@ -88,6 +88,105 @@ test("usage sync session start/chunk/commit is idempotent", { skip: !runDb }, as
       expectedChunks: 1,
     });
     assert.equal(committed.status, "committed");
+    assert.equal(committed.dirtyRemaining, 0);
+  } finally {
+    await prisma.organization.delete({ where: { id: org.id } });
+  }
+});
+
+test("usage sync chunks defer rematerialize; commit settles projections", { skip: !runDb }, async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const org = await prisma.organization.create({
+    data: { name: `Settle Sync Org ${suffix}`, slug: `settle-${suffix}` },
+  });
+  const user = await prisma.developer.create({
+    data: {
+      orgId: org.id,
+      email: `settle-${suffix}@example.com`,
+      name: "Settle Sync Dev",
+      role: "owner",
+    },
+  });
+  const device = await prisma.device.create({
+    data: {
+      orgId: org.id,
+      userId: user.id,
+      hostname: "settle-host",
+      os: "darwin",
+      architecture: "arm64",
+      agentVersion: "test",
+      deviceToken: `settle-tok-${suffix}`,
+    },
+  });
+
+  try {
+    const start = await startUsageSync({
+      orgId: org.id,
+      userId: user.id,
+      deviceId: device.id,
+      partitions: [
+        {
+          partitionKey: "2026-07-21|cursor|gpt-4.1|local_scan|",
+          date: "2026-07-21",
+          tool: "cursor",
+          model: "gpt-4.1",
+          source: "local_scan",
+          contentHash: "settle-hash-1",
+          rowCount: 1,
+        },
+      ],
+    });
+    assert.ok(start.syncRunId);
+
+    await ingestUsageSyncChunk({
+      orgId: org.id,
+      userId: user.id,
+      deviceId: device.id,
+      syncRunId: start.syncRunId,
+      chunkId: "settle-chunk-1",
+      rows: [
+        {
+          date: "2026-07-21",
+          toolName: "cursor",
+          model: "gpt-4.1",
+          source: "local_scan",
+          inputTokens: 100,
+          outputTokens: 20,
+          estimatedCost: 0.05,
+          requests: 2,
+        },
+      ],
+    });
+
+    // Chunk must leave days dirty (no mid-chunk settle).
+    const dirtyAfterChunk = await prisma.analyticsDirtyDay.count({
+      where: { orgId: org.id },
+    });
+    assert.ok(dirtyAfterChunk >= 1, "chunk should mark dirty without settling");
+
+    const committed = await commitUsageSync({
+      orgId: org.id,
+      deviceId: device.id,
+      syncRunId: start.syncRunId,
+      expectedChunks: 1,
+    });
+    assert.equal(committed.status, "committed");
+    assert.equal(committed.dirtyRemaining, 0);
+
+    const dirtyAfterCommit = await prisma.analyticsDirtyDay.count({
+      where: { orgId: org.id },
+    });
+    assert.equal(dirtyAfterCommit, 0);
+
+    const toolSnap = await prisma.orgUsageDaySnapshot.findFirst({
+      where: {
+        orgId: org.id,
+        toolName: "cursor",
+        date: new Date("2026-07-21T00:00:00.000Z"),
+      },
+    });
+    assert.ok(toolSnap, "commit settle should materialize tool snapshot");
+    assert.ok(Number(toolSnap.requests) >= 2);
   } finally {
     await prisma.organization.delete({ where: { id: org.id } });
   }

@@ -1,8 +1,10 @@
 /**
  * Mark dirty snapshot days and invalidate only query-cache rows whose window
  * overlaps those days. Always enqueues a durable materialization job.
- * Small / first-sync sets may also rematerialize inline for low-latency UX;
- * overlay reads keep KPIs correct while dirty.
+ *
+ * Inline rematerialize is opt-in for non-sync writers (legacy local-usage,
+ * small dirty sets). The usage sync pipeline must pass `rematerialize: false`
+ * on chunks — commit owns settle via settleSyncProjections / materializeOrgNow.
  */
 import { Prisma, prisma } from "@usejunction/db";
 import { logServerError } from "@/lib/errors/public";
@@ -28,6 +30,11 @@ export async function invalidateAnalyticsCache(
   orgId: string,
   options: {
     dirtyDates?: Array<Date | string>;
+    /**
+     * true  — force inline rematerialize
+     * false — never inline (dirty + enqueue only); used by sync chunks
+     * omit  — auto: inline when dirty set is small or preferFirstSyncRematerialize
+     */
     rematerialize?: boolean;
     /** Prefer rematerialize when org has no sealed non-stub snapshots yet. */
     preferFirstSyncRematerialize?: boolean;
@@ -49,6 +56,11 @@ export async function invalidateAnalyticsCache(
   `;
 
   await enqueueMaterializationJob(orgId);
+
+  // Sync chunks pass rematerialize: false — commit settles projections once.
+  if (options.rematerialize === false) {
+    return { marked, rematerialized: false };
+  }
 
   let shouldRematerialize = options.rematerialize === true;
   if (!shouldRematerialize && marked.length <= INLINE_REMATERIALIZE_DIRTY_DAY_CAP) {

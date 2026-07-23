@@ -13,8 +13,8 @@ function sampleStrip() {
     ["2026-07-21", { tokens: 3400, cost: 1.25, requests: 12 }],
   ]);
   const priorByDate = new Map<string, WowDayTotals>([
-    ["2026-07-13", { tokens: 8, cost: 0.1, requests: 2 }],
-    ["2026-07-14", { tokens: 2000, cost: 0.8, requests: 8 }],
+    ["2026-07-19", { tokens: 8, cost: 0.1, requests: 2 }],
+    ["2026-07-20", { tokens: 2000, cost: 0.8, requests: 8 }],
   ]);
   return buildWowWeekStrip({
     asOfLocalDate: "2026-07-21",
@@ -103,16 +103,18 @@ describe("daily report email", () => {
     assert.match(built.text, /Manage email reports|Turn off daily emails/);
   });
 
-  test("includes plan status, usage KPIs, and drops redundant eyebrow", () => {
+  test("includes plan status, usage KPIs, and clean section titles", () => {
     const built = buildDailyReportEmail({ report, recipientName: "Dinuda" });
     assert.match(built.html, /Good evening, Dinuda/);
     assert.match(built.html, /usejunction\.png/);
     assert.match(built.html, /alt="UseJunction"/);
-    assert.match(built.html, /Plan status · billing cycle/);
+    assert.match(built.html, />Plan status</);
+    assert.doesNotMatch(built.html, /Plan status · billing cycle/);
     assert.match(built.html, /Within allowance/);
     assert.match(built.html, /Plan usage/);
     assert.match(built.html, /42%/);
-    assert.match(built.html, /Usage by tool · today/);
+    assert.match(built.html, />Usage by tool today</);
+    assert.doesNotMatch(built.html, /Usage by tool · today/);
     assert.match(built.html, /ChatGPT/);
     assert.doesNotMatch(built.html, /Today · You/);
     assert.doesNotMatch(built.html, /750K tokens and/);
@@ -140,7 +142,7 @@ describe("daily report email", () => {
       recipientName: "Dinuda",
     });
     assert.match(built.html, /tokens not reported/);
-    assert.match(built.html, /-100% tokens vs the prior day/);
+    assert.match(built.html, /-100% tokens vs yesterday at 19:00/);
     assert.match(built.html, /47 req/);
   });
 
@@ -160,7 +162,7 @@ describe("daily report email", () => {
   test("email prefers WOW week strip over hourly chart", () => {
     const built = buildDailyReportEmail({ report, recipientName: "Dinuda" });
     assert.match(built.html, /Mon|Tue|Wed/);
-    assert.match(built.html, /vs last week|Peak:/);
+    assert.match(built.html, /vs prior day|vs yesterday|Peak:/);
     assert.doesNotMatch(built.html, /Tokens · key moments/);
     assert.doesNotMatch(built.html, /<svg/);
   });
@@ -234,8 +236,9 @@ describe("daily report PDF document", () => {
     assert.match(pdf.html, /Plan status/);
     assert.match(pdf.html, /Within allowance/);
     assert.match(pdf.html, /Plan usage/);
-    assert.match(pdf.html, /Usage by tool/);
-    assert.match(pdf.html, /Tokens this week · vs last week/);
+    assert.match(pdf.html, />Plan status</);
+    assert.match(pdf.html, />Usage by tool today</);
+    assert.match(pdf.html, /Tokens this week · vs prior day/);
     assert.match(pdf.html, /Today's spend/);
     assert.doesNotMatch(pdf.html, /Tokens by hour/);
     assert.doesNotMatch(pdf.html, /Today · You/);
@@ -254,7 +257,7 @@ describe("daily report PDF document", () => {
       "tokens",
     );
     assert.match(svg, /<svg/);
-    assert.match(svg, /circle/);
+    assert.match(svg, /<rect/);
     assert.match(svg, /#08758a/);
   });
 

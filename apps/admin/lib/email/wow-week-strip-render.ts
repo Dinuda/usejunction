@@ -79,11 +79,11 @@ export function buildEmailWowWeekStripHtml(strip: WowWeekStripV1, metric?: Rhyth
 
       return `<td width="${colWidth}%" valign="top" align="center" style="padding:0 3px;opacity:${opacity};">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;height:${CELL_HEIGHT}px;">
-    <tr><td height="${spacerH}" style="font-size:0;line-height:0;height:${spacerH}px;border:${barH === 0 ? border : "none"};border-radius:6px;background-color:${barH === 0 ? brand.white : "transparent"};">${barH === 0 ? "&nbsp;" : ""}</td></tr>
+    <tr><td height="${spacerH}" style="font-size:0;line-height:0;height:${spacerH}px;border:${barH === 0 ? border : "none"};background-color:${barH === 0 ? brand.white : "transparent"};">${barH === 0 ? "&nbsp;" : ""}</td></tr>
     ${
       barH > 0
         ? `<tr>
-      <td height="${barH}" bgcolor="${fill}" style="height:${barH}px;background-color:${fill};border:${border};border-radius:6px;font-size:0;line-height:0;">
+      <td height="${barH}" bgcolor="${fill}" style="height:${barH}px;background-color:${fill};border:${border};font-size:0;line-height:0;">
         <div style="height:${barH}px;line-height:${barH}px;font-size:0;">&nbsp;</div>
       </td>
     </tr>`
@@ -107,7 +107,7 @@ ${partialNote}
   <tr>${cells}</tr>
 </table>
 <div style="margin-top:14px;font-size:11px;color:${brand.muted};">
-  Bar height = daily ${escapeHtml(active)} · Ring = ±${WOW_OUTLIER_DELTA_PCT}% vs last week
+  Bar height = daily ${escapeHtml(active)} · Ring = ±${WOW_OUTLIER_DELTA_PCT}% vs prior day
 </div>`;
 }
 
@@ -145,11 +145,11 @@ export function buildPdfWowWeekStripSvg(
       const strokeWidth = cell.isOutlier ? 2.5 : 1;
       const empty =
         barH <= 0
-          ? `<rect x="${x.toFixed(1)}" y="${padT}" width="${cellW.toFixed(1)}" height="${plotH}" rx="6" ry="6" fill="${brand.white}" stroke="${brand.border}" stroke-width="1" opacity="${opacity}"/>`
+          ? `<rect x="${x.toFixed(1)}" y="${padT}" width="${cellW.toFixed(1)}" height="${plotH}" fill="${brand.white}" stroke="${brand.border}" stroke-width="1" opacity="${opacity}"/>`
           : "";
       const bar =
         barH > 0
-          ? `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cellW.toFixed(1)}" height="${barH.toFixed(1)}" rx="6" ry="6" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" opacity="${opacity}"/>`
+          ? `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cellW.toFixed(1)}" height="${barH.toFixed(1)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" opacity="${opacity}"/>`
           : "";
       const delta =
         cell.isOutlier && cell.deltaPct != null
@@ -165,15 +165,15 @@ export function buildPdfWowWeekStripSvg(
     })
     .join("\n  ");
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Week-over-week ${escapeHtml(active)} strip">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Day-over-day ${escapeHtml(active)} strip">
   ${rects}
 </svg>`;
 }
 
 export function wowStripMetricLabel(metric: RhythmMetric): string {
-  if (metric === "tokens") return "Tokens this week · vs last week";
-  if (metric === "cost") return "Spend this week · vs last week";
-  return "Requests this week · vs last week";
+  if (metric === "tokens") return "Tokens this week · vs prior day";
+  if (metric === "cost") return "Spend this week · vs prior day";
+  return "Requests this week · vs prior day";
 }
 
 export function formatWowCellMetric(cell: WowWeekdayCell, metric: RhythmMetric): string {

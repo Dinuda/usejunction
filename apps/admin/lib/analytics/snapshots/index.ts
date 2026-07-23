@@ -32,5 +32,6 @@ export {
 export {
   enqueueMaterializationJob,
   enqueueVersionBumpRematerialize,
+  materializeOrgNow,
   drainMaterializationJobs,
 } from "./jobs";

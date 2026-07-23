@@ -150,9 +150,11 @@ export function buildPdfAreaChartSvg(
         (i === 0 || values[i - 1]! < v || i === n - 1 || values[i + 1]! < v);
       if (!isPeak && !isLocal) return "";
       const halo = isPeak
-        ? `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="11" fill="${brand.teal}" fill-opacity="0.14"/>`
+        ? `<rect x="${(c.x - 11).toFixed(1)}" y="${(c.y - 11).toFixed(1)}" width="22" height="22" fill="${brand.teal}" fill-opacity="0.14"/>`
         : "";
-      return `${halo}<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="${isPeak ? 4.5 : 3}" fill="${brand.teal}"/>`;
+      const size = isPeak ? 9 : 6;
+      const half = size / 2;
+      return `${halo}<rect x="${(c.x - half).toFixed(1)}" y="${(c.y - half).toFixed(1)}" width="${size}" height="${size}" fill="${brand.teal}"/>`;
     })
     .join("");
 
@@ -165,7 +167,7 @@ export function buildPdfAreaChartSvg(
   </defs>
   ${yTicks.join("\n  ")}
   <path d="${areaD}" fill="url(#ujPdfArea)"/>
-  <path d="${lineD}" fill="none" stroke="${brand.teal}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="${lineD}" fill="none" stroke="${brand.teal}" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="miter"/>
   ${dots}
   ${xTicks.join("\n  ")}
 </svg>`;
@@ -182,18 +184,18 @@ function loadLogoDataUri(): string {
 }
 
 function buildInsightLine(report: DailyReportPayload, isTeamWeek: boolean): string {
-  const prior = isTeamWeek ? "week" : "day";
+  const prior = isTeamWeek ? "week" : "yesterday at 19:00";
   const parts: string[] = [];
 
   const tokensDelta = report.kpis.tokensDeltaPct;
   if (tokensDelta != null) {
     parts.push(
-      `<span class="underline">${escapeHtml(`${tokensDelta >= 0 ? "+" : ""}${tokensDelta.toFixed(0)}% tokens vs the prior ${prior}`)}</span>`,
+      `<span class="underline">${escapeHtml(`${tokensDelta >= 0 ? "+" : ""}${tokensDelta.toFixed(0)}% tokens vs ${prior}`)}</span>`,
     );
   } else if (report.kpis.costDeltaPct != null) {
     const d = report.kpis.costDeltaPct;
     parts.push(
-      `<span class="underline">${escapeHtml(`${d >= 0 ? "+" : ""}${d.toFixed(0)}% spend vs the prior ${prior}`)}</span>`,
+      `<span class="underline">${escapeHtml(`${d >= 0 ? "+" : ""}${d.toFixed(0)}% spend vs ${prior}`)}</span>`,
     );
   } else if (!isTeamWeek && report.kpis.tokens <= 0 && report.kpis.requests <= 0) {
     parts.push("Quiet day so far");
@@ -290,8 +292,8 @@ export function buildDailyReportPdfHtml(input: {
 
   const planSection = report.plan
     ? `<div class="plan-block">
-  <div class="section-label">Plan status · billing cycle</div>
-  <h2>${escapeHtml(planStatus)}${report.plan.usedPercent != null ? ` · ${escapeHtml(planPct)} used` : ""}.</h2>
+  <h2>Plan status</h2>
+  <p class="plan-lead">${escapeHtml(planStatus)}${report.plan.usedPercent != null ? ` · ${escapeHtml(planPct)} this cycle` : ""}</p>
   <p>${escapeHtml(report.plan.hint ?? (report.plan.withinAllowance ? "Usage is within your included plan allowance." : "Check seats and quotas before the next cycle."))}</p>
   ${
     report.plan.tools.length > 0
@@ -317,12 +319,13 @@ export function buildDailyReportPdfHtml(input: {
   }
 </div>`
     : `<div class="plan-block">
-  <div class="section-label">Plan status · billing cycle</div>
-  <h2>No plan signal yet.</h2>
+  <h2>Plan status</h2>
+  <p class="plan-lead">No plan signal yet.</p>
   <p>Connect a device or wait for the next quota reading to see if you’re within allowance.</p>
 </div>`;
 
   const usagePeriodLabel = isTeamWeek ? "this week" : "today";
+  const usageTitle = isTeamWeek ? "Usage by tool" : "Usage by tool today";
   const breakdown =
     report.topTools.length === 0
       ? `<p class="muted">No tool activity ${escapeHtml(usagePeriodLabel)}.</p>`
@@ -333,25 +336,35 @@ export function buildDailyReportPdfHtml(input: {
               3,
               Math.min(
                 100,
-                Math.round(tool.tokenSharePercent || tool.sharePercent || (tool.requests > 0 ? 3 : 0)),
+                Math.round(
+                  !isTeamWeek && tool.dayPlanUsedPercent != null
+                    ? tool.dayPlanUsedPercent
+                    : tool.tokenSharePercent || tool.sharePercent || (tool.requests > 0 ? 3 : 0),
+                ),
               ),
             );
             const meta =
               tool.tokens <= 0 && tool.requests > 0
                 ? `${formatCompactNumber(tool.requests)} requests · tokens not reported`
-                : `${formatCompactNumber(tool.requests)} requests · ${formatPct(tool.tokenSharePercent, 0)} of tokens`;
+                : !isTeamWeek && tool.dayPlanUsedPercent != null
+                  ? `${formatPct(tool.dayPlanUsedPercent, 0)} of today's plan · ${formatCompactNumber(tool.requests)} requests · ${formatCompactNumber(tool.tokens)} tokens`
+                  : `${formatCompactNumber(tool.requests)} requests · ${formatPct(tool.tokenSharePercent, 0)} of tokens`;
             const tokensLabel =
               tool.tokens > 0
                 ? `${formatCompactNumber(tool.tokens)} tok`
                 : tool.requests > 0
                   ? `${formatCompactNumber(tool.requests)} req`
                   : "0 tok";
+            const rightLabel =
+              !isTeamWeek && tool.dayPlanUsedPercent != null
+                ? `${formatPct(tool.dayPlanUsedPercent, 0)} of plan`
+                : formatUsd(tool.cost);
             return `<div class="break-row">
   <div class="break-top">
     <span class="break-name">${escapeHtml(tool.displayName)}</span>
     <span class="break-metrics">
       <span class="break-tokens">${escapeHtml(tokensLabel)}</span>
-      <span class="break-cost">${escapeHtml(formatUsd(tool.cost))}</span>
+      <span class="break-cost">${escapeHtml(rightLabel)}</span>
     </span>
   </div>
   <div class="break-meta">${escapeHtml(meta)}</div>
@@ -388,7 +401,6 @@ export function buildDailyReportPdfHtml(input: {
       margin: 0 auto;
       background: ${brand.white};
       border: 1px solid ${brand.border};
-      border-radius: 16px;
       padding: 28px 32px 24px;
       display: flex;
       flex-direction: column;
@@ -400,7 +412,7 @@ export function buildDailyReportPdfHtml(input: {
       margin-bottom: 22px;
       flex-shrink: 0;
     }
-    .logo { height: 26px; width: auto; display: block; }
+    .logo { height: 40px; width: auto; display: block; }
     h1 {
       margin: 0;
       font-size: 28px;
@@ -437,7 +449,6 @@ export function buildDailyReportPdfHtml(input: {
       display: inline-block;
       width: 7px;
       height: 7px;
-      border-radius: 50%;
       background: ${brand.teal};
       margin-right: 7px;
       vertical-align: middle;
@@ -451,7 +462,6 @@ export function buildDailyReportPdfHtml(input: {
     }
     .kpi {
       background: ${brand.wash};
-      border-radius: 12px;
       padding: 16px 10px;
       text-align: center;
     }
@@ -477,12 +487,26 @@ export function buildDailyReportPdfHtml(input: {
       min-height: 0;
       overflow: hidden;
     }
-    .plan-block h2, .summary h2 {
+    .plan-block h2, .summary h2, .usage-title {
       margin: 0;
       font-size: 17px;
       font-weight: 600;
       letter-spacing: -0.015em;
       line-height: 1.4;
+    }
+    .usage-title { margin-top: 16px; }
+    .plan-lead {
+      margin: 8px 0 0;
+      font-size: 15px;
+      font-weight: 600;
+      color: ${brand.charcoal};
+      line-height: 1.4;
+    }
+    .usage-sub {
+      margin: 6px 0 0;
+      font-size: 13px;
+      line-height: 1.5;
+      color: ${brand.muted};
     }
     .plan-block > p, .summary > p {
       margin: 8px 0 0;
@@ -518,13 +542,11 @@ export function buildDailyReportPdfHtml(input: {
       margin-top: 8px;
       height: 6px;
       background: ${brand.track};
-      border-radius: 999px;
       overflow: hidden;
     }
     .bar-fill {
       height: 6px;
       background: ${brand.teal};
-      border-radius: 999px;
     }
     .actions {
       display: flex;
@@ -582,7 +604,8 @@ export function buildDailyReportPdfHtml(input: {
 
     <div class="summary">
       ${planSection}
-      <div class="section-label">Usage by tool · ${escapeHtml(usagePeriodLabel)}</div>
+      <h2 class="usage-title">${escapeHtml(usageTitle)}</h2>
+      <p class="usage-sub">${escapeHtml(isTeamWeek ? `Activity across ${usagePeriodLabel}.` : "Share of each tool's daily plan allowance.")}</p>
       ${breakdown}
     </div>
 

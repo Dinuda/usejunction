@@ -255,11 +255,23 @@ function CycleSectionHeader({
   );
 }
 
-function CycleStatus({ code }: { code: PlanVerdictCode }) {
-  const hint = verdictHint(code);
+function CycleStatus({
+  code,
+  expectedEndDate,
+}: {
+  code: PlanVerdictCode;
+  /** Projected date the plan allowance runs out at current burn. */
+  expectedEndDate?: string | null;
+}) {
+  const expectedEndDateLabel = expectedEndDate ? formatShortDate(expectedEndDate) : null;
+  const hint = verdictHint(code, { expectedEndDateLabel });
   return (
     <div className="mt-1.5">
-      <p className={cn("text-xs font-medium", verdictToneClass(code))}>{verdictLabel(code)}</p>
+      <p className={cn("text-xs font-medium", verdictToneClass(code))}>
+        {code === "NEAR_LIMIT" && expectedEndDateLabel
+          ? `${verdictLabel(code)} · ${expectedEndDateLabel}`
+          : verdictLabel(code)}
+      </p>
       {hint ? <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
@@ -516,7 +528,9 @@ function PersonalHome({
                           label={card.toolLabel}
                         />
                       </div>
-                      {verdictCode !== "UNKNOWN" ? <CycleStatus code={verdictCode} /> : null}
+                      {verdictCode !== "UNKNOWN" ? (
+                        <CycleStatus code={verdictCode} expectedEndDate={card.pace.exhaustAt} />
+                      ) : null}
                     </>
                   );
 
@@ -831,7 +845,10 @@ export default function DashboardPage() {
                         />
                       </div>
                       {row.verdictCode && row.verdictCode !== "UNKNOWN" ? (
-                        <CycleStatus code={row.verdictCode} />
+                        <CycleStatus
+                          code={row.verdictCode}
+                          expectedEndDate={row.expectedEndAt}
+                        />
                       ) : usageCost > 0 ? (
                         <div className="mt-1.5">
                           <p className="text-xs font-medium text-muted-foreground">Estimated usage</p>
@@ -840,7 +857,10 @@ export default function DashboardPage() {
                           </p>
                         </div>
                       ) : row.verdictCode ? (
-                        <CycleStatus code={row.verdictCode} />
+                        <CycleStatus
+                          code={row.verdictCode}
+                          expectedEndDate={row.expectedEndAt}
+                        />
                       ) : null}
                     </>
                   );

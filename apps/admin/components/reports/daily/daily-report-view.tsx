@@ -28,15 +28,28 @@ function chartMetric(report: DailyReportPayload): "tokens" | "cost" | "requests"
   return "requests";
 }
 
-function toolUsageSub(tool: {
-  requests: number;
-  tokens: number;
-  tokenSharePercent: number;
-}): string {
-  if (tool.tokens <= 0 && tool.requests > 0) {
-    return `${formatCompactNumber(tool.requests)} requests · tokens not reported`;
+function toolUsageSub(
+  tool: {
+    requests: number;
+    tokens: number;
+    tokenSharePercent: number;
+    dayPlanUsedPercent?: number | null;
+  },
+  isDaily: boolean,
+): string {
+  const parts: string[] = [];
+  if (isDaily && tool.dayPlanUsedPercent != null) {
+    parts.push(`${tool.dayPlanUsedPercent.toFixed(0)}% of today's plan`);
   }
-  return `${formatCompactNumber(tool.requests)} requests · ${formatCompactNumber(tool.tokens)} tokens · ${tool.tokenSharePercent.toFixed(0)}% of tokens`;
+  if (tool.tokens <= 0 && tool.requests > 0) {
+    parts.push(`${formatCompactNumber(tool.requests)} requests · tokens not reported`);
+  } else {
+    parts.push(`${formatCompactNumber(tool.requests)} requests · ${formatCompactNumber(tool.tokens)} tokens`);
+    if (!isDaily || tool.dayPlanUsedPercent == null) {
+      parts.push(`${tool.tokenSharePercent.toFixed(0)}% of tokens`);
+    }
+  }
+  return parts.join(" · ");
 }
 
 export function DailyReportView({
@@ -47,10 +60,9 @@ export function DailyReportView({
   audienceSwitcher?: ReactNode;
 }) {
   const isWeek = report.period === "week";
-  const priorLabel = isWeek ? "prior week" : "prior day";
+  const priorLabel = isWeek ? "prior week" : "yesterday at 19:00";
   const metric = chartMetric(report);
   const spendLabel = isWeek ? "Period spend" : "Today's spend";
-  const usagePeriodLabel = isWeek ? "this week" : "today";
   const fourthLabel = report.kind === "org" ? "Active members" : "Plan usage";
   const fourthValue =
     report.kind === "org"
@@ -98,10 +110,10 @@ export function DailyReportView({
 
       <Panel as="section" className="mt-10 sm:p-6">
         <SignalsSectionHeader
-          title="This week."
+          title="This week"
           description={
             report.wowStrip
-              ? "Daily intensity vs the same weekdays last week."
+              ? "Daily intensity vs the prior calendar day."
               : metric === "tokens"
                 ? isWeek
                   ? "Tokens across the week."
@@ -124,14 +136,14 @@ export function DailyReportView({
 
       {report.plan ? (
         <Panel as="section" className="mt-10 sm:p-6">
-          <SignalsSectionHeader
-            title="Plan status."
-            description={
-              report.plan.usedPercent != null
-                ? `${report.plan.statusLabel} · ${report.plan.usedPercent.toFixed(0)}% used across billing-cycle quotas.`
-                : `${report.plan.statusLabel}. Billing-cycle quotas — not today’s usage.`
-            }
-          />
+        <SignalsSectionHeader
+          title="Plan status"
+          description={
+            report.plan.usedPercent != null
+              ? `${report.plan.statusLabel} · ${report.plan.usedPercent.toFixed(0)}% used this billing cycle.`
+              : `${report.plan.statusLabel}.`
+          }
+        />
           {report.plan.tools.length > 0 ? (
             <ul>
               {report.plan.tools.map((tool) => (
@@ -146,7 +158,7 @@ export function DailyReportView({
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium leading-5">{tool.displayName}</p>
                       <p className="mt-1 text-xs leading-4 text-muted-foreground">
-                        {tool.statusLabel} · billing cycle
+                        {tool.statusLabel}
                       </p>
                     </div>
                   </div>
@@ -162,13 +174,15 @@ export function DailyReportView({
 
       <Panel as="section" className="mt-10 sm:p-6">
         <SignalsSectionHeader
-          title="Usage by tool."
+          title={isWeek ? "Usage by tool" : "Usage by tool today"}
           description={
             report.topTools[0]
-              ? `${report.topTools[0].displayName} led ${usagePeriodLabel} with ${formatCompactNumber(report.topTools[0].tokens)} tokens · ${formatUsd(report.topTools[0].cost)}.`
+              ? isWeek
+                ? `${report.topTools[0].displayName} led this week with ${formatCompactNumber(report.topTools[0].tokens)} tokens · ${formatUsd(report.topTools[0].cost)}.`
+                : `${report.topTools[0].displayName} led today with ${formatCompactNumber(report.topTools[0].tokens)} tokens · ${formatUsd(report.topTools[0].cost)}.`
               : isWeek
                 ? "No usage recorded for this week yet."
-                : "No usage recorded for this local day yet."
+                : "No usage recorded for today yet."
           }
         />
         {report.topTools.length > 0 ? (
@@ -181,10 +195,16 @@ export function DailyReportView({
                   </span>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium leading-5">{tool.displayName}</p>
-                    <p className="mt-1 text-xs leading-4 text-muted-foreground">{toolUsageSub(tool)}</p>
+                    <p className="mt-1 text-xs leading-4 text-muted-foreground">
+                      {toolUsageSub(tool, !isWeek)}
+                    </p>
                   </div>
                 </div>
-                <p className="shrink-0 text-sm font-medium tabular-nums">{formatUsd(tool.cost)}</p>
+                <p className="shrink-0 text-sm font-medium tabular-nums">
+                  {!isWeek && tool.dayPlanUsedPercent != null
+                    ? `${tool.dayPlanUsedPercent.toFixed(0)}% of plan`
+                    : formatUsd(tool.cost)}
+                </p>
               </li>
             ))}
           </ul>

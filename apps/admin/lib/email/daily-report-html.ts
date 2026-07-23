@@ -97,7 +97,7 @@ export function buildEmailColumnChartHtml(
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
     <tr><td height="${spacerH}" style="font-size:0;line-height:0;height:${spacerH}px;">&nbsp;</td></tr>
     <tr>
-      <td height="${barH}" bgcolor="${fill}" style="height:${barH}px;background-color:${fill};font-size:0;line-height:0;border-radius:4px 4px 0 0;">
+      <td height="${barH}" bgcolor="${fill}" style="height:${barH}px;background-color:${fill};font-size:0;line-height:0;">
         <div style="height:${barH}px;line-height:${barH}px;font-size:0;">&nbsp;</div>
       </td>
     </tr>
@@ -114,7 +114,7 @@ export function buildEmailColumnChartHtml(
 
 function metricTile(value: string, label: string) {
   return `<td width="25%" valign="top" style="padding:6px;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:${brand.wash};border-radius:14px;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:${brand.wash};">
     <tr>
       <td align="center" style="padding:22px 12px;">
         <div style="font-size:20px;font-weight:600;color:${brand.charcoal};line-height:1.15;font-variant-numeric:tabular-nums;letter-spacing:-0.02em;font-family:Inter,Helvetica,Arial,sans-serif;">${escapeHtml(value)}</div>
@@ -123,6 +123,14 @@ function metricTile(value: string, label: string) {
     </tr>
   </table>
 </td>`;
+}
+
+function sectionTitle(text: string, marginTop = 0) {
+  return `<div style="margin-top:${marginTop}px;font-size:20px;font-weight:600;color:${brand.charcoal};line-height:1.35;letter-spacing:-0.015em;font-family:Inter,Helvetica,Arial,sans-serif;">${escapeHtml(text)}</div>`;
+}
+
+function sectionSubtitle(text: string) {
+  return `<p style="margin:8px 0 0;font-size:14px;line-height:1.55;color:${brand.muted};">${escapeHtml(text)}</p>`;
 }
 
 function breakdownRow(
@@ -149,9 +157,9 @@ function breakdownRow(
       </tr>
       <tr>
         <td colspan="2" style="padding-top:10px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:${brand.track};border-radius:999px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:${brand.track};">
             <tr>
-              <td width="${width}%" bgcolor="${brand.teal}" style="height:6px;background-color:${brand.teal};font-size:0;line-height:0;border-radius:999px;">
+              <td width="${width}%" bgcolor="${brand.teal}" style="height:6px;background-color:${brand.teal};font-size:0;line-height:0;">
                 <div style="height:6px;font-size:0;line-height:0;">&nbsp;</div>
               </td>
               <td width="${100 - width}%" style="font-size:0;line-height:0;">&nbsp;</td>
@@ -164,26 +172,39 @@ function breakdownRow(
 </tr>`;
 }
 
-function toolUsageMeta(tool: {
-  requests: number;
-  tokens: number;
-  tokenSharePercent: number;
-}): string {
-  if (tool.tokens <= 0 && tool.requests > 0) {
-    return `${formatCompactNumber(tool.requests)} requests · tokens not reported`;
+function toolUsageMeta(
+  tool: {
+    requests: number;
+    tokens: number;
+    tokenSharePercent: number;
+    dayPlanUsedPercent?: number | null;
+  },
+  isDaily: boolean,
+): string {
+  const parts: string[] = [];
+  if (isDaily && tool.dayPlanUsedPercent != null) {
+    parts.push(`${formatPct(tool.dayPlanUsedPercent, 0)} of today's plan`);
   }
-  return `${formatCompactNumber(tool.requests)} requests · ${formatPct(tool.tokenSharePercent, 0)} of tokens`;
+  if (tool.tokens <= 0 && tool.requests > 0) {
+    parts.push(`${formatCompactNumber(tool.requests)} requests · tokens not reported`);
+  } else {
+    parts.push(`${formatCompactNumber(tool.requests)} requests · ${formatCompactNumber(tool.tokens)} tokens`);
+    if (!isDaily || tool.dayPlanUsedPercent == null) {
+      parts.push(`${formatPct(tool.tokenSharePercent, 0)} of tokens`);
+    }
+  }
+  return parts.join(" · ");
 }
 
 function buildInsightBits(report: DailyReportPayload, isTeamWeek: boolean): string[] {
-  const prior = isTeamWeek ? "week" : "day";
+  const prior = isTeamWeek ? "week" : "yesterday at 19:00";
   const bits: string[] = [];
   const tokensDelta = report.kpis.tokensDeltaPct;
   if (tokensDelta != null) {
-    bits.push(`${tokensDelta >= 0 ? "+" : ""}${tokensDelta.toFixed(0)}% tokens vs the prior ${prior}`);
+    bits.push(`${tokensDelta >= 0 ? "+" : ""}${tokensDelta.toFixed(0)}% tokens vs ${prior}`);
   } else if (report.kpis.costDeltaPct != null) {
     const d = report.kpis.costDeltaPct;
-    bits.push(`${d >= 0 ? "+" : ""}${d.toFixed(0)}% spend vs the prior ${prior}`);
+    bits.push(`${d >= 0 ? "+" : ""}${d.toFixed(0)}% spend vs ${prior}`);
   } else if (!isTeamWeek && report.kpis.tokens <= 0 && report.kpis.requests <= 0) {
     bits.push("Quiet day so far");
   }
@@ -261,7 +282,7 @@ export function buildDailyReportEmailDocument(input: {
           .map((tool, index) =>
             breakdownRow(
               tool.displayName,
-              "Billing cycle quota",
+              "Billing cycle",
               tool.statusLabel,
               tool.usedPercent != null ? formatPct(tool.usedPercent, 0) : "—",
               tool.usedPercent ?? 0,
@@ -272,32 +293,39 @@ export function buildDailyReportEmailDocument(input: {
       : "";
 
   const planBlock = report.plan
-    ? `<div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${brand.muted};font-weight:600;">Plan status · billing cycle</div>
-              <div style="margin-top:10px;font-size:18px;font-weight:600;color:${brand.charcoal};line-height:1.4;letter-spacing:-0.015em;font-family:Inter,Helvetica,Arial,sans-serif;">${escapeHtml(planStatus)}${report.plan.usedPercent != null ? ` · ${escapeHtml(planPct)} used` : ""}.</div>
+    ? `${sectionTitle("Plan status")}
+              <div style="margin-top:10px;font-size:18px;font-weight:600;color:${brand.charcoal};line-height:1.4;letter-spacing:-0.015em;font-family:Inter,Helvetica,Arial,sans-serif;">${escapeHtml(planStatus)}${report.plan.usedPercent != null ? ` · ${escapeHtml(planPct)} this cycle` : ""}</div>
               <p style="margin:12px 0 0;font-size:14px;line-height:1.65;color:${brand.muted};">${escapeHtml(report.plan.hint ?? (report.plan.withinAllowance ? "Usage is within your included plan allowance." : "Check seats and quotas before the next cycle."))}</p>
               ${planToolRows ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:8px;">${planToolRows}</table>` : ""}`
-    : `<div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${brand.muted};font-weight:600;">Plan status · billing cycle</div>
+    : `${sectionTitle("Plan status")}
               <div style="margin-top:10px;font-size:18px;font-weight:600;color:${brand.charcoal};line-height:1.4;">No plan signal yet.</div>
               <p style="margin:12px 0 0;font-size:14px;line-height:1.65;color:${brand.muted};">Connect a device or wait for the next quota reading to see if you’re within allowance.</p>`;
 
   const usagePeriodLabel = isTeamWeek ? "this week" : "today";
+  const usageTitle = isTeamWeek ? "Usage by tool" : "Usage by tool today";
   const breakdownRows =
     report.topTools.length > 0
       ? report.topTools
-          .map((tool, index) =>
-            breakdownRow(
+          .map((tool, index) => {
+            const barPct =
+              !isTeamWeek && tool.dayPlanUsedPercent != null
+                ? tool.dayPlanUsedPercent
+                : tool.tokenSharePercent || tool.sharePercent || (tool.requests > 0 ? 3 : 0);
+            return breakdownRow(
               tool.displayName,
-              toolUsageMeta(tool),
+              toolUsageMeta(tool, !isTeamWeek),
               tool.tokens > 0
                 ? `${formatCompactNumber(tool.tokens)} tok`
                 : tool.requests > 0
                   ? `${formatCompactNumber(tool.requests)} req`
                   : "0 tok",
-              formatUsd(tool.cost),
-              tool.tokenSharePercent || tool.sharePercent || (tool.requests > 0 ? 3 : 0),
+              !isTeamWeek && tool.dayPlanUsedPercent != null
+                ? `${formatPct(tool.dayPlanUsedPercent, 0)} of plan`
+                : formatUsd(tool.cost),
+              barPct,
               index === report.topTools.length - 1,
-            ),
-          )
+            );
+          })
           .join("")
       : `<tr><td style="padding:16px 0;color:${brand.muted};font-size:14px;">No tool activity ${escapeHtml(usagePeriodLabel)}.</td></tr>`;
 
@@ -343,13 +371,13 @@ export function buildDailyReportEmailDocument(input: {
 <body style="margin:0;padding:0;background:${brand.page};font-family:Inter,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${brand.page};padding:48px 16px;">
     <tr><td align="center">
-      <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;width:100%;background:${brand.white};border:1px solid ${brand.border};border-radius:20px;overflow:hidden;">
+      <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;width:100%;background:${brand.white};border:1px solid ${brand.border};overflow:hidden;">
 
         <!-- Logo -->
         <tr>
           <td style="padding:36px 40px 0;">
             <a href="${escapeHtml(homeUrl)}" style="text-decoration:none;">
-              <img src="${escapeHtml(logoUrl)}" width="132" height="32" alt="UseJunction" style="display:block;border:0;width:132px;height:32px;max-width:40%;" />
+              <img src="${escapeHtml(logoUrl)}" width="198" height="48" alt="UseJunction" style="display:block;border:0;width:198px;height:48px;max-width:55%;" />
             </a>
           </td>
         </tr>
@@ -374,7 +402,7 @@ export function buildDailyReportEmailDocument(input: {
               useStrip
                 ? ""
                 : `<div style="text-align:center;margin-top:16px;font-size:12px;color:${brand.muted};letter-spacing:0.01em;">
-              <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${brand.teal};margin-right:7px;vertical-align:middle;"></span>${escapeHtml(chartLegend)}
+              <span style="display:inline-block;width:7px;height:7px;background:${brand.teal};margin-right:7px;vertical-align:middle;"></span>${escapeHtml(chartLegend)}
             </div>`
             }
           </td>
@@ -399,8 +427,9 @@ export function buildDailyReportEmailDocument(input: {
           <td style="padding:32px 40px 8px;">
             <div style="border-top:1px solid ${brand.border};padding-top:32px;">
               ${planBlock}
-              <div style="margin-top:32px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${brand.muted};font-weight:600;">Usage by tool · ${escapeHtml(usagePeriodLabel)}</div>
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:4px;">
+              ${sectionTitle(usageTitle, 32)}
+              ${!isTeamWeek ? sectionSubtitle("Share of each tool's daily plan allowance.") : sectionSubtitle(`Activity across ${usagePeriodLabel}.`)}
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:12px;">
                 ${breakdownRows}
               </table>
             </div>

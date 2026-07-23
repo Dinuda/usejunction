@@ -58,6 +58,8 @@ export type OrgOverviewV1 = {
     /** Capped utilization for progress bars (0–100). */
     utilizationDisplayPercent: number | null;
     verdictCode: PlanVerdictCode | null;
+    /** Projected date the plan allowance runs out at current burn (near-limit only). */
+    expectedEndAt: string | null;
     /** Soonest renewal among plans under this tool. */
     billingCycle: BillingCycleInfo;
   }>;

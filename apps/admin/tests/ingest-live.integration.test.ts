@@ -478,7 +478,8 @@ test("actual ingest: large delta partial commit still enqueues materialize + liv
     });
     assert.equal(partial.status, "receiving");
     assert.ok(partial.missingPartitions.length > 0);
-    // Partial commit must still report a real dirtyRemaining (job enqueued).
+    // Partial commit still settles projections so the dashboard improves
+    // while the agent continues uploading remaining partitions.
     assert.ok(partial.dirtyRemaining >= 0);
 
     // Second start must supersede the stuck receiving run and shrink the delta.

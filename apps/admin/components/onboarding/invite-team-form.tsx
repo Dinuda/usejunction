@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Clipboard, Link2, Loader2, Mail, RefreshCw, Send, X } from "lucide-react";
+import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,7 +51,6 @@ export function InviteTeamForm({
   const [sendEmail, setSendEmail] = useState(true);
   const [adding, setAdding] = useState(false);
   const [resending, setResending] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [successNote, setSuccessNote] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -80,12 +80,11 @@ export function InviteTeamForm({
 
   const loadLink = useCallback(async (createIfMissing = true) => {
     setLoadingLink(true);
-    setError(null);
     const get = await fetch("/api/team/invite-link");
     const getData = await get.json().catch(() => ({}));
     if (!get.ok) {
       setLoadingLink(false);
-      setError(userFacingError(getData.error, "Unable to load invite link."));
+      toast.error(userFacingError(getData.error, "Unable to load invite link."));
       return;
     }
     if (getData.url && !isInviteLinkStale(getData.link)) {
@@ -106,7 +105,7 @@ export function InviteTeamForm({
     const createData = await create.json().catch(() => ({}));
     setLoadingLink(false);
     if (!create.ok) {
-      setError(userFacingError(createData.error, "Unable to create invite link."));
+      toast.error(userFacingError(createData.error, "Unable to create invite link."));
       return;
     }
     applyLinkPayload(createData);
@@ -126,7 +125,7 @@ export function InviteTeamForm({
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.url) {
-      setError(userFacingError(data.error, "Unable to refresh invite link."));
+      toast.error(userFacingError(data.error, "Unable to refresh invite link."));
       return null;
     }
     applyLinkPayload(data);
@@ -135,7 +134,6 @@ export function InviteTeamForm({
 
   async function copyInviteLink() {
     setCopyingLink(true);
-    setError(null);
     try {
       const url = await ensureFreshInviteUrl();
       if (!url) return;
@@ -152,7 +150,6 @@ export function InviteTeamForm({
     if (!valid.length) return false;
     setEmails((current) => [...new Set([...current, ...valid])].slice(0, 100));
     setValue("");
-    setError(null);
     return true;
   }
 
@@ -160,7 +157,7 @@ export function InviteTeamForm({
     if (event.key === "Enter" || event.key === ",") {
       event.preventDefault();
       if (!commitDraft() && value.trim()) {
-        setError("Enter a valid work email.");
+        toast.error("Enter a valid work email.");
       }
     }
     if (event.key === "Backspace" && !value && emails.length) {
@@ -170,7 +167,6 @@ export function InviteTeamForm({
 
   async function rotateLink() {
     setRotating(true);
-    setError(null);
     const response = await fetch("/api/team/invite-link", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -179,7 +175,7 @@ export function InviteTeamForm({
     const data = await response.json().catch(() => ({}));
     setRotating(false);
     if (!response.ok) {
-      setError(userFacingError(data.error, "Unable to rotate invite link."));
+      toast.error(userFacingError(data.error, "Unable to rotate invite link."));
       return;
     }
     applyLinkPayload(data);
@@ -191,11 +187,10 @@ export function InviteTeamForm({
     const fromDraft = parseEmails(value).filter((email) => emailPattern.test(email));
     const all = [...new Set([...emails, ...fromDraft])].slice(0, 100);
     if (!all.length) {
-      setError("Add at least one work email.");
+      toast.error("Add at least one work email.");
       return;
     }
     setAdding(true);
-    setError(null);
     setSuccessNote(null);
     const response = await fetch("/api/team/invite-link", {
       method: "PUT",
@@ -205,7 +200,7 @@ export function InviteTeamForm({
     const data = await response.json().catch(() => ({}));
     setAdding(false);
     if (!response.ok) {
-      setError(userFacingError(data.error, "Unable to add people."));
+      toast.error(userFacingError(data.error, "Unable to add people."));
       return;
     }
     setAllowlist(data.allowlist ?? []);
@@ -226,7 +221,7 @@ export function InviteTeamForm({
       : " They can use the invite link whenever you share it.";
     setSuccessNote(`${base}${mailNote}`);
     if (failedMail) {
-      setError(`${failedMail} invitation email${failedMail === 1 ? "" : "s"} failed to send.`);
+      toast.error(`${failedMail} invitation email${failedMail === 1 ? "" : "s"} failed to send.`);
     }
     setEmails([]);
     setValue("");
@@ -239,7 +234,7 @@ export function InviteTeamForm({
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setError(userFacingError(data.error, "Unable to remove email."));
+      toast.error(userFacingError(data.error, "Unable to remove email."));
       return;
     }
     setAllowlist(data.allowlist ?? []);
@@ -247,7 +242,6 @@ export function InviteTeamForm({
 
   async function resendEmail(email: string) {
     setResending(email);
-    setError(null);
     const response = await fetch("/api/team/invite-link", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -256,14 +250,14 @@ export function InviteTeamForm({
     const data = await response.json().catch(() => ({}));
     setResending(null);
     if (!response.ok) {
-      setError(userFacingError(data.error, "Unable to send email."));
+      toast.error(userFacingError(data.error, "Unable to send email."));
       return;
     }
     const result = (data.emailResults ?? [])[0] as { status?: string } | undefined;
     if (result?.status === "sent") {
       setSuccessNote(`Instructions emailed to ${email}.`);
     } else {
-      setError(`Could not email ${email}.`);
+      toast.error(`Could not email ${email}.`);
     }
   }
 
@@ -293,10 +287,7 @@ export function InviteTeamForm({
         <Textarea
           id={dashboard ? "dashboard-invite-emails" : "invite-emails"}
           value={value}
-          onChange={(event) => {
-            setValue(event.target.value);
-            if (error) setError(null);
-          }}
+          onChange={(event) => setValue(event.target.value)}
           onKeyDown={onKeyDown}
           placeholder={emails.length ? "Add another…" : "alice@acme.com, bob@acme.com"}
           className={cn("resize-none border-0 shadow-none focus-visible:ring-0", dashboard ? "min-h-14" : "min-h-16")}
@@ -401,10 +392,7 @@ export function InviteTeamForm({
               <Textarea
                 id="dashboard-invite-emails"
                 value={value}
-                onChange={(event) => {
-                  setValue(event.target.value);
-                  if (error) setError(null);
-                }}
+                onChange={(event) => setValue(event.target.value)}
                 onKeyDown={onKeyDown}
                 placeholder={emails.length ? "Add another…" : "Ex. ellis@acme.com, maria@acme.com"}
                 className="min-h-[6.5rem] resize-none rounded-none border-0 shadow-none focus-visible:ring-0"
@@ -418,12 +406,6 @@ export function InviteTeamForm({
         {successNote ? (
           <Alert>
             <AlertDescription>{successNote}</AlertDescription>
-          </Alert>
-        ) : null}
-
-        {error ? (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
 
@@ -523,13 +505,6 @@ export function InviteTeamForm({
           </Alert>
         ) : null}
       </section>
-
-
-      {error ? (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      ) : null}
     </div>
   );
 }
