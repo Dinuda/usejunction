@@ -13,6 +13,7 @@ export type OnboardingDeveloper = {
     architecture: string;
     agentVersion: string;
     lastSeenAt: Date;
+    lastUsageSyncAt: Date | null;
     toolInstallations: Array<{
       toolName: string;
       version: string | null;
@@ -84,6 +85,7 @@ async function loadDeveloper(userId: string, orgId: string): Promise<OnboardingD
           architecture: true,
           agentVersion: true,
           lastSeenAt: true,
+          lastUsageSyncAt: true,
           toolInstallations: {
             where: { detected: true },
             select: { toolName: true, version: true, lastCheckedAt: true },

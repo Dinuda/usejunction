@@ -240,7 +240,17 @@ export function attachRepositoryIds(
 }
 
 function localAggregateKey(row: NormalizedLocalUsageRow): string {
-  return `${row.dateKey}|${row.toolName}|${row.model}|${row.source}`;
+  const repoKey = row.repository
+    ? `${row.repository.host}/${row.repository.owner}/${row.repository.name}`
+    : row.repositoryId ?? "";
+  return `${row.dateKey}|${row.toolName}|${row.model}|${row.source}|${repoKey}`;
+}
+
+function repositoryKeyForAggregate(row: NormalizedLocalUsageRow): string {
+  if (row.repository) {
+    return `${row.repository.host}/${row.repository.owner}/${row.repository.name}`;
+  }
+  return "";
 }
 
 /**
@@ -303,6 +313,7 @@ function metadataJson(value: Prisma.InputJsonValue): string {
 }
 
 async function bulkUpsertLocalUsageAggregates(
+  tx: Prisma.TransactionClient,
   orgId: string,
   userId: string,
   deviceId: string,
@@ -318,6 +329,7 @@ async function bulkUpsertLocalUsageAggregates(
         ${row.dateKey}::date,
         ${row.toolName},
         ${row.model},
+        ${repositoryKeyForAggregate(row)},
         ${row.inputTokens},
         ${row.outputTokens},
         ${BigInt(row.cacheReadTokens)},
@@ -340,16 +352,16 @@ async function bulkUpsertLocalUsageAggregates(
       )`,
     );
 
-    await prisma.$executeRaw`
+    await tx.$executeRaw`
       INSERT INTO local_usage_aggregates (
-        id, org_id, user_id, device_id, date, tool_name, model,
+        id, org_id, user_id, device_id, date, tool_name, model, repository_key,
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
         suggested_lines, accepted_lines, added_lines, deleted_lines, commits,
         ai_percent, requests, estimated_cost, source, verified, metric_kind, cost_kind,
         calculation_version, metadata
       )
       VALUES ${Prisma.join(values)}
-      ON CONFLICT (device_id, date, tool_name, model, source) DO UPDATE SET
+      ON CONFLICT (device_id, date, tool_name, model, source, repository_key) DO UPDATE SET
         input_tokens = EXCLUDED.input_tokens,
         output_tokens = EXCLUDED.output_tokens,
         cache_read_tokens = EXCLUDED.cache_read_tokens,
@@ -374,6 +386,7 @@ async function bulkUpsertLocalUsageAggregates(
 }
 
 async function bulkUpsertUsageDaily(
+  tx: Prisma.TransactionClient,
   orgId: string,
   userId: string,
   deviceId: string,
@@ -417,7 +430,7 @@ async function bulkUpsertUsageDaily(
       )`,
     );
 
-    await prisma.$executeRaw`
+    await tx.$executeRaw`
       INSERT INTO usage_daily (
         id, org_id, developer_id, device_id, repository_id, date,
         provider, product, tool_name, model, source, source_ref, verified,
@@ -474,8 +487,10 @@ export async function ingestLocalUsageBatch(params: {
   const rows = collapseLocalUsageRows(attachRepositoryIds(normalized, params.deviceId, repoIds));
   const observedAt = new Date();
 
-  await bulkUpsertLocalUsageAggregates(params.orgId, params.userId, params.deviceId, rows);
-  await bulkUpsertUsageDaily(params.orgId, params.userId, params.deviceId, rows, observedAt);
+  await prisma.$transaction(async (tx) => {
+    await bulkUpsertLocalUsageAggregates(tx, params.orgId, params.userId, params.deviceId, rows);
+    await bulkUpsertUsageDaily(tx, params.orgId, params.userId, params.deviceId, rows, observedAt);
+  });
 
   const sample: LocalUsageBatchResult["sample"] = [];
   let totalTokens = 0;

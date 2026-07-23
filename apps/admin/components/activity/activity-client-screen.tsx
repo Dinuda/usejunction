@@ -230,6 +230,8 @@ function SharedActivityView({ view }: { view: ActivityViewModel }) {
             lastSeenAt={view.sync.lastSeenAt}
             lastUsageSyncAt={view.sync.lastUsageSyncAt}
             lastAccountSyncAt={view.sync.lastAccountSyncAt}
+            dashboardReady={view.sync.dashboardReady}
+            dirtyDayCount={view.sync.dirtyDayCount}
           />
         </div>
       ) : null}

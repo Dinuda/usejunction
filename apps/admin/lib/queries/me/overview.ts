@@ -7,6 +7,7 @@ import {
   ensureOrgUsageDaySnapshots,
   readDeveloperUsageFromSnapshots,
 } from "@/lib/analytics/snapshots";
+import { getDashboardReadiness } from "@/lib/analytics/snapshots/readiness";
 import { orgNeedsPlanSync } from "@/lib/queries/me/local-sync-context";
 import { canonicalToolKey, findCatalogTool, isCodingTool } from "@/lib/tools/catalog";
 import type { OrganizationRole } from "@/lib/workspace-context";
@@ -133,6 +134,9 @@ export interface MeOverviewData {
     lastAccountSyncAt: string | null;
     hasLocalEndpoint: boolean;
     needsPlanSync: boolean;
+    dashboardReady: boolean;
+    dirtyDayCount: number;
+    snapshotLagSeconds: number | null;
   };
 }
 
@@ -436,6 +440,7 @@ async function buildMeOverview(
   const needsPlanSync =
     personalNeedsPlanSync ||
     (options.includeOrgPlanSync === false ? false : await orgNeedsPlanSync(orgId));
+  const readiness = await getDashboardReadiness(orgId);
 
   return {
     developer: {
@@ -488,6 +493,9 @@ async function buildMeOverview(
       lastAccountSyncAt: latestAccountSync?.toISOString() ?? null,
       hasLocalEndpoint: developer.devices.some((d) => Boolean(d.localEndpoint)),
       needsPlanSync,
+      dashboardReady: readiness.dashboardReady,
+      dirtyDayCount: readiness.dirtyDayCount,
+      snapshotLagSeconds: readiness.snapshotLagSeconds,
     },
   };
 }

@@ -385,6 +385,8 @@ model LocalUsageAggregate {
   date               DateTime @db.Date
   toolName           String   @map("tool_name")
   model              String   @default("")
+  /// Stable repo identity for unique keying (host/owner/name); empty when unknown.
+  repositoryKey      String   @default("") @map("repository_key")
   inputTokens        Int      @default(0) @map("input_tokens")
   outputTokens       Int      @default(0) @map("output_tokens")
   cacheReadTokens    BigInt   @default(0) @map("cache_read_tokens")
@@ -409,7 +411,7 @@ model LocalUsageAggregate {
   user         Developer    @relation(fields: [userId], references: [id], onDelete: Cascade)
   device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
-  @@unique([deviceId, date, toolName, model, source])
+  @@unique([deviceId, date, toolName, model, source, repositoryKey])
   @@index([orgId, userId, date, toolName])
   @@map("local_usage_aggregates")
 }

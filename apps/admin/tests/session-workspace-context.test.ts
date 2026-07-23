@@ -38,6 +38,10 @@ vi.mock("@usejunction/db", () => ({
     toolInstallation: {
       count: mocks.toolInstallationCount,
     },
+    analyticsDirtyDay: {
+      findMany: vi.fn(async () => []),
+      count: vi.fn(async () => 0),
+    },
   },
 }));
 
@@ -135,7 +139,9 @@ describe("workspace context API", () => {
     expect(payload.data.sync).toMatchObject({
       deviceCount: 0,
       toolCount: 0,
-      watermark: "0|0|||",
+      watermark: "0|0||||0|1",
+      dashboardReady: true,
+      dirtyDayCount: 0,
     });
     expect(response.headers.get("cache-control")).toContain("no-store");
     expect(response.headers.get("server-timing")).toContain("membership");
@@ -162,7 +168,10 @@ describe("workspace context API", () => {
       lastSeenAt: "2026-07-21T12:00:00.000Z",
       lastUsageSyncAt: "2026-07-21T12:05:00.000Z",
       lastAccountSyncAt: null,
-      watermark: "1|3|2026-07-21T12:00:00.000Z|2026-07-21T12:05:00.000Z|",
+      watermark: "1|3|2026-07-21T12:00:00.000Z|2026-07-21T12:05:00.000Z||0|1",
+      dashboardReady: true,
+      dirtyDayCount: 0,
+      snapshotLagSeconds: null,
     });
   });
 

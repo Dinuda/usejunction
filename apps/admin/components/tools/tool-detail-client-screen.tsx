@@ -61,6 +61,8 @@ export default function ToolDetailClientScreen() {
             lastSeenAt={syncContext.lastSeenAt}
             lastUsageSyncAt={syncContext.lastUsageSyncAt}
             lastAccountSyncAt={syncContext.lastAccountSyncAt}
+            dashboardReady={syncContext.dashboardReady}
+            dirtyDayCount={syncContext.dirtyDayCount}
           />
         </div>
       ) : null}

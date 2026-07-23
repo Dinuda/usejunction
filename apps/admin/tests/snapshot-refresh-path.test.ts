@@ -98,8 +98,8 @@ test("ensure stubs missing days without rematerializing sealed days", { skip: !r
         metricVersion: ORG_DAY_SNAPSHOT_VERSION,
       },
     });
-    assert.ok(earlyStub);
-    assert.equal(earlyStub.requests, 0);
+    // Dirty days are not stub-sealed — prefer gaps over authoritative zeros.
+    assert.equal(earlyStub, null);
 
     // Dirty rows must remain for cron / Sync now — ensure does not rematerialize
     // sealed days when stubs do not conflict with usage_daily.
@@ -251,17 +251,17 @@ test("materializeDirtyOrgUsageDays rematerializes contiguous ranges only", { ski
   }
 });
 
-test("invalidateAnalyticsCache defaults to dirty-only without rematerialize", { skip: !runDb }, async () => {
+test("invalidateAnalyticsCache rematerializes small dirty sets inline", { skip: !runDb }, async () => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const org = await prisma.organization.create({
-    data: { name: `Inv Default ${suffix}`, slug: `invd-${suffix}` },
+    data: { name: `Inv Small ${suffix}`, slug: `invs-${suffix}` },
   });
   const day = new Date("2026-07-15T00:00:00.000Z");
   const developer = await prisma.developer.create({
     data: {
       orgId: org.id,
-      email: `invd-${suffix}@example.com`,
-      name: "Inv Dev",
+      email: `invs-${suffix}@example.com`,
+      name: "Inv Small Dev",
       role: "user",
     },
   });
@@ -282,22 +282,87 @@ test("invalidateAnalyticsCache defaults to dirty-only without rematerialize", { 
         outputTokens: BigInt(10),
         costMicros: BigInt(50_000),
         costKind: "estimated_api",
-        dedupeKey: `invd-test:${suffix}`,
+        dedupeKey: `invs-test:${suffix}`,
         observedAt: day,
       },
     });
 
-    await invalidateAnalyticsCache(org.id, { dirtyDates: [day] });
+    const result = await invalidateAnalyticsCache(org.id, { dirtyDates: [day] });
+    assert.equal(result.rematerialized, true);
 
     const dirty = await prisma.analyticsDirtyDay.count({
       where: { orgId: org.id, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
     });
-    assert.equal(dirty, 1);
+    assert.equal(dirty, 0);
 
-    const snaps = await prisma.orgUsageDaySnapshot.count({
+    const snap = await prisma.orgUsageDaySnapshot.findFirst({
+      where: {
+        orgId: org.id,
+        date: day,
+        toolName: "",
+        developerId: "",
+        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+      },
+    });
+    assert.ok(snap);
+    assert.equal(snap.requests, 11);
+  } finally {
+    await prisma.organization.delete({ where: { id: org.id } });
+  }
+});
+
+test("invalidateAnalyticsCache keeps large dirty sets dirty-only", { skip: !runDb }, async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const org = await prisma.organization.create({
+    data: { name: `Inv Large ${suffix}`, slug: `invl-${suffix}` },
+  });
+  const from = new Date("2026-06-01T00:00:00.000Z");
+  const dates = Array.from({ length: 10 }, (_, i) => new Date(from.getTime() + i * 86_400_000));
+  const developer = await prisma.developer.create({
+    data: {
+      orgId: org.id,
+      email: `invl-${suffix}@example.com`,
+      name: "Inv Large Dev",
+      role: "user",
+    },
+  });
+
+  try {
+    for (const [i, date] of dates.entries()) {
+      await prisma.usageDaily.create({
+        data: {
+          orgId: org.id,
+          developerId: developer.id,
+          date,
+          provider: "cursor",
+          product: "cursor",
+          toolName: "cursor",
+          model: "gpt-4.1",
+          source: "device_observed",
+          requests: 1,
+          inputTokens: BigInt(10),
+          outputTokens: BigInt(2),
+          costMicros: BigInt(1_000),
+          costKind: "estimated_api",
+          dedupeKey: `invl-test:${suffix}:${i}`,
+          observedAt: date,
+        },
+      });
+    }
+
+    // Seed a sealed snapshot so first-sync rematerialize does not fire.
+    await materializeOrgUsageRange(org.id, dates[0]!, dates[0]!);
+    await prisma.analyticsDirtyDay.deleteMany({
       where: { orgId: org.id, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
     });
-    assert.equal(snaps, 0);
+
+    const result = await invalidateAnalyticsCache(org.id, { dirtyDates: dates });
+    assert.equal(result.rematerialized, false);
+
+    const dirty = await prisma.analyticsDirtyDay.count({
+      where: { orgId: org.id, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
+    });
+    assert.equal(dirty, 10);
   } finally {
     await prisma.organization.delete({ where: { id: org.id } });
   }
@@ -347,8 +412,16 @@ test("ensure recovers when snapshots were wiped but usage_daily remains", { skip
     await prisma.orgUsageDaySnapshot.deleteMany({ where: { orgId: org.id } });
 
     const result = await ensureOrgUsageDaySnapshots(org.id, from, to);
-    assert.ok(result.recovered > 0, "expected fail-safe rematerialize after wipe");
+    // Hot path marks dirty instead of rematerializing — Sync now / cron heal.
+    assert.equal(result.recovered, 0);
+    assert.ok((result.pendingDirty ?? 0) > 0, "expected corrupt days marked dirty");
 
+    const dirty = await prisma.analyticsDirtyDay.count({
+      where: { orgId: org.id, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
+    });
+    assert.ok(dirty > 0);
+
+    await materializeDirtyOrgUsageDays(org.id);
     const total = await prisma.orgUsageDaySnapshot.findFirst({
       where: {
         orgId: org.id,
@@ -364,13 +437,12 @@ test("ensure recovers when snapshots were wiped but usage_daily remains", { skip
     // Second ensure stays warm — no further recovery.
     const again = await ensureOrgUsageDaySnapshots(org.id, from, to);
     assert.equal(again.recovered, 0);
-    assert.equal(again.stubbed, 0);
   } finally {
     await prisma.organization.delete({ where: { id: org.id } });
   }
 });
 
-test("ensure recovers token/cost-only stubs after first ingest (requests=0)", { skip: !runDb }, async () => {
+test("ensure marks token/cost-only stubs dirty after first ingest (requests=0)", { skip: !runDb }, async () => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const org = await prisma.organization.create({
     data: { name: `Token Stub Org ${suffix}`, slug: `token-stub-${suffix}` },
@@ -407,10 +479,32 @@ test("ensure recovers token/cost-only stubs after first ingest (requests=0)", { 
       },
     });
 
-    // Read-path seal after ingest — same race as post-onboarding dashboard load.
-    const stubbed = await ensureOrgUsageDaySnapshots(org.id, day, day);
-    assert.ok(stubbed.recovered > 0, "expected fail-safe rematerialize for token/cost-only usage");
+    // Seed an empty stub then ensure — should mark dirty, not rematerialize inline.
+    await prisma.orgUsageDaySnapshot.create({
+      data: {
+        orgId: org.id,
+        date: day,
+        toolName: "",
+        developerId: "",
+        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+        requests: 0,
+        inputTokens: BigInt(0),
+        outputTokens: BigInt(0),
+        verifiedUsageCostMicros: BigInt(0),
+        estimatedApiCostMicros: BigInt(0),
+        actualSpendCostMicros: BigInt(0),
+        activeDevelopers: 0,
+        activeDeveloperIds: [],
+        computedAt: new Date(),
+        sourceObservedThrough: null,
+      },
+    });
 
+    const stubbed = await ensureOrgUsageDaySnapshots(org.id, day, day);
+    assert.equal(stubbed.recovered, 0);
+    assert.ok((stubbed.pendingDirty ?? 0) > 0, "expected fail-safe to mark dirty for token/cost-only usage");
+
+    await materializeDirtyOrgUsageDays(org.id);
     const total = await prisma.orgUsageDaySnapshot.findFirst({
       where: {
         orgId: org.id,

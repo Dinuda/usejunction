@@ -17,7 +17,7 @@ vi.mock("@usejunction/db", () => ({
 }));
 
 vi.mock("@/lib/analytics/query", () => ({
-  invalidateAllAnalyticsCaches: mocks.invalidateAll,
+  purgeAllExpiredAnalyticsCaches: mocks.invalidateAll,
 }));
 
 vi.mock("@/lib/analytics/snapshots", () => ({

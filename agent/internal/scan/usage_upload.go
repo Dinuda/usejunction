@@ -68,7 +68,15 @@ func usageRowKey(row types.DailyUsage) string {
 	if source == "" {
 		source = "local_scan"
 	}
-	return fmt.Sprintf("%s|%s|%s|%s", row.ToolName, row.Date, row.Model, source)
+	repo := ""
+	if row.Repository != nil {
+		repo = fmt.Sprintf("%s/%s/%s",
+			strings.ToLower(strings.TrimSpace(row.Repository.Host)),
+			strings.TrimSpace(row.Repository.Owner),
+			strings.TrimSpace(row.Repository.Name),
+		)
+	}
+	return fmt.Sprintf("%s|%s|%s|%s|%s", row.ToolName, row.Date, row.Model, source, repo)
 }
 
 func usageRowFingerprint(row types.DailyUsage) string {

@@ -141,6 +141,7 @@ func collectAndReportWithProgress(
 			fmt.Printf("[report] models: %v\n", err)
 		}
 	}
+	usageIncomplete := false
 	if len(usageReports) > 0 {
 		uploaded, remaining, uploadErr := reportLocalUsageDelta(api, cfg, usageReports, func(drain, pending, scanned int) {
 			progress("upload-usage", fmt.Sprintf("Uploading %d of %d queued usage rows (scanned %d, last %d days)", drain, pending, scanned, scan.UsageLookbackDays))
@@ -163,6 +164,9 @@ func collectAndReportWithProgress(
 				fmt.Printf("[report] usage upload: %v\n", uploadErr)
 			}
 		}
+		if remaining > 0 || uploadErr != nil {
+			usageIncomplete = true
+		}
 	}
 
 	progress("work-extract", "Checking work extraction policy")
@@ -170,11 +174,16 @@ func collectAndReportWithProgress(
 		fmt.Printf("[report] work extraction: %v\n", workErr)
 	}
 
-	if forceFull && sealedDay != "" && sealedDay > lastFullDay && cfgErr == nil && cfg != nil {
+	if !usageIncomplete && forceFull && sealedDay != "" && sealedDay > lastFullDay && cfgErr == nil && cfg != nil {
 		cfg.LastFullUsageRescanDay = sealedDay
 		if saveErr := config.Save(cfg); saveErr != nil {
 			warnings = append(warnings, fmt.Sprintf("persist lastFullUsageRescanDay: %v", saveErr))
 		}
+	}
+
+	if usageIncomplete {
+		progress("complete", "Sync complete with usage still queued")
+		return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, errUsageQueuePending
 	}
 
 	progress("complete", "Sync complete")

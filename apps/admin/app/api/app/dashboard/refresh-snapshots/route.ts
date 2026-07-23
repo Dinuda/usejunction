@@ -3,9 +3,12 @@ import { requireAppPrincipal } from "@/lib/api/app-auth";
 import { appData, appError, timingHeader } from "@/lib/api/app-response";
 import { rematerializeOrgSnapshots } from "@/lib/analytics/snapshots";
 
+/** Allow Sync now to clear large dirty backlogs without hitting the default 10s limit. */
+export const maxDuration = 60;
+
 /**
  * Manual Sync now completion: rematerialize dirty snapshot days for the active org
- * (including today/yesterday). Background ingest only marks dirty.
+ * (including today/yesterday). Background ingest only marks dirty by default.
  */
 export async function POST(request: NextRequest) {
   const started = performance.now();
@@ -17,7 +20,13 @@ export async function POST(request: NextRequest) {
     const result = await rematerializeOrgSnapshots(principal.orgId, { includeToday: true });
     const loaded = performance.now();
     return appData(
-      { ok: true as const, ...result },
+      {
+        ok: true as const,
+        dirtyDays: result.dirtyDays,
+        rows: result.rows,
+        dirtyRemaining: result.dirtyRemaining,
+        dashboardReady: result.dirtyRemaining === 0,
+      },
       {
         serverTiming: timingHeader({
           auth: authenticated - started,

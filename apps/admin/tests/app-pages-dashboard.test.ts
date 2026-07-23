@@ -51,6 +51,9 @@ beforeEach(() => {
     lastUsageSyncAt: null,
     lastAccountSyncAt: null,
     deviceCount: 1,
+    dashboardReady: true,
+    dirtyDayCount: 0,
+    snapshotLagSeconds: null,
   });
   mocks.resolveLinkedDeveloperId.mockResolvedValue("dev-1");
   mocks.getOrgOverview.mockResolvedValue({ data: { hasActivity: true } });

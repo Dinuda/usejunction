@@ -1,4 +1,5 @@
 import { prisma } from "@usejunction/db";
+import { getDashboardReadiness } from "@/lib/analytics/snapshots/readiness";
 import { canonicalToolKey, findCatalogTool } from "@/lib/tools/catalog";
 
 export type LocalSyncContext = {
@@ -9,6 +10,9 @@ export type LocalSyncContext = {
   needsPlanSync: boolean;
   /** Active (non-decommissioned) devices for the current developer. */
   deviceCount: number;
+  dashboardReady: boolean;
+  dirtyDayCount: number;
+  snapshotLagSeconds: number | null;
 };
 
 function catalogToolDetectedWithoutPlan(input: {
@@ -134,7 +138,10 @@ export async function getLocalSyncPanelContext(
 ): Promise<LocalSyncContext | null> {
   const developer = await loadDeveloperSyncDevices(orgId, authUserId);
   if (!developer) return null;
-  const summary = summarizeDeveloperDevices(developer.devices);
+  const [summary, readiness] = await Promise.all([
+    Promise.resolve(summarizeDeveloperDevices(developer.devices)),
+    getDashboardReadiness(orgId),
+  ]);
   return {
     lastSeenAt: summary.lastSeenAt,
     lastUsageSyncAt: summary.lastUsageSyncAt,
@@ -142,14 +149,20 @@ export async function getLocalSyncPanelContext(
     hasLocalEndpoint: summary.hasLocalEndpoint,
     needsPlanSync: summary.personalNeedsPlanSync,
     deviceCount: developer.devices.length,
+    dashboardReady: readiness.dashboardReady,
+    dirtyDayCount: readiness.dirtyDayCount,
+    snapshotLagSeconds: readiness.snapshotLagSeconds,
   };
 }
 
 export async function getLocalSyncContext(orgId: string, authUserId: string): Promise<LocalSyncContext | null> {
   const developer = await loadDeveloperSyncDevices(orgId, authUserId);
   if (!developer) return null;
-  const summary = summarizeDeveloperDevices(developer.devices);
-  const orgWideNeedsPlanSync = await orgNeedsPlanSync(orgId);
+  const [summary, orgWideNeedsPlanSync, readiness] = await Promise.all([
+    Promise.resolve(summarizeDeveloperDevices(developer.devices)),
+    orgNeedsPlanSync(orgId),
+    getDashboardReadiness(orgId),
+  ]);
 
   return {
     lastSeenAt: summary.lastSeenAt,
@@ -158,5 +171,8 @@ export async function getLocalSyncContext(orgId: string, authUserId: string): Pr
     hasLocalEndpoint: summary.hasLocalEndpoint,
     needsPlanSync: summary.personalNeedsPlanSync || orgWideNeedsPlanSync,
     deviceCount: developer.devices.length,
+    dashboardReady: readiness.dashboardReady,
+    dirtyDayCount: readiness.dirtyDayCount,
+    snapshotLagSeconds: readiness.snapshotLagSeconds,
   };
 }

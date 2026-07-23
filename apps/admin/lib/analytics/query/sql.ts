@@ -39,7 +39,10 @@ const measureValueSql: Record<UsageMeasure, Prisma.Sql> = {
   commits: Prisma.sql`COALESCE(SUM(CASE WHEN effective_metric_kind = 'productivity' THEN commits ELSE 0 END), 0)::bigint`,
   pullRequests: Prisma.sql`COALESCE(SUM(CASE WHEN effective_metric_kind = 'productivity' THEN pull_requests ELSE 0 END), 0)::bigint`,
   costMicros: Prisma.sql`COALESCE(SUM(CASE WHEN selected_cost THEN cost_micros ELSE 0 END), 0)::bigint::text`,
-  activeDevelopers: Prisma.sql`COUNT(DISTINCT developer_id) FILTER (WHERE selected_activity AND requests > 0)::int`,
+  activeDevelopers: Prisma.sql`COUNT(DISTINCT developer_id) FILTER (
+    WHERE selected_activity
+      AND (requests > 0 OR input_tokens > 0 OR output_tokens > 0 OR cost_micros > 0 OR sessions > 0 OR active_seconds > 0)
+  )::int`,
 };
 
 const measureOrderSql: Record<UsageMeasure, Prisma.Sql> = {

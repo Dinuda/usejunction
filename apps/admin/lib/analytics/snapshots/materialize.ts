@@ -132,10 +132,18 @@ function parseDeveloperIds(value: unknown): string[] {
   return [];
 }
 
+/** Cap each CTE window so large rematerialize jobs stay within serverless budgets. */
+const MATERIALIZE_CHUNK_DAYS = 14;
+
+async function withOrgDbLock(orgId: string, work: () => Promise<void>): Promise<void> {
+  // In-process serialization. Cross-instance races are bounded by upsert/skipDuplicates
+  // and Sync now / cron ownership of rematerialize (read path no longer rematerializes).
+  await withOrgLock(orgId, work);
+}
+
 /**
- * Materialize an entire [from, to] window in one SQL pass (one CTE over the range),
- * then replace snapshot rows for those days. Used by cron / Sync now — never from
- * the dashboard read path (which only stub-fills missing days).
+ * Materialize an entire [from, to] window (chunked CTEs), then replace snapshot
+ * rows for those days. Used by cron / Sync now.
  */
 export async function materializeOrgUsageRange(
   orgId: string,
@@ -147,6 +155,40 @@ export async function materializeOrgUsageRange(
   const toDay = utcDay(to);
   if (toDay.getTime() < fromDay.getTime()) return 0;
 
+  let total = 0;
+  await withOrgDbLock(orgId, async () => {
+    total = await materializeOrgUsageRangeChunks(orgId, fromDay, toDay, metricVersion);
+  });
+  return total;
+}
+
+async function materializeOrgUsageRangeChunks(
+  orgId: string,
+  fromDay: Date,
+  toDay: Date,
+  metricVersion: string,
+): Promise<number> {
+  let total = 0;
+  for (
+    let cursor = fromDay.getTime();
+    cursor <= toDay.getTime();
+    cursor += MATERIALIZE_CHUNK_DAYS * 86_400_000
+  ) {
+    const chunkFrom = new Date(cursor);
+    const chunkTo = new Date(
+      Math.min(cursor + (MATERIALIZE_CHUNK_DAYS - 1) * 86_400_000, toDay.getTime()),
+    );
+    total += await materializeOrgUsageRangeUnlocked(orgId, chunkFrom, chunkTo, metricVersion);
+  }
+  return total;
+}
+
+async function materializeOrgUsageRangeUnlocked(
+  orgId: string,
+  fromDay: Date,
+  toDay: Date,
+  metricVersion: string,
+): Promise<number> {
   const fromKey = isoDay(fromDay);
   const toKey = isoDay(toDay);
   const now = new Date();
@@ -202,7 +244,7 @@ export async function materializeOrgUsageRange(
           PARTITION BY date, developer_id, provider, product, tool_name, model
         ) AS best_activity_priority,
         MIN(cost_priority) FILTER (WHERE cost_micros > 0) OVER (
-          PARTITION BY date, provider
+          PARTITION BY date, provider, tool_name, model
         ) AS best_cost_priority
       FROM classified
     ), canonical AS (
@@ -230,9 +272,16 @@ export async function materializeOrgUsageRange(
         COALESCE(SUM(CASE WHEN selected_cost AND effective_cost_kind = 'verified_usage' THEN cost_micros ELSE 0 END), 0)::bigint AS "verifiedUsageCostMicros",
         COALESCE(SUM(CASE WHEN selected_cost AND effective_cost_kind = 'estimated_api' THEN cost_micros ELSE 0 END), 0)::bigint AS "estimatedApiCostMicros",
         COALESCE(SUM(CASE WHEN selected_cost AND effective_cost_kind = 'actual_spend' THEN cost_micros ELSE 0 END), 0)::bigint AS "actualSpendCostMicros",
-        COUNT(DISTINCT developer_id) FILTER (WHERE selected_activity AND requests > 0)::int AS "activeDevelopers",
+        COUNT(DISTINCT developer_id) FILTER (
+          WHERE selected_activity
+            AND (requests > 0 OR input_tokens > 0 OR output_tokens > 0 OR cost_micros > 0 OR sessions > 0 OR active_seconds > 0)
+        )::int AS "activeDevelopers",
         COALESCE(
-          jsonb_agg(DISTINCT developer_id) FILTER (WHERE selected_activity AND requests > 0 AND developer_id IS NOT NULL),
+          jsonb_agg(DISTINCT developer_id) FILTER (
+            WHERE selected_activity
+              AND developer_id IS NOT NULL
+              AND (requests > 0 OR input_tokens > 0 OR output_tokens > 0 OR cost_micros > 0 OR sessions > 0 OR active_seconds > 0)
+          ),
           '[]'::jsonb
         ) AS "activeDeveloperIds",
         MAX(observed_at) AS "sourceObservedThrough"
@@ -354,6 +403,7 @@ export async function materializeOrgUsageRange(
   const finalRows = [...deduped.values()];
 
   await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`org-snap:${orgId}`}))`;
     await tx.orgUsageDaySnapshot.deleteMany({
       where: {
         orgId,
@@ -456,7 +506,7 @@ export async function materializeDirtyOrgUsageDays(
 export async function rematerializeOrgSnapshots(
   orgId: string,
   options: { metricVersion?: string; includeToday?: boolean } = {},
-): Promise<{ dirtyDays: number; rows: number }> {
+): Promise<{ dirtyDays: number; rows: number; dirtyRemaining: number }> {
   const metricVersion = options.metricVersion ?? ORG_DAY_SNAPSHOT_VERSION;
   const today = utcDay(new Date());
   const yesterday = new Date(today.getTime() - 86_400_000);
@@ -477,7 +527,10 @@ export async function rematerializeOrgSnapshots(
     rows += result.rows;
     if (result.days === 0) break;
   }
-  return { dirtyDays, rows };
+  const dirtyRemaining = await prisma.analyticsDirtyDay.count({
+    where: { orgId, metricVersion },
+  });
+  return { dirtyDays, rows, dirtyRemaining };
 }
 
 /**
@@ -538,39 +591,55 @@ async function findEmptyStubDaysWithUsage(
 }
 
 /**
- * Read-path seal: insert empty org-total stubs for missing days.
- * Does not rematerialize warm/sealed days (cron / Sync now own freshness).
- * Fail-safe: if stubs conflict with usage_daily (e.g. snaps wiped), log+Slack and
- * rematerialize only the conflicting days so the dashboard recovers.
+ * Read-path seal: insert empty org-total stubs for missing days that are not
+ * already dirty. Does not rematerialize on the hot path — marks conflicting
+ * stubs dirty so Sync now / cron heal them (partialData via readiness).
  */
 export async function ensureOrgUsageDaySnapshots(
   orgId: string,
   from: Date,
   to: Date,
   options: { metricVersion?: string } = {},
-): Promise<{ stubbed: number; hadCoverage: boolean; recovered: number }> {
+): Promise<{ stubbed: number; hadCoverage: boolean; recovered: number; pendingDirty: number }> {
   const metricVersion = options.metricVersion ?? ORG_DAY_SNAPSHOT_VERSION;
   const fromDay = utcDay(from);
   const toDay = utcDay(to);
   let stubbed = 0;
   let hadCoverage = false;
   let recovered = 0;
+  let pendingDirty = 0;
 
   try {
-    await withOrgLock(orgId, async () => {
-      const existing = await prisma.orgUsageDaySnapshot.findMany({
-        where: {
-          orgId,
-          metricVersion,
-          toolName: "",
-          developerId: "",
-          date: { gte: fromDay, lte: toDay },
-        },
-        select: { date: true },
-      });
+    await withOrgDbLock(orgId, async () => {
+      const [existing, dirtyRows] = await Promise.all([
+        prisma.orgUsageDaySnapshot.findMany({
+          where: {
+            orgId,
+            metricVersion,
+            toolName: "",
+            developerId: "",
+            date: { gte: fromDay, lte: toDay },
+          },
+          select: { date: true },
+        }),
+        prisma.analyticsDirtyDay.findMany({
+          where: {
+            orgId,
+            metricVersion,
+            date: { gte: fromDay, lte: toDay },
+          },
+          select: { date: true },
+        }),
+      ]);
       hadCoverage = existing.length > 0;
       const have = new Set(existing.map((row) => isoDay(row.date)));
-      const missing = eachDayInclusive(fromDay, toDay).filter((day) => !have.has(isoDay(day)));
+      const dirtyKeys = new Set(dirtyRows.map((row) => isoDay(row.date)));
+      pendingDirty = dirtyKeys.size;
+
+      // Never seal authoritative zeros over dirty days — prefer gaps / "updating".
+      const missing = eachDayInclusive(fromDay, toDay).filter(
+        (day) => !have.has(isoDay(day)) && !dirtyKeys.has(isoDay(day)),
+      );
 
       if (missing.length) {
         const now = new Date();
@@ -597,13 +666,14 @@ export async function ensureOrgUsageDaySnapshots(
         stubbed = missing.length;
       }
 
+      // Off hot-path rematerialize: mark corrupt stubs dirty for Sync now / cron.
       const corruptDays = await findEmptyStubDaysWithUsage(orgId, fromDay, toDay, metricVersion);
       if (!corruptDays.length) return;
 
       alertSnapshotFailsafe(
         "analytics/snapshots_missing",
         orgId,
-        new Error("org-day snapshots empty while usage_daily has data; rematerializing"),
+        new Error("org-day snapshots empty while usage_daily has data; marking dirty"),
         {
           from: isoDay(fromDay),
           to: isoDay(toDay),
@@ -613,18 +683,19 @@ export async function ensureOrgUsageDaySnapshots(
         },
       );
 
-      for (const range of collapseDaysToRanges(corruptDays)) {
-        recovered += await materializeOrgUsageRange(orgId, range.from, range.to, metricVersion);
-      }
+      const marked = await markOrgUsageDaysDirty(orgId, corruptDays, metricVersion);
+      pendingDirty += marked.length;
+      recovered = 0;
     });
   } catch (error) {
     alertSnapshotFailsafe("analytics/snapshots_inaccessible", orgId, error, {
       from: isoDay(fromDay),
       to: isoDay(toDay),
     });
+    // Last resort: rematerialize under lock (rare — snaps table inaccessible / schema drift).
     try {
-      await withOrgLock(orgId, async () => {
-        recovered = await materializeOrgUsageRange(orgId, fromDay, toDay, metricVersion);
+      await withOrgDbLock(orgId, async () => {
+        recovered = await materializeOrgUsageRangeChunks(orgId, fromDay, toDay, metricVersion);
       });
     } catch (retryError) {
       alertSnapshotFailsafe("analytics/snapshots_recover_failed", orgId, retryError, {
@@ -635,7 +706,7 @@ export async function ensureOrgUsageDaySnapshots(
     }
   }
 
-  return { stubbed, hadCoverage, recovered };
+  return { stubbed, hadCoverage, recovered, pendingDirty };
 }
 
 /** Mark yesterday+today dirty for orgs that have recent usage (daily seal helper). */

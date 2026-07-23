@@ -281,8 +281,8 @@ func (s *Server) completedDebouncedJob(last time.Time) *syncJob {
 	now := time.Now().UTC()
 	return &syncJob{
 		ID:         randomJobID(),
-		Status:     "succeeded",
-		Step:       "complete",
+		Status:     "skipped",
+		Step:       "debounce",
 		Message:    "Already synced recently",
 		StartedAt:  last.UTC().Format(time.RFC3339),
 		UpdatedAt:  now.Format(time.RFC3339),

@@ -23,6 +23,10 @@ const (
 	collectionInterval = 30 * time.Minute
 )
 
+// errUsageQueuePending means the sync uploaded something but left rows queued.
+// Treated as non-fatal for UI, but must not suppress the next collect cycle.
+var errUsageQueuePending = errors.New("usage upload queue still pending")
+
 type usageRunTracker struct {
 	mu             sync.RWMutex
 	lastSuccessful time.Time
@@ -36,11 +40,27 @@ func (t *usageRunTracker) markSuccessful(at time.Time) {
 	t.mu.Unlock()
 }
 
+func (t *usageRunTracker) markIncomplete() {
+	t.mu.Lock()
+	// Clear success watermark so the next heartbeat/collection retries soon.
+	t.lastSuccessful = time.Time{}
+	t.mu.Unlock()
+}
+
 func (t *usageRunTracker) due(now time.Time, maxAge time.Duration) bool {
 	t.mu.RLock()
 	lastSuccessful := t.lastSuccessful
 	t.mu.RUnlock()
 	return lastSuccessful.IsZero() || now.Sub(lastSuccessful) >= maxAge
+}
+
+// collectGate serializes all collect+report paths (tickers + localsync).
+var collectGate sync.Mutex
+
+func withCollectGate(fn func() (int, int, int, int, []string, error)) (int, int, int, int, []string, error) {
+	collectGate.Lock()
+	defer collectGate.Unlock()
+	return fn()
 }
 
 var reportCmd = &cobra.Command{
@@ -70,12 +90,20 @@ var daemonCmd = &cobra.Command{
 		api := client.New(cfg)
 		usageRuns := &usageRunTracker{}
 		syncFn := func(ctx context.Context, refresh bool, progress localsync.ProgressFunc) (int, int, int, int, []string, error) {
-			startedAt := time.Now()
-			tools, accounts, quotas, usage, warnings, syncErr := collectAndReportWithProgress(ctx, api, refresh, progress)
-			if syncErr == nil {
-				usageRuns.markSuccessful(startedAt)
-			}
-			return tools, accounts, quotas, usage, warnings, syncErr
+			return withCollectGate(func() (int, int, int, int, []string, error) {
+				startedAt := time.Now()
+				tools, accounts, quotas, usage, warnings, syncErr := collectAndReportWithProgress(ctx, api, refresh, progress)
+				if syncErr == nil {
+					usageRuns.markSuccessful(startedAt)
+					return tools, accounts, quotas, usage, warnings, nil
+				}
+				if errors.Is(syncErr, errUsageQueuePending) {
+					usageRuns.markIncomplete()
+					// Surface as success to Sync now UI (warnings carry the queue detail).
+					return tools, accounts, quotas, usage, warnings, nil
+				}
+				return tools, accounts, quotas, usage, warnings, syncErr
+			})
 		}
 
 		go func() {

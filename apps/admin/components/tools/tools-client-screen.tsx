@@ -79,6 +79,8 @@ function PersonalTools({
             lastSeenAt={sync.lastSeenAt}
             lastUsageSyncAt={sync.lastUsageSyncAt}
             lastAccountSyncAt={sync.lastAccountSyncAt}
+            dashboardReady={sync.dashboardReady}
+            dirtyDayCount={sync.dirtyDayCount}
           />
         </div>
       ) : null}
@@ -179,6 +181,9 @@ export default function ToolsClientScreen() {
             hasLocalEndpoint: personal.sync.hasLocalEndpoint,
             needsPlanSync: personal.sync.needsPlanSync,
             deviceCount: personal.developer.devices.length,
+            dashboardReady: personal.sync.dashboardReady ?? true,
+            dirtyDayCount: personal.sync.dirtyDayCount ?? 0,
+            snapshotLagSeconds: personal.sync.snapshotLagSeconds ?? null,
           }}
         />
       );
@@ -212,6 +217,8 @@ export default function ToolsClientScreen() {
             lastSeenAt={syncContext.lastSeenAt}
             lastUsageSyncAt={syncContext.lastUsageSyncAt}
             lastAccountSyncAt={syncContext.lastAccountSyncAt}
+            dashboardReady={syncContext.dashboardReady}
+            dirtyDayCount={syncContext.dirtyDayCount}
           />
         ) : null}
       </SubscriptionInventory>

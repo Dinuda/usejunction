@@ -20,6 +20,7 @@ type Device = {
   hostname: string;
   os: string;
   lastSeenAt: string;
+  lastUsageSyncAt?: string | null;
   toolInstallations?: Array<{ toolName: string; version?: string | null }>;
 };
 
@@ -51,9 +52,13 @@ export type DeviceConnectCardHandle = {
   checkConnection: () => void;
 };
 
-/** Device is ready once enrolled and the agent has reported at least one tool. */
+/** Device is ready once enrolled, tools reported, and first usage sync landed (or timed out waiting). */
 function isReadyDevice(device: Device | null | undefined): boolean {
   return Boolean(device && (device.toolInstallations?.length ?? 0) > 0);
+}
+
+function hasUsageReady(device: Device | null | undefined): boolean {
+  return Boolean(device?.lastUsageSyncAt);
 }
 
 export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(function DeviceConnectCard(
@@ -103,6 +108,13 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
     }
 
     if (candidate && !isReadyDevice(candidate)) {
+      setWaitingForTools(true);
+      setDevice(candidate);
+      return;
+    }
+
+    if (candidate && isReadyDevice(candidate) && !hasUsageReady(candidate)) {
+      // Tools found — keep polling briefly until first usage ingest lands.
       setWaitingForTools(true);
       setDevice(candidate);
       return;
@@ -200,27 +212,36 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
 
   useEffect(() => {
     if (pollAfterCopy) return;
-    if (isReadyDevice(device)) return;
+    if (isReadyDevice(device) && hasUsageReady(device)) return;
 
     const interval = window.setInterval(() => void checkEnrollment(), POLL_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, [checkEnrollment, device, pollAfterCopy]);
 
   useEffect(() => {
-    if (!pollAfterCopy || pollSession === 0 || isReadyDevice(device)) return;
+    if (!pollAfterCopy || pollSession === 0) return;
+    if (isReadyDevice(device) && hasUsageReady(device)) return;
 
     setIsPolling(true);
     setWaitingForTools(false);
     void checkEnrollment();
 
     const interval = window.setInterval(() => void checkEnrollment(), POLL_INTERVAL_MS);
-    const timeout = window.setTimeout(() => setIsPolling(false), POLL_DURATION_MS);
+    const timeout = window.setTimeout(() => {
+      setIsPolling(false);
+      // Soft-complete on timeout once tools are present — usage may still be uploading.
+      if (device && isReadyDevice(device) && notifiedRef.current !== device.id) {
+        notifiedRef.current = device.id;
+        setWaitingForTools(false);
+        onConnected?.(device);
+      }
+    }, POLL_DURATION_MS);
 
     return () => {
       window.clearInterval(interval);
       window.clearTimeout(timeout);
     };
-  }, [checkEnrollment, device, pollAfterCopy, pollSession]);
+  }, [checkEnrollment, device, onConnected, pollAfterCopy, pollSession]);
 
   const handleCopied = useCallback(() => {
     if (!pollAfterCopy) return;

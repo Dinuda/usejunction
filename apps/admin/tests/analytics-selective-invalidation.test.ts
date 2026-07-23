@@ -43,7 +43,7 @@ test("selective invalidation marks dirty days and keeps historical cache rows", 
       ],
     });
 
-    await invalidateAnalyticsCache(org.id, {
+    const result = await invalidateAnalyticsCache(org.id, {
       dirtyDates: ["2026-07-20"],
     });
 
@@ -54,12 +54,13 @@ test("selective invalidation marks dirty days and keeps historical cache rows", 
     const keys = remaining.map((row) => row.key).sort();
     assert.deepEqual(keys, [historicalKey]);
 
+    // Small dirty sets rematerialize inline; dirty markers are cleared after.
+    assert.equal(result.rematerialized, true);
     const dirty = await prisma.analyticsDirtyDay.findMany({
       where: { orgId: org.id, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
       select: { date: true },
     });
-    assert.equal(dirty.length, 1);
-    assert.equal(dirty[0]?.date.toISOString().slice(0, 10), "2026-07-20");
+    assert.equal(dirty.length, 0);
   } finally {
     await prisma.organization.delete({ where: { id: org.id } });
   }

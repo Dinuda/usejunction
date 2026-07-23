@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
 import { jsonSafe } from "@/lib/api/app-response";
+import { getDashboardReadiness } from "@/lib/analytics/snapshots/readiness";
 import { ACTIVE_ORG_COOKIE } from "@/lib/require-organization";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
 import { computeOrgBillingStatus } from "@/lib/saas-billing/status";
@@ -33,6 +34,9 @@ export type WorkspaceContextPayload = {
     lastUsageSyncAt: string | null;
     lastAccountSyncAt: string | null;
     watermark: string;
+    dashboardReady: boolean;
+    dirtyDayCount: number;
+    snapshotLagSeconds: number | null;
   };
   sessionWorkspaceSyncRequired: boolean;
 };
@@ -98,11 +102,14 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
     lastSeenAt: null as string | null,
     lastUsageSyncAt: null as string | null,
     lastAccountSyncAt: null as string | null,
-    watermark: "0|0|||",
+    watermark: "0|0||||0|1",
+    dashboardReady: true,
+    dirtyDayCount: 0,
+    snapshotLagSeconds: null as number | null,
   };
 
   if (current) {
-    const [deviceAgg, toolCount] = await Promise.all([
+    const [deviceAgg, toolCount, readiness] = await Promise.all([
       prisma.device.aggregate({
         where: { orgId: current.orgId, decommissionedAt: null },
         _count: { id: true },
@@ -115,6 +122,7 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
       prisma.toolInstallation.count({
         where: { orgId: current.orgId, detected: true },
       }),
+      getDashboardReadiness(current.orgId),
     ]);
     const lastSeenAt = latestIso(deviceAgg._max.lastSeenAt);
     const lastUsageSyncAt = latestIso(deviceAgg._max.lastUsageSyncAt);
@@ -131,7 +139,12 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
         lastSeenAt,
         lastUsageSyncAt,
         lastAccountSyncAt,
+        dirtyDayCount: readiness.dirtyDayCount,
+        dashboardReady: readiness.dashboardReady,
       }),
+      dashboardReady: readiness.dashboardReady,
+      dirtyDayCount: readiness.dirtyDayCount,
+      snapshotLagSeconds: readiness.snapshotLagSeconds,
     };
   }
 

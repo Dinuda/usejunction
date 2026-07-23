@@ -22,7 +22,7 @@ beforeEach(() => {
     developerId: "dev-1",
     role: "admin",
   });
-  mocks.rematerializeOrgSnapshots.mockResolvedValue({ dirtyDays: 3, rows: 6 });
+  mocks.rematerializeOrgSnapshots.mockResolvedValue({ dirtyDays: 3, rows: 6, dirtyRemaining: 0 });
 });
 
 test("sync-now refresh-snapshots rematerializes dirty days for the session org", async () => {
@@ -38,6 +38,8 @@ test("sync-now refresh-snapshots rematerializes dirty days for the session org",
   const body = await response.json();
   assert.equal(body.data.ok, true);
   assert.equal(body.data.dirtyDays, 3);
+  assert.equal(body.data.dirtyRemaining, 0);
+  assert.equal(body.data.dashboardReady, true);
   assert.equal(mocks.rematerializeOrgSnapshots.mock.calls.length, 1);
   assert.deepEqual(mocks.rematerializeOrgSnapshots.mock.calls[0], [
     "org-sync-1",

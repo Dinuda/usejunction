@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { invalidateAllAnalyticsCaches } from "@/lib/analytics/query";
+import { purgeAllExpiredAnalyticsCaches } from "@/lib/analytics/query";
 import { logServerError } from "@/lib/errors/public";
 import { setFullUsageRescanDay, utcDayString } from "@/lib/runtime-settings";
 import {
@@ -55,7 +55,7 @@ async function handle(req: NextRequest) {
       snapshotDays += result.days;
     }
 
-    const cachesInvalidated = await invalidateAllAnalyticsCaches();
+    const cachesInvalidated = await purgeAllExpiredAnalyticsCaches();
     return NextResponse.json({
       ok: true,
       day,

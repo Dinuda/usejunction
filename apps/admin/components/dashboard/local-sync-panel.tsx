@@ -29,7 +29,7 @@ type LocalSyncInfo =
 type LocalSyncJob = {
   ok?: boolean;
   jobId?: string;
-  status?: "running" | "succeeded" | "failed";
+  status?: "running" | "succeeded" | "failed" | "skipped";
   step?: string;
   message?: string;
   tools?: number;
@@ -45,6 +45,16 @@ type LocalSyncJob = {
 type LocalAgentHealth = {
   ok?: boolean;
   syncProtocol?: number;
+};
+
+type SnapshotRefreshResult = {
+  ok?: boolean;
+  dirtyDays?: number;
+  rows?: number;
+  dirtyRemaining?: number;
+  dashboardReady?: boolean;
+  error?: string;
+  message?: string;
 };
 
 function sleep(ms: number) {
@@ -107,9 +117,7 @@ function SyncDetailLine({
   );
 }
 
-function formatSyncDetail(body: {
-  warnings?: string[];
-}) {
+function formatSyncDetail(body: { warnings?: string[] }) {
   if (!body.warnings?.length) return null;
   return `Synced with ${body.warnings.length} warning${body.warnings.length === 1 ? "" : "s"}.`;
 }
@@ -136,26 +144,79 @@ function parseSyncDetail(detail: string): { toolKey: string | null; label: strin
   return { toolKey: null, label: detail };
 }
 
+async function refreshSnapshots(): Promise<
+  { ok: true; result: SnapshotRefreshResult } | { ok: false; message: string }
+> {
+  try {
+    const res = await fetch("/api/app/dashboard/refresh-snapshots", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "x-requested-with": "usejunction-web" },
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      data?: SnapshotRefreshResult;
+      error?: string;
+      message?: string;
+    };
+    if (!res.ok) {
+      return {
+        ok: false,
+        message: body.message ?? body.error ?? "Could not refresh dashboard snapshots.",
+      };
+    }
+    return { ok: true, result: body.data ?? {} };
+  } catch {
+    return { ok: false, message: "Could not refresh dashboard snapshots." };
+  }
+}
+
 export function LocalSyncPanel({
   lastSeenAt,
   lastUsageSyncAt,
   lastAccountSyncAt,
+  dashboardReady,
+  dirtyDayCount,
 }: {
   lastSeenAt?: string | null;
   lastUsageSyncAt?: string | null;
   lastAccountSyncAt?: string | null;
+  dashboardReady?: boolean;
+  dirtyDayCount?: number;
 }) {
   const router = useRouter();
   const invalidateAppData = useInvalidateAppData();
   const [pending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "syncing" | "ok" | "unreachable" | "error">("idle");
   const [detail, setDetail] = useState<string | null>(null);
-  const lastSuccessfulSyncAt = latestTimestamp(lastUsageSyncAt, lastAccountSyncAt) ?? lastSeenAt;
+  const uploadedAt = latestTimestamp(lastUsageSyncAt, lastAccountSyncAt) ?? lastSeenAt;
+  const ready = dashboardReady !== false && !(dirtyDayCount && dirtyDayCount > 0);
 
   async function loadInfo(): Promise<LocalSyncInfo | null> {
     const res = await fetch("/api/me/local-sync", { cache: "no-store" });
     if (!res.ok) return null;
     return (await res.json()) as LocalSyncInfo;
+  }
+
+  async function finishAfterAgentUpload(warnings?: string[]) {
+    setDetail("Updating dashboard…");
+    const refresh = await refreshSnapshots();
+    if (!refresh.ok) {
+      setStatus("error");
+      setDetail(refresh.message);
+      return;
+    }
+    const remaining = refresh.result.dirtyRemaining ?? 0;
+    if (remaining > 0) {
+      setStatus("ok");
+      setDetail(
+        `Uploaded · dashboard still updating (${remaining} day${remaining === 1 ? "" : "s"} pending)`,
+      );
+    } else {
+      setStatus("ok");
+      setDetail(formatSyncDetail({ warnings }) ?? "Dashboard updated");
+    }
+    await invalidateAppData();
+    startTransition(() => router.refresh());
   }
 
   async function syncNow() {
@@ -197,13 +258,17 @@ export function LocalSyncPanel({
 
       const url = new URL("/v1/sync", local.url);
       url.searchParams.set("refresh", "1");
-      const res = await fetchWithTimeout(url.toString(), {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${local.token}`,
-          "Content-Type": "application/json",
+      const res = await fetchWithTimeout(
+        url.toString(),
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${local.token}`,
+            "Content-Type": "application/json",
+          },
         },
-      }, 5_000);
+        5_000,
+      );
       if (!res.ok) {
         setStatus("error");
         setDetail(
@@ -223,15 +288,12 @@ export function LocalSyncPanel({
         setDetail("Local sync failed. Check the agent logs for details.");
         return;
       }
-      setStatus("ok");
-      setDetail(formatSyncDetail({ warnings: body.warnings }));
-      await fetch("/api/app/dashboard/refresh-snapshots", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "x-requested-with": "usejunction-web" },
-      }).catch(() => null);
-      await invalidateAppData();
-      startTransition(() => router.refresh());
+      if (body.debounced || body.status === "skipped") {
+        // Still refresh snapshots — upload may have landed without a new collect.
+        await finishAfterAgentUpload(body.warnings);
+        return;
+      }
+      await finishAfterAgentUpload(body.warnings);
     } catch (cause) {
       setStatus("unreachable");
       setDetail(
@@ -250,10 +312,14 @@ export function LocalSyncPanel({
       statusUrl.searchParams.set("jobId", jobId);
       let res: Response;
       try {
-        res = await fetchWithTimeout(statusUrl.toString(), {
-          method: "GET",
-          headers: { Authorization: `Bearer ${local.token}` },
-        }, 5_000);
+        res = await fetchWithTimeout(
+          statusUrl.toString(),
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${local.token}` },
+          },
+          5_000,
+        );
       } catch (cause) {
         setStatus("error");
         setDetail(
@@ -276,7 +342,9 @@ export function LocalSyncPanel({
       if (body.status === "running") {
         const longRunning = Date.now() - started > 45_000;
         setStatus("syncing");
-        setDetail(`${body.message ?? "Syncing tools, plans, and usage"}${longRunning ? " · still running" : ""}`);
+        setDetail(
+          `${body.message ?? "Syncing tools, plans, and usage"}${longRunning ? " · still running" : ""}`,
+        );
         continue;
       }
       if (body.status === "failed") {
@@ -284,28 +352,22 @@ export function LocalSyncPanel({
         setDetail("Local sync failed. Check the agent logs for details.");
         return;
       }
-      setStatus("ok");
-      setDetail(formatSyncDetail({ warnings: body.warnings }));
-      await fetch("/api/app/dashboard/refresh-snapshots", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "x-requested-with": "usejunction-web" },
-      }).catch(() => null);
-      await invalidateAppData();
-      startTransition(() => router.refresh());
+      await finishAfterAgentUpload(body.warnings);
       return;
     }
   }
 
+  const statusLabel = !ready
+    ? dirtyDayCount && dirtyDayCount > 0
+      ? `Updating dashboard · uploaded ${formatRelativeTime(uploadedAt)}`
+      : `Uploaded ${formatRelativeTime(uploadedAt)} · updating dashboard`
+    : `Last synced ${formatRelativeTime(uploadedAt)}`;
+
   return (
     <div className="flex items-center justify-between gap-2 sm:gap-4">
       <div className="min-w-0">
-        <p className="text-xs leading-5 text-muted-foreground sm:text-sm">
-          Last synced {formatRelativeTime(lastSuccessfulSyncAt)}
-        </p>
-        {detail ? (
-          <SyncDetailLine detail={detail} status={status} />
-        ) : null}
+        <p className="text-xs leading-5 text-muted-foreground sm:text-sm">{statusLabel}</p>
+        {detail ? <SyncDetailLine detail={detail} status={status} /> : null}
       </div>
       <Button
         type="button"

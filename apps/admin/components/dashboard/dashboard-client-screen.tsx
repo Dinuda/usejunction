@@ -385,6 +385,8 @@ function PersonalHome({
               lastSeenAt={data.sync.lastSeenAt}
               lastUsageSyncAt={data.sync.lastUsageSyncAt}
               lastAccountSyncAt={data.sync.lastAccountSyncAt}
+              dashboardReady={data.sync.dashboardReady}
+              dirtyDayCount={data.sync.dirtyDayCount}
             />
           </div>
           <div className="grid grid-cols-2 items-stretch gap-y-5 sm:gap-y-8 xl:grid-cols-4">
@@ -631,6 +633,8 @@ export default function DashboardPage() {
                 lastSeenAt={query.data.syncContext.lastSeenAt}
                 lastUsageSyncAt={query.data.syncContext.lastUsageSyncAt}
                 lastAccountSyncAt={query.data.syncContext.lastAccountSyncAt}
+                dashboardReady={query.data.syncContext.dashboardReady}
+                dirtyDayCount={query.data.syncContext.dirtyDayCount}
               />
             </div>
           ) : null}
@@ -675,6 +679,8 @@ export default function DashboardPage() {
             lastSeenAt={syncContext.lastSeenAt}
             lastUsageSyncAt={syncContext.lastUsageSyncAt}
             lastAccountSyncAt={syncContext.lastAccountSyncAt}
+            dashboardReady={syncContext.dashboardReady}
+            dirtyDayCount={syncContext.dirtyDayCount}
           />
         </div>
       ) : null}
