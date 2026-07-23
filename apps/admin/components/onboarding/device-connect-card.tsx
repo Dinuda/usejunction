@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { hasToolBrandIcon, ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { Panel } from "@/components/panel";
 import { PlatformCommand } from "@/components/onboarding/platform-command";
@@ -277,49 +277,63 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
   const expired = isEnrollmentTokenStale(expiresAt);
   const showWaiting = pollAfterCopy ? isPolling : true;
   const showStatusRow = !hideInlineStatus && (showWaiting || expired);
+  const enrolledAwaitingTools = waitingForTools && Boolean(device);
 
   return (
     <div className={cn(compact ? "space-y-0" : "space-y-4")}>
-      {!compact && (
+      {!compact && !enrolledAwaitingTools && (
         <div>
           <p className="text-sm font-medium">{title}</p>
           <p className="mt-1 text-xs text-muted-foreground">{description}</p>
         </div>
       )}
-      {commands ? (
-        <PlatformCommand
-          commands={commands}
-          resolveCommandForCopy={resolveCommandForCopy}
-          onCopied={handleCopied}
-          footerDescription={footerDescription}
-        />
-      ) : (
-        <div className="border border-brand-olive bg-brand-olive p-4 font-mono text-xs text-primary-foreground">Preparing commands…</div>
-      )}
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      {showStatusRow ? (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {showWaiting ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin text-primary" />
-              {waitingForTools
-                ? "Device enrolled — waiting for tool detection…"
-                : "Waiting for enroll…"}
-            </div>
-          ) : (
-            <div />
-          )}
-          {expired && (
-            <Button variant="outline" size="sm" onClick={() => void generateToken()}>
-              Refresh expired command
-            </Button>
-          )}
+      {enrolledAwaitingTools ? (
+        <div className="flex items-center gap-2 border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
+          <Check className="size-4 shrink-0" aria-hidden />
+          <span>Device enrolled — waiting for tool detection…</span>
+          <Loader2 className="size-4 shrink-0 animate-spin opacity-80" aria-hidden />
         </div>
-      ) : null}
+      ) : (
+        <>
+          {commands ? (
+            <PlatformCommand
+              commands={commands}
+              resolveCommandForCopy={resolveCommandForCopy}
+              onCopied={handleCopied}
+              footerDescription={footerDescription}
+            />
+          ) : (
+            <div className="border border-brand-olive bg-brand-olive p-4 font-mono text-xs text-primary-foreground">Preparing commands…</div>
+          )}
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          {showStatusRow ? (
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+              {showWaiting ? (
+                <div className="flex w-full items-center justify-between gap-3 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="size-4 animate-spin text-primary" />
+                    Waiting for enroll…
+                  </div>
+                  {!expired ? (
+                    <span className="shrink-0 font-mono text-[0.65rem]">Expires in 15 minutes</span>
+                  ) : null}
+                </div>
+              ) : (
+                <div />
+              )}
+              {expired && (
+                <Button variant="outline" size="sm" onClick={() => void generateToken()}>
+                  Refresh expired command
+                </Button>
+              )}
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 });

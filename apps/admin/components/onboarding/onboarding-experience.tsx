@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, Laptop, Loader2, Users } from "lucide-react";
+import Image from "next/image";
+import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { DeviceConnectCard } from "@/components/onboarding/device-connect-card";
 import { InviteTeamForm } from "@/components/onboarding/invite-team-form";
@@ -52,17 +53,19 @@ function TextLink({
 }
 
 function ChoiceCard({
-  icon: Icon,
+  iconSrc,
   title,
   description,
   onClick,
   primary = false,
+  dark = false,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  iconSrc: string;
   title: string;
   description: string;
   onClick: () => void;
   primary?: boolean;
+  dark?: boolean;
 }) {
   return (
     <button
@@ -72,33 +75,34 @@ function ChoiceCard({
         "group flex min-h-[9.5rem] flex-1 flex-col items-start gap-4 border p-4 text-left transition-colors",
         primary
           ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
-          : "border-border bg-card hover:border-primary/40 hover:bg-muted/40",
+          : dark
+            ? "border-foreground bg-foreground text-background hover:bg-foreground/90"
+            : "border-border bg-card hover:border-primary/40 hover:bg-muted/40",
       )}
     >
-      <span
-        className={cn(
-          "inline-flex size-9 items-center justify-center border",
-          primary
-            ? "border-primary-foreground/25 bg-primary-foreground/10"
-            : "border-border bg-muted/50",
-        )}
-      >
-        <Icon className={cn("size-4", primary ? "text-primary-foreground" : "text-primary")} />
-      </span>
+      <Image src={iconSrc} alt="" width={36} height={36} className="size-9 shrink-0" />
       <span className="mt-auto space-y-1.5">
         <span className="flex items-center gap-2 text-sm font-semibold tracking-tight">
           {title}
           <ArrowRight
             className={cn(
               "size-3.5 transition-transform group-hover:translate-x-0.5",
-              primary ? "text-primary-foreground/80" : "text-muted-foreground",
+              primary
+                ? "text-primary-foreground/80"
+                : dark
+                  ? "text-background/80"
+                  : "text-muted-foreground",
             )}
           />
         </span>
         <span
           className={cn(
             "block text-xs leading-5",
-            primary ? "text-primary-foreground/80" : "text-muted-foreground",
+            primary
+              ? "text-primary-foreground/80"
+              : dark
+                ? "text-background/80"
+                : "text-muted-foreground",
           )}
         >
           {description}
@@ -176,7 +180,6 @@ export function OnboardingExperience() {
         size="md"
         accent="cyan"
         contentAlign="top"
-        eyebrow="Invite pending"
         title="Finish your invite first."
         description="Open the invite link from your email or teammate before setting up a personal workspace."
         statement="Visibility before control."
@@ -194,7 +197,6 @@ export function OnboardingExperience() {
         size="md"
         accent="cyan"
         contentAlign="top"
-        eyebrow="Workspace setup"
         title="Loading your workspace."
         description="Checking devices and membership."
         statement="Visibility before control."
@@ -224,15 +226,13 @@ export function OnboardingExperience() {
         size="md"
         accent="cyan"
         contentAlign="top"
-        eyebrow="Connected"
         title={`${device.hostname} is live.`}
         description={`Reporting to ${workspaceName}. Open the dashboard to see tools and spend.`}
         statement="First signal. Then the rest."
       >
         <div className="space-y-5">
           <div className="border border-border bg-card px-4 py-3">
-            <p className="font-mono text-[0.65rem] uppercase tracking-[0.14em] text-primary">Device</p>
-            <p className="mt-2 text-sm font-medium">{device.hostname}</p>
+            <p className="text-sm font-medium">{device.hostname}</p>
             <p className="mt-1 text-xs text-muted-foreground">{device.os} · just now</p>
             {connectedTools.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
@@ -258,9 +258,8 @@ export function OnboardingExperience() {
         size="md"
         accent="cyan"
         contentAlign="top"
-        eyebrow="Connect"
         title="Run this in Terminal."
-        description="Copy the command. We’ll detect the machine automatically."
+        description="Copy the command and paste it in Terminal. We’ll detect the machine automatically."
         statement="One command. Real data."
       >
         <div className="space-y-5">
@@ -272,16 +271,22 @@ export function OnboardingExperience() {
               void refresh("poll");
             }}
           />
-          <p className="font-mono text-[0.65rem] text-muted-foreground">
-            Enrollment code · expires in 15 minutes
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-1">
+          <div className="space-y-1 pt-2 text-center text-sm text-muted-foreground">
             {isFounder ? (
-              <TextLink onClick={() => setPath("invite")}>Invite the team instead</TextLink>
+              <button
+                type="button"
+                onClick={() => setPath("invite")}
+                className="inline-flex items-center gap-1.5 hover:text-foreground"
+              >
+                <ArrowLeft className="size-3.5" />
+                Invite the team instead
+              </button>
             ) : null}
-            <TextLink onClick={() => void finish("skip")} disabled={finishing}>
-              Skip for now
-            </TextLink>
+            <div>
+              <TextLink onClick={() => void finish("skip")} disabled={finishing}>
+                Skip for now
+              </TextLink>
+            </div>
           </div>
         </div>
       </AuthShell>
@@ -294,18 +299,26 @@ export function OnboardingExperience() {
         size="md"
         accent="cyan"
         contentAlign="top"
-        eyebrow="Invite"
-        title="Share a link."
-        description={`Teammates join ${workspaceName}, connect a machine, and show up here.`}
+        title="Invite teammates."
+        description="Invite someone else to help you build out the workspace."
         statement="Visibility before control."
       >
-        <div className="space-y-5">
-          <InviteTeamForm onInvited={() => void finish()} />
-          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
-            <TextLink onClick={() => setPath("connect")}>Connect a computer instead</TextLink>
-            <TextLink onClick={() => void finish("skip")} disabled={finishing}>
-              Skip for now
-            </TextLink>
+        <div className="space-y-6">
+          <InviteTeamForm variant="dashboard" onInvited={() => void finish()} />
+          <div className="space-y-1 pt-2 text-center text-sm text-muted-foreground">
+            <button
+              type="button"
+              onClick={() => setPath("connect")}
+              className="inline-flex items-center gap-1.5 hover:text-foreground"
+            >
+              <ArrowLeft className="size-3.5" />
+              Connect a computer instead
+            </button>
+            <div>
+              <TextLink onClick={() => void finish("skip")} disabled={finishing}>
+                Skip for now
+              </TextLink>
+            </div>
           </div>
         </div>
       </AuthShell>
@@ -317,7 +330,6 @@ export function OnboardingExperience() {
       size="md"
       accent="cyan"
       contentAlign="top"
-      eyebrow="Workspace setup"
       title={workspaceName}
       description="Connect this computer or invite the team. You can rename the workspace anytime from settings."
       statement="Visibility before control."
@@ -325,24 +337,25 @@ export function OnboardingExperience() {
       <div className="flex flex-col gap-3 sm:flex-row">
         <ChoiceCard
           primary
-          icon={Laptop}
+          iconSrc="/images/laptop-tile.png"
           title="Connect this computer"
           description="Install the agent and start reporting tools."
           onClick={() => setPath("connect")}
         />
         <ChoiceCard
-          icon={Users}
+          dark
+          iconSrc="/images/person-tile.png"
           title="Invite the team"
           description="Share a join link for teammates."
           onClick={() => setPath("invite")}
         />
       </div>
-      <p className="mt-5 text-center text-sm text-muted-foreground">
-        You can do the other step later.{" "}
+      <div className="mt-5 space-y-1 text-center text-sm text-muted-foreground">
+        <p>You can invite your team later.</p>
         <TextLink onClick={() => void finish("skip")} disabled={finishing}>
           Skip for now
         </TextLink>
-      </p>
+      </div>
     </AuthShell>
   );
 }

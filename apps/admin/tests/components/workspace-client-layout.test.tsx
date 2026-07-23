@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
+import { workspaceContextKey } from "@/lib/app-pages/query-keys";
 
 const mocks = vi.hoisted(() => ({
   useAppQuery: vi.fn(),
@@ -116,22 +117,18 @@ describe("WorkspaceClientLayout", () => {
     mockWorkspaceContext(undefined);
   });
 
-  it("renders the shell and starts page data when workspace onboarding is complete", async () => {
+  it("renders the shell from workspace context without a layout page-data prefetch", async () => {
     mockWorkspaceContext(readyContext("1|2|seen|usage|"));
 
     await renderLayout();
 
     expect(screen.getByTestId("workspace-shell")).toBeTruthy();
     expect(screen.getByText("Dashboard screen")).toBeTruthy();
+    expect(mocks.useAppQuery).toHaveBeenCalledTimes(1);
     expect(mocks.useAppQuery).toHaveBeenCalledWith(
-      ["app", "workspace-context"],
+      workspaceContextKey,
       "/api/app/workspace-context",
       expect.objectContaining({ refetchInterval: expect.any(Function) }),
-    );
-    expect(mocks.useAppQuery).toHaveBeenCalledWith(
-      ["app", "dashboard", ""],
-      "/api/app/dashboard",
-      { enabled: true },
     );
     expect(mocks.replace).not.toHaveBeenCalled();
   });
@@ -157,11 +154,7 @@ describe("WorkspaceClientLayout", () => {
     await waitFor(() => {
       expect(mocks.replace).toHaveBeenCalledWith("/onboarding");
     });
-    expect(mocks.useAppQuery).toHaveBeenCalledWith(
-      ["app", "dashboard", ""],
-      "/api/app/dashboard",
-      { enabled: false },
-    );
+    expect(mocks.useAppQuery).toHaveBeenCalledTimes(1);
   });
 
   it("redirects to onboarding when workspace onboarding is incomplete", async () => {
@@ -191,11 +184,7 @@ describe("WorkspaceClientLayout", () => {
     await waitFor(() => {
       expect(mocks.replace).toHaveBeenCalledWith("/onboarding");
     });
-    expect(mocks.useAppQuery).toHaveBeenCalledWith(
-      ["app", "dashboard", ""],
-      "/api/app/dashboard",
-      { enabled: false },
-    );
+    expect(mocks.useAppQuery).toHaveBeenCalledTimes(1);
   });
 
   it("invalidates app queries when the sync watermark advances", async () => {

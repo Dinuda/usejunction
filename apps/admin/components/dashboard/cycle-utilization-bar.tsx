@@ -17,11 +17,13 @@ export function CycleUtilizationBar({
   displayPercent,
   verdictCode,
   label,
+  size = "default",
 }: {
   percent: number | null;
   displayPercent: number | null;
   verdictCode: PlanVerdictCode | null;
   label: string;
+  size?: "default" | "lg";
 }) {
   const meterValue =
     displayPercent != null ? Math.min(100, Math.max(2, displayPercent)) : 0;
@@ -42,7 +44,8 @@ export function CycleUtilizationBar({
       {percent != null ? (
         <p
           className={cn(
-            "shrink-0 text-xs font-semibold tabular-nums",
+            "shrink-0 font-semibold tabular-nums",
+            size === "lg" ? "text-lg" : "text-xs",
             verdictCode === "LIMIT_EXCEEDED" && "text-destructive",
             verdictCode === "NEAR_LIMIT" && "text-brand-yellow-dark",
             verdictCode === "LIGHT_USE" && "text-muted-foreground",

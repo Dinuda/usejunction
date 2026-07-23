@@ -18,7 +18,6 @@ const baseBilling: OrgBillingStatus = {
   plan: "community",
   effectivePlan: "community",
   planLabel: "Community",
-  trialDaysLeft: null,
   subscriptionStatus: null,
   usersUsed: 2,
   usersLimit: 10,
@@ -91,18 +90,6 @@ test("Team billing shows a simple plan summary, billed users, total, and seat sy
 
 test.each([
   {
-    name: "Trial",
-    state: billing({
-      plan: "trial",
-      effectivePlan: "trial",
-      planLabel: "Trial",
-      trialDaysLeft: 3,
-    }),
-    total: "$0 during trial",
-    detail: "Your trial is free. Team costs $8 per active user per month.",
-    status: "3 days left in trial",
-  },
-  {
     name: "Community",
     state: baseBilling,
     total: "$0 / month",
@@ -172,22 +159,14 @@ test("paid workspaces without a Lemon portal show a non-actionable state", () =>
   expect(screen.queryByRole("button", { name: /Manage billing/i })).toBeNull();
 });
 
-test("upgrade opens Lemon checkout", async () => {
-  const currentHref = stubLocation();
-  const fetchMock = vi.fn().mockResolvedValue({
-    ok: true,
-    json: async () => ({ url: "https://lemon.test/checkout" }),
-  });
+test("upgrade links to the in-app Team checkout page", () => {
+  const fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
   render(<BillingSettingsCard billing={baseBilling} members={members} />);
 
-  fireEvent.click(screen.getByRole("button", { name: /Upgrade to Team/i }));
-
-  await waitFor(() => expect(currentHref()).toBe("https://lemon.test/checkout"));
-  expect(fetchMock).toHaveBeenCalledWith(
-    "/api/billing/checkout",
-    expect.objectContaining({ method: "POST", body: "{}" }),
-  );
+  const upgrade = screen.getByRole("link", { name: /Upgrade to Team/i });
+  expect(upgrade.getAttribute("href")).toBe("/settings/upgrade");
+  expect(fetchMock).not.toHaveBeenCalled();
 });
 
 test("manage billing opens the Lemon portal and surfaces API failures", async () => {

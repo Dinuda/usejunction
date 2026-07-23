@@ -13,8 +13,7 @@ model Organization {
   name                       String
   slug                       String    @unique @default(cuid())
   color                      String?
-  plan                       String    @default("trial")
-  trialEndsAt                DateTime? @map("trial_ends_at")
+  plan                       String    @default("community")
   subscriptionStatus         String?   @map("subscription_status")
   lemonSqueezyCustomerId     String?   @map("lemon_squeezy_customer_id")
   lemonSqueezySubscriptionId String?   @map("lemon_squeezy_subscription_id")

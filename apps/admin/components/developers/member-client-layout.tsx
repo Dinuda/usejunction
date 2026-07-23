@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/page-header";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 import { useAppQuery } from "@/lib/api/client";
+import { teamMemberKey } from "@/lib/app-pages/query-keys";
 import { canManageSettings, type OrganizationRole } from "@/lib/rbac/permissions";
 import type { getDeveloperOverview } from "@/lib/queries/me/overview";
 import type { DeveloperRosterData } from "@/lib/read-models/developers";
@@ -51,7 +52,7 @@ export function MemberClientLayout({ children }: { children: React.ReactNode }) 
   const apiQuery = new URLSearchParams(periodQuery);
   apiQuery.set("section", section);
   const query = useAppQuery<MemberClientData>(
-    ["app", "team", developerId, section, periodQuery],
+    teamMemberKey(developerId, section, periodQuery),
     `/api/app/team/${encodeURIComponent(developerId)}?${apiQuery.toString()}`,
   );
   if (query.isPending) return <AppPageSkeleton />;

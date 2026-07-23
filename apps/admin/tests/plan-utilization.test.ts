@@ -397,13 +397,13 @@ test("evaluatePlanUtilization thresholds and stale", () => {
   assert.equal(evaluatePlanUtilization({ primaryQuota: null, included: null }).code, "UNKNOWN");
 });
 
-test("verdictLabel and verdictHint describe on-plan vs running-out states", () => {
-  assert.equal(verdictLabel("LIGHT_USE"), "On plan");
-  assert.equal(verdictLabel("HEALTHY"), "Steady");
-  assert.equal(verdictLabel("NEAR_LIMIT"), "Running out");
-  assert.equal(verdictLabel("LIMIT_EXCEEDED"), "Over limit");
-  assert.match(verdictHint("NEAR_LIMIT") ?? "", /cap before renewal/i);
-  assert.match(verdictHint("LIGHT_USE") ?? "", /headroom/i);
+test("verdictLabel and verdictHint describe within-allowance vs near-limit states", () => {
+  assert.equal(verdictLabel("LIGHT_USE"), "Within allowance");
+  assert.equal(verdictLabel("HEALTHY"), "On track");
+  assert.equal(verdictLabel("NEAR_LIMIT"), "Near limit");
+  assert.equal(verdictLabel("LIMIT_EXCEEDED"), "Over quota");
+  assert.match(verdictHint("NEAR_LIMIT") ?? "", /plan cap before renewal/i);
+  assert.match(verdictHint("LIGHT_USE") ?? "", /within the included plan allowance/i);
 });
 
 test("resolveReportWindow uses range and rejects non-UTC", () => {

@@ -1,7 +1,7 @@
 # Hobby Vercel only allows once-per-day native crons. Hourly report fan-out is
-# triggered here (POST + CRON_SECRET). Requires repo secrets:
-#   CRON_SECRET   — same value as Vercel Production
-#   CRON_BASE_URL — e.g. https://usejunction.dev (no trailing slash)
+# triggered here. Secrets live on the agent-production environment (not repo secrets):
+#   CRON_SECRET        — same value as Vercel Production
+#   CONTROL_PLANE_URL  — e.g. https://usejunction.dev (already used by agent releases)
 name: Production crons
 
 on:
@@ -21,25 +21,26 @@ jobs:
   daily-report-send:
     name: Daily report send
     runs-on: ubuntu-latest
+    environment: agent-production
     # PDF generation can approach the route maxDuration (300s)
     timeout-minutes: 8
     steps:
-      - name: Require secrets
+      - name: Require environment secrets
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          CRON_BASE_URL: ${{ secrets.CRON_BASE_URL }}
+          CONTROL_PLANE_URL: ${{ secrets.CONTROL_PLANE_URL }}
         run: |
-          if [ -z "$CRON_SECRET" ] || [ -z "$CRON_BASE_URL" ]; then
-            echo "::error::Set repository secrets CRON_SECRET and CRON_BASE_URL"
+          if [ -z "$CRON_SECRET" ] || [ -z "$CONTROL_PLANE_URL" ]; then
+            echo "::error::Set agent-production environment secrets CRON_SECRET and CONTROL_PLANE_URL (Settings → Environments → agent-production)"
             exit 1
           fi
       - name: POST /api/cron/daily-report-send
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          CRON_BASE_URL: ${{ secrets.CRON_BASE_URL }}
+          CONTROL_PLANE_URL: ${{ secrets.CONTROL_PLANE_URL }}
         run: |
           set -euo pipefail
-          base="${CRON_BASE_URL%/}"
+          base="${CONTROL_PLANE_URL%/}"
           code=$(curl -sS -o /tmp/cron-body.json -w "%{http_code}" \
             -X POST "$base/api/cron/daily-report-send" \
             -H "Authorization: Bearer $CRON_SECRET" \

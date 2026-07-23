@@ -141,12 +141,16 @@ gh secret set CONTROL_PLANE_URL \
   --env agent-production \
   -b 'https://usejunction.dev'
 
+gh secret set CRON_SECRET \
+  --env agent-production \
+  -b '<same value as Vercel Production CRON_SECRET>'
+
 gh secret set AGENT_RELEASE_OPERATIONS_TOKEN \
   --env agent-production \
   -b '<same token as Vercel>'
 ```
 
-`.github/workflows/agent-release-control.yml` runs with `environment: agent-production` and calls:
+`.github/workflows/agent-release-control.yml` and `.github/workflows/production-crons.yml` run with `environment: agent-production`. Release control calls:
 
 - `POST $CONTROL_PLANE_URL/api/internal/agent-releases/promote`
 - `POST $CONTROL_PLANE_URL/api/internal/agent-releases/pause`

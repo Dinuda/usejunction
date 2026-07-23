@@ -2,15 +2,13 @@
  * UseJunction SaaS billing (Lemon Squeezy).
  * Junction charges customers for the product — not vendor tool seat accounting.
  */
-export type SaasPlan = "trial" | "community" | "team" | "enterprise";
+export type SaasPlan = "community" | "team" | "enterprise";
 
-export const TRIAL_DAYS = 14;
 export const USER_LIMIT_FREE = 5;
 export const TEAM_PRICE_PER_DEV_USD = 8;
 
 export type OrgBillingFields = {
   plan: string;
-  trialEndsAt: Date | null;
   subscriptionStatus: string | null;
   currentPeriodEnd: Date | null;
 };
@@ -31,10 +29,6 @@ export function resolveEffectivePlan(org: OrgBillingFields): SaasPlan {
     return "team";
   }
 
-  if (plan === "trial" && org.trialEndsAt && org.trialEndsAt > new Date()) {
-    return "trial";
-  }
-
   return "community";
 }
 
@@ -45,17 +39,8 @@ export function getUserLimit(effectivePlan: SaasPlan): number | null {
   return USER_LIMIT_FREE;
 }
 
-export function getTrialDaysLeft(trialEndsAt: Date | null): number | null {
-  if (!trialEndsAt) return null;
-  const ms = trialEndsAt.getTime() - Date.now();
-  if (ms <= 0) return 0;
-  return Math.ceil(ms / (1000 * 60 * 60 * 24));
-}
-
 export function getPlanDisplayName(effectivePlan: SaasPlan): string {
   switch (effectivePlan) {
-    case "trial":
-      return "Trial";
     case "community":
       return "Community";
     case "team":
@@ -69,8 +54,4 @@ export function getPlanDisplayName(effectivePlan: SaasPlan): string {
 
 export function isPaidPlan(effectivePlan: SaasPlan): boolean {
   return effectivePlan === "team" || effectivePlan === "enterprise";
-}
-
-export function trialEndsAtFromNow(days = TRIAL_DAYS): Date {
-  return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 }

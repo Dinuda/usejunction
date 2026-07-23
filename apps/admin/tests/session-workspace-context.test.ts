@@ -111,7 +111,6 @@ describe("workspace context API", () => {
       name,
       color: null,
       plan: "community",
-      trialEndsAt: null,
       subscriptionStatus: null,
       currentPeriodEnd: null,
       lemonSqueezyCustomerId: null,

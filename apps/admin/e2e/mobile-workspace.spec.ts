@@ -65,19 +65,19 @@ test("mobile dashboard uses the compact header, period picker, and KPI grid", as
   await page.keyboard.press("Escape");
 
   const commitment = page.getByText("Subscription commitment").locator("..");
-  const verified = page.getByText("Verified usage").locator("..");
-  const estimated = page.getByText("Estimated API value").locator("..");
-  const [commitmentBox, verifiedBox, estimatedBox] = await Promise.all([
+  const usage = page.getByText("Estimated usage").locator("..");
+  const spendPerDay = page.getByText("Est. spend/day").locator("..");
+  const [commitmentBox, usageBox, spendPerDayBox] = await Promise.all([
     commitment.boundingBox(),
-    verified.boundingBox(),
-    estimated.boundingBox(),
+    usage.boundingBox(),
+    spendPerDay.boundingBox(),
   ]);
   expect(commitmentBox).not.toBeNull();
-  expect(verifiedBox).not.toBeNull();
-  expect(estimatedBox).not.toBeNull();
-  expect(Math.abs(commitmentBox!.y - verifiedBox!.y)).toBeLessThan(4);
-  expect(verifiedBox!.x).toBeGreaterThan(commitmentBox!.x);
-  expect(estimatedBox!.y).toBeGreaterThan(commitmentBox!.y);
+  expect(usageBox).not.toBeNull();
+  expect(spendPerDayBox).not.toBeNull();
+  expect(Math.abs(commitmentBox!.y - usageBox!.y)).toBeLessThan(4);
+  expect(usageBox!.x).toBeGreaterThan(commitmentBox!.x);
+  expect(spendPerDayBox!.y).toBeGreaterThan(commitmentBox!.y);
 
   const syncStatus = page.getByText(/^Last synced/);
   const syncButton = page.getByRole("button", { name: /Sync now|Syncing/ });

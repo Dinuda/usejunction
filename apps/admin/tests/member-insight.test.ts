@@ -45,6 +45,6 @@ describe("buildMemberInsight", () => {
       latestWorkTldr: null,
       workExtractionEnabled: true,
     });
-    expect(text).toMatch(/running out|Running out/i);
+    expect(text).toMatch(/near limit|Near limit/i);
   });
 });

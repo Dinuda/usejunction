@@ -60,12 +60,6 @@ function statusLine(billing: OrgBillingStatus) {
     return "User limit reached — upgrade to add more";
   }
 
-  if (billing.effectivePlan === "trial") {
-    if (billing.trialDaysLeft === 0) return "Trial ended";
-    if (billing.trialDaysLeft === 1) return "1 day left in trial";
-    return `${billing.trialDaysLeft} days left in trial`;
-  }
-
   if (billing.effectivePlan === "team" || billing.effectivePlan === "enterprise") {
     if (billing.subscriptionStatus === "cancelled") return "Cancels at period end";
     return "Active subscription";
@@ -75,7 +69,7 @@ function statusLine(billing: OrgBillingStatus) {
 }
 
 export function PlanStatusCard({ billing }: PlanStatusCardProps) {
-  const { error, loading, openCheckout, openPortal } = useBillingNavigation();
+  const { error, loading, openPortal } = useBillingNavigation();
 
   const paid = billing.effectivePlan === "team" || billing.effectivePlan === "enterprise";
   const usageLabel = paid
@@ -123,16 +117,16 @@ export function PlanStatusCard({ billing }: PlanStatusCardProps) {
 
         {billing.canUpgrade && (
           <Button
-            type="button"
+            asChild
             size="sm"
             variant="outline"
             className="relative z-20 h-9 w-full border-0 bg-white font-semibold shadow-sm hover:bg-[var(--brand-orange-pale)] [background-image:none]"
             style={{ color: "var(--brand-orange-dark)" }}
-            disabled={loading}
-            onClick={openCheckout}
           >
-            {loading ? <Loader2 className="size-4 animate-spin" /> : "Upgrade to Team"}
-            {!loading && <ArrowRight className="size-4" />}
+            <Link href="/settings/upgrade">
+              Upgrade to Team
+              <ArrowRight className="size-4" />
+            </Link>
           </Button>
         )}
 

@@ -47,16 +47,16 @@ export type DailyReportPlanTool = {
   displayName: string;
   usedPercent: number | null;
   statusLabel: string;
-  onPlan: boolean | null;
+  withinAllowance: boolean | null;
 };
 
 export type DailyReportPlanStatus = {
   /** Avg primary-window utilization across tools with signal, 0–100+. */
   usedPercent: number | null;
-  /** Fleet-style status: On plan / Running out / Over limit / … */
+  /** Plan allowance status: Within allowance / Near limit / Over quota / … */
   statusLabel: string;
-  /** true = within plan, false = at risk or over, null = unknown/stale. */
-  onPlan: boolean | null;
+  /** true = within included allowance, false = near limit or over, null = unknown/stale. */
+  withinAllowance: boolean | null;
   hint: string | null;
   tools: DailyReportPlanTool[];
 };
@@ -88,7 +88,7 @@ export type DailyReportPayload = {
      */
     acceptancePercent: number | null;
   };
-  /** Live provider quota + on-plan verdict (primary windows only). */
+  /** Live provider quota + plan-allowance verdict (primary windows only). */
   plan: DailyReportPlanStatus | null;
   series: DailyReportSeriesPoint[];
   topTools: DailyReportToolRow[];
@@ -204,23 +204,23 @@ const VERDICT_RANK: Record<PlanVerdictCode, number> = {
   HEALTHY: 0,
 };
 
-/** Fleet-style status: HEALTHY and LIGHT_USE both count as on plan. */
+/** Fleet-style status: HEALTHY and LIGHT_USE both count as within allowance. */
 export function reportPlanStatusLabel(code: PlanVerdictCode): {
   statusLabel: string;
-  onPlan: boolean | null;
+  withinAllowance: boolean | null;
 } {
   switch (code) {
     case "LIGHT_USE":
     case "HEALTHY":
-      return { statusLabel: "On plan", onPlan: true };
+      return { statusLabel: "Within allowance", withinAllowance: true };
     case "NEAR_LIMIT":
-      return { statusLabel: "Running out", onPlan: false };
+      return { statusLabel: "Near limit", withinAllowance: false };
     case "LIMIT_EXCEEDED":
-      return { statusLabel: "Over limit", onPlan: false };
+      return { statusLabel: "Over quota", withinAllowance: false };
     case "DATA_STALE":
-      return { statusLabel: "Stale data", onPlan: null };
+      return { statusLabel: "No quota data", withinAllowance: null };
     default:
-      return { statusLabel: "No signal", onPlan: null };
+      return { statusLabel: "No quota data", withinAllowance: null };
   }
 }
 
@@ -255,14 +255,14 @@ async function readPlanStatus(input: {
     if (VERDICT_RANK[verdict.code] > VERDICT_RANK[worstCode]) {
       worstCode = verdict.code;
     }
-    const { statusLabel, onPlan } = reportPlanStatusLabel(verdict.code);
+    const { statusLabel, withinAllowance } = reportPlanStatusLabel(verdict.code);
     const usedPercent = primaryQuota?.rawRatio != null ? primaryQuota.rawRatio * 100 : null;
     tools.push({
       toolName: toolKey,
       displayName: toolDisplayName(toolKey),
       usedPercent,
       statusLabel,
-      onPlan,
+      withinAllowance,
     });
   }
 
@@ -274,21 +274,21 @@ async function readPlanStatus(input: {
       ? withSignal.reduce((sum, t) => sum + (t.usedPercent ?? 0), 0) / withSignal.length
       : null;
 
-  // Fleet badge: every signaled tool within plan → On plan.
-  const signaledOnPlan = withSignal.map((t) => t.onPlan);
+  // Fleet badge: every signaled tool within allowance → Within allowance.
+  const signaledWithinAllowance = withSignal.map((t) => t.withinAllowance);
   let statusLabel: string;
-  let onPlan: boolean | null;
-  if (signaledOnPlan.length > 0 && signaledOnPlan.every((v) => v === true)) {
-    statusLabel = "On plan";
-    onPlan = true;
+  let withinAllowance: boolean | null;
+  if (signaledWithinAllowance.length > 0 && signaledWithinAllowance.every((v) => v === true)) {
+    statusLabel = "Within allowance";
+    withinAllowance = true;
   } else {
-    ({ statusLabel, onPlan } = reportPlanStatusLabel(worstCode));
+    ({ statusLabel, withinAllowance } = reportPlanStatusLabel(worstCode));
   }
 
   return {
     usedPercent,
     statusLabel,
-    onPlan,
+    withinAllowance,
     hint: verdictHint(worstCode),
     tools: tools.slice(0, 4),
   };

@@ -6,7 +6,8 @@ const developerEmail = process.env.E2E_DEVELOPER_EMAIL ?? "developer@example.com
 test("developer calculation views use personal usage totals", async ({ page }) => {
   await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/dashboard/);
-  await expect(page.getByText("Your device, tools, and last 30 days of traffic.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Spend, traffic, coverage." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your plans." })).toBeVisible();
   await expect(page.getByRole("row", { name: /Cursor gpt-4\.1 10 .*\$5\.00 Verified/i })).toBeVisible();
 
   await page.goto("/activity");

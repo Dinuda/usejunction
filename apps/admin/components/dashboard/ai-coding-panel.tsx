@@ -30,9 +30,6 @@ function pct(value: number | null) {
 }
 
 function CostBadge({ row }: { row: ModelUsageRow }) {
-  if (row.metricKind === "productivity") {
-    return <Badge variant="outline" className="rounded-none">Productivity</Badge>;
-  }
   if (row.costKind === "verified_usage" || row.verified) {
     return <Badge variant="default" className="rounded-none">Verified</Badge>;
   }
@@ -190,7 +187,6 @@ export function AiCodingPanel({
   const acceptance =
     metrics.suggestedLines > 0 ? (metrics.acceptedLines / metrics.suggestedLines) * 100 : null;
   const usageModels = models.filter((row) => row.metricKind !== "productivity");
-  const productivityModels = models.filter((row) => row.metricKind === "productivity");
 
   const content = (
     <>
@@ -254,14 +250,6 @@ export function AiCodingPanel({
         description={`${usageModels.length} usage models with no truncation`}
         rows={usageModels}
       />
-
-      {productivityModels.length > 0 ? (
-        <ModelTable
-          title="Productivity attribution"
-          description="Lines and commits — not model calls or billed usage"
-          rows={productivityModels}
-        />
-      ) : null}
     </>
   );
 

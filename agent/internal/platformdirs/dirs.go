@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 func Home() string {
@@ -59,6 +60,8 @@ func EditorUserDirs() []string {
 		EditorUserDir("Code"),
 		EditorUserDir("Code - Insiders"),
 		EditorUserDir("Cursor"),
+		EditorUserDir("Antigravity"),
+		EditorUserDir("Antigravity IDE"),
 	}
 }
 
@@ -84,11 +87,51 @@ func ExtensionRoots() []string {
 		filepath.Join(home, ".vscode", "extensions"),
 		filepath.Join(home, ".vscode-insiders", "extensions"),
 		filepath.Join(home, ".cursor", "extensions"),
+		filepath.Join(home, ".antigravity", "extensions"),
 	}
 }
 
 func CursorUserDir() string {
 	return EditorUserDir("Cursor")
+}
+
+func AntigravityUserDirs() []string {
+	return []string{
+		EditorUserDir("Antigravity"),
+		EditorUserDir("Antigravity IDE"),
+	}
+}
+
+func AntigravityUserDir() string {
+	for _, dir := range AntigravityUserDirs() {
+		if st, err := os.Stat(dir); err == nil && st.IsDir() {
+			return dir
+		}
+	}
+	return EditorUserDir("Antigravity")
+}
+
+// GeminiHome returns the Gemini / Antigravity session root (~/.gemini by default).
+func GeminiHome() string {
+	if v := strings.TrimSpace(os.Getenv("GEMINI_HOME")); v != "" {
+		return v
+	}
+	return filepath.Join(Home(), ".gemini")
+}
+
+// GeminiAntigravityRoots returns on-disk Antigravity conversation store candidates.
+// Prefer an explicit ANTIGRAVITY_CLI_ROOT pin when set; otherwise discover the
+// common IDE / IDE-legacy / CLI layouts under GeminiHome().
+func GeminiAntigravityRoots() []string {
+	if v := strings.TrimSpace(os.Getenv("ANTIGRAVITY_CLI_ROOT")); v != "" {
+		return []string{v}
+	}
+	home := GeminiHome()
+	return []string{
+		filepath.Join(home, "antigravity"),
+		filepath.Join(home, "antigravity-ide"),
+		filepath.Join(home, "antigravity-cli"),
+	}
 }
 
 func OpenCodeCandidates() []string {

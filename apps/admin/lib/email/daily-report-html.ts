@@ -208,7 +208,7 @@ export function buildDailyReportEmailDocument(input: {
   const tokens = formatCompactNumber(report.kpis.tokens);
   const requests = formatCompactNumber(report.kpis.requests);
   const planPct = report.plan?.usedPercent != null ? formatPct(report.plan.usedPercent, 0) : "—";
-  const planStatus = report.plan?.statusLabel ?? "No signal";
+  const planStatus = report.plan?.statusLabel ?? "No quota data";
 
   const insightBits = buildInsightBits(report, isTeamWeek);
   const hasDelta =
@@ -251,11 +251,11 @@ export function buildDailyReportEmailDocument(input: {
   const planBlock = report.plan
     ? `<div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${brand.muted};font-weight:600;">Plan status</div>
               <div style="margin-top:10px;font-size:18px;font-weight:600;color:${brand.charcoal};line-height:1.4;letter-spacing:-0.015em;font-family:Inter,Helvetica,Arial,sans-serif;">${escapeHtml(planStatus)}${report.plan.usedPercent != null ? ` · ${escapeHtml(planPct)} used` : ""}.</div>
-              <p style="margin:12px 0 0;font-size:14px;line-height:1.65;color:${brand.muted};">${escapeHtml(report.plan.hint ?? (report.plan.onPlan ? "Usage is within your included plan allowance." : "Check seats and quotas before the next cycle."))}</p>
+              <p style="margin:12px 0 0;font-size:14px;line-height:1.65;color:${brand.muted};">${escapeHtml(report.plan.hint ?? (report.plan.withinAllowance ? "Usage is within your included plan allowance." : "Check seats and quotas before the next cycle."))}</p>
               ${planToolRows ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:8px;">${planToolRows}</table>` : ""}`
     : `<div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${brand.muted};font-weight:600;">Plan status</div>
               <div style="margin-top:10px;font-size:18px;font-weight:600;color:${brand.charcoal};line-height:1.4;">No plan signal yet.</div>
-              <p style="margin:12px 0 0;font-size:14px;line-height:1.65;color:${brand.muted};">Connect a device or wait for the next quota reading to see if you’re on plan.</p>`;
+              <p style="margin:12px 0 0;font-size:14px;line-height:1.65;color:${brand.muted};">Connect a device or wait for the next quota reading to see if you’re within allowance.</p>`;
 
   const breakdownRows =
     report.topTools.length > 0

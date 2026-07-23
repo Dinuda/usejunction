@@ -28,7 +28,6 @@ beforeEach(() => {
   mocks.developerCount.mockResolvedValue(1);
   mocks.organizationFindUnique.mockResolvedValue({
     plan: "community",
-    trialEndsAt: null,
     subscriptionStatus: null,
     currentPeriodEnd: null,
   });

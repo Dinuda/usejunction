@@ -109,9 +109,6 @@ export function PlatformCommand({
           )}
         </button>
       </div>
-      <p className="text-right font-mono text-[0.65rem] text-muted-foreground mt-1">
-        {copied ? "Copied" : platform === "windows" ? "Paste in PowerShell" : "Paste in Terminal"}
-      </p>
       {footerDescription ? (
         <p className="text-sm leading-7 text-muted-foreground">{footerDescription}</p>
       ) : null}

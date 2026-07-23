@@ -213,8 +213,7 @@ export const termsPage: ContentPage = {
       heading: "3. Open-Source Software and Hosted Service",
       body: [
         "The UseJunction codebase is licensed under the UseJunction Community License (Apache 2.0–based with additional commercial terms). See the LICENSE file in the repository. Self-hosting is at your own operational risk subject to that license.",
-        "Paid Team and Enterprise plans, trials, and other hosted features are billed per your checkout or contract and are subject to these Terms and your order or subscription agreement.",
-        "Trials convert according to product entitlements unless canceled.",
+        "Paid Team and Enterprise plans and other hosted features are billed per your checkout or contract and are subject to these Terms and your order or subscription agreement.",
       ],
     },
     {

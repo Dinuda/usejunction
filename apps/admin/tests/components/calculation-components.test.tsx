@@ -72,7 +72,7 @@ describe("calculation-bearing components", () => {
     vi.clearAllMocks();
   });
 
-  test("AiCodingPanel calculates acceptance, separates productivity, filters, and paginates", async () => {
+  test("AiCodingPanel calculates acceptance, filters productivity, and paginates", async () => {
     const rows = Array.from({ length: 26 }, (_, index) => usageRow(index));
     rows.push({ ...usageRow(99), model: "productivity-row", metricKind: "productivity" });
 
@@ -81,7 +81,8 @@ describe("calculation-bearing components", () => {
     expect(screen.getByText(/100 suggested · 25% accept/)).toBeInTheDocument();
     expect(screen.getByText("$3.00")).toBeInTheDocument();
     expect(screen.getByText("26 usage models with no truncation")).toBeInTheDocument();
-    expect(screen.getByText("Lines and commits — not model calls or billed usage")).toBeInTheDocument();
+    expect(screen.queryByText("Productivity attribution")).not.toBeInTheDocument();
+    expect(screen.queryByText("productivity-row")).not.toBeInTheDocument();
     expect(screen.getByText("Showing 1–25 of 26")).toBeInTheDocument();
     expect(screen.queryByText("model-25")).not.toBeInTheDocument();
 
@@ -91,7 +92,7 @@ describe("calculation-bearing components", () => {
 
     const search = screen.getAllByPlaceholderText("Search models…")[0]!;
     await userEvent.type(search, "model-25");
-    expect(screen.getAllByText("Showing 1–1 of 1")).toHaveLength(2);
+    expect(screen.getByText("Showing 1–1 of 1")).toBeInTheDocument();
   });
 
   test("AiCodingPanel handles zero suggested lines and zero token breakdown", () => {
@@ -120,9 +121,9 @@ describe("calculation-bearing components", () => {
     const meter = screen.getByRole("meter");
     expect(meter).toHaveAttribute("aria-valuenow", "85");
     expect(meter).toHaveAttribute("aria-valuemax", "100");
-    expect(meter).toHaveAttribute("aria-label", "Average plan use 85 percent, Over limit");
+    expect(meter).toHaveAttribute("aria-label", "Average plan use 85 percent, Over quota");
     expect(screen.getByText("85%")).toBeInTheDocument();
-    expect(screen.getByText(/avg across 2 plans · Over limit/)).toBeInTheDocument();
+    expect(screen.getByText(/avg across 2 plans · Over quota/)).toBeInTheDocument();
   });
 
   test("RosterPlanUsage reports no signal without inventing a percentage", () => {

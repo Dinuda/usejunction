@@ -105,7 +105,7 @@ export function ContentArticle({ page }: { page: ContentPage }) {
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.14em] text-primary">Get started</p>
             <p className="mt-2 text-base text-muted-foreground">
-              Deploy open-source or start a Team trial.
+              Deploy open-source or upgrade to Managed.
             </p>
           </div>
           <Button asChild>

@@ -2,28 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { requireAppPrincipal } from "@/lib/api/app-auth";
 import { appData, appError } from "@/lib/api/app-response";
+import { loadNotificationPreferences } from "@/lib/app-pages/settings";
 import { applyUserTimeZone, getOrCreateNotificationPrefs } from "@/lib/notifications/preferences";
 
 export async function GET(request: NextRequest) {
   const principal = await requireAppPrincipal(request);
   if (principal instanceof NextResponse) return principal;
-
-  const [user, prefs] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: principal.userId },
-      select: { timeZone: true, timeZoneSource: true, timeZoneManual: true },
-    }),
-    getOrCreateNotificationPrefs(principal.userId, principal.orgId),
-  ]);
-
-  return appData({
-    timeZone: user?.timeZone ?? "UTC",
-    timeZoneSource: user?.timeZoneSource ?? null,
-    timeZoneManual: Boolean(user?.timeZoneManual),
-    role: principal.role,
-    dailyPersonalEnabled: prefs.dailyPersonalEnabled,
-    dailyOrgEnabled: prefs.dailyOrgEnabled,
-  });
+  return appData(await loadNotificationPreferences(principal));
 }
 
 export async function PATCH(request: NextRequest) {

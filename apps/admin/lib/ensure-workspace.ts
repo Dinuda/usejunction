@@ -8,7 +8,6 @@ import {
   type ResolvedAuthUser,
 } from "@/lib/ensure-auth-user";
 import { hasPendingWorkspaceInvite } from "@/lib/onboarding-status";
-import { trialEndsAtFromNow } from "@/lib/saas-billing/entitlements";
 
 function slugify(value: string) {
   return (
@@ -76,7 +75,7 @@ export async function createWorkspaceForUser(
   try {
     organization = await prisma.$transaction(async (tx) => {
       const org = await tx.organization.create({
-        data: { name, slug, color, plan: "trial", trialEndsAt: trialEndsAtFromNow() },
+        data: { name, slug, color, plan: "community" },
       });
       const team = await tx.team.create({ data: { orgId: org.id, name: "Platform" } });
       await tx.organizationMembership.create({

@@ -3,7 +3,6 @@ import type { OrganizationRole } from "@/lib/workspace-context";
 import { canManageSettings } from "@/lib/rbac/permissions";
 import {
   getPlanDisplayName,
-  getTrialDaysLeft,
   getUserLimit,
   isPaidPlan,
   resolveEffectivePlan,
@@ -14,7 +13,6 @@ export type OrgBillingStatus = {
   plan: string;
   effectivePlan: SaasPlan;
   planLabel: string;
-  trialDaysLeft: number | null;
   subscriptionStatus: string | null;
   usersUsed: number;
   usersLimit: number | null;
@@ -28,7 +26,6 @@ export type OrgBillingStatus = {
 
 export type OrgBillingFacts = {
   plan: string;
-  trialEndsAt: Date | null;
   subscriptionStatus: string | null;
   currentPeriodEnd: Date | null;
   lemonSqueezyCustomerId: string | null;
@@ -43,7 +40,6 @@ export function computeOrgBillingStatus(
 ): OrgBillingStatus {
   const effectivePlan = resolveEffectivePlan(facts);
   const usersLimit = getUserLimit(effectivePlan);
-  const trialDaysLeft = effectivePlan === "trial" ? getTrialDaysLeft(facts.trialEndsAt) : null;
   const paid = isPaidPlan(effectivePlan);
   const isAdmin = canManageSettings(role);
   const desiredSeatQuantity = Math.max(1, facts.usersUsed);
@@ -61,7 +57,6 @@ export function computeOrgBillingStatus(
     plan: facts.plan,
     effectivePlan,
     planLabel: getPlanDisplayName(effectivePlan),
-    trialDaysLeft,
     subscriptionStatus: facts.subscriptionStatus,
     usersUsed: facts.usersUsed,
     usersLimit,
@@ -83,7 +78,6 @@ export async function getOrgBillingStatus(
       where: { id: orgId },
       select: {
         plan: true,
-        trialEndsAt: true,
         subscriptionStatus: true,
         currentPeriodEnd: true,
         lemonSqueezyCustomerId: true,
@@ -128,7 +122,6 @@ export async function assertCanAddUser(
       where: { id: orgId },
       select: {
         plan: true,
-        trialEndsAt: true,
         subscriptionStatus: true,
         currentPeriodEnd: true,
       },

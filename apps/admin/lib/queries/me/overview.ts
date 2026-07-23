@@ -6,6 +6,7 @@ import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
 import { orgNeedsPlanSync } from "@/lib/queries/me/local-sync-context";
 import { canonicalToolKey, findCatalogTool } from "@/lib/tools/catalog";
 import type { OrganizationRole } from "@/lib/workspace-context";
+import { rollupPersonalToolsUsage } from "@/lib/queries/me/tools-usage-rollup";
 
 export interface AiCodingMetrics {
   suggestedLines: number;
@@ -242,20 +243,18 @@ async function buildMeOverview(
   const verifiedUsageCost = costSummary.verifiedUsageCost;
   const estimatedApiCost = costSummary.estimatedApiCost;
 
-  const detectedToolNames = new Set(
-    developer.devices.flatMap((device) => device.toolInstallations.map((tool) => tool.toolName)),
+  const detectedToolNames = developer.devices.flatMap((device) =>
+    device.toolInstallations.map((tool) => tool.toolName),
   );
-  const toolsUsage30d = [
-    ...tools.data.rows.map((row) => ({
+  const toolsUsage30d = rollupPersonalToolsUsage(
+    tools.data.rows.map((row) => ({
       toolName: dimension(row, "tool") || "unknown",
       requests: metricNumber(row, "requests"),
       tokens: metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens"),
       cost: metricNumber(row, "costMicros") / 1_000_000,
     })),
-    ...Array.from(detectedToolNames)
-      .filter((name) => !tools.data.rows.some((row) => dimension(row, "tool") === name))
-      .map((toolName) => ({ toolName, requests: 0, tokens: 0, cost: 0 })),
-  ].sort((a, b) => b.requests - a.requests || a.toolName.localeCompare(b.toolName));
+    detectedToolNames,
+  );
 
   const modelUsageRows: ModelUsageRow[] = models.data.rows.flatMap((row) => {
     const source = dimension(row, "source");

@@ -11,6 +11,8 @@ import { TEAM_PRICE_PER_DEV_USD } from "@/lib/saas-billing/entitlements";
 import type { OrgBillingStatus } from "@/lib/saas-billing/status";
 import { cn } from "@/lib/utils";
 
+const TEAM_UPGRADE_HREF = "/settings/upgrade";
+
 export type BillingSettingsMember = {
   id: string;
   name: string;
@@ -34,13 +36,6 @@ function memberInitials(name: string, email: string) {
 }
 
 function subscriptionLabel(billing: OrgBillingStatus) {
-  if (billing.effectivePlan === "trial") {
-    if (billing.trialDaysLeft === 0) return "Trial ended";
-    if (billing.trialDaysLeft === 1) return "1 day left in trial";
-    if (billing.trialDaysLeft !== null) return `${billing.trialDaysLeft} days left in trial`;
-    return "Trial";
-  }
-
   if (billing.effectivePlan === "community") return "Free tier";
   if (billing.subscriptionStatus === "cancelled") return "Cancels at period end";
   if (billing.subscriptionStatus === "paused") return "Subscription paused";
@@ -53,13 +48,6 @@ function priceSummary(billing: OrgBillingStatus) {
   const total = billing.usersUsed * TEAM_PRICE_PER_DEV_USD;
 
   switch (billing.effectivePlan) {
-    case "trial":
-      return {
-        total: "$0 during trial",
-        detail: `Your trial is free. Team costs $${TEAM_PRICE_PER_DEV_USD} per active user per month.`,
-        rosterTitle: "Active users",
-        memberRate: "Trial",
-      };
     case "community":
       return {
         total: "$0 / month",
@@ -91,14 +79,11 @@ function statusTone(billing: OrgBillingStatus) {
   if (billing.subscriptionStatus === "paused" || billing.subscriptionStatus === "cancelled") {
     return "text-brand-orange-dark";
   }
-  if (billing.effectivePlan === "trial") {
-    return "text-primary-dark";
-  }
   return "text-muted-foreground";
 }
 
 export function BillingSettingsCard({ billing, members }: BillingSettingsCardProps) {
-  const { error, loading, pendingDestination, openCheckout, openPortal } = useBillingNavigation();
+  const { error, loading, pendingDestination, openPortal } = useBillingNavigation();
   const pricing = priceSummary(billing);
   const paid = billing.effectivePlan === "team" || billing.effectivePlan === "enterprise";
 
@@ -120,20 +105,11 @@ export function BillingSettingsCard({ billing, members }: BillingSettingsCardPro
           </p>
         </div>
         {billing.canUpgrade ? (
-          <Button
-            type="button"
-            className="w-full rounded-none [&::before]:hidden sm:w-auto"
-            disabled={loading}
-            aria-busy={pendingDestination === "checkout"}
-            onClick={openCheckout}
-          >
-            {pendingDestination === "checkout" ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            ) : null}
-            {pendingDestination === "checkout" ? "Opening checkout…" : "Upgrade to Team"}
-            {pendingDestination !== "checkout" ? (
+          <Button asChild className="w-full rounded-none [&::before]:hidden sm:w-auto">
+            <Link href={TEAM_UPGRADE_HREF}>
+              Upgrade to Team
               <ArrowRight className="size-4" aria-hidden="true" />
-            ) : null}
+            </Link>
           </Button>
         ) : billing.canManage ? (
           <Button

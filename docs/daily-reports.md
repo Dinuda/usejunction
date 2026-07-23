@@ -36,7 +36,7 @@ Hobby Vercel cannot run hourly crons, so report send is triggered from GitHub Ac
 
 Auth: `Authorization: Bearer $CRON_SECRET`
 
-See [production-deployment.md](./production-deployment.md#cron-jobs) for secrets (`CRON_SECRET`, `CRON_BASE_URL`) and the Hobby/Actions split.
+See [production-deployment.md](./production-deployment.md#cron-jobs) for `agent-production` secrets (`CRON_SECRET`, `CONTROL_PLANE_URL`) and the Hobby/Actions split.
 
 ## Run the report job locally
 

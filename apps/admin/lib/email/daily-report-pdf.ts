@@ -244,7 +244,7 @@ export function buildDailyReportPdfHtml(input: {
   const requests = formatCompactNumber(report.kpis.requests);
   const planPct =
     report.plan?.usedPercent != null ? formatPct(report.plan.usedPercent, 0) : "—";
-  const planStatus = report.plan?.statusLabel ?? "No signal";
+  const planStatus = report.plan?.statusLabel ?? "No quota data";
 
   const insightHtml = buildInsightLine(report, isTeamWeek);
 
@@ -277,7 +277,7 @@ export function buildDailyReportPdfHtml(input: {
     ? `<div class="plan-block">
   <div class="section-label">Plan status</div>
   <h2>${escapeHtml(planStatus)}${report.plan.usedPercent != null ? ` · ${escapeHtml(planPct)} used` : ""}.</h2>
-  <p>${escapeHtml(report.plan.hint ?? (report.plan.onPlan ? "Usage is within your included plan allowance." : "Check seats and quotas before the next cycle."))}</p>
+  <p>${escapeHtml(report.plan.hint ?? (report.plan.withinAllowance ? "Usage is within your included plan allowance." : "Check seats and quotas before the next cycle."))}</p>
   ${
     report.plan.tools.length > 0
       ? report.plan.tools
@@ -304,7 +304,7 @@ export function buildDailyReportPdfHtml(input: {
     : `<div class="plan-block">
   <div class="section-label">Plan status</div>
   <h2>No plan signal yet.</h2>
-  <p>Connect a device or wait for the next quota reading to see if you’re on plan.</p>
+  <p>Connect a device or wait for the next quota reading to see if you’re within allowance.</p>
 </div>`;
 
   const breakdown =

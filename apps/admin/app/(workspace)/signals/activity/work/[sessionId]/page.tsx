@@ -1,31 +1,30 @@
-"use client";
+import { notFound } from "next/navigation";
+import { AppQueryHydration } from "@/components/app-query-hydration";
+import SignalsWorkDetailClientScreen from "@/components/signals/signals-work-detail-client-screen";
+import { principalFromWorkspace } from "@/lib/app-pages/principal";
+import { signalsWorkKey } from "@/lib/app-pages/query-keys";
+import { makeServerQueryClient } from "@/lib/app-pages/server-query-client";
+import { loadSignalsWorkDetailPage } from "@/lib/app-pages/signals-work-detail";
 
-import { useParams, useSearchParams } from "next/navigation";
-import { WorkSessionDetailView } from "@/components/signals/work-session-detail-view";
-import type { getWorkSessionDetail } from "@/lib/signals/queries/get-work-session-detail";
-import { useAppQuery } from "@/lib/api/client";
-import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
-
-type WorkDetailPayload = { session: NonNullable<Awaited<ReturnType<typeof getWorkSessionDetail>>>["data"] };
-
-export default function WorkSessionDetailPage() {
-  const { sessionId } = useParams<{ sessionId: string }>();
-  const searchParams = useSearchParams();
-  const query = useAppQuery<WorkDetailPayload>(["app", "signals", "work", sessionId], `/api/app/signals/activity/work/${encodeURIComponent(sessionId)}`);
-  if (query.isPending) return <AppPageSkeleton />;
-  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
-  const session = query.data.session;
-  const fromDeveloper = searchParams.get("from") === "team";
-  const backHref = fromDeveloper
-    ? `/team/${session.developer.id}/work`
-    : "/signals/activity";
-  const backLabel = fromDeveloper ? session.developer.name : "Activity";
-
+export default async function WorkSessionDetailPage({
+  params,
+}: {
+  params: Promise<{ sessionId: string }>;
+}) {
+  const { sessionId } = await params;
+  const principal = await principalFromWorkspace(["owner", "admin"]);
+  const queryClient = makeServerQueryClient();
+  await queryClient.prefetchQuery({
+    queryKey: signalsWorkKey(sessionId),
+    queryFn: async () => {
+      const data = await loadSignalsWorkDetailPage(principal, sessionId);
+      if (!data) notFound();
+      return data;
+    },
+  });
   return (
-    <WorkSessionDetailView
-      session={session}
-      backHref={backHref}
-      backLabel={backLabel}
-    />
+    <AppQueryHydration client={queryClient}>
+      <SignalsWorkDetailClientScreen />
+    </AppQueryHydration>
   );
 }

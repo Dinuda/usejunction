@@ -4,30 +4,26 @@ import { test } from "vitest";
 import {
   BLOCK_CHECKOUT_STATUSES,
   getUserLimit,
-  getTrialDaysLeft,
   isPaidPlan,
   resolveEffectivePlan,
   TEAM_PRICE_PER_DEV_USD,
-  TRIAL_DAYS,
   USER_LIMIT_FREE,
 } from "../lib/saas-billing/entitlements";
 import { activeSeatQuantity } from "../lib/saas-billing/seats";
 
-test("keeps trial while trialEndsAt is in the future", () => {
+test("resolves unpaid workspaces to community with a 5-user cap", () => {
   const plan = resolveEffectivePlan({
-    plan: "trial",
-    trialEndsAt: new Date(Date.now() + 86_400_000),
+    plan: "community",
     subscriptionStatus: null,
     currentPeriodEnd: null,
   });
-  assert.equal(plan, "trial");
+  assert.equal(plan, "community");
   assert.equal(getUserLimit(plan), USER_LIMIT_FREE);
 });
 
-test("falls back to community when trial ends", () => {
+test("treats legacy trial plan rows as community", () => {
   const plan = resolveEffectivePlan({
     plan: "trial",
-    trialEndsAt: new Date(Date.now() - 1_000),
     subscriptionStatus: null,
     currentPeriodEnd: null,
   });
@@ -39,7 +35,6 @@ test("treats team with paid statuses as uncapped users", () => {
   for (const subscriptionStatus of ["active", "on_trial", "cancelled", "paused"]) {
     const plan = resolveEffectivePlan({
       plan: "team",
-      trialEndsAt: null,
       subscriptionStatus,
       currentPeriodEnd: new Date(Date.now() + 86_400_000),
     });
@@ -56,15 +51,8 @@ test("blocks duplicate checkout only for active-like statuses", () => {
 });
 
 test("exports single-source developer pricing constants", () => {
-  assert.equal(TRIAL_DAYS, 14);
   assert.equal(USER_LIMIT_FREE, 5);
   assert.equal(TEAM_PRICE_PER_DEV_USD, 8);
-});
-
-test("reports trial days left", () => {
-  assert.equal(getTrialDaysLeft(null), null);
-  assert.equal(getTrialDaysLeft(new Date(Date.now() - 1_000)), 0);
-  assert.ok((getTrialDaysLeft(new Date(Date.now() + 2 * 86_400_000)) ?? 0) >= 2);
 });
 
 test("lemon webhook signature digests differ for wrong secrets", () => {

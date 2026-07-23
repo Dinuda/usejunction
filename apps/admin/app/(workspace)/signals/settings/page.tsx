@@ -1,25 +1,20 @@
-"use client";
+import { AppQueryHydration } from "@/components/app-query-hydration";
+import SignalsSettingsClientScreen from "@/components/signals/signals-settings-client-screen";
+import { principalFromWorkspace } from "@/lib/app-pages/principal";
+import { signalsSettingsKey } from "@/lib/app-pages/query-keys";
+import { makeServerQueryClient } from "@/lib/app-pages/server-query-client";
+import { loadSignalsSettingsPage } from "@/lib/app-pages/signals-settings";
 
-import { SignalsPageHeader } from "@/components/signals/signals-page-header";
-import { SignalsPolicyCard } from "@/components/signals/signals-policy-card";
-import type { getOrgSignalsPolicy } from "@/lib/signals/service";
-import { useAppQuery } from "@/lib/api/client";
-import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
-
-type SignalsSettingsPayload = { policy: Awaited<ReturnType<typeof getOrgSignalsPolicy>> };
-
-export default function SignalsSettingsPage() {
-  const query = useAppQuery<SignalsSettingsPayload>(["app", "signals", "settings"], "/api/app/signals/settings");
-  if (query.isPending) return <AppPageSkeleton />;
-  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
-
+export default async function SignalsSettingsPage() {
+  const principal = await principalFromWorkspace(["owner", "admin"]);
+  const queryClient = makeServerQueryClient();
+  await queryClient.prefetchQuery({
+    queryKey: signalsSettingsKey,
+    queryFn: () => loadSignalsSettingsPage(principal),
+  });
   return (
-    <>
-      <SignalsPageHeader
-        title="Boundaries"
-        description="Retention for coding-tool work from enrolled agents."
-      />
-      <SignalsPolicyCard initialPolicy={query.data.policy} />
-    </>
+    <AppQueryHydration client={queryClient}>
+      <SignalsSettingsClientScreen />
+    </AppQueryHydration>
   );
 }

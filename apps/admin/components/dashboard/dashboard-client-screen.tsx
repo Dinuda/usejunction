@@ -27,15 +27,16 @@ import {
   type PlanVerdictCode,
 } from "@/lib/billing/plan-utilization-policy";
 import {
-  parseRollingPeriodFromSearch,
   rollingPeriodLabel,
   type RollingPeriod,
 } from "@/lib/dashboard/period-prefs";
 import {
+  cycleViewPeriodLabel,
   cycleViewShortSuffix,
-  parseCycleView,
   type CycleView,
 } from "@/lib/dashboard/cycle-view";
+import { buildMemberPlanBoard, type MemberPlanBoardCard } from "@/lib/quotas/plan-board";
+import type { QuotaPaceCode } from "@/lib/quotas/pace";
 import { canonicalToolKey, findCatalogTool, toolDisplayName } from "@/lib/tools/catalog";
 import { formatCompactNumber, formatShortDate, formatUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -43,6 +44,7 @@ import type { OrgOverviewV1 } from "@/lib/insights";
 import type { getMeOverview } from "@/lib/queries/me/overview";
 import type { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
 import { useAppQuery } from "@/lib/api/client";
+import { dashboardKey } from "@/lib/app-pages/query-keys";
 import { AppPageError } from "@/components/app-data-state";
 import { DashboardCrunchingState } from "@/components/dashboard/dashboard-crunching-state";
 
@@ -64,6 +66,21 @@ function Delta({ value, inverse = false }: { value: number | null; inverse?: boo
 function formatPricePerMillionTokens(cost: number, tokens: number) {
   if (tokens <= 0) return "—";
   return formatUsd((cost * 1_000_000) / tokens);
+}
+
+function formatEstSpendPerDay(cost: number, rangeDays: number) {
+  if (rangeDays <= 0) return "—";
+  return formatUsd(cost / rangeDays);
+}
+
+function usageCostBreakdownSub(verified: number, estimated: number) {
+  return `${formatUsd(verified)} verified · ${formatUsd(estimated)} estimated`;
+}
+
+function verifiedEstimatedWindowSub(view: CycleView) {
+  if (view === "last_30_days") return "verified + estimated · selected window";
+  if (view === "previous_cycles") return "verified + estimated · previous cycles";
+  return "verified + estimated · current cycles";
 }
 
 function Kpi({
@@ -119,44 +136,53 @@ function orgCycleSummary(cycles: OrgOverviewV1["subscriptionCycles"]) {
     withSignal.length > 0
       ? withSignal.reduce((sum, row) => sum + (row.utilizationPercent ?? 0), 0) / withSignal.length
       : null;
-  const runningOut = cycles.filter((row) => row.verdictCode === "NEAR_LIMIT").length;
-  const overLimit = cycles.filter((row) => row.verdictCode === "LIMIT_EXCEEDED").length;
-  const onPlan = cycles.filter(
+  const nearLimit = cycles.filter((row) => row.verdictCode === "NEAR_LIMIT").length;
+  const overQuota = cycles.filter((row) => row.verdictCode === "LIMIT_EXCEEDED").length;
+  const withinAllowance = cycles.filter(
     (row) => row.verdictCode === "LIGHT_USE" || row.verdictCode === "HEALTHY",
   ).length;
-  return { avgUtilization, runningOut, overLimit, onPlan, withSignal: withSignal.length };
+  return { avgUtilization, nearLimit, overQuota, withinAllowance, withSignal: withSignal.length };
+}
+
+function fleetVerdictCode(cycles: OrgOverviewV1["subscriptionCycles"]): PlanVerdictCode | null {
+  const { nearLimit, overQuota, withinAllowance, withSignal } = orgCycleSummary(cycles);
+  if (withSignal === 0) return null;
+  if (overQuota > 0) return "LIMIT_EXCEEDED";
+  if (nearLimit > 0) return "NEAR_LIMIT";
+  if (withinAllowance === withSignal) return "HEALTHY";
+  return "HEALTHY";
 }
 
 function fleetStatusBadge(cycles: OrgOverviewV1["subscriptionCycles"]) {
-  const { runningOut, overLimit, onPlan, withSignal } = orgCycleSummary(cycles);
+  const { nearLimit, overQuota, withinAllowance, withSignal } = orgCycleSummary(cycles);
   if (withSignal === 0) return null;
-  if (overLimit > 0) {
+  if (overQuota > 0) {
     return (
       <Badge variant="outline" className="border-destructive/30 bg-destructive/10 font-normal text-destructive">
-        {overLimit === withSignal ? "Over limit" : `${overLimit} over limit`}
+        {overQuota === withSignal ? "Over quota" : `${overQuota} over quota`}
       </Badge>
     );
   }
-  if (runningOut > 0) {
+  if (nearLimit > 0) {
     return (
       <Badge
         variant="outline"
         className="border-brand-yellow-dark/40 bg-brand-yellow-pale font-normal text-brand-yellow-dark"
       >
-        {runningOut === 1 ? "1 running out" : `${runningOut} running out`}
+        {nearLimit === 1 ? "1 near limit" : `${nearLimit} near limit`}
       </Badge>
     );
   }
-  if (onPlan === withSignal) {
+  if (withinAllowance === withSignal) {
     return (
       <Badge variant="outline" className="border-primary/30 bg-primary/10 font-normal text-primary">
-        On plan
+        Within allowance
       </Badge>
     );
   }
   return (
     <Badge variant="outline" className="border-primary/30 bg-primary/10 font-normal text-primary">
-      Steady
+      On track
     </Badge>
   );
 }
@@ -173,16 +199,23 @@ function CycleSectionHeader({
   bordered?: boolean;
 }) {
   const { avgUtilization } = orgCycleSummary(cycles);
+  const title = sectionTitleForView(view, period);
   return (
-    <div className={cn("mb-6 flex flex-wrap items-center gap-2", bordered && "border-b pb-4")}>
-      <h2 className="text-lg font-semibold tracking-tight">{sectionTitleForView(view, period)}.</h2>
-      <div className="ml-auto flex flex-wrap items-center gap-2">
-        {avgUtilization != null ? (
-          <Badge variant="outline" className="font-normal text-muted-foreground">
-            {avgUtilization.toFixed(0)}% utilized
-          </Badge>
-        ) : null}
-        {fleetStatusBadge(cycles)}
+    <div className={cn("mb-6", bordered && "border-b pb-4")}>
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="text-lg font-semibold tracking-tight">{title}.</h2>
+        <div className="ml-auto flex min-w-[12rem] max-w-sm flex-1 flex-wrap items-center justify-end gap-3">
+          {avgUtilization != null ? (
+            <CycleUtilizationBar
+              percent={avgUtilization}
+              displayPercent={Math.min(100, Math.max(0, avgUtilization))}
+              verdictCode={fleetVerdictCode(cycles)}
+              label={title}
+              size="lg"
+            />
+          ) : null}
+          {fleetStatusBadge(cycles)}
+        </div>
       </div>
     </div>
   );
@@ -211,32 +244,142 @@ function cycleWindowLabel(row: OrgOverviewV1["subscriptionCycles"][number], view
   return `${formatShortDate(row.billingCycle.cycleStart)} – ${formatShortDate(row.billingCycle.cycleEnd)}`;
 }
 
+function paceToVerdictCode(code: QuotaPaceCode, usedPercent: number | null): PlanVerdictCode {
+  if (code === "ALREADY_EXCEEDED" || (usedPercent != null && usedPercent >= 100)) return "LIMIT_EXCEEDED";
+  if (code === "EXCESS") return "NEAR_LIMIT";
+  if (code === "ON_TRACK") return "HEALTHY";
+  if (code === "UNDER") return "LIGHT_USE";
+  return "UNKNOWN";
+}
+
+function personalPlanWindowLabel(card: MemberPlanBoardCard) {
+  const plan = card.planName || card.primary?.windowLabel || "Plan";
+  if (!card.primary?.resetsAt) return plan;
+  const reset = new Date(card.primary.resetsAt);
+  if (Number.isNaN(reset.getTime())) return plan;
+  return `${plan} · Renews ${formatShortDate(reset.toISOString())}`;
+}
+
+function personalCycleSummary(cards: MemberPlanBoardCard[]) {
+  const withSignal = cards.filter((card) => card.pace.usedPercent != null);
+  const avgUtilization =
+    withSignal.length > 0
+      ? withSignal.reduce((sum, card) => sum + (card.pace.usedPercent ?? 0), 0) / withSignal.length
+      : null;
+  const nearLimit = cards.filter((card) => card.pace.code === "EXCESS").length;
+  const overQuota = cards.filter(
+    (card) => card.pace.code === "ALREADY_EXCEEDED" || (card.pace.usedPercent ?? 0) >= 100,
+  ).length;
+  const withinAllowance = cards.filter(
+    (card) => card.pace.code === "UNDER" || card.pace.code === "ON_TRACK",
+  ).length;
+  return { avgUtilization, nearLimit, overQuota, withinAllowance, withSignal: withSignal.length };
+}
+
+function personalFleetVerdictCode(cards: MemberPlanBoardCard[]): PlanVerdictCode | null {
+  const { nearLimit, overQuota, withinAllowance, withSignal } = personalCycleSummary(cards);
+  if (withSignal === 0) return null;
+  if (overQuota > 0) return "LIMIT_EXCEEDED";
+  if (nearLimit > 0) return "NEAR_LIMIT";
+  if (withinAllowance === withSignal) return "HEALTHY";
+  return "HEALTHY";
+}
+
+function personalFleetStatusBadge(cards: MemberPlanBoardCard[]) {
+  const { nearLimit, overQuota, withinAllowance, withSignal } = personalCycleSummary(cards);
+  if (withSignal === 0) return null;
+  if (overQuota > 0) {
+    return (
+      <Badge variant="outline" className="border-destructive/30 bg-destructive/10 font-normal text-destructive">
+        {overQuota === withSignal ? "Over quota" : `${overQuota} over quota`}
+      </Badge>
+    );
+  }
+  if (nearLimit > 0) {
+    return (
+      <Badge
+        variant="outline"
+        className="border-brand-yellow-dark/40 bg-brand-yellow-pale font-normal text-brand-yellow-dark"
+      >
+        {nearLimit === 1 ? "1 near limit" : `${nearLimit} near limit`}
+      </Badge>
+    );
+  }
+  if (withinAllowance === withSignal) {
+    return (
+      <Badge variant="outline" className="border-primary/30 bg-primary/10 font-normal text-primary">
+        Within allowance
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="border-primary/30 bg-primary/10 font-normal text-primary">
+      On track
+    </Badge>
+  );
+}
+
 function PersonalHome({
   data,
   audienceSwitcher,
+  allowPeriodControls,
+  cycleView,
+  rollingPeriod,
+  periodLabel,
 }: {
   data: Awaited<ReturnType<typeof getMeOverview>>;
   audienceSwitcher?: ReactNode;
+  allowPeriodControls: boolean;
+  cycleView: CycleView;
+  rollingPeriod: RollingPeriod;
+  periodLabel: string;
 }) {
   const usage = data.usage30d;
   const tokens = Number(BigInt(usage.inputTokens) + BigInt(usage.outputTokens));
   const usageCost = usage.verifiedUsageCost + usage.estimatedApiCost;
-  const firstName = data.developer.name.split(" ")[0] || "there";
+  const empty = !data.developer.devices.length;
+  const accounts = data.developer.devices.flatMap((device) => device.accounts);
+  const quotaSnapshots = data.developer.devices.flatMap((device) =>
+    device.quotas.map((quota) => ({
+      toolName: quota.toolName,
+      windowType: quota.windowType,
+      usedPercent: quota.usedPercent,
+      creditsRemaining: quota.creditsRemaining,
+      resetAt: quota.resetAt,
+      source: quota.source,
+      updatedAt: quota.updatedAt,
+      developerId: data.developer.id,
+    })),
+  );
+  const planCards = buildMemberPlanBoard({
+    snapshots: quotaSnapshots,
+    accounts,
+    assignedPlans: data.developer.assignedPlans,
+    toolsUsage: data.toolsUsage30d,
+  });
+  const { avgUtilization } = personalCycleSummary(planCards);
 
   return (
     <>
-      <ConnectMachineBanner show={!data.developer.devices.length} />
-      <div className="mb-10">
-        <PageHeader
-          className="mb-0"
-          title={`Hey ${firstName}.`}
-          description="Your device, tools, and last 30 days of traffic."
-        >
-          {audienceSwitcher}
-        </PageHeader>
-      </div>
+      <ConnectMachineBanner show={empty} />
+      <PageHeader
+        title={empty ? "Nothing reporting yet." : "Spend, traffic, coverage."}
+        description={
+          empty
+            ? "Connect a machine to see your plans, usage, and traffic."
+            : undefined
+        }
+        actions={
+          !empty && allowPeriodControls ? (
+            <CycleViewPicker view={cycleView} period={rollingPeriod} basePath="/dashboard" />
+          ) : null
+        }
+        mobileActionsInline
+      >
+        {audienceSwitcher}
+      </PageHeader>
 
-      {!data.developer.devices.length ? (
+      {empty ? (
         <DashboardSetupPanel canInvite={false} />
       ) : (
         <>
@@ -252,7 +395,7 @@ function PersonalHome({
               label="Price per 1M tokens"
               value={formatPricePerMillionTokens(usageCost, tokens)}
               hero
-              sub="verified + estimated · last 30 days"
+              sub={`verified + estimated · ${periodLabel}`}
               className="border-l-2 border-border-strong py-3 pl-4 pr-3"
             />
             <Kpi
@@ -267,6 +410,86 @@ function PersonalHome({
               sub="Enrolled"
             />
           </div>
+
+          <Panel as="section" className="mt-10">
+            <div className="mb-6">
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="text-lg font-semibold tracking-tight">Your plans.</h2>
+                <div className="ml-auto flex min-w-[12rem] max-w-sm flex-1 flex-wrap items-center justify-end gap-3">
+                  {avgUtilization != null ? (
+                    <CycleUtilizationBar
+                      percent={avgUtilization}
+                      displayPercent={Math.min(100, Math.max(0, avgUtilization))}
+                      verdictCode={personalFleetVerdictCode(planCards)}
+                      label="Your plans"
+                      size="lg"
+                    />
+                  ) : null}
+                  {personalFleetStatusBadge(planCards)}
+                </div>
+              </div>
+            </div>
+            {planCards.length ? (
+              <ul>
+                {planCards.map((card) => {
+                  const href = findCatalogTool(card.toolKey) ? `/tools/${card.toolKey}` : null;
+                  const used = card.pace.usedPercent;
+                  const verdictCode = paceToVerdictCode(card.pace.code, used);
+                  const body = (
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <ToolLogoTile tool={card.toolName} size="md" />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{card.toolLabel}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {personalPlanWindowLabel(card)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <p className="text-sm font-semibold tabular-nums">
+                            {card.usage && card.usage.cost > 0 ? formatUsd(card.usage.cost) : "—"}
+                          </p>
+                          {href ? (
+                            <ArrowUpRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <CycleUtilizationBar
+                          percent={used}
+                          displayPercent={used == null ? null : Math.min(100, Math.max(0, used))}
+                          verdictCode={verdictCode}
+                          label={card.toolLabel}
+                        />
+                      </div>
+                      {verdictCode !== "UNKNOWN" ? <CycleStatus code={verdictCode} /> : null}
+                    </>
+                  );
+
+                  return (
+                    <li key={card.toolKey}>
+                      {href ? (
+                        <Link
+                          href={href}
+                          className="block py-5 transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+                        >
+                          {body}
+                        </Link>
+                      ) : (
+                        <div className="py-5">{body}</div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <Empty className="min-h-0 gap-1 border-0 p-6 md:p-6">
+                <EmptyDescription>No plan windows yet. Connect a machine to report quotas.</EmptyDescription>
+              </Empty>
+            )}
+          </Panel>
 
           <Panel className="mt-10">
             <AiCodingPanel metrics={data.aiCoding30d} models={data.modelUsage30d} embedded />
@@ -284,19 +507,22 @@ function PersonalHome({
                 }
               />
               <ul>
-                {data.developer.devices.map((device) => (
-                  <li key={device.id} className="flex items-center justify-between gap-3 py-5">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{device.hostname}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {device.os} · {device.tools.length} tools
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="font-mono text-[0.65rem] uppercase tracking-[0.08em]">
-                      agent {device.agentVersion || "—"}
-                    </Badge>
-                  </li>
-                ))}
+                {data.developer.devices.map((device) => {
+                  const toolCount = new Set(device.tools.map((tool) => canonicalToolKey(tool.toolName))).size;
+                  return (
+                    <li key={device.id} className="flex items-center justify-between gap-3 py-5">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{device.hostname}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {device.os} · {toolCount} {toolCount === 1 ? "tool" : "tools"}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="font-mono text-[0.65rem] uppercase tracking-[0.08em]">
+                        agent {device.agentVersion || "—"}
+                      </Badge>
+                    </li>
+                  );
+                })}
               </ul>
             </Panel>
 
@@ -305,9 +531,9 @@ function PersonalHome({
               {data.toolsUsage30d.length ? (
                 <ul>
                   {data.toolsUsage30d.map((tool) => (
-                    <li key={tool.toolName} className="flex items-center justify-between gap-3 py-5">
+                    <li key={canonicalToolKey(tool.toolName)} className="flex items-center justify-between gap-3 py-5">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{tool.toolName}</p>
+                        <p className="truncate text-sm font-medium">{toolDisplayName(tool.toolName)}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {tool.tokens > 0 ? `${formatCompactNumber(tool.tokens)} tokens` : "Detected on your machine"}
                         </p>
@@ -340,6 +566,10 @@ type DashboardPayload =
       scope: AudienceScope;
       canSwitchAudience: boolean;
       youUnlinked?: boolean;
+      allowPeriodControls: boolean;
+      cycleView: CycleView;
+      rollingPeriod: RollingPeriod;
+      periodLabel: string;
       personal: Awaited<ReturnType<typeof getMeOverview>> | null;
       needsPersonalConnect?: boolean;
       syncContext?: Awaited<ReturnType<typeof getLocalSyncContext>>;
@@ -360,7 +590,7 @@ export default function DashboardPage() {
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
   const query = useAppQuery<DashboardPayload>(
-    ["app", "dashboard", queryString],
+    dashboardKey(queryString),
     `/api/app/dashboard${queryString ? `?${queryString}` : ""}`,
   );
   // Pending without cached data: plain skeleton first; crunching copy only after 1.5s.
@@ -393,7 +623,16 @@ export default function DashboardPage() {
         </>
       );
     }
-    return <PersonalHome data={query.data.personal} audienceSwitcher={switcher} />;
+    return (
+      <PersonalHome
+        data={query.data.personal}
+        audienceSwitcher={switcher}
+        allowPeriodControls={query.data.allowPeriodControls}
+        cycleView={query.data.cycleView}
+        rollingPeriod={query.data.rollingPeriod}
+        periodLabel={query.data.periodLabel}
+      />
+    );
   }
 
   const { cycleView, rollingPeriod, error, needsPersonalConnect, syncContext } = query.data;
@@ -457,20 +696,26 @@ export default function DashboardPage() {
               }
             />
             <Kpi
-              label="Verified usage"
-              value={formatUsd(data.kpis.verifiedUsageCost.value)}
+              label="Estimated usage"
+              value={formatUsd(data.kpis.verifiedUsageCost.value + data.kpis.estimatedApiCost.value)}
               delta={data.kpis.verifiedUsageCost.deltaPercent}
               inverse
               compactMobile
               className="border-l-2 border-border-strong pl-3 pr-2 sm:pl-4 sm:pr-3"
+              sub={usageCostBreakdownSub(
+                data.kpis.verifiedUsageCost.value,
+                data.kpis.estimatedApiCost.value,
+              )}
             />
             <Kpi
-              label="Estimated API value"
-              value={formatUsd(data.kpis.estimatedApiCost.value)}
-              delta={data.kpis.estimatedApiCost.deltaPercent}
-              inverse
+              label="Est. spend/day"
+              value={formatEstSpendPerDay(
+                data.kpis.verifiedUsageCost.value + data.kpis.estimatedApiCost.value,
+                data.observation.rangeDays,
+              )}
               compactMobile
               className="border-l-2 border-border-strong pl-3 pr-2 sm:pl-4 sm:pr-3"
+              sub={`${data.observation.rangeDays} days · ${cycleViewPeriodLabel(data.cycleView, rollingPeriod)}`}
             />
             <Kpi
               label="Price per 1M tokens"
@@ -480,13 +725,7 @@ export default function DashboardPage() {
               )}
               compactMobile
               className="border-l-2 border-border-strong pl-3 pr-2 sm:pl-4 sm:pr-3"
-              sub={
-                data.cycleView === "last_30_days"
-                  ? "verified + estimated · selected window"
-                  : data.cycleView === "previous_cycles"
-                    ? "verified + estimated · previous cycles"
-                    : "verified + estimated · current cycles"
-              }
+              sub={verifiedEstimatedWindowSub(data.cycleView)}
             />
           </div>
 

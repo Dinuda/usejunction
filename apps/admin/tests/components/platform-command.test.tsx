@@ -11,5 +11,4 @@ test("platform command switches between terminal and Windows PowerShell", () => 
   fireEvent.click(screen.getByRole("tab", { name: "Windows" }));
   expect(screen.getByText("windows-install")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Copy Windows PowerShell command" })).toBeTruthy();
-  expect(screen.getByText("Paste in PowerShell")).toBeTruthy();
 });

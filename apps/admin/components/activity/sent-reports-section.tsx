@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { AudienceScope } from "@/lib/audience-scope";
 import { useAppQuery } from "@/lib/api/client";
+import { activityReportsInlineKey } from "@/lib/app-pages/query-keys";
 import type { SentReportKindFilter, SentReportListItem } from "@/lib/reports/sent-reports";
 
 type ReportsListResponse = {
@@ -102,7 +103,7 @@ export function SentReportsSection({ audience }: { audience: AudienceScope }) {
   const listBase = `/api/app/activity/reports?${scopeParam}`;
 
   const inlineQuery = useAppQuery<ReportsListResponse>(
-    ["app", "activity", "reports", audience, "inline"],
+    activityReportsInlineKey(audience),
     `${listBase}&limit=5&offset=0&kind=all`,
   );
 
@@ -197,7 +198,7 @@ export function SentReportsSection({ audience }: { audience: AudienceScope }) {
       ) : items.length === 0 ? (
         <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-sm text-muted-foreground">
           <Mail className="size-8 opacity-40" />
-          <p>No reports sent yet. They appear here after the 19:00 local send.</p>
+          <p>No reports sent yet. </p>
         </div>
       ) : (
         <div className="divide-y border-t border-border/70">

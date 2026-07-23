@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SessionProvider, useSession } from "next-auth/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -8,6 +8,7 @@ import { WorkspaceShell } from "@/components/workspace-shell";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 import { TimezoneReporter } from "@/components/timezone-reporter";
 import { useAppQuery } from "@/lib/api/client";
+import { workspaceContextKey } from "@/lib/app-pages/query-keys";
 import type { OrgBillingStatus } from "@/lib/saas-billing/status";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
 
@@ -34,32 +35,6 @@ type WorkspaceContext = {
   sessionWorkspaceSyncRequired: boolean;
 };
 
-/**
- * Start the active page request as soon as the client layout mounts. The page
- * hook adopts the same cache entry while session identity and workspace
- * context resolve independently.
- */
-function activePageData(pathname: string, queryString: string): { queryKey: readonly unknown[]; url: string } | null {
-  const suffix = queryString ? `?${queryString}` : "";
-  const pages: Record<string, { queryKey: string[]; url: string }> = {
-    "/dashboard": { queryKey: ["app", "dashboard"], url: "/api/app/dashboard" },
-    "/activity": { queryKey: ["app", "activity"], url: "/api/app/activity" },
-    "/tools": { queryKey: ["app", "tools"], url: "/api/app/tools" },
-    "/team": { queryKey: ["app", "team"], url: "/api/app/team" },
-    "/signals": { queryKey: ["app", "signals", "overview"], url: "/api/app/signals/overview" },
-    "/signals/activity": { queryKey: ["app", "signals", "activity"], url: "/api/app/signals/activity" },
-  };
-  const page = pages[pathname];
-  if (page) {
-    return { queryKey: [...page.queryKey, queryString], url: `${page.url}${suffix}` };
-  }
-  if (pathname === "/settings") {
-    return { queryKey: ["app", "notification-preferences"], url: "/api/app/me/notification-preferences" };
-  }
-  if (pathname === "/signals/settings") return { queryKey: ["app", "signals", "settings"], url: "/api/app/signals/settings" };
-  return null;
-}
-
 function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -70,7 +45,7 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
   const awaitingSince = useRef<number | null>(null);
   const lastWatermark = useRef<string | null>(null);
   const contextQuery = useAppQuery<WorkspaceContext>(
-    ["app", "workspace-context"],
+    workspaceContextKey,
     "/api/app/workspace-context",
     {
       // Poll while a device is connected but usage has not landed yet so Team /
@@ -90,19 +65,6 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
   );
   const syncStarted = useRef(false);
   const [syncFailed, setSyncFailed] = useState(false);
-
-  const pageData = useMemo(() => activePageData(pathname, queryString), [pathname, queryString]);
-  const workspaceReady = Boolean(
-    contextQuery.data?.current?.onboardingCompleted,
-  );
-  // Keep one active observer for page data in the layout. The screen uses the
-  // same key, so it adopts this in-flight request instead of racing a second
-  // fetch after its client bundle mounts.
-  useAppQuery<unknown>(
-    pageData?.queryKey ?? ["app", "page-data-idle"],
-    pageData?.url ?? "/api/app/workspace-context",
-    { enabled: Boolean(pageData && workspaceReady) },
-  );
 
   useEffect(() => {
     if (sessionStatus !== "unauthenticated") return;

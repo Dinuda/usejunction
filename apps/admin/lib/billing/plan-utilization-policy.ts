@@ -279,17 +279,17 @@ export function evaluatePlanUtilization(input: {
 export function verdictLabel(code: PlanVerdictCode): string {
   switch (code) {
     case "LIGHT_USE":
-      return "On plan";
+      return "Within allowance";
     case "HEALTHY":
-      return "Steady";
+      return "On track";
     case "NEAR_LIMIT":
-      return "Running out";
+      return "Near limit";
     case "LIMIT_EXCEEDED":
-      return "Over limit";
+      return "Over quota";
     case "DATA_STALE":
-      return "Stale data";
+      return "No quota data";
     default:
-      return "No signal";
+      return "No quota data";
   }
 }
 
@@ -297,13 +297,13 @@ export function verdictLabel(code: PlanVerdictCode): string {
 export function verdictHint(code: PlanVerdictCode): string | null {
   switch (code) {
     case "LIGHT_USE":
-      return "Plenty of headroom this cycle";
+      return "Usage is well within the included plan allowance";
     case "HEALTHY":
-      return "Usage is tracking with the plan";
+      return "Usage is within the included plan allowance";
     case "NEAR_LIMIT":
-      return "Likely to hit the cap before renewal";
+      return "Likely to hit the plan cap before renewal";
     case "LIMIT_EXCEEDED":
-      return "Quota already spent for this window";
+      return "Included plan quota is already used up";
     case "DATA_STALE":
       return "Last quota reading is too old";
     default:

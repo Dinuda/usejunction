@@ -2,11 +2,8 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
-import { MetricPeriodFilter } from "@/components/dashboard/metric-period-filter";
-import {
-  cycleViewPeriodLabel,
-  parseCycleView,
-} from "@/lib/dashboard/cycle-view";
+import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
+import { parseCycleView } from "@/lib/dashboard/cycle-view";
 import {
   DEFAULT_ROLLING_PERIOD,
   periodsEqual,
@@ -14,6 +11,7 @@ import {
   readRollingPeriodPrefs,
   rollingPeriodHref,
 } from "@/lib/dashboard/period-prefs";
+import { cn } from "@/lib/utils";
 
 /**
  * Global period cycler for the member hub — stays on the current tab and
@@ -32,7 +30,6 @@ export function MemberHubPeriodFilter({ className }: { className?: string }) {
     from: searchParams.get("from") ?? undefined,
     to: searchParams.get("to") ?? undefined,
   });
-  const periodLabel = cycleViewPeriodLabel(cycleView, period);
 
   useEffect(() => {
     if (cycleView !== "last_30_days") return;
@@ -45,12 +42,8 @@ export function MemberHubPeriodFilter({ className }: { className?: string }) {
   }, [cycleView, pathname, router, searchParams]);
 
   return (
-    <MetricPeriodFilter
-      view={cycleView}
-      period={period}
-      basePath={pathname}
-      label={periodLabel}
-      className={className}
-    />
+    <div className={cn(className)}>
+      <CycleViewPicker view={cycleView} period={period} basePath={pathname} />
+    </div>
   );
 }

@@ -38,7 +38,7 @@ beforeEach(() => {
   });
 });
 
-test("checkout shows the active member quantity in Lemon's product summary", async () => {
+test("checkout shows a rich product summary with media and seat quantity", async () => {
   const { createTeamCheckout } = await import("@/lib/saas-billing/lemonsqueezy");
 
   assert.equal(await createTeamCheckout({
@@ -52,8 +52,16 @@ test("checkout shows the active member quantity in Lemon's product summary", asy
   assert.equal(options.productOptions.name, "UseJunction Team");
   assert.match(options.productOptions.description, /3 active members/);
   assert.match(options.productOptions.description, /next bill/);
+  assert.match(options.productOptions.description, /Hosted UseJunction/);
+  assert.deepEqual(options.productOptions.media, [
+    "https://app.usejunction.test/images/laptop-tile.png",
+    "https://app.usejunction.test/images/person-tile.png",
+    "https://app.usejunction.test/images/connecting-computer.png",
+  ]);
   assert.deepEqual(options.productOptions.enabledVariants, [20]);
   assert.equal(options.checkoutOptions.desc, true);
+  assert.equal(options.checkoutOptions.media, true);
+  assert.equal(options.checkoutOptions.buttonColor, "#08758a");
   assert.deepEqual(options.checkoutData.variantQuantities, [{ variantId: 20, quantity: 3 }]);
 });
 
@@ -62,5 +70,5 @@ test("checkout uses singular member copy", async () => {
   await createTeamCheckout({ orgId: "org_1", email: "owner@example.com", quantity: 1 });
 
   const [, , options] = mocks.createCheckout.mock.calls[0];
-  assert.match(options.productOptions.description, /1 active member<\/strong>/);
+  assert.match(options.productOptions.description, /1 active member/);
 });

@@ -448,9 +448,8 @@ export function InviteTeamForm({
             type="submit"
             form="dashboard-invite-form"
             size="sm"
-            variant="outline"
             disabled={!canAdd}
-            className="h-9 min-w-[10.5rem] gap-1.5 rounded-none px-6 bg-background shadow-none"
+            className="h-9 min-w-[10.5rem] gap-1.5 rounded-none bg-foreground px-6 text-background shadow-none hover:bg-foreground/90"
           >
             {adding ? <Loader2 className="animate-spin" /> : <Send />}
             {adding ? "Sending…" : "Send"}

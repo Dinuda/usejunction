@@ -3,6 +3,11 @@
  */
 import { createCheckout, getCustomer, getSubscription } from "@lemonsqueezy/lemonsqueezy.js";
 import { prisma } from "@usejunction/db";
+import {
+  TEAM_CHECKOUT_BUTTON_COLOR,
+  teamCheckoutDescription,
+  teamCheckoutMediaUrls,
+} from "@/lib/saas-billing/checkout-presentation";
 import { PAID_SUBSCRIPTION_STATUSES } from "@/lib/saas-billing/entitlements";
 import {
   ensureLemonSqueezyConfigured,
@@ -28,17 +33,17 @@ export async function createTeamCheckout(input: {
   const storeId = requireLemonEnv("LEMONSQUEEZY_STORE_ID");
   const variantId = requireLemonEnv("LEMONSQUEEZY_VARIANT_ID_TEAM");
   const quantity = Math.max(1, input.quantity);
-  const memberLabel = quantity === 1 ? "member" : "members";
+  const baseUrl = getAppBaseUrl();
 
   const response = await createCheckout(storeId, variantId, {
     productOptions: {
       name: "UseJunction Team",
-      description: [
-        `<strong>${quantity} active ${memberLabel}</strong>`,
-        "Members who join or leave are reflected automatically on your next bill.",
-      ].join("<br>"),
+      description: teamCheckoutDescription(quantity),
+      media: teamCheckoutMediaUrls(baseUrl),
       enabledVariants: [Number(variantId)],
-      redirectUrl: `${getAppBaseUrl()}/dashboard?upgraded=1`,
+      redirectUrl: `${baseUrl}/dashboard?upgraded=1`,
+      receiptButtonText: "Open dashboard",
+      receiptThankYouNote: "Welcome to UseJunction Team — your workspace is upgrading now.",
     },
     checkoutData: {
       email: input.email,
@@ -54,8 +59,13 @@ export async function createTeamCheckout(input: {
       ],
     },
     checkoutOptions: {
+      embed: false,
+      media: true,
+      logo: true,
       desc: true,
+      discount: true,
       subscriptionPreview: true,
+      buttonColor: TEAM_CHECKOUT_BUTTON_COLOR,
     },
   });
 

@@ -102,14 +102,20 @@ Hobby Vercel only allows **once-per-day** native crons. The hourly report fan-ou
 | `GET/POST /api/cron/materialize-org-day-snapshots` | Materialize org day analytics snapshots | Vercel (`apps/admin/vercel.json`) | `45 0 * * *` |
 | `POST /api/cron/daily-report-send` | Email daily report teasers at 19:00 in each user’s timezone | GitHub Actions | `5 * * * *` |
 
-### GitHub Actions secrets (required for hourly report send)
+### GitHub Environment `agent-production` (required for hourly report send)
 
-Add these as **repository** secrets (Settings → Secrets and variables → Actions):
+`.github/workflows/production-crons.yml` runs with `environment: agent-production` (same as agent release workflows — **not** repository secrets).
 
 | Secret | Value |
 |--------|--------|
 | `CRON_SECRET` | Same value as Vercel Production `CRON_SECRET` |
-| `CRON_BASE_URL` | `https://usejunction.dev` (no trailing slash) |
+| `CONTROL_PLANE_URL` | `https://usejunction.dev` (no trailing slash; already required for agent promote/pause) |
+
+```bash
+gh secret set CRON_SECRET --env agent-production -b '<same as Vercel CRON_SECRET>'
+# CONTROL_PLANE_URL is usually already set for agent releases:
+gh secret list --env agent-production
+```
 
 You can also run **Actions → Production crons → Run workflow** to invoke report send manually.
 
@@ -150,7 +156,7 @@ Full ship checklist: [agent-releases.md § How to ship a production agent releas
 5. [ ] Sign-up / sign-in / email invite works (Resend)
 6. [ ] Domain `https://usejunction.dev` serves the app
 7. [ ] (If Team billing) Lemon keys + webhook configured
-8. [ ] GitHub `agent-production` env + signing secrets configured
+8. [ ] GitHub `agent-production` env configured (`CONTROL_PLANE_URL`, `CRON_SECRET`, signing + promote secrets)
 9. [ ] First `agent-v*` candidate built and promoted when ready to OTA
 
 ## Related docs

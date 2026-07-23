@@ -25,16 +25,16 @@ const report: DailyReportPayload = {
   },
   plan: {
     usedPercent: 42,
-    statusLabel: "On plan",
-    onPlan: true,
-    hint: "Plenty of headroom this cycle",
+    statusLabel: "Within allowance",
+    withinAllowance: true,
+    hint: "Usage is well within the included plan allowance",
     tools: [
       {
         toolName: "cursor",
         displayName: "Cursor",
         usedPercent: 42,
-        statusLabel: "On plan",
-        onPlan: true,
+        statusLabel: "Within allowance",
+        withinAllowance: true,
       },
     ],
   },
@@ -81,7 +81,7 @@ describe("daily report email", () => {
     assert.match(built.html, /usejunction\.png/);
     assert.match(built.html, /alt="UseJunction"/);
     assert.match(built.html, /Plan status/);
-    assert.match(built.html, /On plan/);
+    assert.match(built.html, /Within allowance/);
     assert.match(built.html, /Plan usage/);
     assert.match(built.html, /42%/);
     assert.match(built.html, /Usage by tool/);
@@ -159,7 +159,7 @@ describe("daily report PDF document", () => {
     assert.match(pdf.html, /<svg/);
     assert.match(pdf.html, /linearGradient/);
     assert.match(pdf.html, /Plan status/);
-    assert.match(pdf.html, /On plan/);
+    assert.match(pdf.html, /Within allowance/);
     assert.match(pdf.html, /Plan usage/);
     assert.match(pdf.html, /Usage by tool/);
     assert.match(pdf.html, /Tokens by hour/);
