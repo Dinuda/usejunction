@@ -189,7 +189,9 @@ export function LocalSyncPanel({
   const [status, setStatus] = useState<"idle" | "syncing" | "ok" | "unreachable" | "error">("idle");
   const [detail, setDetail] = useState<string | null>(null);
   const uploadedAt = latestTimestamp(lastUsageSyncAt, lastAccountSyncAt) ?? lastSeenAt;
-  const ready = dashboardReady !== false && !(dirtyDayCount && dirtyDayCount > 0);
+  // Live-horizon KPIs come from usage_daily; only honor dashboardReady from the
+  // server (history stub conflicts). Dirty history backlog must not block the UI.
+  const ready = dashboardReady !== false;
 
   async function loadInfo(): Promise<LocalSyncInfo | null> {
     const res = await fetch("/api/me/local-sync", { cache: "no-store" });
@@ -199,13 +201,21 @@ export function LocalSyncPanel({
 
   async function finishAfterAgentUpload(warnings?: string[]) {
     setDetail("Updating dashboard…");
-    const refresh = await refreshSnapshots();
-    if (!refresh.ok) {
-      setStatus("error");
-      setDetail(refresh.message);
-      return;
+    let remaining = 0;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const refresh = await refreshSnapshots();
+      if (!refresh.ok) {
+        setStatus("error");
+        setDetail(refresh.message);
+        return;
+      }
+      remaining = refresh.result.dirtyRemaining ?? 0;
+      if (remaining === 0) break;
+      setDetail(
+        `Uploaded · dashboard still updating (${remaining} day${remaining === 1 ? "" : "s"} pending)…`,
+      );
+      await new Promise((resolve) => window.setTimeout(resolve, 1_500));
     }
-    const remaining = refresh.result.dirtyRemaining ?? 0;
     if (remaining > 0) {
       setStatus("ok");
       setDetail(
@@ -358,10 +368,10 @@ export function LocalSyncPanel({
   }
 
   const statusLabel = !ready
-    ? dirtyDayCount && dirtyDayCount > 0
-      ? `Updating dashboard · uploaded ${formatRelativeTime(uploadedAt)}`
-      : `Uploaded ${formatRelativeTime(uploadedAt)} · updating dashboard`
-    : `Last synced ${formatRelativeTime(uploadedAt)}`;
+    ? `Uploaded ${formatRelativeTime(uploadedAt)} · updating dashboard`
+    : dirtyDayCount && dirtyDayCount > 0
+      ? `Last synced ${formatRelativeTime(uploadedAt)} · history still updating`
+      : `Last synced ${formatRelativeTime(uploadedAt)}`;
 
   return (
     <div className="flex items-center justify-between gap-2 sm:gap-4">

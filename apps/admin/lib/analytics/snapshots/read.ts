@@ -7,6 +7,14 @@ import {
   snapshotIsoDay,
   snapshotUtcDay,
 } from "./materialize";
+import {
+  OVERLAY_LIVE_DIRTY_DAY_CAP,
+  eachIsoDayInclusive,
+  liveOrgDayTotalsForDates,
+  loadDirtyDaysInWindow,
+  splitLiveReadWindow,
+  type LiveDayTotalRow,
+} from "./overlay";
 
 export type SnapshotDayTotals = {
   date: string;
@@ -131,7 +139,7 @@ function foldSnapshotRows(
     activeDeveloperIds: unknown;
     sourceObservedThrough: Date | null;
   }>,
-  options: { includeTools?: boolean; toolNames?: string[] },
+  options: { includeTools?: boolean; toolNames?: string[]; partialData?: boolean; importingDays?: number },
 ): SnapshotReadResult {
   const dayTotals: SnapshotDayTotals[] = [];
   const toolAcc = new Map<string, SnapshotToolTotals>();
@@ -213,7 +221,7 @@ function foldSnapshotRows(
     tokens: dayTotals.reduce((sum, row) => sum + row.inputTokens + row.outputTokens, 0),
     verifiedUsageCost: dayTotals.reduce((sum, row) => sum + row.verifiedUsageCost, 0),
     estimatedApiCost: dayTotals.reduce((sum, row) => sum + row.estimatedApiCost, 0),
-    partialData: false,
+    partialData: Boolean(options.partialData) || (options.importingDays ?? 0) > 0,
   };
 
   return {
@@ -233,39 +241,87 @@ function foldSnapshotRows(
 
 /**
  * Sum ready org-day snapshots for a window (`developerId = ""` rollups only).
- * Callers that need multiple windows should call `ensureOrgUsageDaySnapshots`
- * once for the union range first, then pass `{ ensure: false }` here.
+ * Recent-horizon days always come from live usage_daily so first-sync KPIs are
+ * correct even when sealed snapshots are stale or zero. Older days use sealed
+ * snapshots with a dirty-day overlay.
  */
 export async function readOrgUsageFromSnapshots(
   orgId: string,
   window: MetricWindow,
   options: { includeTools?: boolean; toolNames?: string[]; ensure?: boolean } = {},
 ): Promise<SnapshotReadResult> {
-  if (options.ensure !== false) {
-    await ensureOrgUsageDaySnapshots(orgId, window.from, window.to);
-  }
-
   const from = snapshotUtcDay(window.from);
   const to = snapshotUtcDay(window.to);
-  const rows = await prisma.orgUsageDaySnapshot.findMany({
-    where: {
-      orgId,
-      developerId: "",
-      metricVersion: ORG_DAY_SNAPSHOT_VERSION,
-      date: { gte: from, lte: to },
-      ...(options.toolNames?.length
-        ? { OR: [{ toolName: "" }, { toolName: { in: options.toolNames } }] }
-        : {}),
-    },
-    orderBy: [{ date: "asc" }, { toolName: "asc" }],
-  });
+  const { historyFrom, historyTo, liveFrom, liveTo } = splitLiveReadWindow(from, to);
 
-  return foldSnapshotRows(rows, options);
+  if (options.ensure !== false && historyFrom && historyTo) {
+    await ensureOrgUsageDaySnapshots(orgId, historyFrom, historyTo);
+  }
+
+  type MergedRow = {
+    date: Date;
+    toolName: string;
+    requests: number;
+    inputTokens: bigint;
+    outputTokens: bigint;
+    verifiedUsageCostMicros: bigint;
+    estimatedApiCostMicros: bigint;
+    actualSpendCostMicros: bigint;
+    activeDevelopers: number;
+    activeDeveloperIds: unknown;
+    sourceObservedThrough: Date | null;
+  };
+
+  let historyRows: MergedRow[] = [];
+  let deferredDirty: string[] = [];
+  let liveDirtyOverlay = false;
+
+  if (historyFrom && historyTo) {
+    const dirtyDays = await loadDirtyDaysInWindow(orgId, historyFrom, historyTo);
+    const liveDirty = dirtyDays.slice(0, OVERLAY_LIVE_DIRTY_DAY_CAP);
+    deferredDirty = dirtyDays.slice(OVERLAY_LIVE_DIRTY_DAY_CAP);
+    const dirtySet = new Set(dirtyDays);
+
+    const rows = await prisma.orgUsageDaySnapshot.findMany({
+      where: {
+        orgId,
+        developerId: "",
+        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+        date: { gte: historyFrom, lte: historyTo },
+        ...(options.toolNames?.length
+          ? { OR: [{ toolName: "" }, { toolName: { in: options.toolNames } }] }
+          : {}),
+      },
+      orderBy: [{ date: "asc" }, { toolName: "asc" }],
+    });
+
+    const cleanRows = rows.filter((row) => !dirtySet.has(snapshotIsoDay(row.date)));
+    historyRows = cleanRows;
+    if (liveDirty.length) {
+      liveDirtyOverlay = true;
+      const live = await liveOrgDayTotalsForDates(orgId, liveDirty);
+      const liveOrg = live.filter((row) => row.developerId === "");
+      historyRows = [...cleanRows, ...liveOrg];
+    }
+  }
+
+  let liveRows: LiveDayTotalRow[] = [];
+  if (liveFrom && liveTo) {
+    const liveDays = eachIsoDayInclusive(liveFrom, liveTo);
+    const live = await liveOrgDayTotalsForDates(orgId, liveDays);
+    liveRows = live.filter((row) => row.developerId === "");
+  }
+
+  return foldSnapshotRows([...historyRows, ...liveRows], {
+    ...options,
+    partialData: deferredDirty.length > 0 || liveDirtyOverlay,
+    importingDays: deferredDirty.length,
+  });
 }
 
 /**
  * Sum sealed developer-day snapshots for You / member dashboards.
- * Same generation as org rollups — never queries usage_daily on the read path.
+ * Same live-horizon + dirty-aware overlay as org rollups.
  */
 export async function readDeveloperUsageFromSnapshots(
   orgId: string,
@@ -273,25 +329,90 @@ export async function readDeveloperUsageFromSnapshots(
   window: MetricWindow,
   options: { includeTools?: boolean; toolNames?: string[]; ensure?: boolean } = {},
 ): Promise<SnapshotReadResult> {
-  if (options.ensure !== false) {
-    await ensureOrgUsageDaySnapshots(orgId, window.from, window.to);
-    await ensureDeveloperUsageDaySnapshots(orgId, developerId, window.from, window.to);
-  }
-
   const from = snapshotUtcDay(window.from);
   const to = snapshotUtcDay(window.to);
-  const rows = await prisma.orgUsageDaySnapshot.findMany({
-    where: {
-      orgId,
-      developerId,
-      metricVersion: ORG_DAY_SNAPSHOT_VERSION,
-      date: { gte: from, lte: to },
-      ...(options.toolNames?.length
-        ? { OR: [{ toolName: "" }, { toolName: { in: options.toolNames } }] }
-        : {}),
-    },
-    orderBy: [{ date: "asc" }, { toolName: "asc" }],
-  });
+  const { historyFrom, historyTo, liveFrom, liveTo } = splitLiveReadWindow(from, to);
 
-  return foldSnapshotRows(rows, options);
+  if (options.ensure !== false && historyFrom && historyTo) {
+    await ensureOrgUsageDaySnapshots(orgId, historyFrom, historyTo);
+    await ensureDeveloperUsageDaySnapshots(orgId, developerId, historyFrom, historyTo);
+  }
+
+  type MergedRow = {
+    date: Date;
+    toolName: string;
+    requests: number;
+    inputTokens: bigint;
+    outputTokens: bigint;
+    verifiedUsageCostMicros: bigint;
+    estimatedApiCostMicros: bigint;
+    actualSpendCostMicros: bigint;
+    activeDevelopers: number;
+    activeDeveloperIds: unknown;
+    sourceObservedThrough: Date | null;
+  };
+
+  let historyRows: MergedRow[] = [];
+  let deferredDirty: string[] = [];
+  let liveDirtyOverlay = false;
+
+  if (historyFrom && historyTo) {
+    const dirtyDays = await loadDirtyDaysInWindow(orgId, historyFrom, historyTo);
+    const liveDirty = dirtyDays.slice(0, OVERLAY_LIVE_DIRTY_DAY_CAP);
+    deferredDirty = dirtyDays.slice(OVERLAY_LIVE_DIRTY_DAY_CAP);
+    const dirtySet = new Set(dirtyDays);
+
+    const rows = await prisma.orgUsageDaySnapshot.findMany({
+      where: {
+        orgId,
+        developerId,
+        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+        date: { gte: historyFrom, lte: historyTo },
+        ...(options.toolNames?.length
+          ? { OR: [{ toolName: "" }, { toolName: { in: options.toolNames } }] }
+          : {}),
+      },
+      orderBy: [{ date: "asc" }, { toolName: "asc" }],
+    });
+
+    const cleanRows = rows.filter((row) => !dirtySet.has(snapshotIsoDay(row.date)));
+    historyRows = cleanRows;
+    if (liveDirty.length) {
+      liveDirtyOverlay = true;
+      const live = await liveOrgDayTotalsForDates(orgId, liveDirty, { developerId });
+      const liveDev = live.filter((row) => row.developerId === developerId || row.developerId === "");
+      const byKey = new Map<string, (typeof live)[number]>();
+      for (const row of liveDev) {
+        const key = `${snapshotIsoDay(row.date)}|${row.toolName}|${row.developerId}`;
+        if (
+          row.developerId === developerId ||
+          !byKey.has(`${snapshotIsoDay(row.date)}|${row.toolName}|${developerId}`)
+        ) {
+          byKey.set(key, row);
+        }
+      }
+      const preferred = [...byKey.values()].filter((row) => row.developerId === developerId);
+      historyRows = [
+        ...cleanRows,
+        ...(preferred.length ? preferred : liveDev.filter((r) => r.toolName === "" && r.developerId === "")),
+      ];
+    }
+  }
+
+  let liveRows: LiveDayTotalRow[] = [];
+  if (liveFrom && liveTo) {
+    const liveDays = eachIsoDayInclusive(liveFrom, liveTo);
+    const live = await liveOrgDayTotalsForDates(orgId, liveDays, { developerId });
+    const liveDev = live.filter((row) => row.developerId === developerId);
+    liveRows =
+      liveDev.length > 0
+        ? liveDev
+        : live.filter((row) => row.toolName === "" && row.developerId === "");
+  }
+
+  return foldSnapshotRows([...historyRows, ...liveRows], {
+    ...options,
+    partialData: deferredDirty.length > 0 || liveDirtyOverlay,
+    importingDays: deferredDirty.length,
+  });
 }

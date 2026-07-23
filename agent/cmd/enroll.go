@@ -53,7 +53,8 @@ var enrollCmd = &cobra.Command{
 			DeviceID:        resp.DeviceID,
 			UserID:          resp.UserID,
 			OrgID:           resp.OrgID,
-			GatewayURL:      resp.GatewayURL,
+			// Never store or use a gateway URL. Local tools keep their own
+			// vendor configs (e.g. ~/.codex/config.toml) untouched.
 		}
 		if resp.Otel != nil {
 			cfg.OtelEnabled = resp.Otel.Enabled
@@ -71,6 +72,10 @@ var enrollCmd = &cobra.Command{
 			return fmt.Errorf("saving config: %w", err)
 		}
 
+		if err := configure.RepairLegacyCodexGatewayConfig(); err != nil {
+			fmt.Printf("codex config repair warning: %v\n", err)
+		}
+
 		if enrollSetup {
 			if err := configure.RunSetup(cfg, configure.SetupOptions{
 				EnableOtel: true,
@@ -84,13 +89,11 @@ var enrollCmd = &cobra.Command{
 
 		if format == "json" {
 			printJSON(map[string]any{
-				"deviceId":   resp.DeviceID,
-				"orgId":      resp.OrgID,
-				"gatewayUrl": resp.GatewayURL,
+				"deviceId": resp.DeviceID,
+				"orgId":    resp.OrgID,
 			})
 		} else {
 			fmt.Printf("Enrolled device %s for org %s\n", resp.DeviceID, resp.OrgID)
-			fmt.Printf("Gateway: %s\n", resp.GatewayURL)
 			fmt.Printf("Config saved to %s\n", config.ConfigPath())
 		}
 		return nil

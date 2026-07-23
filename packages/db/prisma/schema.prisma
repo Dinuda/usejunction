@@ -51,6 +51,8 @@ model Organization {
   orgUsageDaySnapshots   OrgUsageDaySnapshot[]
   analyticsDirtyDays     AnalyticsDirtyDay[]
   analyticsWatermarks    AnalyticsWatermark[]
+  syncRuns               SyncRun[]
+  deviceUsageFingerprints DeviceUsageFingerprint[]
   toolClaims             DeveloperToolClaim[]
   billingPlanTemplates   BillingPlanTemplate[]
   planAssignments        DeveloperPlanAssignment[]
@@ -138,6 +140,11 @@ model Device {
   localSyncTokenEnc  String?   @map("local_sync_token_enc")
   lastUsageSyncAt    DateTime? @map("last_usage_sync_at")
   lastAccountSyncAt  DateTime? @map("last_account_sync_at")
+  lastToolsSyncAt    DateTime? @map("last_tools_sync_at")
+  lastQuotasSyncAt   DateTime? @map("last_quotas_sync_at")
+  toolsContentHash   String?   @map("tools_content_hash")
+  accountsContentHash String?  @map("accounts_content_hash")
+  quotasContentHash  String?   @map("quotas_content_hash")
   decommissionedAt   DateTime? @map("decommissioned_at")
   createdAt          DateTime  @default(now()) @map("created_at")
 
@@ -150,6 +157,9 @@ model Device {
   quotaSnapshots         QuotaSnapshot[]
   localUsageAggregates   LocalUsageAggregate[]
   usageDaily             UsageDaily[]
+  syncRuns               SyncRun[]
+  syncChunks             SyncChunk[]
+  deviceUsageFingerprints DeviceUsageFingerprint[]
   signalsActivityEvents  SignalsActivityEvent[]
   signalsSessions        SignalsSession[]
   localWorkSessions      LocalWorkSession[]
@@ -917,6 +927,75 @@ model AnalyticsWatermark {
 
   @@unique([orgId, kind, metricVersion])
   @@map("analytics_watermarks")
+}
+
+/// Server-tracked usage sync session (replaces client-only fingerprint drain).
+model SyncRun {
+  id              String    @id @default(cuid())
+  orgId           String    @map("org_id")
+  deviceId        String    @map("device_id")
+  kind            String    @default("usage")
+  status          String    @default("open") // open | receiving | committed | failed
+  expectedChunks  Int       @default(0) @map("expected_chunks")
+  receivedChunks  Int       @default(0) @map("received_chunks")
+  expectedRows    Int       @default(0) @map("expected_rows")
+  receivedRows    Int       @default(0) @map("received_rows")
+  manifestHash    String?   @map("manifest_hash")
+  /// JSON array of partition keys expected in this run (delta set).
+  deltaPartitions Json      @default("[]") @map("delta_partitions")
+  /// JSON array of all partition keys in the lookback manifest (authoritative for reconciliation).
+  manifestPartitions Json   @default("[]") @map("manifest_partitions")
+  windowFrom      DateTime? @map("window_from") @db.Date
+  windowTo        DateTime? @map("window_to") @db.Date
+  error           String?
+  startedAt       DateTime  @default(now()) @map("started_at")
+  committedAt     DateTime? @map("committed_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  chunks       SyncChunk[]
+
+  @@index([orgId, deviceId, status])
+  @@index([deviceId, startedAt])
+  @@map("sync_runs")
+}
+
+model SyncChunk {
+  id          String   @id @default(cuid())
+  syncRunId   String   @map("sync_run_id")
+  deviceId    String   @map("device_id")
+  /// Client-generated idempotency key.
+  chunkId     String   @map("chunk_id")
+  rowCount    Int      @default(0) @map("row_count")
+  contentHash String   @default("") @map("content_hash")
+  receivedAt  DateTime @default(now()) @map("received_at")
+
+  syncRun SyncRun @relation(fields: [syncRunId], references: [id], onDelete: Cascade)
+  device  Device  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([syncRunId, chunkId])
+  @@index([deviceId, receivedAt])
+  @@map("sync_chunks")
+}
+
+/// Server-side partition fingerprints so delta computation survives re-enroll / lost local cache.
+model DeviceUsageFingerprint {
+  id           String   @id @default(cuid())
+  orgId        String   @map("org_id")
+  deviceId     String   @map("device_id")
+  partitionKey String   @map("partition_key")
+  contentHash  String   @map("content_hash")
+  date         DateTime @db.Date
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, partitionKey])
+  @@index([orgId, deviceId, date])
+  @@map("device_usage_fingerprints")
 }
 
 model DeveloperToolClaim {

@@ -13,6 +13,7 @@ import (
 	"github.com/usejunction/agent/internal/probe"
 	"github.com/usejunction/agent/internal/providers"
 	"github.com/usejunction/agent/internal/scan"
+	"github.com/usejunction/agent/internal/syncengine"
 	"github.com/usejunction/agent/internal/types"
 	"github.com/usejunction/agent/internal/workextract"
 )
@@ -58,6 +59,18 @@ func codexHomeForProbe() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".codex")
+}
+
+func claudeConfigDirForProbe() string {
+	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
+		return d
+	}
+	home, _ := os.UserHomeDir()
+	candidate := filepath.Join(home, ".claude")
+	if st, err := os.Stat(candidate); err == nil && st.IsDir() {
+		return candidate
+	}
+	return filepath.Join(home, ".config", "claude")
 }
 
 // collectAndReport gathers telemetry from all providers and posts to the control plane.
@@ -119,22 +132,7 @@ func collectAndReportWithProgress(
 		quotaReports = append(quotaReports, result.quotaReports...)
 	}
 
-	progress("upload-tools", fmt.Sprintf("Uploading %d tool reports", len(toolReports)))
-	if err := api.ReportTools(toolReports); err != nil {
-		return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, fmt.Errorf("tools: %w", err)
-	}
-	if len(accountReports) > 0 {
-		progress("upload-accounts", fmt.Sprintf("Uploading %d account reports", len(accountReports)))
-		if err := api.ReportAccounts(accountReports); err != nil {
-			return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, fmt.Errorf("accounts: %w", err)
-		}
-	}
-	if len(quotaReports) > 0 {
-		progress("upload-quotas", fmt.Sprintf("Uploading %d quota windows", len(quotaReports)))
-		if err := api.ReportQuotas(quotaReports); err != nil {
-			return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, fmt.Errorf("quotas: %w", err)
-		}
-	}
+	progress("upload-tools", fmt.Sprintf("Preparing %d tool / %d account / %d quota reports for sync", len(toolReports), len(accountReports), len(quotaReports)))
 	if len(modelReports) > 0 {
 		progress("upload-models", fmt.Sprintf("Uploading %d local model reports", len(modelReports)))
 		if err := api.ReportLocalModels(modelReports); err != nil && verbose {
@@ -142,15 +140,96 @@ func collectAndReportWithProgress(
 		}
 	}
 	usageIncomplete := false
-	if len(usageReports) > 0 {
-		uploaded, remaining, uploadErr := reportLocalUsageDelta(api, cfg, usageReports, func(drain, pending, scanned int) {
-			progress("upload-usage", fmt.Sprintf("Uploading %d of %d queued usage rows (scanned %d, last %d days)", drain, pending, scanned, scan.UsageLookbackDays))
-		})
-		if uploadErr != nil && uploaded == 0 {
-			return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, fmt.Errorf("usage: %w", uploadErr)
+	// Tools/accounts/quotas ride as sidecars on usage sync start. If there is no
+	// usage to upload, still open a sync session so inventory can land.
+	if len(usageReports) > 0 || len(toolReports) > 0 || len(accountReports) > 0 || len(quotaReports) > 0 {
+		daily := make([]types.DailyUsage, 0, len(usageReports))
+		for _, row := range usageReports {
+			daily = append(daily, aggregateToUsage(row))
+		}
+		progress("upload-usage", fmt.Sprintf("Syncing usage (%d scanned rows, last %d days) + inventory", len(daily), scan.UsageLookbackDays))
+		// Drain until remaining==0 so first-sync dashboards are correct in one collect.
+		// Each iteration re-starts; fingerprints from prior chunks shrink the delta.
+		// Inventory sidecars are sent on the first pass; server no-ops on hash match.
+		const maxUsageSyncIterations = 32
+		uploaded := 0
+		remaining := 0
+		var uploadErr error
+		usedLegacy := false
+		for iter := 0; iter < maxUsageSyncIterations; iter++ {
+			if err := ctx.Err(); err != nil {
+				uploadErr = err
+				break
+			}
+			var inventory *syncengine.InventorySidecars
+			if iter == 0 {
+				toolsForPass := toolReports
+				if toolsForPass == nil {
+					toolsForPass = []client.ToolReport{}
+				}
+				accountsForPass := accountReports
+				if accountsForPass == nil {
+					accountsForPass = []client.AccountReport{}
+				}
+				quotasForPass := quotaReports
+				if quotasForPass == nil {
+					quotasForPass = []client.QuotaReport{}
+				}
+				inventory = &syncengine.InventorySidecars{
+					Tools:    toolsForPass,
+					Accounts: accountsForPass,
+					Quotas:   quotasForPass,
+				}
+			}
+			n, rem, syncWarnings, err := syncengine.UploadUsageSession(ctx, api, daily, inventory)
+			warnings = append(warnings, syncWarnings...)
+			uploaded += n
+			remaining = rem
+			uploadErr = err
+			if uploadErr != nil {
+				// Fall back to legacy fingerprint drain if sync endpoints are unavailable.
+				progress("upload-usage", "Falling back to legacy usage upload")
+				if iter == 0 {
+					if len(accountReports) > 0 {
+						if accErr := api.ReportAccounts(accountReports); accErr != nil {
+							warnings = append(warnings, fmt.Sprintf("accounts legacy upload: %v", accErr))
+						}
+					}
+					if len(quotaReports) > 0 {
+						if qErr := api.ReportQuotas(quotaReports); qErr != nil {
+							warnings = append(warnings, fmt.Sprintf("quotas legacy upload: %v", qErr))
+						}
+					}
+				}
+				var legacyErr error
+				if len(usageReports) > 0 {
+					uploaded, remaining, legacyErr = reportLocalUsageDelta(api, cfg, usageReports, func(drain, pending, scanned int) {
+						progress("upload-usage", fmt.Sprintf("Uploading %d of %d queued usage rows (scanned %d, last %d days)", drain, pending, scanned, scan.UsageLookbackDays))
+					})
+				} else {
+					uploaded, remaining = 0, 0
+				}
+				usedLegacy = true
+				if legacyErr != nil && uploaded == 0 && len(usageReports) > 0 {
+					return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, fmt.Errorf("usage: %w", legacyErr)
+				}
+				if legacyErr != nil {
+					uploadErr = legacyErr
+				} else {
+					uploadErr = nil
+				}
+				break
+			}
+			if remaining == 0 {
+				break
+			}
+			progress("upload-usage", fmt.Sprintf("Uploaded %d usage rows so far; continuing (%d remaining)", uploaded, remaining))
+		}
+		if !usedLegacy && remaining > 0 && uploadErr == nil {
+			warnings = append(warnings, fmt.Sprintf("%d usage rows still queued after %d sync passes", remaining, maxUsageSyncIterations))
 		}
 		switch {
-		case uploaded == 0:
+		case uploaded == 0 && remaining == 0:
 			progress("upload-usage", "No usage changes since last upload")
 		case remaining > 0:
 			progress("upload-usage", fmt.Sprintf("Uploaded %d usage rows; %d older rows queued for next sync", uploaded, remaining))
@@ -327,17 +406,37 @@ func collectProvider(ctx context.Context, p providers.Provider, refresh bool) pr
 			quotaSnaps = snaps
 			acc = mergeToolAccounts(acc, probeAcc)
 		}
+	case "claude":
+		// Merge plan/auth from quota probe even when HTTP fails (401 clears plan).
+		snaps, probeAcc, err := probe.ProbeClaudeQuota(ctx, claudeConfigDirForProbe())
+		acc = mergeToolAccounts(acc, probeAcc)
+		if err == nil {
+			quotaSnaps = snaps
+		}
 	default:
 		quotaSnaps, _ = p.ProbeQuota(ctx)
 	}
-	if acc != nil && acc.AuthPresent {
+	plan := ""
+	if acc != nil {
+		plan = strings.TrimSpace(acc.Plan)
+	}
+	// Attach when auth is present or a vendor plan was probed — syncDetected
+	// creates seats only when plan is non-null; empty-email accounts are fine.
+	if acc != nil && (acc.AuthPresent || plan != "") {
+		toolName := strings.TrimSpace(acc.ToolName)
+		if toolName == "" {
+			toolName = status.ToolName
+		}
 		result.accountReports = append(result.accountReports, client.AccountReport{
-			ToolName:    acc.ToolName,
+			ToolName:    toolName,
 			Email:       acc.Email,
-			Plan:        acc.Plan,
+			Plan:        plan,
 			LoginMethod: acc.LoginMethod,
-			AuthPresent: acc.AuthPresent,
+			AuthPresent: acc.AuthPresent || plan != "",
 		})
+		if plan == "" && len(quotaSnaps) > 0 {
+			fmt.Printf("[collect] %s: auth/quota present but plan empty — subscription seat will not auto-create\n", toolName)
+		}
 	}
 
 	for _, snap := range quotaSnaps {

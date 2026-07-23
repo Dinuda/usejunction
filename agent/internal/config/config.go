@@ -24,7 +24,9 @@ type Config struct {
 	DeviceID                string `json:"deviceId"`
 	UserID                  string `json:"userId"`
 	OrgID                   string `json:"orgId"`
-	GatewayURL              string `json:"gatewayUrl"`
+	// GatewayURL is legacy. Observability-only agents must leave vendor tool
+	// configs alone and must not route traffic through a gateway.
+	GatewayURL              string `json:"gatewayUrl,omitempty"`
 	OtelEnabled             bool   `json:"otelEnabled,omitempty"`
 	OtelMetricsEndpoint     string `json:"otelMetricsEndpoint,omitempty"`
 	LocalSyncPort           int    `json:"localSyncPort,omitempty"`
@@ -122,6 +124,9 @@ func Save(c *Config) error {
 	if err := os.MkdirAll(ConfigDir(), 0700); err != nil {
 		return err
 	}
+	// Never persist a gateway URL. Older agents used this to rewrite vendor
+	// tool configs; observability-only agents must not.
+	c.GatewayURL = ""
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err

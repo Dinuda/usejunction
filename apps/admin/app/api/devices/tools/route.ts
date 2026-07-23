@@ -1,17 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@usejunction/db";
-import {
-  recordDeviceActivityEvent,
-  uniqueStrings,
-} from "@/lib/activity/record-device-activity-event";
 import { findDeviceByBearerToken } from "@/lib/auth";
 import { limitedJson } from "@/lib/security/http";
 import { logServerError } from "@/lib/errors/public";
+import {
+  applyDeviceToolInventory,
+  toolsInventoryContentHash,
+  type ToolInventoryItem,
+} from "@/lib/sync/tools-inventory";
 
+/**
+ * Compatibility endpoint for agents that still POST tool inventory here.
+ * Canonical path is the sync-start tools sidecar; both call applyDeviceToolInventory.
+ */
 export async function POST(req: NextRequest) {
-  const started = Date.now();
   try {
-    const device = await findDeviceByBearerToken(req, {});
+    const device = await findDeviceByBearerToken(req, {
+      select: {
+        id: true,
+        orgId: true,
+        userId: true,
+        toolsContentHash: true,
+      },
+    });
     if (!device) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
@@ -24,76 +34,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "tools array required" }, { status: 400 });
     }
 
-    let upserted = 0;
-    const reportedNames: string[] = [];
-    const sample: Array<{ toolName: string; version: string | null; configured: boolean }> = [];
-    for (const tool of tools) {
-      if (!tool.toolName) continue;
-      const detected = tool.detected !== false;
-      if (!detected) continue;
-      reportedNames.push(tool.toolName);
-
-      await prisma.toolInstallation.upsert({
-        where: { deviceId_toolName: { deviceId: device.id, toolName: tool.toolName } },
-        update: {
-          detected: true,
-          configured: tool.configured ?? false,
-          configPath: tool.configPath ?? null,
-          version: tool.version ?? null,
-          lastCheckedAt: new Date(),
-        },
-        create: {
-          orgId: device.orgId,
-          userId: device.userId,
-          deviceId: device.id,
-          toolName: tool.toolName,
-          detected: true,
-          configured: tool.configured ?? false,
-          configPath: tool.configPath ?? null,
-          version: tool.version ?? null,
-        },
-      });
-      if (sample.length < 8) {
-        sample.push({
-          toolName: tool.toolName,
-          version: tool.version ?? null,
-          configured: Boolean(tool.configured),
-        });
-      }
-      upserted += 1;
-    }
-
-    // Drop stale rows for tools no longer present on this device.
-    if (reportedNames.length > 0) {
-      await prisma.toolInstallation.deleteMany({
-        where: {
-          deviceId: device.id,
-          toolName: { notIn: reportedNames },
-        },
-      });
-    } else {
-      await prisma.toolInstallation.deleteMany({ where: { deviceId: device.id } });
-    }
-
-    await prisma.device.update({
-      where: { id: device.id },
-      data: { lastSeenAt: new Date() },
+    const items: ToolInventoryItem[] = tools.map((tool) => {
+      const row = tool as Record<string, unknown>;
+      return {
+        toolName: String(row.toolName ?? ""),
+        detected: row.detected !== false,
+        configured: Boolean(row.configured),
+        configPath: typeof row.configPath === "string" ? row.configPath : null,
+        version: typeof row.version === "string" ? row.version : null,
+      };
     });
+    const contentHash = toolsInventoryContentHash(items);
 
-    const toolNames = uniqueStrings(reportedNames);
-    await recordDeviceActivityEvent({
+    if (device.toolsContentHash && device.toolsContentHash === contentHash) {
+      return NextResponse.json({ upserted: 0, unchanged: true });
+    }
+
+    const result = await applyDeviceToolInventory({
       orgId: device.orgId,
-      developerId: device.userId,
+      userId: device.userId,
       deviceId: device.id,
-      kind: "tools",
-      status: "ok",
-      summary: `Tools sync · ${upserted} tools${toolNames.length ? ` · ${toolNames.join(", ")}` : ""}`,
-      requestSummary: { tools: upserted, names: toolNames, sample },
-      responseSummary: { upserted },
-      durationMs: Date.now() - started,
+      items,
+      contentHash,
     });
 
-    return NextResponse.json({ upserted });
+    return NextResponse.json({ upserted: result.upserted });
   } catch (e) {
     logServerError("devices/tools", e);
     return NextResponse.json({ error: "tools upsert failed" }, { status: 500 });

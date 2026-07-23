@@ -462,7 +462,7 @@ export async function getOrgOverview(
       usageKpis.tokens > 0 ||
       mergedTools.some((tool) => tool.requests > 0) ||
       detectedInstallations.length > 0,
-    partialData: previousKpis.partialData,
+    partialData: Boolean(usageKpis.partialData || previousKpis.partialData),
     observation,
     kpis: {
       actualSpend: {

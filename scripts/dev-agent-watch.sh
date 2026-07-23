@@ -50,7 +50,12 @@ run_reinstall() {
   if bash "$REINSTALL"; then
     echo "[$(date '+%H:%M:%S')] Agent reinstall succeeded."
   else
-    echo "[$(date '+%H:%M:%S')] Agent reinstall failed (watcher continues)." >&2
+    echo "[$(date '+%H:%M:%S')] ERROR: agent reinstall FAILED — daemon may still be on the old binary." >&2
+    echo "[$(date '+%H:%M:%S')] Fix the error above and save again, or run: pnpm agent:reinstall" >&2
+    if command -v printf >/dev/null 2>&1; then
+      # Terminal bell so a failed restart is obvious in a long watch session.
+      printf '\a' >&2 || true
+    fi
   fi
 }
 

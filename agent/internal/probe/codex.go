@@ -87,6 +87,8 @@ func LoadCodexAuth(home string) (*codexAuthFile, error) {
 	return &auth, nil
 }
 
+// SaveCodexAuth writes refreshed OAuth tokens back to ~/.codex/auth.json only.
+// This never touches config.toml or TCC-gated folders (Documents/Downloads/…).
 func SaveCodexAuth(home string, auth *codexAuthFile) error {
 	path := filepath.Join(home, "auth.json")
 	if auth.nestedTokens {
@@ -508,7 +510,9 @@ func refreshCodexToken(ctx context.Context, home string, auth *codexAuthFile) (*
 		auth.IDToken = v
 	}
 	auth.LastRefresh = time.Now().UTC().Format(time.RFC3339)
-	_ = SaveCodexAuth(home, auth)
+	if err := SaveCodexAuth(home, auth); err != nil {
+		return nil, err
+	}
 	return auth, nil
 }
 

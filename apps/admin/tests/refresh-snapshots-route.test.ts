@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 const mocks = vi.hoisted(() => ({
   requireAppPrincipal: vi.fn(),
   rematerializeOrgSnapshots: vi.fn(),
+  getDashboardReadiness: vi.fn(),
 }));
 
 vi.mock("@/lib/api/app-auth", () => ({
@@ -13,6 +14,7 @@ vi.mock("@/lib/api/app-auth", () => ({
 
 vi.mock("@/lib/analytics/snapshots", () => ({
   rematerializeOrgSnapshots: mocks.rematerializeOrgSnapshots,
+  getDashboardReadiness: mocks.getDashboardReadiness,
 }));
 
 beforeEach(() => {
@@ -23,6 +25,13 @@ beforeEach(() => {
     role: "admin",
   });
   mocks.rematerializeOrgSnapshots.mockResolvedValue({ dirtyDays: 3, rows: 6, dirtyRemaining: 0 });
+  mocks.getDashboardReadiness.mockResolvedValue({
+    dashboardReady: true,
+    dirtyDayCount: 0,
+    stubConflictDayCount: 0,
+    snapshotLagSeconds: null,
+    oldestDirtyDay: null,
+  });
 });
 
 test("sync-now refresh-snapshots rematerializes dirty days for the session org", async () => {

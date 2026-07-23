@@ -1,7 +1,20 @@
 import { randomBytes } from "crypto";
 import { Prisma, prisma } from "@usejunction/db";
 import { CALCULATION_VERSION } from "@/lib/metrics/source-priority";
+import {
+  inferCostKind,
+  inferMetricKind,
+  normalizeCanonicalSource,
+  providerForTool,
+} from "@/lib/usage/classify";
 import { shouldPreserveProductivityRequests } from "@/lib/metrics/local-usage-inventory";
+
+export {
+  inferCostKind,
+  inferMetricKind,
+  normalizeCanonicalSource,
+  providerForTool,
+} from "@/lib/usage/classify";
 
 export type LocalUsageInputRow = {
   date: string;
@@ -67,43 +80,6 @@ const BULK_CHUNK = 100;
 
 function newRowId() {
   return `c${randomBytes(12).toString("hex")}`;
-}
-
-export function providerForTool(toolName: string): string {
-  if (toolName === "claude") return "anthropic";
-  if (toolName === "codex" || toolName === "codex-work") return "openai";
-  if (toolName === "copilot") return "github";
-  if (toolName === "antigravity") return "google";
-  return toolName;
-}
-
-export function normalizeCanonicalSource(source: string): string {
-  if (source === "local_scan" || source === "cursor_local" || source === "antigravity_local" || source === "antigravity_usage") {
-    return "device_observed";
-  }
-  if (source === "cursor_usage_events") return "vendor_verified";
-  return source;
-}
-
-export function inferMetricKind(row: LocalUsageInputRow, source: string): string {
-  if (row.metricKind) return row.metricKind;
-  if (source === "cursor_local") return "productivity";
-  if (
-    (row.suggestedLines ?? 0) + (row.acceptedLines ?? 0) + (row.addedLines ?? 0) + (row.commits ?? 0) > 0 &&
-    (row.inputTokens ?? 0) + (row.outputTokens ?? 0) === 0
-  ) {
-    return "productivity";
-  }
-  return "usage";
-}
-
-export function inferCostKind(row: LocalUsageInputRow, source: string, estimatedCost: number): string | null {
-  if (row.costKind) return row.costKind;
-  if (estimatedCost <= 0) return null;
-  if (row.verified || source === "cursor_usage_events" || normalizeCanonicalSource(source) === "vendor_verified") {
-    return "verified_usage";
-  }
-  return "estimated_api";
 }
 
 export function buildUsageDedupeKey(params: {
@@ -392,6 +368,7 @@ async function bulkUpsertUsageDaily(
   deviceId: string,
   rows: NormalizedLocalUsageRow[],
   observedAt: Date,
+  monotonicObservedAt = false,
 ) {
   for (const batch of chunkRows(rows, BULK_CHUNK)) {
     const values = batch.map(
@@ -430,6 +407,10 @@ async function bulkUpsertUsageDaily(
       )`,
     );
 
+    const conflictWhere = monotonicObservedAt
+      ? Prisma.sql`usage_daily.observed_at <= EXCLUDED.observed_at`
+      : Prisma.sql`TRUE`;
+
     await tx.$executeRaw`
       INSERT INTO usage_daily (
         id, org_id, developer_id, device_id, repository_id, date,
@@ -460,6 +441,7 @@ async function bulkUpsertUsageDaily(
         calculation_version = EXCLUDED.calculation_version,
         metadata = EXCLUDED.metadata,
         observed_at = EXCLUDED.observed_at
+      WHERE ${conflictWhere}
     `;
   }
 }
@@ -477,6 +459,9 @@ export async function ingestLocalUsageBatch(params: {
   userId: string;
   deviceId: string;
   rows: LocalUsageInputRow[];
+  observedAt?: Date;
+  /** When true, skip updates where stored observed_at is newer than incoming. */
+  monotonicObservedAt?: boolean;
 }): Promise<LocalUsageBatchResult> {
   const normalized = normalizeLocalUsageRows(params.rows, { deviceId: params.deviceId });
   if (normalized.length === 0) {
@@ -485,11 +470,19 @@ export async function ingestLocalUsageBatch(params: {
 
   const repoIds = await resolveRepositoryIdMap(params.orgId, normalized);
   const rows = collapseLocalUsageRows(attachRepositoryIds(normalized, params.deviceId, repoIds));
-  const observedAt = new Date();
+  const observedAt = params.observedAt ?? new Date();
 
   await prisma.$transaction(async (tx) => {
     await bulkUpsertLocalUsageAggregates(tx, params.orgId, params.userId, params.deviceId, rows);
-    await bulkUpsertUsageDaily(tx, params.orgId, params.userId, params.deviceId, rows, observedAt);
+    await bulkUpsertUsageDaily(
+      tx,
+      params.orgId,
+      params.userId,
+      params.deviceId,
+      rows,
+      observedAt,
+      params.monotonicObservedAt === true,
+    );
   });
 
   const sample: LocalUsageBatchResult["sample"] = [];

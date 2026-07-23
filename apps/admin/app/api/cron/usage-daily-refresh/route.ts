@@ -4,10 +4,12 @@ import { logServerError } from "@/lib/errors/public";
 import { setFullUsageRescanDay, utcDayString } from "@/lib/runtime-settings";
 import {
   markActiveOrgsTodayDirty,
-  materializeDirtyOrgUsageDays,
   ORG_DAY_SNAPSHOT_VERSION,
 } from "@/lib/analytics/snapshots";
+import { drainMaterializationJobs, enqueueMaterializationJob } from "@/lib/analytics/snapshots/jobs";
 import { prisma } from "@usejunction/db";
+
+export const maxDuration = 60;
 
 function authorizeCron(req: NextRequest): NextResponse | null {
   const secret = process.env.CRON_SECRET;
@@ -28,8 +30,8 @@ function authorizeCron(req: NextRequest): NextResponse | null {
 }
 
 /**
- * Seals the UTC day for agent full usage rescans, marks active orgs' today/yesterday
- * dirty, rematerializes those snapshots, and refreshes analytics query caches.
+ * Seals the UTC day for agent full usage rescans, marks active orgs dirty,
+ * drains the materialization job queue, and purges expired analytics caches.
  */
 async function handle(req: NextRequest) {
   const denied = authorizeCron(req);
@@ -44,23 +46,21 @@ async function handle(req: NextRequest) {
       where: { metricVersion: ORG_DAY_SNAPSHOT_VERSION },
       distinct: ["orgId"],
       select: { orgId: true },
-      take: 200,
+      take: 500,
     });
-    let snapshotDays = 0;
     for (const row of dirtyOrgs) {
-      const result = await materializeDirtyOrgUsageDays(row.orgId, {
-        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
-        limit: 90,
-      });
-      snapshotDays += result.days;
+      await enqueueMaterializationJob(row.orgId);
     }
 
+    const drain = await drainMaterializationJobs({ limit: 80, maxDurationMs: 45_000 });
     const cachesInvalidated = await purgeAllExpiredAnalyticsCaches();
     return NextResponse.json({
       ok: true,
       day,
       orgsMarked,
-      snapshotDays,
+      jobsProcessed: drain.processed,
+      dirtyCleared: drain.dirtyCleared,
+      remainingJobs: drain.remainingJobs,
       cachesInvalidated,
     });
   } catch (error) {

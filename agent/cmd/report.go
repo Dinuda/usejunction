@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/usejunction/agent/internal/client"
 	"github.com/usejunction/agent/internal/config"
+	"github.com/usejunction/agent/internal/configure"
 	"github.com/usejunction/agent/internal/localsync"
 	"github.com/usejunction/agent/internal/platformdirs"
 	ujsignals "github.com/usejunction/agent/internal/signals"
@@ -79,6 +80,9 @@ var daemonCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if err := configure.RepairLegacyCodexGatewayConfig(); err != nil && verbose {
+			fmt.Printf("[daemon] codex config repair warning: %v\n", err)
+		}
 		if changed, err := cfg.EnsureLocalSyncCredentials(); err != nil {
 			return err
 		} else if changed {
@@ -138,6 +142,7 @@ var daemonCmd = &cobra.Command{
 		} else if updated {
 			fmt.Printf("Updated UseJunction agent; restarting service…\n")
 			if restartErr := restartBackgroundAgent(); restartErr != nil {
+				// KeepAlive will usually relaunch from the updated path after we exit.
 				fmt.Printf("[daemon] update installed; restart warning: %v\n", restartErr)
 			}
 			return nil
@@ -291,7 +296,7 @@ func applyUpdate(ctx context.Context, cfg *config.Config, api *client.APIClient,
 		Directive: *directive, CurrentVersion: config.Version,
 		ControlPlaneURL: cfg.ControlPlaneURL, Reporter: api,
 	})
-	if errors.Is(err, updater.ErrBlockedVersion) {
+	if errors.Is(err, updater.ErrBlockedVersion) || errors.Is(err, updater.ErrLocalDevPinned) {
 		return false, nil
 	}
 	return updated, err

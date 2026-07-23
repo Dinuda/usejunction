@@ -1,5 +1,5 @@
 import { randomBytes } from "crypto";
-import { prisma } from "@usejunction/db";
+import { Prisma, prisma } from "@usejunction/db";
 import { logServerError } from "@/lib/errors/public";
 import { CALCULATION_VERSION, PRICING_VERSION } from "@/lib/metrics/source-priority";
 
@@ -533,67 +533,98 @@ export async function rematerializeOrgSnapshots(
   return { dirtyDays, rows, dirtyRemaining };
 }
 
+/** Heal at most this many corrupt days inline on ensure (rest → job queue). */
+const INLINE_CORRUPT_RECOVER_DAY_CAP = 14;
+
 /**
- * Empty stub days (no observed-through, zero activity/cost) that still have
- * usage_daily — typically after someone wiped snapshots, or after first ingest
- * when the read path sealed zeros before Sync now rematerialized.
+ * Org-total snapshot days that conflict with usage_daily:
+ * - empty stubs (no observed-through, all zeros) with any usage signal
+ * - undercounts (sealed requests=0 / $0 while usage_daily has requests / cost)
  *
- * Local scans (especially Codex) often report tokens/cost with requests=0, so
- * conflict detection must treat any of those signals as real usage.
+ * Incomplete rematerialize (e.g. Codex-only while Cursor vendor rows exist) is a
+ * common undercount shape and must not stay sealed forever.
  */
-async function findEmptyStubDaysWithUsage(
+async function findCorruptOrgDaySnapshots(
   orgId: string,
   fromDay: Date,
   toDay: Date,
   metricVersion: string,
 ): Promise<Date[]> {
-  const stubs = await prisma.orgUsageDaySnapshot.findMany({
-    where: {
-      orgId,
-      metricVersion,
-      toolName: "",
-      developerId: "",
-      date: { gte: fromDay, lte: toDay },
-      requests: 0,
-      inputTokens: BigInt(0),
-      outputTokens: BigInt(0),
-      verifiedUsageCostMicros: BigInt(0),
-      estimatedApiCostMicros: BigInt(0),
-      actualSpendCostMicros: BigInt(0),
-      sourceObservedThrough: null,
-    },
-    select: { date: true },
-  });
-  if (!stubs.length) return [];
+  const fromKey = isoDay(fromDay);
+  const toKey = isoDay(toDay);
+  const rows = await prisma.$queryRaw<Array<{ date: Date }>>`
+    WITH org_totals AS (
+      SELECT
+        date,
+        requests,
+        input_tokens,
+        output_tokens,
+        verified_usage_cost_micros,
+        estimated_api_cost_micros,
+        actual_spend_cost_micros,
+        source_observed_through
+      FROM org_usage_day_snapshots
+      WHERE org_id = ${orgId}
+        AND metric_version = ${metricVersion}
+        AND tool_name = ''
+        AND developer_id = ''
+        AND date >= ${fromKey}::date
+        AND date <= ${toKey}::date
+    ),
+    usage_signals AS (
+      SELECT
+        date,
+        COALESCE(SUM(requests), 0)::int AS requests,
+        COALESCE(SUM(input_tokens), 0)::bigint AS input_tokens,
+        COALESCE(SUM(output_tokens), 0)::bigint AS output_tokens,
+        COALESCE(SUM(cost_micros), 0)::bigint AS cost_micros,
+        COALESCE(SUM(sessions), 0)::int AS sessions,
+        COALESCE(SUM(active_seconds), 0)::bigint AS active_seconds
+      FROM usage_daily
+      WHERE org_id = ${orgId}
+        AND date >= ${fromKey}::date
+        AND date <= ${toKey}::date
+      GROUP BY date
+    )
+    SELECT o.date
+    FROM org_totals o
+    INNER JOIN usage_signals u ON u.date = o.date
+    WHERE
+      (
+        o.requests = 0
+        AND o.input_tokens = 0
+        AND o.output_tokens = 0
+        AND o.verified_usage_cost_micros = 0
+        AND o.estimated_api_cost_micros = 0
+        AND o.actual_spend_cost_micros = 0
+        AND o.source_observed_through IS NULL
+        AND (
+          u.requests > 0
+          OR u.sessions > 0
+          OR u.input_tokens > 0
+          OR u.output_tokens > 0
+          OR u.cost_micros > 0
+          OR u.active_seconds > 0
+        )
+      )
+      OR (o.requests = 0 AND u.requests > 0)
+      OR (
+        o.verified_usage_cost_micros = 0
+        AND o.estimated_api_cost_micros = 0
+        AND o.actual_spend_cost_micros = 0
+        AND u.cost_micros > 0
+      )
+    ORDER BY o.date ASC
+  `;
 
-  const stubKeys = new Set(stubs.map((row) => isoDay(row.date)));
-  // Any non-empty usage row conflicts with a zero stub — not just request counts.
-  const usageDays = await prisma.usageDaily.groupBy({
-    by: ["date"],
-    where: {
-      orgId,
-      date: { gte: fromDay, lte: toDay },
-      OR: [
-        { requests: { gt: 0 } },
-        { sessions: { gt: 0 } },
-        { inputTokens: { gt: 0 } },
-        { outputTokens: { gt: 0 } },
-        { costMicros: { gt: 0 } },
-        { activeSeconds: { gt: 0 } },
-      ],
-    },
-  });
-
-  return usageDays
-    .map((row) => utcDay(row.date))
-    .filter((day) => stubKeys.has(isoDay(day)))
-    .sort((a, b) => a.getTime() - b.getTime());
+  return rows.map((row) => utcDay(row.date));
 }
 
 /**
  * Read-path seal: insert empty org-total stubs for missing days that are not
- * already dirty. Does not rematerialize on the hot path — marks conflicting
- * stubs dirty so Sync now / cron heal them (partialData via readiness).
+ * already dirty. Corrupt sealed days (empty stubs / undercounts vs usage_daily)
+ * are marked dirty, enqueued for the worker, and healed inline when the set is
+ * small enough that dashboard loads do not loop on snapshots_missing forever.
  */
 export async function ensureOrgUsageDaySnapshots(
   orgId: string,
@@ -642,38 +673,95 @@ export async function ensureOrgUsageDaySnapshots(
       );
 
       if (missing.length) {
-        const now = new Date();
-        await prisma.orgUsageDaySnapshot.createMany({
-          data: missing.map((day) => ({
-            orgId,
-            date: day,
-            toolName: "",
-            developerId: "",
-            metricVersion,
-            requests: 0,
-            inputTokens: BigInt(0),
-            outputTokens: BigInt(0),
-            verifiedUsageCostMicros: BigInt(0),
-            estimatedApiCostMicros: BigInt(0),
-            actualSpendCostMicros: BigInt(0),
-            activeDevelopers: 0,
-            activeDeveloperIds: [],
-            computedAt: now,
-            sourceObservedThrough: null,
-          })),
-          skipDuplicates: true,
-        });
-        stubbed = missing.length;
+        // Never seal zeros over days that already have usage_daily facts — mark
+        // dirty so rematerialize fills real totals instead of authoritative stubs.
+        const missingKeys = missing.map((day) => isoDay(day));
+        const usageDays = await prisma.$queryRaw<Array<{ date: Date }>>`
+          SELECT DISTINCT date
+          FROM usage_daily
+          WHERE org_id = ${orgId}
+            AND date IN (${Prisma.join(missingKeys.map((d) => Prisma.sql`${d}::date`))})
+            AND (
+              requests > 0 OR sessions > 0 OR input_tokens > 0 OR output_tokens > 0
+              OR cost_micros > 0 OR active_seconds > 0
+            )
+        `;
+        const usageKeySet = new Set(usageDays.map((row) => isoDay(row.date)));
+        const toStub = missing.filter((day) => !usageKeySet.has(isoDay(day)));
+        const toDirty = missing.filter((day) => usageKeySet.has(isoDay(day)));
+
+        if (toDirty.length) {
+          const marked = await markOrgUsageDaysDirty(orgId, toDirty, metricVersion);
+          pendingDirty += marked.length;
+          for (const day of toDirty) dirtyKeys.add(isoDay(day));
+          try {
+            const { enqueueMaterializationJob } = await import("./jobs");
+            await enqueueMaterializationJob(orgId);
+          } catch (enqueueError) {
+            alertSnapshotFailsafe("analytics/snapshots_enqueue_failed", orgId, enqueueError, {
+              days: toDirty.length,
+              reason: "missing-days-with-usage",
+            });
+          }
+
+          // Heal small missing-with-usage windows inline (same cap as corrupt stubs)
+          // so wiped snapshots recover on ensure without waiting for the worker.
+          const healDays = toDirty.slice(0, INLINE_CORRUPT_RECOVER_DAY_CAP);
+          let healedRows = 0;
+          for (const range of collapseDaysToRanges(healDays)) {
+            healedRows += await materializeOrgUsageRangeUnlocked(
+              orgId,
+              range.from,
+              range.to,
+              metricVersion,
+            );
+          }
+          if (healedRows > 0) {
+            recovered += healedRows;
+            const remainingDirty = await prisma.analyticsDirtyDay.count({
+              where: {
+                orgId,
+                metricVersion,
+                date: { gte: fromDay, lte: toDay },
+              },
+            });
+            pendingDirty = remainingDirty;
+          }
+        }
+
+        if (toStub.length) {
+          const now = new Date();
+          await prisma.orgUsageDaySnapshot.createMany({
+            data: toStub.map((day) => ({
+              orgId,
+              date: day,
+              toolName: "",
+              developerId: "",
+              metricVersion,
+              requests: 0,
+              inputTokens: BigInt(0),
+              outputTokens: BigInt(0),
+              verifiedUsageCostMicros: BigInt(0),
+              estimatedApiCostMicros: BigInt(0),
+              actualSpendCostMicros: BigInt(0),
+              activeDevelopers: 0,
+              activeDeveloperIds: [],
+              computedAt: now,
+              sourceObservedThrough: null,
+            })),
+            skipDuplicates: true,
+          });
+          stubbed = toStub.length;
+        }
       }
 
-      // Off hot-path rematerialize: mark corrupt stubs dirty for Sync now / cron.
-      const corruptDays = await findEmptyStubDaysWithUsage(orgId, fromDay, toDay, metricVersion);
+      const corruptDays = await findCorruptOrgDaySnapshots(orgId, fromDay, toDay, metricVersion);
       if (!corruptDays.length) return;
 
       alertSnapshotFailsafe(
         "analytics/snapshots_missing",
         orgId,
-        new Error("org-day snapshots empty while usage_daily has data; marking dirty"),
+        new Error("org-day snapshots empty/undercounted while usage_daily has data; healing"),
         {
           from: isoDay(fromDay),
           to: isoDay(toDay),
@@ -685,7 +773,38 @@ export async function ensureOrgUsageDaySnapshots(
 
       const marked = await markOrgUsageDaysDirty(orgId, corruptDays, metricVersion);
       pendingDirty += marked.length;
-      recovered = 0;
+
+      // Durable drain even if this process exits before inline recovery finishes.
+      try {
+        const { enqueueMaterializationJob } = await import("./jobs");
+        await enqueueMaterializationJob(orgId);
+      } catch (enqueueError) {
+        alertSnapshotFailsafe("analytics/snapshots_enqueue_failed", orgId, enqueueError, {
+          days: corruptDays.length,
+        });
+      }
+
+      // Heal small corrupt windows under the lock we already hold (no nested lock).
+      const healDays = corruptDays.slice(0, INLINE_CORRUPT_RECOVER_DAY_CAP);
+      let healedRows = 0;
+      for (const range of collapseDaysToRanges(healDays)) {
+        healedRows += await materializeOrgUsageRangeUnlocked(
+          orgId,
+          range.from,
+          range.to,
+          metricVersion,
+        );
+      }
+      recovered = healDays.length;
+      if (healedRows > 0) {
+        pendingDirty = await prisma.analyticsDirtyDay.count({
+          where: {
+            orgId,
+            metricVersion,
+            date: { gte: fromDay, lte: toDay },
+          },
+        });
+      }
     });
   } catch (error) {
     alertSnapshotFailsafe("analytics/snapshots_inaccessible", orgId, error, {

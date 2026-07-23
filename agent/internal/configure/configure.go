@@ -1,5 +1,9 @@
 // Package configure handles post-enroll setup such as Claude OTEL env snippets
 // and restoring tool configs that older agent versions may have backed up.
+//
+// HARD RULE: never write, patch, or rewrite vendor tool configs
+// (especially ~/.codex/config.toml / OpenAI Codex). UseJunction is
+// observability-only and has no gateway to point tools at.
 package configure
 
 import (
@@ -76,6 +80,63 @@ func RestoreBackups() error {
 // UnconfigureAll restores legacy backups and removes generated env snippets.
 func UnconfigureAll() error {
 	return RestoreBackups()
+}
+
+func codexConfigPath() string {
+	home := os.Getenv("CODEX_HOME")
+	if home == "" {
+		var err error
+		home, err = os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+	}
+	return filepath.Join(home, "config.toml")
+}
+
+func isLegacyGatewayCodexConfig(body string) bool {
+	if !strings.Contains(body, "Managed by UseJunction agent") {
+		return false
+	}
+	return strings.Contains(body, "UseJunction Gateway") ||
+		strings.Contains(body, "USEJUNCTION_VIRTUAL_KEY") ||
+		strings.Contains(body, "[usejunction]")
+}
+
+// RepairLegacyCodexGatewayConfig restores ~/.codex/config.toml when a legacy
+// gateway agent overwrote it. Observability-only agents must never point Codex
+// at a Junction gateway.
+func RepairLegacyCodexGatewayConfig() error {
+	configPath := codexConfigPath()
+	if configPath == "" {
+		return nil
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil
+	}
+	if !isLegacyGatewayCodexConfig(string(data)) {
+		return nil
+	}
+
+	entries := loadManifest()
+	var latest manifestEntry
+	for _, e := range entries {
+		if e.Tool == "codex" && e.OriginalPath == configPath {
+			latest = e
+		}
+	}
+	if latest.BackupFile == "" {
+		return fmt.Errorf("legacy gateway config detected at %s but no backup found in %s", configPath, config.BackupDir())
+	}
+	src := filepath.Join(config.BackupDir(), latest.BackupFile)
+	if !fileExists(src) {
+		return fmt.Errorf("legacy gateway config detected but backup %s is missing", src)
+	}
+	if err := copyFile(src, configPath); err != nil {
+		return fmt.Errorf("restore codex config from backup: %w", err)
+	}
+	return nil
 }
 
 // ClaudeOtelOptions configures Claude Code OTLP metrics export.

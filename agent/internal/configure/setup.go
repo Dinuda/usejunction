@@ -13,6 +13,7 @@ type SetupOptions struct {
 }
 
 // RunSetup writes Claude OTEL env when enrolled.
+// It must never modify vendor tool configs (Codex, Cursor, etc.).
 func RunSetup(cfg *config.Config, opts SetupOptions) error {
 	if !opts.EnableOtel {
 		return nil
@@ -27,5 +28,7 @@ func RunSetup(cfg *config.Config, opts SetupOptions) error {
 	}
 	cfg.OtelEnabled = true
 	cfg.OtelMetricsEndpoint = otelEndpoint
+	// Drop any legacy gateway URL persisted by older agent versions.
+	cfg.GatewayURL = ""
 	return config.Save(cfg)
 }

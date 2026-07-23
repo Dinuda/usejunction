@@ -110,7 +110,9 @@ export async function POST(req: NextRequest) {
       userId: enrollment.developer.id,
       orgId,
       deviceToken,
-      gatewayUrl: process.env.LITELLM_URL || "http://localhost:4000",
+      // Observability-only product: never point agents at a gateway.
+      // Legacy clients may still read this field; keep it empty.
+      gatewayUrl: "",
       status: "connected",
       otel: {
         enabled: telemetryEndpoint?.enabled ?? true,

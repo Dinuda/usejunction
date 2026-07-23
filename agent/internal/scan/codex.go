@@ -83,6 +83,14 @@ func ScanCodex(codexHome string, forceFull bool) ([]types.DailyUsage, error) {
 		if b.MetricKind == "" {
 			b.MetricKind = types.MetricKindUsage
 		}
+		// Summary / rollup paths can leave tokens+cost with Requests=0. Ensure every
+		// usage-kind row that carries activity reports at least one model call so
+		// dashboard request KPIs are not sealed to zero while cost shows.
+		if b.MetricKind != types.MetricKindProductivity &&
+			b.Requests == 0 &&
+			(b.InputTokens+b.OutputTokens > 0 || b.EstimatedCost > 0) {
+			b.Requests = 1
+		}
 		if b.CostKind == "" && b.EstimatedCost > 0 {
 			b.CostKind = types.CostKindEstimatedAPI
 		}

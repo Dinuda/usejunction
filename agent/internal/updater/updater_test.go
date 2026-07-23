@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -238,6 +239,23 @@ func TestApplyRejectsOversizedAndBlockedVersions(t *testing.T) {
 	directive.Size = 1
 	if updated, err := Apply(context.Background(), &config.Config{BlockedUpdateVersion: "0.2.0"}, ApplyOptions{Directive: directive, CurrentVersion: "0.1.0"}); err != ErrBlockedVersion || updated {
 		t.Fatalf("blocked Apply() = (%v, %v)", updated, err)
+	}
+}
+
+func TestApplySkipsLocalDevVersion(t *testing.T) {
+	directive := client.AgentUpdateDirective{
+		TargetVersion: "0.2.0",
+		Size:          12,
+		SHA256:        strings.Repeat("a", 64),
+	}
+	updated, err := Apply(context.Background(), &config.Config{}, ApplyOptions{
+		Directive: directive, CurrentVersion: "0.0.0-dev.abc123.1700000000",
+	})
+	if updated || !errors.Is(err, ErrLocalDevPinned) {
+		t.Fatalf("expected ErrLocalDevPinned, got updated=%v err=%v", updated, err)
+	}
+	if !IsLocalDevVersion("0.0.0-dev.abc123.1") || IsLocalDevVersion("0.1.0") {
+		t.Fatal("IsLocalDevVersion mismatch")
 	}
 }
 

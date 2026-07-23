@@ -23,6 +23,70 @@ func TestCodexPlanFromClaims(t *testing.T) {
 	}
 }
 
+func TestSaveCodexAuthOnlyTouchesAuthJSON(t *testing.T) {
+	dir := t.TempDir()
+	authPath := filepath.Join(dir, "auth.json")
+	configPath := filepath.Join(dir, "config.toml")
+	docsPath := filepath.Join(dir, "Documents", "secret.txt")
+	if err := os.MkdirAll(filepath.Dir(docsPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	originalAuth := `{
+	  "auth_mode": "chatgpt",
+	  "last_refresh": "2026-07-07T11:53:16Z",
+	  "tokens": {
+	    "access_token": "old-access",
+	    "refresh_token": "old-refresh",
+	    "id_token": "old-id",
+	    "account_id": "acct-1"
+	  }
+	}`
+	originalConfig := "model = \"gpt-test\"\n"
+	originalDocs := "leave me alone\n"
+	if err := os.WriteFile(authPath, []byte(originalAuth), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte(originalConfig), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(docsPath, []byte(originalDocs), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	auth, err := LoadCodexAuth(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth.AccessToken = "new-access"
+	auth.RefreshToken = "new-refresh"
+	auth.LastRefresh = time.Now().UTC().Format(time.RFC3339)
+	if err := SaveCodexAuth(dir, auth); err != nil {
+		t.Fatal(err)
+	}
+
+	gotAuth, err := os.ReadFile(authPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(gotAuth), "new-access") || !strings.Contains(string(gotAuth), "new-refresh") {
+		t.Fatalf("auth.json was not updated: %s", gotAuth)
+	}
+	gotConfig, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotConfig) != originalConfig {
+		t.Fatalf("config.toml must stay untouched: %s", gotConfig)
+	}
+	gotDocs, err := os.ReadFile(docsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotDocs) != originalDocs {
+		t.Fatalf("Documents must stay untouched: %s", gotDocs)
+	}
+}
+
 func TestLoadCodexAuthNestedTokens(t *testing.T) {
 	dir := t.TempDir()
 	authJSON := `{

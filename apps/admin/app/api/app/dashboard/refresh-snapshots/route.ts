@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAppPrincipal } from "@/lib/api/app-auth";
 import { appData, appError, timingHeader } from "@/lib/api/app-response";
-import { rematerializeOrgSnapshots } from "@/lib/analytics/snapshots";
+import { getDashboardReadiness, rematerializeOrgSnapshots } from "@/lib/analytics/snapshots";
 
 /** Allow Sync now to clear large dirty backlogs without hitting the default 10s limit. */
 export const maxDuration = 60;
@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await rematerializeOrgSnapshots(principal.orgId, { includeToday: true });
+    const readiness = await getDashboardReadiness(principal.orgId);
     const loaded = performance.now();
     return appData(
       {
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
         dirtyDays: result.dirtyDays,
         rows: result.rows,
         dirtyRemaining: result.dirtyRemaining,
-        dashboardReady: result.dirtyRemaining === 0,
+        dashboardReady: readiness.dashboardReady,
       },
       {
         serverTiming: timingHeader({

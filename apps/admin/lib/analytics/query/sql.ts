@@ -133,7 +133,7 @@ function canonicalUsageCtes(scope: AnalyticsScope, query: NormalizedUsageQueryV1
           PARTITION BY date, developer_id, provider, product, tool_name, model
         ) AS best_activity_priority,
         MIN(cost_priority) FILTER (WHERE cost_micros > 0) OVER (
-          PARTITION BY date, provider
+          PARTITION BY date, provider, tool_name, model
         ) AS best_cost_priority
       FROM classified
     ), canonical AS (

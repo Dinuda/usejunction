@@ -28,9 +28,22 @@ const MaxArtifactBytes int64 = 100 * 1024 * 1024
 
 var ErrBlockedVersion = errors.New("update version is blocked after rollback")
 
+// ErrLocalDevPinned means OTA is skipped because this binary was built by
+// scripts/dev-agent-reinstall.sh (version 0.0.0-dev.*). Published releases
+// would otherwise look "newer" under semver (0.1.0 > 0.0.0-dev) and overwrite
+// the local checkout build on the next heartbeat.
+var ErrLocalDevPinned = errors.New("local 0.0.0-dev build is pinned; refusing OTA overwrite")
+
 // TrustedUpdateSigningKeys is a comma-separated list of keyId:base64urlPublicKey
 // entries. Production builds should inject it with -ldflags.
 var TrustedUpdateSigningKeys = ""
+
+// IsLocalDevVersion reports whether version was stamped by the local
+// reinstall/watch scripts (0.0.0-dev.<sha>.<unix>).
+func IsLocalDevVersion(version string) bool {
+	v := strings.TrimPrefix(strings.TrimSpace(version), "v")
+	return strings.HasPrefix(v, "0.0.0-dev.")
+}
 
 type Reporter interface {
 	ReportAgentUpdate(client.AgentUpdateEvent) error
@@ -267,6 +280,9 @@ func verifyDirectiveSignature(directive client.AgentUpdateDirective) error {
 // remains single-binary. See docs/agent-releases.md ("Future macOS menu bar companion").
 func Apply(ctx context.Context, cfg *config.Config, opts ApplyOptions) (bool, error) {
 	directive := opts.Directive
+	if IsLocalDevVersion(opts.CurrentVersion) && !opts.Force {
+		return false, ErrLocalDevPinned
+	}
 	comparison, valid := CompareVersions(directive.TargetVersion, opts.CurrentVersion)
 	if !valid || comparison <= 0 {
 		return false, fmt.Errorf("target version %q is not newer than %q", directive.TargetVersion, opts.CurrentVersion)

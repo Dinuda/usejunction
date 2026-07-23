@@ -35,13 +35,12 @@ var statusCmd = &cobra.Command{
 		}
 
 		out := map[string]any{
-			"enrolled":     true,
-			"deviceId":     cfg.DeviceID,
-			"orgId":        cfg.OrgID,
-			"gatewayUrl":   cfg.GatewayURL,
-			"agentVersion": config.Version,
+			"enrolled":      true,
+			"deviceId":      cfg.DeviceID,
+			"orgId":         cfg.OrgID,
+			"agentVersion":  config.Version,
 			"toolsDetected": len(tools),
-			"tools":        tools,
+			"tools":         tools,
 		}
 
 		if format == "json" {
@@ -52,7 +51,6 @@ var statusCmd = &cobra.Command{
 		fmt.Printf("Status:       enrolled\n")
 		fmt.Printf("Device ID:    %s\n", cfg.DeviceID)
 		fmt.Printf("Org ID:       %s\n", cfg.OrgID)
-		fmt.Printf("Gateway:      %s\n", cfg.GatewayURL)
 		fmt.Printf("Agent:        v%s\n", config.Version)
 		fmt.Printf("Tools found:  %d\n", len(tools))
 		for _, t := range tools {

@@ -1,18 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@usejunction/db";
-import {
-  recordDeviceActivityEvent,
-  uniqueStrings,
-} from "@/lib/activity/record-device-activity-event";
 import { findDeviceByBearerToken } from "@/lib/auth";
 import { limitedJson } from "@/lib/security/http";
-import { syncDetectedPlansForDevice } from "@/lib/tools/sync-detected";
 import { logServerError } from "@/lib/errors/public";
+import {
+  applyDeviceAccountInventory,
+  accountsInventoryContentHash,
+  type AccountInventoryItem,
+} from "@/lib/sync/accounts-inventory";
+import { repairDetectedPlanCycles } from "@/lib/tools/sync-detected";
 
+/**
+ * Compatibility endpoint for agents that still POST accounts here.
+ * Canonical path is the sync-start accounts sidecar.
+ */
 export async function POST(req: NextRequest) {
-  const started = Date.now();
   try {
-    const device = await findDeviceByBearerToken(req, {});
+    const device = await findDeviceByBearerToken(req, {
+      select: {
+        id: true,
+        orgId: true,
+        userId: true,
+        accountsContentHash: true,
+      },
+    });
     if (!device) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
@@ -25,87 +35,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "accounts array required" }, { status: 400 });
     }
 
-    let upserted = 0;
-    const reported: Array<{ toolName: string; plan: string | null; email: string | null }> = [];
-    for (const acct of accounts) {
-      if (!acct.toolName) continue;
-
-      const existing = await prisma.toolAccount.findUnique({
-        where: { deviceId_toolName: { deviceId: device.id, toolName: acct.toolName } },
-        select: { email: true, plan: true },
-      });
-
-      const incomingPlan = typeof acct.plan === "string" ? acct.plan.trim() : "";
-      const incomingEmail = typeof acct.email === "string" ? acct.email.trim() : "";
-      const plan = incomingPlan || existing?.plan || null;
-      const email = incomingEmail || existing?.email || null;
-
-      await prisma.toolAccount.upsert({
-        where: { deviceId_toolName: { deviceId: device.id, toolName: acct.toolName } },
-        update: {
-          email,
-          plan,
-          loginMethod: acct.loginMethod ?? "unknown",
-          authPresent: acct.authPresent ?? false,
-          updatedAt: new Date(),
-        },
-        create: {
-          orgId: device.orgId,
-          userId: device.userId,
-          deviceId: device.id,
-          toolName: acct.toolName,
-          email,
-          plan,
-          loginMethod: acct.loginMethod ?? "unknown",
-          authPresent: acct.authPresent ?? false,
-        },
-      });
-      reported.push({
-        toolName: acct.toolName,
-        plan,
-        email,
-      });
-      upserted += 1;
-    }
-
-    if (reported.length > 0) {
-      await prisma.device.update({
-        where: { id: device.id },
-        data: { lastAccountSyncAt: new Date(), lastSeenAt: new Date() },
-      });
-      try {
-        await syncDetectedPlansForDevice({
-          orgId: device.orgId,
-          developerId: device.userId,
-          accounts: reported,
-        });
-      } catch (syncError) {
-        logServerError("devices/accounts", syncError, { phase: "plan sync" });
-      }
-    }
-
-    const toolNames = uniqueStrings(reported.map((row) => row.toolName));
-    await recordDeviceActivityEvent({
-      orgId: device.orgId,
-      developerId: device.userId,
-      deviceId: device.id,
-      kind: "accounts",
-      status: "ok",
-      summary: `Account sync · ${upserted} accounts${toolNames.length ? ` · ${toolNames.join(", ")}` : ""}`,
-      requestSummary: {
-        accounts: upserted,
-        tools: toolNames,
-        sample: reported.slice(0, 8).map((row) => ({
-          toolName: row.toolName,
-          plan: row.plan,
-          email: row.email,
-        })),
-      },
-      responseSummary: { upserted },
-      durationMs: Date.now() - started,
+    const items: AccountInventoryItem[] = accounts.map((acct) => {
+      const row = acct as Record<string, unknown>;
+      return {
+        toolName: String(row.toolName ?? ""),
+        email: typeof row.email === "string" ? row.email : null,
+        plan: typeof row.plan === "string" ? row.plan : null,
+        loginMethod: typeof row.loginMethod === "string" ? row.loginMethod : "unknown",
+        authPresent: Boolean(row.authPresent),
+      };
     });
+    const contentHash = accountsInventoryContentHash(items);
 
-    return NextResponse.json({ upserted });
+    if (device.accountsContentHash && device.accountsContentHash === contentHash) {
+      return NextResponse.json({ upserted: 0, unchanged: true });
+    }
+
+    const result = await applyDeviceAccountInventory({
+      orgId: device.orgId,
+      userId: device.userId,
+      deviceId: device.id,
+      items,
+      contentHash,
+      runPlanSync: true,
+    });
+    try {
+      await repairDetectedPlanCycles(device.orgId);
+    } catch (repairError) {
+      logServerError("devices/accounts", repairError, { phase: "cycle repair" });
+    }
+
+    return NextResponse.json({ upserted: result.upserted });
   } catch (e) {
     logServerError("devices/accounts", e);
     return NextResponse.json({ error: "accounts upsert failed" }, { status: 500 });

@@ -20,3 +20,17 @@ export {
 export type { SnapshotDayTotals, SnapshotToolDay, SnapshotToolTotals } from "./read";
 export { getDashboardReadiness, countOrgDirtyDays } from "./readiness";
 export type { DashboardReadiness } from "./readiness";
+export {
+  OVERLAY_LIVE_DIRTY_DAY_CAP,
+  LIVE_READ_HORIZON_DAYS,
+  liveOrgDayTotalsForDates,
+  loadDirtyDaysInWindow,
+  splitLiveReadWindow,
+  windowUsesLiveReads,
+  eachIsoDayInclusive,
+} from "./overlay";
+export {
+  enqueueMaterializationJob,
+  enqueueVersionBumpRematerialize,
+  drainMaterializationJobs,
+} from "./jobs";

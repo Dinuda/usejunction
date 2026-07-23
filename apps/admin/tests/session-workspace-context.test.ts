@@ -42,6 +42,12 @@ vi.mock("@usejunction/db", () => ({
       findMany: vi.fn(async () => []),
       count: vi.fn(async () => 0),
     },
+    orgUsageDaySnapshot: {
+      findMany: vi.fn(async () => []),
+    },
+    usageDaily: {
+      findMany: vi.fn(async () => []),
+    },
   },
 }));
 

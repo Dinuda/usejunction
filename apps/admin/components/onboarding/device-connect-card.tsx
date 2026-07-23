@@ -84,6 +84,7 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
   const [waitingForTools, setWaitingForTools] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const [pollSession, setPollSession] = useState(0);
+  const [importProgress, setImportProgress] = useState<string | null>(null);
   const notifiedRef = useRef<string | null>(null);
   const refreshInFlightRef = useRef<Promise<EnrollmentCredentials | null> | null>(null);
 
@@ -114,15 +115,50 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
     }
 
     if (candidate && isReadyDevice(candidate) && !hasUsageReady(candidate)) {
-      // Tools found — keep polling briefly until first usage ingest lands.
+      // Tools found — keep polling until first usage ingest lands.
       setWaitingForTools(true);
       setDevice(candidate);
+      setImportProgress("Waiting for first usage upload…");
+      return;
+    }
+
+    if (candidate && isReadyDevice(candidate) && hasUsageReady(candidate)) {
+      // Usage uploaded — wait for dashboard readiness when available.
+      setDevice(candidate);
+      try {
+        const ctxRes = await fetch("/api/app/workspace-context", { cache: "no-store" });
+        if (ctxRes.ok) {
+          const ctx = (await ctxRes.json()) as {
+            data?: { sync?: { dashboardReady?: boolean; dirtyDayCount?: number } };
+          };
+          const sync = ctx.data?.sync;
+          if (sync && sync.dashboardReady === false) {
+            setWaitingForTools(true);
+            setImportProgress(
+              sync.dirtyDayCount && sync.dirtyDayCount > 0
+                ? `Preparing dashboard… (${sync.dirtyDayCount} day${sync.dirtyDayCount === 1 ? "" : "s"} importing)`
+                : "Preparing dashboard…",
+            );
+            return;
+          }
+        }
+      } catch {
+        // Soft-fail: proceed with upload-ready if readiness probe fails.
+      }
+      setWaitingForTools(false);
+      setIsPolling(false);
+      setImportProgress(null);
+      if (notifiedRef.current !== candidate.id) {
+        notifiedRef.current = candidate.id;
+        onConnected?.(candidate);
+      }
       return;
     }
 
     if (candidate && isReadyDevice(candidate)) {
       setWaitingForTools(false);
       setIsPolling(false);
+      setImportProgress(null);
       setDevice(candidate);
       if (notifiedRef.current !== candidate.id) {
         notifiedRef.current = candidate.id;
@@ -311,7 +347,12 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
       {enrolledAwaitingTools ? (
         <div className="flex items-center gap-2 border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
           <Check className="size-4 shrink-0" aria-hidden />
-          <span>Device enrolled — waiting for tool detection…</span>
+          <span>
+            {importProgress ??
+              (hasUsageReady(device)
+                ? "Device enrolled — preparing dashboard…"
+                : "Device enrolled — waiting for tool detection…")}
+          </span>
           <Loader2 className="size-4 shrink-0 animate-spin opacity-80" aria-hidden />
         </div>
       ) : (

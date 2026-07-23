@@ -177,7 +177,7 @@ test("canonical usage keeps estimated cost while preserving observed activity pr
   }
 });
 
-test("provider-verified daily cost suppresses gateway estimates for the same provider day", { skip: !process.env.DATABASE_URL }, async () => {
+test("verified cost suppresses lower-priority cost only within same provider/tool/model", { skip: !process.env.DATABASE_URL }, async () => {
   const [{ prisma }, { UTC_TIMEZONE }, { metricNumber, readUsageMetrics }] = await Promise.all([
     import("@usejunction/db"),
     import("../lib/analytics/contracts/time-window"),
@@ -190,15 +190,21 @@ test("provider-verified daily cost suppresses gateway estimates for the same pro
       data: [
         {
           id: `${orgId}_provider`, orgId, date: new Date("2026-07-19T00:00:00.000Z"),
-          provider: "openai", product: "api_platform", toolName: "openai-api", model: "",
+          provider: "openai", product: "api_platform", toolName: "openai-api", model: "gpt-5",
           source: "vendor_verified", verified: true, costMicros: BigInt(8_000_000),
           costKind: "verified_usage", dedupeKey: `${orgId}:provider`,
         },
         {
-          id: `${orgId}_gateway`, orgId, date: new Date("2026-07-19T00:00:00.000Z"),
-          provider: "openai", product: "gateway", toolName: "junction-gateway", model: "gpt-5",
+          id: `${orgId}_gateway_same`, orgId, date: new Date("2026-07-19T00:00:00.000Z"),
+          provider: "openai", product: "gateway", toolName: "openai-api", model: "gpt-5",
           source: "gateway_observed", requests: 10, costMicros: BigInt(3_000_000),
-          costKind: "estimated_api", dedupeKey: `${orgId}:gateway`,
+          costKind: "estimated_api", dedupeKey: `${orgId}:gateway-same`,
+        },
+        {
+          id: `${orgId}_gateway_other`, orgId, date: new Date("2026-07-19T00:00:00.000Z"),
+          provider: "openai", product: "gateway", toolName: "junction-gateway", model: "gpt-5",
+          source: "gateway_observed", requests: 4, costMicros: BigInt(2_000_000),
+          costKind: "estimated_api", dedupeKey: `${orgId}:gateway-other`,
         },
       ],
     });
@@ -208,7 +214,9 @@ test("provider-verified daily cost suppresses gateway estimates for the same pro
       window: { from: new Date("2026-07-19T00:00:00.000Z"), to: new Date("2026-07-19T00:00:00.000Z"), timezone: UTC_TIMEZONE, grain: "day" },
       measures: ["costMicros"],
     });
-    assert.equal(metricNumber(result.data.rows[0], "costMicros"), 8_000_000);
+    // Same tool+model: verified (8M) wins over gateway (3M).
+    // Different tool: gateway other (2M) still counts — fine-grained cost partition.
+    assert.equal(metricNumber(result.data.rows[0], "costMicros"), 10_000_000);
   } finally {
     await prisma.organization.delete({ where: { id: orgId } }).catch(() => {});
   }

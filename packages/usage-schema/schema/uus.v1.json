@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://usejunction.com/schemas/uus.v1.json",
+  "title": "UseJunction Usage Schema v1",
+  "description": "Aggregate-first daily usage record. Typed core aligns with OpenTelemetry GenAI semantic conventions; tool-specific fields live in extensions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "date", "tool", "model", "source"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "UUS semver. Breaking changes bump major."
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "UTC calendar day (YYYY-MM-DD)."
+    },
+    "gen_ai.system": {
+      "type": "string",
+      "description": "Provider / system (openai, anthropic, cursor, …). Optional on wire; server classifies from tool when absent."
+    },
+    "tool": {
+      "type": "string",
+      "minLength": 1,
+      "description": "UseJunction tool id (codex, claude, cursor, …)."
+    },
+    "gen_ai.request.model": {
+      "type": "string",
+      "description": "Model id. Empty string allowed for productivity-only rows."
+    },
+    "model": {
+      "type": "string",
+      "description": "Alias for gen_ai.request.model (camelCase wire compat)."
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Observation source. Legacy aliases normalized server-side."
+    },
+    "repository": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["host", "owner", "name"],
+      "properties": {
+        "host": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "gen_ai.usage.input_tokens": { "type": "integer", "minimum": 0 },
+    "gen_ai.usage.output_tokens": { "type": "integer", "minimum": 0 },
+    "gen_ai.usage.cache_read_tokens": { "type": "integer", "minimum": 0 },
+    "cache_write_tokens": { "type": "integer", "minimum": 0 },
+    "reasoning_tokens": { "type": "integer", "minimum": 0 },
+    "inputTokens": { "type": "integer", "minimum": 0 },
+    "outputTokens": { "type": "integer", "minimum": 0 },
+    "cacheReadTokens": { "type": "integer", "minimum": 0 },
+    "cacheWriteTokens": { "type": "integer", "minimum": 0 },
+    "reasoningTokens": { "type": "integer", "minimum": 0 },
+    "requests": { "type": "integer", "minimum": 0 },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "amountMicros": { "type": "integer", "minimum": 0 },
+        "amountUsd": { "type": "number", "minimum": 0 },
+        "kind": {
+          "type": "string",
+          "enum": ["verified_usage", "estimated_api", "actual_spend"]
+        }
+      }
+    },
+    "estimatedCost": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Legacy USD cost; maps to cost.amountUsd / estimated_api when cost omitted."
+    },
+    "verified": { "type": "boolean" },
+    "metricKind": {
+      "type": "string",
+      "enum": ["usage", "productivity"]
+    },
+    "costKind": {
+      "type": "string",
+      "enum": ["verified_usage", "estimated_api", "actual_spend"]
+    },
+    "tokenSemantics": {
+      "type": "string",
+      "enum": ["openai_subset_cache", "anthropic_additive_cache", "vendor_reported"]
+    },
+    "calculationVersion": { "type": "string" },
+    "extensions": {
+      "type": "object",
+      "description": "Namespaced long-tail attributes (code.*, vcs.*, tool-specific).",
+      "additionalProperties": true,
+      "properties": {
+        "code.suggested_lines": { "type": "integer", "minimum": 0 },
+        "code.accepted_lines": { "type": "integer", "minimum": 0 },
+        "code.added_lines": { "type": "integer", "minimum": 0 },
+        "code.deleted_lines": { "type": "integer", "minimum": 0 },
+        "vcs.commits": { "type": "integer", "minimum": 0 },
+        "ai_percent": { "type": ["number", "null"] }
+      }
+    },
+    "suggestedLines": { "type": "integer", "minimum": 0 },
+    "acceptedLines": { "type": "integer", "minimum": 0 },
+    "addedLines": { "type": "integer", "minimum": 0 },
+    "deletedLines": { "type": "integer", "minimum": 0 },
+    "commits": { "type": "integer", "minimum": 0 },
+    "aiPercent": { "type": ["number", "null"] },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "toolName": {
+      "type": "string",
+      "description": "Legacy alias for tool."
+    }
+  }
+}

@@ -412,16 +412,10 @@ test("ensure recovers when snapshots were wiped but usage_daily remains", { skip
     await prisma.orgUsageDaySnapshot.deleteMany({ where: { orgId: org.id } });
 
     const result = await ensureOrgUsageDaySnapshots(org.id, from, to);
-    // Hot path marks dirty instead of rematerializing — Sync now / cron heal.
-    assert.equal(result.recovered, 0);
-    assert.ok((result.pendingDirty ?? 0) > 0, "expected corrupt days marked dirty");
+    // Small corrupt windows heal inline so dashboard loads stop looping.
+    assert.ok(result.recovered > 0, "expected inline recovery for wiped stubs");
+    assert.equal(result.pendingDirty, 0);
 
-    const dirty = await prisma.analyticsDirtyDay.count({
-      where: { orgId: org.id, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
-    });
-    assert.ok(dirty > 0);
-
-    await materializeDirtyOrgUsageDays(org.id);
     const total = await prisma.orgUsageDaySnapshot.findFirst({
       where: {
         orgId: org.id,
@@ -501,10 +495,9 @@ test("ensure marks token/cost-only stubs dirty after first ingest (requests=0)",
     });
 
     const stubbed = await ensureOrgUsageDaySnapshots(org.id, day, day);
-    assert.equal(stubbed.recovered, 0);
-    assert.ok((stubbed.pendingDirty ?? 0) > 0, "expected fail-safe to mark dirty for token/cost-only usage");
+    assert.ok(stubbed.recovered > 0, "expected fail-safe to heal token/cost-only usage stubs");
+    assert.equal(stubbed.pendingDirty, 0);
 
-    await materializeDirtyOrgUsageDays(org.id);
     const total = await prisma.orgUsageDaySnapshot.findFirst({
       where: {
         orgId: org.id,
@@ -518,6 +511,133 @@ test("ensure marks token/cost-only stubs dirty after first ingest (requests=0)",
     assert.equal(total.requests, 0);
     assert.equal(total.inputTokens, BigInt(7_225_706));
     assert.equal(total.estimatedApiCostMicros, BigInt(18_371_595));
+  } finally {
+    await prisma.organization.delete({ where: { id: org.id } });
+  }
+});
+
+test("ensure heals undercounted snaps (codex-only while cursor vendor exists)", { skip: !runDb }, async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const org = await prisma.organization.create({
+    data: { name: `Undercount Org ${suffix}`, slug: `undercount-${suffix}` },
+  });
+  const day = new Date("2026-07-22T00:00:00.000Z");
+  const developer = await prisma.developer.create({
+    data: {
+      orgId: org.id,
+      email: `undercount-${suffix}@example.com`,
+      name: "Undercount Dev",
+      role: "user",
+    },
+  });
+
+  try {
+    await prisma.usageDaily.createMany({
+      data: [
+        {
+          orgId: org.id,
+          developerId: developer.id,
+          date: day,
+          provider: "openai",
+          product: "codex",
+          toolName: "codex",
+          model: "gpt-5.6-sol",
+          source: "device_observed",
+          requests: 0,
+          inputTokens: BigInt(7_225_706),
+          outputTokens: BigInt(30_733),
+          costMicros: BigInt(18_371_595),
+          costKind: "estimated_api",
+          dedupeKey: `undercount-codex:${suffix}`,
+          observedAt: day,
+        },
+        {
+          orgId: org.id,
+          developerId: developer.id,
+          date: day,
+          provider: "cursor",
+          product: "cursor",
+          toolName: "cursor",
+          model: "cursor-grok-4.5-high",
+          source: "vendor_verified",
+          verified: true,
+          requests: 94,
+          inputTokens: BigInt(4_464_889),
+          outputTokens: BigInt(775_604),
+          costMicros: BigInt(42_683_012),
+          costKind: "verified_usage",
+          dedupeKey: `undercount-cursor:${suffix}`,
+          observedAt: day,
+        },
+      ],
+    });
+
+    // Simulate a stale sealed day that only captured Codex.
+    await prisma.orgUsageDaySnapshot.createMany({
+      data: [
+        {
+          orgId: org.id,
+          date: day,
+          toolName: "",
+          developerId: "",
+          metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+          requests: 0,
+          inputTokens: BigInt(7_225_706),
+          outputTokens: BigInt(30_733),
+          verifiedUsageCostMicros: BigInt(0),
+          estimatedApiCostMicros: BigInt(18_371_595),
+          actualSpendCostMicros: BigInt(0),
+          activeDevelopers: 1,
+          activeDeveloperIds: [developer.id],
+          computedAt: new Date(),
+          sourceObservedThrough: day,
+        },
+        {
+          orgId: org.id,
+          date: day,
+          toolName: "codex",
+          developerId: "",
+          metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+          requests: 0,
+          inputTokens: BigInt(7_225_706),
+          outputTokens: BigInt(30_733),
+          verifiedUsageCostMicros: BigInt(0),
+          estimatedApiCostMicros: BigInt(18_371_595),
+          actualSpendCostMicros: BigInt(0),
+          activeDevelopers: 1,
+          activeDeveloperIds: [developer.id],
+          computedAt: new Date(),
+          sourceObservedThrough: day,
+        },
+      ],
+    });
+
+    const result = await ensureOrgUsageDaySnapshots(org.id, day, day);
+    assert.ok(result.recovered > 0, "expected undercount to heal inline");
+
+    const total = await prisma.orgUsageDaySnapshot.findFirst({
+      where: {
+        orgId: org.id,
+        date: day,
+        toolName: "",
+        developerId: "",
+        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+      },
+    });
+    assert.ok(total);
+    assert.equal(total.requests, 94);
+    assert.equal(total.verifiedUsageCostMicros, BigInt(42_683_012));
+    assert.equal(total.estimatedApiCostMicros, BigInt(18_371_595));
+
+    const { readOrgUsageFromSnapshots } = await import("@/lib/analytics/snapshots/read");
+    const overview = await readOrgUsageFromSnapshots(
+      org.id,
+      { from: day, to: day, timezone: "UTC", grain: "day" },
+      { ensure: false, includeTools: true },
+    );
+    assert.equal(overview.kpis.modelCalls, 94);
+    assert.ok(overview.kpis.verifiedUsageCost > 40);
+    assert.ok(overview.tools.some((tool) => tool.toolName === "cursor" && tool.requests === 94));
   } finally {
     await prisma.organization.delete({ where: { id: org.id } });
   }

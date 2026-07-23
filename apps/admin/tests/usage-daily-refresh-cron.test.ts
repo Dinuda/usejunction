@@ -5,8 +5,9 @@ const mocks = vi.hoisted(() => ({
   upsert: vi.fn(),
   invalidateAll: vi.fn(),
   markActive: vi.fn(),
-  materializeDirty: vi.fn(),
   dirtyFindMany: vi.fn(),
+  enqueue: vi.fn(),
+  drain: vi.fn(),
 }));
 
 vi.mock("@usejunction/db", () => ({
@@ -23,7 +24,11 @@ vi.mock("@/lib/analytics/query", () => ({
 vi.mock("@/lib/analytics/snapshots", () => ({
   ORG_DAY_SNAPSHOT_VERSION: "org-day-snap-v1:test",
   markActiveOrgsTodayDirty: mocks.markActive,
-  materializeDirtyOrgUsageDays: mocks.materializeDirty,
+}));
+
+vi.mock("@/lib/analytics/snapshots/jobs", () => ({
+  enqueueMaterializationJob: mocks.enqueue,
+  drainMaterializationJobs: mocks.drain,
 }));
 
 beforeEach(() => {
@@ -33,10 +38,11 @@ beforeEach(() => {
   mocks.invalidateAll.mockResolvedValue(4);
   mocks.markActive.mockResolvedValue(2);
   mocks.dirtyFindMany.mockResolvedValue([{ orgId: "org-1" }]);
-  mocks.materializeDirty.mockResolvedValue({ days: 2, rows: 4 });
+  mocks.enqueue.mockResolvedValue(undefined);
+  mocks.drain.mockResolvedValue({ processed: 1, dirtyCleared: 2, remainingJobs: 0 });
 });
 
-test("usage daily refresh seals the UTC day, marks dirty, rematerializes, and invalidates caches", async () => {
+test("usage daily refresh seals the UTC day, enqueues jobs, drains, and invalidates caches", async () => {
   const { POST } = await import("@/app/api/cron/usage-daily-refresh/route");
   const response = await POST(
     new Request("http://localhost/api/cron/usage-daily-refresh", {
@@ -52,10 +58,12 @@ test("usage daily refresh seals the UTC day, marks dirty, rematerializes, and in
   assert.match(body.day, /^\d{4}-\d{2}-\d{2}$/);
   assert.equal(body.cachesInvalidated, 4);
   assert.equal(body.orgsMarked, 2);
-  assert.equal(body.snapshotDays, 2);
+  assert.equal(body.jobsProcessed, 1);
+  assert.equal(body.dirtyCleared, 2);
   assert.equal(mocks.upsert.mock.calls.length, 1);
   assert.equal(mocks.markActive.mock.calls.length, 1);
-  assert.equal(mocks.materializeDirty.mock.calls.length, 1);
+  assert.equal(mocks.enqueue.mock.calls.length, 1);
+  assert.equal(mocks.drain.mock.calls.length, 1);
   assert.equal(mocks.invalidateAll.mock.calls.length, 1);
 });
 

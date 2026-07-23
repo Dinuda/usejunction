@@ -28,6 +28,19 @@ while [[ $# -gt 0 ]]; do
 done
 
 CONTROL_PLANE_URL="${CONTROL_PLANE_URL%/}"
+DEV_SOURCE_FILE="${HOME}/.usejunction/dev-source"
+FORCE_RELEASE="${USEJUNCTION_FORCE_RELEASE:-0}"
+
+# Prefer the checkout pinned by pnpm agent:reinstall / dev:agent so curl|install.sh
+# does not silently download a published release over a local 0.0.0-dev binary.
+if [[ -z "${USEJUNCTION_ROOT:-}" && -f "$DEV_SOURCE_FILE" ]]; then
+  pinned_root="$(tr -d '\r\n' < "$DEV_SOURCE_FILE" 2>/dev/null || true)"
+  if [[ -n "$pinned_root" && -f "${pinned_root}/agent/main.go" ]]; then
+    USEJUNCTION_ROOT="$pinned_root"
+    export USEJUNCTION_ROOT
+    echo "Using pinned local checkout from ${DEV_SOURCE_FILE}: ${USEJUNCTION_ROOT}"
+  fi
+fi
 
 if [[ -z "$ENROLL_TOKEN" && -z "$CONNECT_TOKEN" && "$UPGRADE_ONLY" != true ]]; then
   usage
@@ -211,10 +224,88 @@ download_macos_agent() {
   return 1
 }
 
+installed_agent_binary() {
+  if [[ "$OS" == "darwin" && -x "${APP_DIR}/Contents/MacOS/usejunction" ]]; then
+    printf '%s\n' "${APP_DIR}/Contents/MacOS/usejunction"
+    return 0
+  fi
+  if [[ -x "$BINARY" ]]; then
+    printf '%s\n' "$BINARY"
+    return 0
+  fi
+  return 1
+}
+
+current_agent_version() {
+  local bin="$1"
+  local json
+  json="$("$bin" status --format json 2>/dev/null || true)"
+  printf '%s' "$json" | sed -n 's/.*"agentVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1
+}
+
+is_local_dev_version() {
+  local version="$1"
+  [[ "$version" == 0.0.0-dev.* || "$version" == v0.0.0-dev.* ]]
+}
+
+dev_build_version() {
+  local root="${USEJUNCTION_ROOT:-}"
+  local short_sha="nogit"
+  if [[ -n "$root" ]] && command -v git >/dev/null 2>&1; then
+    short_sha="$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo nogit)"
+  fi
+  printf '0.0.0-dev.%s.%s\n' "$short_sha" "$(date +%s)"
+}
+
 install_agent() {
   local agent_src=""
+  local prefer_source=false
+  local stamp_version="$VERSION"
+
+  # Local pin / explicit build-from-source: always compile from the checkout and
+  # stamp 0.0.0-dev.* so OTA cannot treat a published release as "newer".
+  if [[ "${USEJUNCTION_BUILD_FROM_SOURCE:-}" == "1" ]] || [[ -n "${USEJUNCTION_ROOT:-}" && -f "${USEJUNCTION_ROOT}/agent/main.go" ]]; then
+    prefer_source=true
+  fi
+  if [[ "$prefer_source" == true ]] && agent_src="$(find_agent_src)" && command -v go >/dev/null 2>&1; then
+    stamp_version="$(dev_build_version)"
+    echo "Building agent from source (${agent_src}) as v${stamp_version}..."
+    if [[ "$OS" == "darwin" ]]; then
+      local tmp_binary
+      tmp_binary="$(mktemp)"
+      (cd "$agent_src" && go build -ldflags "-X github.com/usejunction/agent/internal/config.Version=${stamp_version}" -o "$tmp_binary" .)
+      VERSION="$stamp_version"
+      install_macos_app_bundle "$tmp_binary"
+      rm -f "$tmp_binary"
+      link_macos_cli
+      return 0
+    fi
+    local tmp_binary
+    tmp_binary="$(mktemp "${INSTALL_DIR}/.usejunction-build.XXXXXX")"
+    (cd "$agent_src" && go build -ldflags "-X github.com/usejunction/agent/internal/config.Version=${stamp_version}" -o "$tmp_binary" .)
+    VERSION="$stamp_version"
+    atomic_install_binary "$tmp_binary" "$BINARY"
+    return 0
+  fi
+
+  # Keep an existing local-dev binary unless the caller forces a release install.
+  local existing=""
+  if existing="$(installed_agent_binary)"; then
+    local current_version
+    current_version="$(current_agent_version "$existing")"
+    if is_local_dev_version "$current_version" && [[ "$FORCE_RELEASE" != "1" ]]; then
+      echo "Keeping local agent v${current_version} (pinned by pnpm agent:reinstall / 0.0.0-dev)."
+      echo "Set USEJUNCTION_FORCE_RELEASE=1 to download a published release over it."
+      VERSION="$current_version"
+      if [[ "$OS" == "darwin" ]]; then
+        link_macos_cli
+      fi
+      return 0
+    fi
+  fi
+
   if [[ "$OS" == "darwin" ]]; then
-    if [[ "$UPGRADE_ONLY" != true || "${USEJUNCTION_BUILD_FROM_SOURCE:-}" == "1" ]] && agent_src="$(find_agent_src)" && command -v go >/dev/null 2>&1; then
+    if [[ "$UPGRADE_ONLY" != true ]] && agent_src="$(find_agent_src)" && command -v go >/dev/null 2>&1; then
       echo "Building agent from source (${agent_src})..."
       local tmp_binary
       tmp_binary="$(mktemp)"
@@ -253,7 +344,7 @@ install_agent() {
       echo "Download from ${base} failed; trying next source..."
     done
   else
-    if [[ "$UPGRADE_ONLY" != true || "${USEJUNCTION_BUILD_FROM_SOURCE:-}" == "1" ]] && agent_src="$(find_agent_src)" && command -v go >/dev/null 2>&1; then
+    if [[ "$UPGRADE_ONLY" != true ]] && agent_src="$(find_agent_src)" && command -v go >/dev/null 2>&1; then
       echo "Building agent from source (${agent_src})..."
       local tmp_binary
       tmp_binary="$(mktemp "${INSTALL_DIR}/.usejunction-build.XXXXXX")"
@@ -371,6 +462,11 @@ if [[ "$UPGRADE_ONLY" == true && -x "$BINARY" ]]; then
   CURRENT_VERSION="$(printf '%s' "$CURRENT_JSON" | sed -n 's/.*"agentVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
   if [[ -z "$CURRENT_VERSION" ]]; then
     echo "Could not determine the installed agent version; refusing an unverified upgrade." >&2
+    exit 1
+  fi
+  if is_local_dev_version "$CURRENT_VERSION" && [[ "$FORCE_RELEASE" != "1" ]]; then
+    echo "Refusing to replace local agent v${CURRENT_VERSION} with published v${VERSION}." >&2
+    echo "Run pnpm agent:reinstall, or set USEJUNCTION_FORCE_RELEASE=1 to force a release install." >&2
     exit 1
   fi
   VERSION_ORDER="$(semver_compare "$VERSION" "$CURRENT_VERSION")" || {

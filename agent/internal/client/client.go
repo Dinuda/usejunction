@@ -4,6 +4,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -451,10 +452,6 @@ func (c *APIClient) CheckAgentUpdate() (*AgentUpdateDirective, error) {
 	return out.Update, nil
 }
 
-func (c *APIClient) ReportTools(tools []ToolReport) error {
-	return c.post("/api/devices/tools", map[string]any{"tools": tools})
-}
-
 func (c *APIClient) ReportLocalModels(models []LocalModelReport) error {
 	return c.post("/api/devices/local-models", map[string]any{"models": models})
 }
@@ -482,6 +479,123 @@ func (c *APIClient) ReportLocalUsage(aggregates []UsageAggregate) error {
 		}
 	}
 	return nil
+}
+
+type SyncManifestPartition struct {
+	PartitionKey string            `json:"partitionKey"`
+	Date         string            `json:"date"`
+	Tool         string            `json:"tool"`
+	Model        string            `json:"model"`
+	Source       string            `json:"source"`
+	Repository   *RepositoryReport `json:"repository,omitempty"`
+	ContentHash  string            `json:"contentHash"`
+	RowCount     int               `json:"rowCount"`
+}
+
+type StartUsageSyncResponse struct {
+	SyncRunID         string   `json:"syncRunId"`
+	DeltaPartitions   []string `json:"deltaPartitions"`
+	ExpectedRows      int      `json:"expectedRows"`
+	Status            string   `json:"status"`
+	ToolsApplied      string   `json:"toolsApplied,omitempty"`
+	ToolsWarning      string   `json:"toolsWarning,omitempty"`
+	AccountsApplied   string   `json:"accountsApplied,omitempty"`
+	AccountsWarning   string   `json:"accountsWarning,omitempty"`
+	QuotasApplied     string   `json:"quotasApplied,omitempty"`
+	QuotasWarning     string   `json:"quotasWarning,omitempty"`
+}
+
+type ToolsSyncSidecar struct {
+	ContentHash string       `json:"contentHash"`
+	Items       []ToolReport `json:"items"`
+}
+
+type AccountsSyncSidecar struct {
+	ContentHash string          `json:"contentHash"`
+	Items       []AccountReport `json:"items"`
+}
+
+type QuotasSyncSidecar struct {
+	ContentHash string        `json:"contentHash"`
+	Items       []QuotaReport `json:"items"`
+}
+
+type StartUsageSyncOptions struct {
+	Tools    *ToolsSyncSidecar
+	Accounts *AccountsSyncSidecar
+	Quotas   *QuotasSyncSidecar
+}
+
+func (c *APIClient) StartUsageSync(ctx context.Context, partitions []SyncManifestPartition, opts *StartUsageSyncOptions) (*StartUsageSyncResponse, error) {
+	_ = ctx
+	body := map[string]any{"partitions": partitions}
+	if opts != nil {
+		if opts.Tools != nil {
+			body["tools"] = opts.Tools
+		}
+		if opts.Accounts != nil {
+			body["accounts"] = opts.Accounts
+		}
+		if opts.Quotas != nil {
+			body["quotas"] = opts.Quotas
+		}
+	}
+	var out StartUsageSyncResponse
+	if err := c.postJSON("/api/ingest/sync/usage/start", body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+type UploadUsageSyncChunkResponse struct {
+	Upserted       int  `json:"upserted"`
+	Duplicate      bool `json:"duplicate"`
+	ReceivedChunks int  `json:"receivedChunks"`
+	ReceivedRows   int  `json:"receivedRows"`
+}
+
+func (c *APIClient) UploadUsageSyncChunk(ctx context.Context, syncRunID, chunkID string, aggregates []UsageAggregate) (int, error) {
+	_ = ctx
+	var out UploadUsageSyncChunkResponse
+	err := c.postJSON("/api/ingest/sync/usage/chunk", map[string]any{
+		"syncRunId":  syncRunID,
+		"chunkId":    chunkID,
+		"aggregates": aggregates,
+		"observedAt": time.Now().UTC().Format(time.RFC3339Nano),
+	}, &out)
+	if err != nil {
+		if isPayloadTooLarge(err) && len(aggregates) > 1 {
+			mid := len(aggregates) / 2
+			left, errLeft := c.UploadUsageSyncChunk(ctx, syncRunID, chunkID+"a", aggregates[:mid])
+			if errLeft != nil {
+				return left, errLeft
+			}
+			right, errRight := c.UploadUsageSyncChunk(ctx, syncRunID, chunkID+"b", aggregates[mid:])
+			return left + right, errRight
+		}
+		return 0, err
+	}
+	return out.Upserted, nil
+}
+
+type CommitUsageSyncResponse struct {
+	Status            string   `json:"status"`
+	ReceivedChunks    int      `json:"receivedChunks"`
+	ReceivedRows      int      `json:"receivedRows"`
+	MissingPartitions []string `json:"missingPartitions"`
+	DirtyRemaining    int      `json:"dirtyRemaining"`
+}
+
+func (c *APIClient) CommitUsageSync(ctx context.Context, syncRunID string, expectedChunks int) (*CommitUsageSyncResponse, error) {
+	_ = ctx
+	var out CommitUsageSyncResponse
+	if err := c.postJSON("/api/ingest/sync/usage/commit", map[string]any{
+		"syncRunId":      syncRunID,
+		"expectedChunks": expectedChunks,
+	}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // reportLocalUsageBatch POSTs one aggregate slice. On HTTP 413 with more than

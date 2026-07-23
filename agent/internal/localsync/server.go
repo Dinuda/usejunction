@@ -112,12 +112,15 @@ func (s *Server) originAllowed(origin string) bool {
 	if s.loopbackOriginAllowed(u) {
 		return true
 	}
-	allowed := []string{s.cfg.ControlPlaneURL}
-	if s.cfg.GatewayURL != "" {
-		allowed = append(allowed, s.cfg.GatewayURL)
+	// Control plane + common local admin ports only. No gateway origins —
+	// UseJunction does not route tools through a gateway.
+	allowed := []string{
+		s.cfg.ControlPlaneURL,
+		"http://localhost:3000",
+		"http://localhost:3001",
+		"http://127.0.0.1:3000",
+		"http://127.0.0.1:3001",
 	}
-	// Common local admin ports during development.
-	allowed = append(allowed, "http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001")
 	for _, a := range allowed {
 		au, err := url.Parse(a)
 		if err != nil || au.Scheme == "" || au.Host == "" {

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Info } from "lucide-react";
 import { ConnectMachineBanner } from "@/components/dashboard/connect-machine-banner";
 import { CycleUtilizationBar } from "@/components/dashboard/cycle-utilization-bar";
 import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
@@ -18,6 +18,7 @@ import { ToolBrandIcon, ToolLogoTile } from "@/components/tools/tool-brand-icon"
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
 import type { AudienceScope } from "@/lib/audience-scope";
 import {
@@ -73,6 +74,36 @@ function formatEstSpendPerDay(cost: number, rangeDays: number) {
   return formatUsd(cost / rangeDays);
 }
 
+function estSpendPerDayTooltip(view: CycleView) {
+  const base = "Verified plus estimated usage divided by the number of days in this view.";
+  if (view === "current_cycles") {
+    return `${base} For current cycles, the day count is the union of each active plan's billing cycle — from the earliest cycle start to the latest cycle end — not the length of a single plan.`;
+  }
+  if (view === "previous_cycles") {
+    return `${base} For previous cycles, the day count spans the same union across your plans' prior billing cycles.`;
+  }
+  return `${base} Uses the exact number of days in your selected date range.`;
+}
+
+function KpiInfoTooltip({ content }: { content: string }) {
+  return (
+    <Tooltip delayDuration={200}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label="How this is calculated"
+        >
+          <Info className="size-3" strokeWidth={2.25} />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-64 text-xs leading-relaxed">
+        {content}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function usageCostBreakdownSub(verified: number, estimated: number) {
   return `${formatUsd(verified)} verified · ${formatUsd(estimated)} estimated`;
 }
@@ -93,6 +124,7 @@ function Kpi({
   hero,
   compactMobile,
   className,
+  action,
 }: {
   label: string;
   value: string;
@@ -103,6 +135,7 @@ function Kpi({
   hero?: boolean;
   compactMobile?: boolean;
   className?: string;
+  action?: ReactNode;
 }) {
   return (
     <SignalsKpi
@@ -113,6 +146,7 @@ function Kpi({
       accent={accent}
       compactMobile={compactMobile}
       className={className}
+      action={action}
       footer={delta != null ? <Delta value={delta} inverse={inverse} /> : undefined}
     />
   );
@@ -418,6 +452,7 @@ function PersonalHome({
               compactMobile
               className="border-l-2 border-border-strong pl-3 pr-2 sm:pl-4 sm:pr-3"
               sub={`${data.observation.rangeDays} days · ${cycleViewPeriodLabel(cycleView, rollingPeriod)}`}
+              action={<KpiInfoTooltip content={estSpendPerDayTooltip(cycleView)} />}
             />
             <Kpi
               label="Price per 1M tokens"
@@ -736,6 +771,7 @@ export default function DashboardPage() {
               compactMobile
               className="border-l-2 border-border-strong pl-3 pr-2 sm:pl-4 sm:pr-3"
               sub={`${data.observation.rangeDays} days · ${cycleViewPeriodLabel(data.cycleView, rollingPeriod)}`}
+              action={<KpiInfoTooltip content={estSpendPerDayTooltip(data.cycleView)} />}
             />
             <Kpi
               label="Price per 1M tokens"
@@ -773,15 +809,13 @@ export default function DashboardPage() {
                             </p>
                             <p className="mt-1 text-xs text-muted-foreground">
                               {cycleWindowLabel(row, data.cycleView)}
-                              {usageCost > 0
-                                ? ` · Seat ${formatUsd(row.cycleSpend)}`
-                                : null}
+                              {row.cycleSpend > 0 ? ` · Seat ${formatUsd(row.cycleSpend)}` : null}
                             </p>
                           </div>
                         </div>
                         <div className="flex items-start gap-2">
                           <p className="text-sm font-semibold tabular-nums">
-                            {formatUsd(usageCost > 0 ? usageCost : row.cycleSpend)}
+                            {usageCost > 0 ? formatUsd(usageCost) : "—"}
                           </p>
                           {href ? (
                             <ArrowUpRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />

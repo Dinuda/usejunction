@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/usejunction/agent/internal/client"
@@ -31,13 +33,13 @@ var updateCmd = &cobra.Command{
 		}
 		api := client.New(cfg)
 		if updateRollback {
-			stopWindowsBackgroundAgent()
+			stopBackgroundAgent()
 			if err := updater.Rollback(cfg, api, ""); err != nil {
-				startWindowsBackgroundAgent()
+				startBackgroundAgent()
 				return err
 			}
-			if err := restartBackgroundAgent(); err != nil && verbose {
-				fmt.Printf("rollback installed; restart warning: %v\n", err)
+			if err := restartBackgroundAgent(); err != nil {
+				return fmt.Errorf("rollback installed but daemon restart failed: %w", err)
 			}
 			fmt.Println("Rolled back the UseJunction agent. The rejected version is blocked until a newer release or --force.")
 			return nil
@@ -64,57 +66,84 @@ var updateCmd = &cobra.Command{
 			return nil
 		}
 
-		stopWindowsBackgroundAgent()
+		stopBackgroundAgent()
 		updated, err := updater.Apply(cmd.Context(), cfg, updater.ApplyOptions{
 			Directive: *directive, CurrentVersion: config.Version, ControlPlaneURL: cfg.ControlPlaneURL,
 			Reporter: api, Force: updateForce,
 		})
 		if errors.Is(err, updater.ErrBlockedVersion) {
-			startWindowsBackgroundAgent()
+			startBackgroundAgent()
 			return fmt.Errorf("version %s is blocked after rollback; use --force to reinstall it", directive.TargetVersion)
 		}
 		if err != nil {
-			startWindowsBackgroundAgent()
+			startBackgroundAgent()
 			return err
 		}
 		if !updated {
-			startWindowsBackgroundAgent()
+			startBackgroundAgent()
 			return nil
 		}
-		if err := restartBackgroundAgent(); err != nil && verbose {
-			fmt.Printf("update installed; restart warning: %v\n", err)
+		if err := restartBackgroundAgent(); err != nil {
+			return fmt.Errorf("update installed but daemon restart failed: %w", err)
 		}
 		fmt.Printf("Installed UseJunction agent v%s. The background service is restarting.\n", directive.TargetVersion)
 		return nil
 	},
 }
 
-func stopWindowsBackgroundAgent() {
-	if runtime.GOOS != "windows" {
-		return
+// stopBackgroundAgent unloads/stops the background service so binary replacement
+// cannot leave a stale process running from a renamed previous path.
+func stopBackgroundAgent() {
+	home, _ := os.UserHomeDir()
+	switch runtime.GOOS {
+	case "darwin":
+		domain := fmt.Sprintf("gui/%d", os.Getuid())
+		plist := filepath.Join(home, "Library", "LaunchAgents", "com.usejunction.agent.plist")
+		if err := exec.Command("launchctl", "bootout", domain, plist).Run(); err != nil {
+			_ = exec.Command("launchctl", "unload", plist).Run()
+		}
+	case "linux":
+		_ = exec.Command("systemctl", "--user", "stop", "usejunction-agent.service").Run()
+	case "windows":
+		_ = exec.Command("powershell.exe", "-NoProfile", "-Command", "Stop-ScheduledTask -TaskName 'UseJunction Agent' -ErrorAction SilentlyContinue").Run()
 	}
-	_ = exec.Command("powershell.exe", "-NoProfile", "-Command", "Stop-ScheduledTask -TaskName 'UseJunction Agent' -ErrorAction SilentlyContinue").Run()
 }
 
-func startWindowsBackgroundAgent() {
-	if runtime.GOOS != "windows" {
-		return
+// startBackgroundAgent reloads the service after a failed update/rollback attempt.
+func startBackgroundAgent() {
+	home, _ := os.UserHomeDir()
+	switch runtime.GOOS {
+	case "darwin":
+		domain := fmt.Sprintf("gui/%d", os.Getuid())
+		plist := filepath.Join(home, "Library", "LaunchAgents", "com.usejunction.agent.plist")
+		if err := exec.Command("launchctl", "bootstrap", domain, plist).Run(); err != nil {
+			_ = exec.Command("launchctl", "load", plist).Run()
+		}
+	case "linux":
+		_ = exec.Command("systemctl", "--user", "start", "usejunction-agent.service").Run()
+	case "windows":
+		_ = exec.Command("powershell.exe", "-NoProfile", "-Command", "Start-ScheduledTask -TaskName 'UseJunction Agent' -ErrorAction SilentlyContinue").Run()
 	}
-	_ = exec.Command("powershell.exe", "-NoProfile", "-Command", "Start-ScheduledTask -TaskName 'UseJunction Agent' -ErrorAction SilentlyContinue").Run()
 }
 
 func restartBackgroundAgent() error {
 	home, _ := os.UserHomeDir()
 	switch runtime.GOOS {
 	case "darwin":
-		label := fmt.Sprintf("gui/%d/com.usejunction.agent", os.Getuid())
-		if err := exec.Command("launchctl", "kickstart", "-k", label).Run(); err == nil {
+		if err := restartDarwinLaunchAgent(home); err != nil {
+			return err
+		}
+		// kickstart -k terminates the launchd job. When the daemon invokes this
+		// during self-update it may already be exiting; skip PID verification.
+		if isDaemonProcess() {
 			return nil
 		}
-		plist := filepath.Join(home, "Library", "LaunchAgents", "com.usejunction.agent.plist")
-		return exec.Command("launchctl", "load", plist).Run()
+		return verifyDarwinDaemonExecutable(home)
 	case "linux":
-		return exec.CommandContext(context.Background(), "systemctl", "--user", "restart", "usejunction-agent.service").Run()
+		if err := exec.CommandContext(context.Background(), "systemctl", "--user", "restart", "usejunction-agent.service").Run(); err != nil {
+			return err
+		}
+		return nil
 	case "windows":
 		// The Windows updater launches a detached handoff because the running
 		// executable is locked. That handoff restarts the Scheduled Task.
@@ -122,6 +151,78 @@ func restartBackgroundAgent() error {
 	default:
 		return fmt.Errorf("automatic restart is unsupported on %s", runtime.GOOS)
 	}
+}
+
+func isDaemonProcess() bool {
+	for _, arg := range os.Args[1:] {
+		if arg == "daemon" {
+			return true
+		}
+	}
+	return false
+}
+
+func restartDarwinLaunchAgent(home string) error {
+	uid := os.Getuid()
+	domain := fmt.Sprintf("gui/%d", uid)
+	label := domain + "/com.usejunction.agent"
+	plist := filepath.Join(home, "Library", "LaunchAgents", "com.usejunction.agent.plist")
+	if _, err := os.Stat(plist); err != nil {
+		return fmt.Errorf("launchd plist not found at %s", plist)
+	}
+
+	if err := exec.Command("launchctl", "kickstart", "-k", label).Run(); err == nil {
+		return nil
+	}
+
+	// Job may have been booted out (manual update path). Never bare-load alone.
+	_ = exec.Command("launchctl", "bootout", domain, plist).Run()
+	if err := exec.Command("launchctl", "bootstrap", domain, plist).Run(); err != nil {
+		_ = exec.Command("launchctl", "unload", plist).Run()
+		if err := exec.Command("launchctl", "load", plist).Run(); err != nil {
+			return fmt.Errorf("launchctl bootstrap/load failed: %w", err)
+		}
+	}
+	_ = exec.Command("launchctl", "kickstart", "-k", label).Run()
+	return nil
+}
+
+func verifyDarwinDaemonExecutable(home string) error {
+	deadline := time.Now().Add(5 * time.Second)
+	appBinary := filepath.Join(home, ".usejunction", "UseJunction.app", "Contents", "MacOS", "usejunction")
+	previousMarker := filepath.Join(home, ".usejunction", "UseJunction.previous.app")
+	legacyPrevious := filepath.Join(home, ".usejunction", "UseJunction.app.previous")
+
+	for time.Now().Before(deadline) {
+		out, err := exec.Command("ps", "-ax", "-o", "command=").Output()
+		if err != nil {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		lines := strings.Split(string(out), "\n")
+		runningApp := false
+		stalePrevious := false
+		for _, line := range lines {
+			if !strings.Contains(line, "usejunction") || !strings.Contains(line, "daemon") {
+				continue
+			}
+			if strings.Contains(line, previousMarker) || strings.Contains(line, legacyPrevious) || strings.Contains(line, "UseJunction.previous.app") || strings.Contains(line, "UseJunction.app.previous") {
+				stalePrevious = true
+				continue
+			}
+			if strings.Contains(line, appBinary) || strings.Contains(line, "UseJunction.app/Contents/MacOS/usejunction") {
+				runningApp = true
+			}
+		}
+		if stalePrevious {
+			return fmt.Errorf("stale agent still running from UseJunction.previous.app; kickstart failed to replace the process")
+		}
+		if runningApp {
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return fmt.Errorf("daemon did not come up from %s after restart", appBinary)
 }
 
 func init() {

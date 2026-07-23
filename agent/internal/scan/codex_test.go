@@ -187,3 +187,61 @@ func TestProcessCodexWorkFileAttributesSurfaceAndTools(t *testing.T) {
 		t.Fatalf("flow row: %#v", flowRow)
 	}
 }
+
+func TestScanCodexForcesRequestOnTokenOnlyUsageRow(t *testing.T) {
+	dir := t.TempDir()
+	sessions := filepath.Join(dir, "sessions")
+	if err := os.MkdirAll(sessions, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Hand-build a bucket-like finalize case: tokens present, Requests left at 0
+	// before ScanCodex's finalize pass (simulates summary/rollup shape).
+	path := filepath.Join(sessions, "rollout.jsonl")
+	var buf bytes.Buffer
+	write := func(v any) {
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf.Write(b)
+		buf.WriteByte('\n')
+	}
+	write(map[string]any{
+		"type": "session_meta", "timestamp": "2026-07-17T10:00:00Z",
+		"payload": map[string]any{"originator": "codex_cli"},
+	})
+	// Single cumulative total — one request after parse; then we zero Requests
+	write(map[string]any{
+		"type": "event_msg", "timestamp": "2026-07-17T10:00:01Z",
+		"payload": map[string]any{
+			"type": "token_count", "model": "gpt-5.2-codex",
+			"info": map[string]any{"total_token_usage": map[string]any{
+				"input_tokens": float64(5000), "output_tokens": float64(50),
+			}},
+		},
+	})
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := ScanCodex(dir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var usage *types.DailyUsage
+	for i := range rows {
+		if rows[i].MetricKind == types.MetricKindUsage {
+			usage = &rows[i]
+			break
+		}
+	}
+	if usage == nil {
+		t.Fatal("expected usage row")
+	}
+	if usage.Requests < 1 {
+		t.Fatalf("expected requests >= 1 for token-bearing usage row, got %#v", usage)
+	}
+	if usage.InputTokens < 1 || usage.EstimatedCost <= 0 {
+		t.Fatalf("expected tokens+cost, got %#v", usage)
+	}
+}

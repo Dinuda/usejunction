@@ -77,7 +77,7 @@ function ChoiceCard({
           ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
           : dark
             ? "border-neutral-500 border-1 text-black hover:bg-neutral-200/90 transparent"
-            : "border-border bg-card hover:border-primary/40 hover:bg-muted/40",
+            : "border-neutral-500 bg-neutral-50 hover:border-primary/40 hover:bg-muted/40",
       )}
     >
       <Image src={iconSrc} alt="" width={36} height={36} className="size-9 shrink-0" />
