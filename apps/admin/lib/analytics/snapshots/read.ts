@@ -14,7 +14,6 @@ import {
   loadDirtyDaysInWindow,
   orgLiveRowsForRead,
   splitLiveReadWindow,
-  type LiveDayTotalRow,
 } from "./overlay";
 
 export type SnapshotDayTotals = {
@@ -306,7 +305,7 @@ export async function readOrgUsageFromSnapshots(
     }
   }
 
-  let liveRows: LiveDayTotalRow[] = [];
+  let liveRows: MergedRow[] = [];
   if (liveFrom && liveTo) {
     const liveDays = eachIsoDayInclusive(liveFrom, liveTo);
     const live = await liveOrgDayTotalsForDates(orgId, liveDays);
@@ -400,7 +399,7 @@ export async function readDeveloperUsageFromSnapshots(
     }
   }
 
-  let liveRows: LiveDayTotalRow[] = [];
+  let liveRows: MergedRow[] = [];
   if (liveFrom && liveTo) {
     const liveDays = eachIsoDayInclusive(liveFrom, liveTo);
     const live = await liveOrgDayTotalsForDates(orgId, liveDays, { developerId });
