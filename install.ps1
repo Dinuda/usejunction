@@ -1,7 +1,6 @@
 [CmdletBinding()]
 param(
   [string]$Token = "",
-  [string]$Connect = "",
   [string]$Url = "",
   [switch]$Upgrade
 )
@@ -24,10 +23,10 @@ $RunnerPath = Join-Path $RootDir "run-agent.ps1"
 $LogPath = Join-Path $RootDir "agent.log"
 
 function Show-Usage {
-  throw "Usage: install.ps1 [-Token <token> | -Connect <token> | -Upgrade] [-Url <control-plane>]"
+  throw "Usage: install.ps1 [-Token <token> | -Upgrade] [-Url <control-plane>]"
 }
 
-if (-not $Upgrade -and [string]::IsNullOrWhiteSpace($Token) -and [string]::IsNullOrWhiteSpace($Connect)) {
+if (-not $Upgrade -and [string]::IsNullOrWhiteSpace($Token)) {
   Show-Usage
 }
 if ($Upgrade -and -not (Test-Path $ConfigPath)) {
@@ -121,6 +120,16 @@ function Add-AgentToPath {
   }
 }
 
+function Show-CliInstructions {
+  Write-Host ""
+  Write-Host "UseJunction installed. Admin panel: $Url"
+  Write-Host "CLI: $Binary"
+  Write-Host "Next: open a new terminal, or run: `$env:Path = `"`$env:Path;$InstallDir`""
+  Write-Host "Then: usejunction status"
+  Write-Host "The agent will also start automatically when you sign in to Windows."
+  Write-Host "Rollback an update: usejunction update --rollback"
+}
+
 function Register-AgentTask {
   New-Item -ItemType Directory -Force -Path $RootDir | Out-Null
   $escapedBinary = $Binary.Replace("'", "''")
@@ -186,43 +195,16 @@ if ($Upgrade) {
   Start-Sleep -Seconds 2
   & $Binary status
   Write-Host "UseJunction agent upgraded to v$Version."
+  Write-Host "CLI: $Binary"
+  Write-Host "Next: open a new terminal, or run: `$env:Path = `"`$env:Path;$InstallDir`""
   exit 0
 }
 
-if ($Connect) {
-  $joinUrl = "$Url/connect-invite/$Connect"
-  Write-Host "Opening browser to authenticate..."
-  Write-Host "  $joinUrl"
-  Start-Process $joinUrl
-  Write-Host "Waiting for you to sign in (up to 10 minutes)..."
-  for ($attempt = 0; $attempt -lt 120; $attempt++) {
-    try {
-      $invite = Invoke-RestMethod -UseBasicParsing -Uri "$Url/api/connect-invite/$Connect/status" -TimeoutSec 15
-      if ($invite.status -eq "ready" -and $invite.enrollmentToken) {
-        $Token = [string]$invite.enrollmentToken
-        Write-Host "Authenticated. Enrolling device..."
-        break
-      }
-      if ($invite.status -in @("expired", "used")) { throw "Connect invite $($invite.status). Ask your admin for a new command." }
-    } catch {
-      if ($_.Exception.Message -match '^Connect invite') { throw }
-    }
-    Start-Sleep -Seconds 5
-  }
-  if (-not $Token) { throw "Timed out waiting for browser authentication." }
-}
-
-Write-Host "Enrolling device..."
-& $Binary enroll --token $Token --url $Url --setup
-if ($LASTEXITCODE -ne 0) { throw "Device enrollment failed." }
-Write-Host "Detecting tools..."
-& $Binary doctor
-if ($LASTEXITCODE -ne 0) { Write-Warning "Tool detection completed with warnings." }
+& $Binary onboard --token $Token --url $Url
+if ($LASTEXITCODE -ne 0) { throw "Device onboarding failed." }
 
 Register-AgentTask
 Start-ScheduledTask -TaskName $TaskName
 Start-Sleep -Seconds 2
-& $Binary status
-Write-Host ""
-Write-Host "UseJunction installed. Admin panel: $Url"
-Write-Host "The agent will also start automatically when you sign in to Windows."
+& $Binary onboard --complete
+if ($LASTEXITCODE -ne 0) { Write-Warning "Could not print install summary." }

@@ -6,8 +6,24 @@ import { buildTeamInviteLinkUrl, getPublicAppUrl } from "@/lib/connect-command";
 import { normalizeEmail } from "@/lib/developer-identity";
 import { notifyTeamSeatsAdded } from "@/lib/notifications/slack";
 import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
+import {
+  ASSIGNABLE_ROLES,
+  canManageSettings,
+  type OrganizationRole,
+} from "@/lib/rbac/permissions";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
 import { logServerError } from "@/lib/errors/public";
+
+type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
+
+function resolveInviteRole(
+  actorRole: OrganizationRole,
+  requested: AssignableRole,
+): AssignableRole | NextResponse {
+  if (canManageSettings(actorRole)) return requested;
+  if (requested === "user") return "user";
+  return NextResponse.json({ error: "forbidden" }, { status: 403 });
+}
 
 const TEAM_INVITE_TTL_DAYS = 7;
 
@@ -82,6 +98,51 @@ async function orgName(orgId: string) {
   return org?.name ?? "your workspace";
 }
 
+/** Track emailed / shared invites so Team → Invited can list pending people. */
+async function recordPendingInvite(params: {
+  orgId: string;
+  email: string;
+  role: AssignableRole;
+  invitedByUserId: string;
+  expiresAt: Date;
+}) {
+  const existingMember = await prisma.developer.findUnique({
+    where: { orgId_email: { orgId: params.orgId, email: params.email } },
+    select: { id: true, removedAt: true },
+  });
+  if (existingMember && !existingMember.removedAt) return null;
+
+  const existing = await prisma.organizationInvite.findFirst({
+    where: {
+      orgId: params.orgId,
+      email: params.email,
+      acceptedAt: null,
+    },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  if (existing) {
+    return prisma.organizationInvite.update({
+      where: { id: existing.id },
+      data: { expiresAt: params.expiresAt, role: params.role },
+      select: { id: true, email: true, role: true },
+    });
+  }
+
+  const token = generateOpaqueToken("uj_invite", 32);
+  return prisma.organizationInvite.create({
+    data: {
+      orgId: params.orgId,
+      email: params.email,
+      role: params.role,
+      tokenHash: hashOpaqueToken(token),
+      expiresAt: params.expiresAt,
+      invitedByUserId: params.invitedByUserId,
+    },
+    select: { id: true, email: true, role: true },
+  });
+}
+
 export async function GET(req: NextRequest) {
   const auth = await requireOrgRole(req, rolesFor("org_overview"));
   if (auth instanceof NextResponse) return auth;
@@ -112,6 +173,7 @@ export async function POST(req: NextRequest) {
 const allowlistSchema = z.object({
   emails: z.array(z.string().email()).min(1).max(100),
   sendEmail: z.boolean().optional().default(true),
+  role: z.enum(ASSIGNABLE_ROLES).optional().default("user"),
 });
 
 export async function PUT(req: NextRequest) {
@@ -122,6 +184,9 @@ export async function PUT(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "add at least one valid email" }, { status: 400 });
   }
+
+  const inviteRole = resolveInviteRole(auth.role, parsed.data.role);
+  if (inviteRole instanceof NextResponse) return inviteRole;
 
   const { link } = await ensureLink(auth.orgId, auth.userId, false);
   const emails = [...new Set(parsed.data.emails.map(normalizeEmail))];
@@ -136,6 +201,8 @@ export async function PUT(req: NextRequest) {
   const added = [];
   const emailResults: Array<{ email: string; status: "sent" | "skipped" | "email_failed"; error?: string }> = [];
 
+  const inviteExpiresAt = link.expiresAt && link.expiresAt > new Date() ? link.expiresAt : defaultInviteExpiry(new Date());
+
   for (const email of emails) {
     const row = await prisma.teamInviteAllowlist.upsert({
       where: { linkId_email: { linkId: link.id, email } },
@@ -145,28 +212,13 @@ export async function PUT(req: NextRequest) {
     });
     added.push(row);
 
-    const existingDeveloper = await prisma.developer.findUnique({
-      where: { orgId_email: { orgId: auth.orgId, email } },
-      select: { id: true },
+    await recordPendingInvite({
+      orgId: auth.orgId,
+      email,
+      role: inviteRole,
+      invitedByUserId: auth.userId,
+      expiresAt: inviteExpiresAt,
     });
-    if (!existingDeveloper) {
-      const pending = await prisma.organizationInvite.findFirst({
-        where: { orgId: auth.orgId, email, acceptedAt: null, expiresAt: { gt: new Date() } },
-        select: { id: true },
-      });
-      if (!pending) {
-        await prisma.organizationInvite.create({
-          data: {
-            orgId: auth.orgId,
-            email,
-            role: "user",
-            tokenHash: hashOpaqueToken(generateOpaqueToken("uj_invite", 32)),
-            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-            invitedByUserId: auth.userId,
-          },
-        });
-      }
-    }
 
     if (!parsed.data.sendEmail) {
       emailResults.push({ email, status: "skipped" });
@@ -215,12 +267,52 @@ export async function PUT(req: NextRequest) {
   });
 }
 
-/** Resend invite email(s) for allowlisted addresses. */
+/** Update pending invite role and/or resend invite email(s). */
 export async function PATCH(req: NextRequest) {
   const auth = await requireOrgRole(req, rolesFor("org_overview"));
   if (auth instanceof NextResponse) return auth;
 
   const body = await req.json().catch(() => ({}));
+  const roleUpdate = z
+    .object({
+      email: z.string().email(),
+      role: z.enum(ASSIGNABLE_ROLES),
+    })
+    .safeParse(body);
+
+  if (roleUpdate.success && body.role !== undefined && !body.emails && body.resend !== true) {
+    const email = normalizeEmail(roleUpdate.data.email);
+    const inviteRole = resolveInviteRole(auth.role, roleUpdate.data.role);
+    if (inviteRole instanceof NextResponse) return inviteRole;
+
+    const invite = await prisma.organizationInvite.findFirst({
+      where: {
+        orgId: auth.orgId,
+        email,
+        acceptedAt: null,
+      },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, email: true, role: true },
+    });
+    if (!invite) return NextResponse.json({ error: "invite not found" }, { status: 404 });
+
+    const updated = await prisma.organizationInvite.update({
+      where: { id: invite.id },
+      data: { role: inviteRole },
+      select: { id: true, email: true, role: true },
+    });
+    await audit({
+      orgId: auth.orgId,
+      actorType: "user",
+      actorId: auth.userId,
+      action: "invite.role_updated",
+      targetType: "invite",
+      targetId: invite.id,
+      metadata: { email, from: invite.role, to: inviteRole },
+    });
+    return NextResponse.json(updated);
+  }
+
   const emailsRaw: unknown[] = Array.isArray(body.emails)
     ? body.emails
     : body.email
@@ -237,13 +329,23 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "email required" }, { status: 400 });
   }
 
-  const link = await prisma.teamInviteLink.findUnique({
-    where: { orgId: auth.orgId },
-    include: { allowlist: { select: { email: true } } },
-  });
-  if (!link) return NextResponse.json({ error: "invite link not found" }, { status: 404 });
-
+  const { link } = await ensureLink(auth.orgId, auth.userId, false);
   const allowlisted = new Set(link.allowlist.map((row) => row.email));
+  const pendingInvites = await prisma.organizationInvite.findMany({
+    where: {
+      orgId: auth.orgId,
+      email: { in: emails },
+      acceptedAt: null,
+    },
+    select: { id: true, email: true, expiresAt: true },
+    orderBy: { createdAt: "desc" },
+  });
+  const pendingByEmail = new Map<string, { id: string; expiresAt: Date }>();
+  for (const invite of pendingInvites) {
+    if (!pendingByEmail.has(invite.email)) pendingByEmail.set(invite.email, invite);
+  }
+  const inviteExpiresAt =
+    link.expiresAt && link.expiresAt > new Date() ? link.expiresAt : defaultInviteExpiry(new Date());
   const inviteUrl = buildTeamInviteLinkUrl(link.tokenReveal, getPublicAppUrl());
   const organizationName = await orgName(auth.orgId);
   const inviter = await prisma.user.findUnique({
@@ -253,11 +355,23 @@ export async function PATCH(req: NextRequest) {
   const invitedBy = { name: inviter?.name, email: inviter?.email ?? auth.email };
   const emailResults: Array<{ email: string; status: "sent" | "email_failed" | "not_allowlisted"; error?: string }> =
     [];
+  const now = new Date();
 
   for (const email of emails) {
-    if (!allowlisted.has(email)) {
+    const pending = pendingByEmail.get(email);
+    if (!allowlisted.has(email) && !pending) {
       emailResults.push({ email, status: "not_allowlisted" });
       continue;
+    }
+    if (pending && pending.expiresAt <= now) {
+      const token = generateOpaqueToken("uj_invite", 32);
+      await prisma.organizationInvite.update({
+        where: { id: pending.id },
+        data: {
+          tokenHash: hashOpaqueToken(token),
+          expiresAt: inviteExpiresAt,
+        },
+      });
     }
     try {
       await sendTeamInviteEmail({ to: email, organizationName, inviteUrl, invitedBy });
@@ -272,7 +386,7 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ emailResults, url: inviteUrl });
+  return NextResponse.json({ emailResults, url: inviteUrl, expiresAt: inviteExpiresAt.toISOString() });
 }
 
 export async function DELETE(req: NextRequest) {

@@ -387,13 +387,12 @@ Local safety rules:
 
 ## Bootstrap and rollback
 
-`install.sh` and `install.ps1` support three main paths:
+`install.sh` and `install.ps1` support two main paths:
 
 - enrollment with `--token`
-- teammate connect with `--connect`
 - upgrade-only bootstrap with `--upgrade`
 
-PowerShell uses the equivalent `-Token`, `-Connect`, `-Url`, and `-Upgrade` parameters. It installs `usejunction.exe` for the current user and registers the `UseJunction Agent` logon task without elevation.
+PowerShell uses the equivalent `-Token`, `-Url`, and `-Upgrade` parameters. It installs `usejunction.exe` for the current user and registers the `UseJunction Agent` logon task without elevation.
 
 For upgrades, the script:
 

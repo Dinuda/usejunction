@@ -19,6 +19,7 @@ func Run(verbose bool) error {
 	}
 
 	stopServices()
+	removeCliFromPath()
 	deferred, err := schedulePlatformCleanup()
 	if err != nil {
 		return err

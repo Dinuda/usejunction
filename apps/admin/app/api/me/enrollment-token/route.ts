@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { getPublicAppUrl } from "@/lib/public-url";
-import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
 import { assertCanEnrollDevice } from "@/lib/saas-billing/status";
+import { issueEnrollmentToken } from "@/lib/enrollment-token";
+import { limitedJson } from "@/lib/security/http";
 
 export async function POST(req: NextRequest) {
   const auth = await requireOrgRole(req, rolesFor("self_view"));
@@ -16,33 +17,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: enrollGate.message }, { status: 403 });
   }
 
-  const rawToken = generateOpaqueToken("uj_enroll", 32);
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-  const token = await prisma.$transaction(async (tx) => {
-    await tx.enrollmentToken.deleteMany({ where: { developerId: developer.id, usedAt: null } });
-    return tx.enrollmentToken.create({
-      data: {
-        orgId: auth.orgId,
-        teamId: developer.teamId,
-        developerId: developer.id,
-        tokenHash: hashOpaqueToken(rawToken),
-        expiresAt,
-      },
-      select: { id: true },
-    });
+  const parsedBody = await limitedJson(req, 1024);
+  const body = parsedBody.ok ? (parsedBody.data as Record<string, unknown>) : {};
+  const rotate = body.rotate === true;
+
+  const issued = await issueEnrollmentToken({
+    orgId: auth.orgId,
+    developerId: developer.id,
+    rotate,
   });
   await audit({
     orgId: auth.orgId,
     actorType: "user",
     actorId: auth.userId,
-    action: "enrollment_token.created",
+    action: rotate ? "enrollment_token.rotated" : "enrollment_token.created",
     targetType: "enrollment_token",
-    targetId: token.id,
+    targetId: issued.id,
   });
   return NextResponse.json(
     {
-      token: rawToken,
-      expiresAt: expiresAt.toISOString(),
+      token: issued.token,
+      expiresAt: issued.expiresAt.toISOString(),
       controlPlaneUrl: getPublicAppUrl(),
     },
     { status: 201 },

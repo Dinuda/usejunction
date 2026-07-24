@@ -1,5 +1,4 @@
 import { prisma } from "@usejunction/db";
-import { workSessionPath } from "@/lib/signals/work-display";
 import type {
   DeviceActivityDeveloper,
   DeviceActivityDevice,
@@ -84,114 +83,33 @@ export async function getDeviceActivityFeed(
   const limit = Math.min(options.limit ?? 50, 100);
   const developerWhere = options.developerId ? { developerId: options.developerId } : {};
   const deviceDeveloperWhere = options.developerId ? { userId: options.developerId } : {};
-  const perSource = Math.min(limit, 40);
 
-  const [events, updateEvents, gatewayRequests, workSessions, signalsSessions, devices] =
-    await Promise.all([
-      prisma.deviceActivityEvent.findMany({
-        where: { orgId, ...developerWhere },
-        orderBy: { occurredAt: "desc" },
-        take: perSource,
-        include: {
-          device: {
-            select: {
-              id: true,
-              hostname: true,
-              os: true,
-              architecture: true,
-              agentVersion: true,
-              lastSeenAt: true,
-            },
-          },
-          developer: { select: { id: true, name: true, email: true } },
-        },
-      }),
-      prisma.agentUpdateEvent.findMany({
-        where: {
-          orgId,
-          ...(options.developerId ? { device: { userId: options.developerId } } : {}),
-        },
-        orderBy: { createdAt: "desc" },
-        take: Math.min(perSource, 30),
-        include: {
-          device: {
-            select: {
-              id: true,
-              hostname: true,
-              os: true,
-              architecture: true,
-              agentVersion: true,
-              lastSeenAt: true,
-              user: { select: { id: true, name: true, email: true } },
-            },
+  const [events, devices] = await Promise.all([
+    prisma.deviceActivityEvent.findMany({
+      where: { orgId, ...developerWhere },
+      orderBy: { occurredAt: "desc" },
+      take: limit,
+      include: {
+        device: {
+          select: {
+            id: true,
+            hostname: true,
+            os: true,
+            architecture: true,
+            agentVersion: true,
+            lastSeenAt: true,
           },
         },
-      }),
-      prisma.requestMetadata.findMany({
-        where: {
-          orgId,
-          ...(options.developerId ? { userId: options.developerId } : {}),
-          deviceId: { not: null },
-        },
-        orderBy: { createdAt: "desc" },
-        take: Math.min(perSource, 30),
-        include: {
-          device: {
-            select: {
-              id: true,
-              hostname: true,
-              os: true,
-              architecture: true,
-              agentVersion: true,
-              lastSeenAt: true,
-            },
-          },
-          user: { select: { id: true, name: true, email: true } },
-        },
-      }),
-      prisma.localWorkSession.findMany({
-        where: { orgId, ...developerWhere },
-        orderBy: { observedAt: "desc" },
-        take: Math.min(perSource, 30),
-        include: {
-          device: {
-            select: {
-              id: true,
-              hostname: true,
-              os: true,
-              architecture: true,
-              agentVersion: true,
-              lastSeenAt: true,
-            },
-          },
-          developer: { select: { id: true, name: true, email: true } },
-        },
-      }),
-      prisma.signalsSession.findMany({
-        where: { orgId, ...developerWhere },
-        orderBy: { startedAt: "desc" },
-        take: Math.min(perSource, 30),
-        include: {
-          device: {
-            select: {
-              id: true,
-              hostname: true,
-              os: true,
-              architecture: true,
-              agentVersion: true,
-              lastSeenAt: true,
-            },
-          },
-          developer: { select: { id: true, name: true, email: true } },
-        },
-      }),
-      prisma.device.findMany({
-        where: { orgId, decommissionedAt: null, ...deviceDeveloperWhere },
-        orderBy: { lastSeenAt: "desc" },
-        take: 20,
-        include: { user: { select: { id: true, name: true, email: true } } },
-      }),
-    ]);
+        developer: { select: { id: true, name: true, email: true } },
+      },
+    }),
+    prisma.device.findMany({
+      where: { orgId, decommissionedAt: null, ...deviceDeveloperWhere },
+      orderBy: { lastSeenAt: "desc" },
+      take: 20,
+      include: { user: { select: { id: true, name: true, email: true } } },
+    }),
+  ]);
 
   const items: DeviceActivityItem[] = [];
 
@@ -216,177 +134,6 @@ export async function getDeviceActivityFeed(
       inspect: {
         requestSummary: event.requestSummary,
         responseSummary: event.responseSummary,
-      },
-    });
-  }
-
-  for (const event of updateEvents) {
-    const version =
-      event.currentVersion && event.currentVersion !== event.targetVersion
-        ? `${event.currentVersion} → ${event.targetVersion}`
-        : event.targetVersion;
-    items.push({
-      id: `agent_update:${event.id}`,
-      kind: "agent_update",
-      source: "observed",
-      direction: "ingest",
-      status: event.errorCode || event.eventType.includes("failed") ? "error" : "ok",
-      at: event.createdAt.toISOString(),
-      title: kindTitle("agent_update"),
-      summary: `${event.device.hostname} · ${event.eventType.replaceAll("_", " ")} · ${version}${
-        event.stage ? ` · ${event.stage}` : ""
-      }`,
-      errorCode: event.errorCode,
-      durationMs: null,
-      device: deviceSnapshot(event.device),
-      developer: developerSnapshot(event.device.user),
-      details: {
-        eventType: event.eventType,
-        currentVersion: event.currentVersion,
-        targetVersion: event.targetVersion,
-        stage: event.stage,
-      },
-      inspect: {
-        requestSummary: {
-          eventType: event.eventType,
-          currentVersion: event.currentVersion,
-          targetVersion: event.targetVersion,
-          stage: event.stage,
-        },
-        responseSummary: {
-          errorCode: event.errorCode,
-        },
-      },
-    });
-  }
-
-  for (const row of gatewayRequests) {
-    if (!row.device) continue;
-    const tokens = row.inputTokens + row.outputTokens;
-    items.push({
-      id: `gateway:${row.id}`,
-      kind: "gateway_request",
-      source: "observed",
-      direction: "observed",
-      status: row.status === "success" ? "ok" : row.status,
-      at: row.createdAt.toISOString(),
-      title: kindTitle("gateway_request"),
-      summary: `${row.device.hostname} · ${row.toolName ?? "tool"} · ${row.model ?? "model"} · ${tokens} tokens`,
-      errorCode: row.status === "success" ? null : row.status,
-      durationMs: row.latencyMs || null,
-      device: deviceSnapshot(row.device),
-      developer: developerSnapshot(row.user),
-      details: {
-        toolName: row.toolName,
-        model: row.model,
-        provider: row.provider,
-        inputTokens: row.inputTokens,
-        outputTokens: row.outputTokens,
-        estimatedCost: row.estimatedCost,
-        latencyMs: row.latencyMs,
-        source: row.source,
-      },
-      inspect: {
-        requestSummary: {
-          toolName: row.toolName,
-          model: row.model,
-          provider: row.provider,
-          source: row.source,
-          traceId: row.traceId,
-        },
-        responseSummary: {
-          status: row.status,
-          inputTokens: row.inputTokens,
-          outputTokens: row.outputTokens,
-          estimatedCost: row.estimatedCost,
-          latencyMs: row.latencyMs,
-        },
-      },
-    });
-  }
-
-  for (const session of workSessions) {
-    items.push({
-      id: `work:${session.id}`,
-      kind: "work_session",
-      source: "observed",
-      direction: "observed",
-      status: "ok",
-      at: session.observedAt.toISOString(),
-      title: kindTitle("work_session"),
-      summary: `${session.device.hostname} · ${session.toolName}${
-        session.model ? ` · ${session.model}` : ""
-      }${session.title ? ` · ${session.title}` : ""}`,
-      errorCode: null,
-      durationMs: null,
-      device: deviceSnapshot(session.device),
-      developer: developerSnapshot(session.developer),
-      details: {
-        toolName: session.toolName,
-        model: session.model,
-        mode: session.mode,
-        title: session.title,
-        tldr: session.tldr,
-        href: workSessionPath(session.id),
-      },
-      inspect: {
-        requestSummary: {
-          localId: session.localId,
-          toolName: session.toolName,
-          model: session.model,
-          mode: session.mode,
-          source: session.source,
-        },
-        responseSummary: {
-          title: session.title,
-          tldr: session.tldr,
-          overview: session.overview,
-          repository: session.repository,
-        },
-      },
-    });
-  }
-
-  for (const session of signalsSessions) {
-    const before = session.domainBefore ?? session.appBefore ?? "unknown";
-    const after = session.domainAfter ?? session.appAfter ?? "unknown";
-    items.push({
-      id: `signals:${session.id}`,
-      kind: "signals_session",
-      source: "observed",
-      direction: "observed",
-      status: "ok",
-      at: session.startedAt.toISOString(),
-      title: kindTitle("signals_session"),
-      summary: `${session.device.hostname} · ${before} → ${session.aiTool} → ${after}`,
-      errorCode: null,
-      durationMs: session.durationSeconds * 1000,
-      device: deviceSnapshot(session.device),
-      developer: developerSnapshot(session.developer),
-      details: {
-        aiTool: session.aiTool,
-        appBefore: session.appBefore,
-        domainBefore: session.domainBefore,
-        appAfter: session.appAfter,
-        domainAfter: session.domainAfter,
-        confidence: session.confidence,
-        durationSeconds: session.durationSeconds,
-      },
-      inspect: {
-        requestSummary: {
-          localId: session.localId,
-          flowSignature: session.flowSignature,
-          collectionMode: session.collectionMode,
-        },
-        responseSummary: {
-          aiTool: session.aiTool,
-          appBefore: session.appBefore,
-          domainBefore: session.domainBefore,
-          appAfter: session.appAfter,
-          domainAfter: session.domainAfter,
-          steps: session.steps,
-          confidence: session.confidence,
-        },
       },
     });
   }

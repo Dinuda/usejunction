@@ -41,7 +41,7 @@ export default function MemberOverviewClientScreen() {
   const planCards = buildMemberPlanBoard({
     snapshots: quotaSnapshots,
     accounts,
-    assignedPlans: personal.developer.assignedPlans,
+    vendorSeats: personal.developer.vendorSeats,
     toolsUsage: personal.toolsUsage30d,
   });
   const planKpi = planBoardLeadLabel(planCards);

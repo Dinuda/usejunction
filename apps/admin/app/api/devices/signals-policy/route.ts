@@ -7,12 +7,10 @@ import { logServerError } from "@/lib/errors/public";
 
 export async function GET(req: NextRequest) {
   try {
-    const device = await findDeviceByBearerToken(req, {
-      include: { user: { select: { teamId: true } } },
-    });
+    const device = await findDeviceByBearerToken(req, {});
     if (!device) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-    const policy = await getEffectiveSignalsPolicy(device.orgId, device.user.teamId);
+    const policy = await getEffectiveSignalsPolicy(device.orgId);
     const collectionStartedAt = policy.workExtractionEnabled
       ? deviceWorkExtractionStartedAt(policy.workExtractionStartedAt, device.createdAt)
       : null;

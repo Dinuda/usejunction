@@ -25,17 +25,11 @@ function parseArgs(): Args {
 }
 
 async function snapshotTable(orgId: string, since: Date) {
-  const [usage, local] = await Promise.all([
-    prisma.usageDaily.findMany({ where: { orgId, date: { gte: since } } }),
-    prisma.localUsageAggregate.findMany({ where: { orgId, date: { gte: since } } }),
-  ]);
+  const usage = await prisma.usageDaily.findMany({ where: { orgId, date: { gte: since } } });
   return {
     usageCount: usage.length,
-    localCount: local.length,
     usageRequests: usage.reduce((n, r) => n + r.requests, 0),
     usageCostMicros: usage.reduce((n, r) => n + Number(r.costMicros), 0),
-    localRequests: local.reduce((n, r) => n + r.requests, 0),
-    localCost: local.reduce((n, r) => n + r.estimatedCost, 0),
   };
 }
 
@@ -86,15 +80,6 @@ async function main() {
       },
       data: { requests: 0, metricKind: "productivity" },
     }),
-    prisma.localUsageAggregate.updateMany({
-      where: {
-        orgId,
-        date: { gte: since },
-        toolName: "cursor",
-        source: { in: ["cursor_local", "device_observed"] },
-      },
-      data: { requests: 0, metricKind: "productivity" },
-    }),
     prisma.usageDaily.updateMany({
       where: {
         orgId,
@@ -109,8 +94,6 @@ async function main() {
       data: { source: "vendor_verified", verified: true, costKind: "verified_usage" },
     }),
   ]);
-  await prisma.analyticsQueryCache.deleteMany({ where: { orgId } });
-
   const after = await snapshotTable(orgId, since);
   console.log("After:", after);
   console.log("Next: run `usejunction collect --refresh` on connected devices to rebuild Codex/Cursor history.");

@@ -9,6 +9,7 @@ test("developer calculation views use personal usage totals", async ({ page }) =
   await expect(page.getByRole("heading", { name: "Spend, traffic, coverage." })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Your plans." })).toBeVisible();
   await expect(page.getByRole("row", { name: /Cursor gpt-4\.1 10 .*\$5\.00 Verified/i })).toBeVisible();
+  await expect(page.getByRole("row", { name: /OpenCode opencode-go\/kimi-k2\.7-code/i })).toBeVisible();
 
   await page.goto("/activity");
   await expect(page.getByRole("heading", { level: 1, name: "Your activity." })).toBeVisible();
@@ -18,6 +19,7 @@ test("developer calculation views use personal usage totals", async ({ page }) =
   await page.goto("/tools");
   await expect(page.getByRole("heading", { name: "Your tools." })).toBeVisible();
   await expect(page.locator("main").getByText("cursor", { exact: true })).toBeVisible();
+  await expect(page.locator("main").getByText("opencode", { exact: true })).toBeVisible();
 });
 
 test("developer chrome hides owner-only navigation", async ({ page }) => {

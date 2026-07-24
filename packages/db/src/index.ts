@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
  * Bump when Device (or other hot models) gain fields so a long-lived Next.js
  * process drops a stale PrismaClient after `prisma generate`.
  */
-const PRISMA_SCHEMA_REV = "daily-report-usage-snapshots-v2";
+const PRISMA_SCHEMA_REV = "schema-cleanup-full-pass-v1";
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
@@ -43,7 +43,6 @@ export type {
   AgentUpdateDeployment,
   AgentUpdateEvent,
   AnalyticsDirtyDay,
-  AnalyticsQueryCache,
   AnalyticsWatermark,
   AppRuntimeSetting,
   OrgUsageDaySnapshot,
@@ -51,7 +50,6 @@ export type {
   ApiCreditPool,
   AuthActionToken,
   BillingPlanTemplate,
-  ConnectInvite,
   DailyReportDelivery,
   DailyReportUsageSnapshot,
   Developer,
@@ -62,7 +60,6 @@ export type {
   EnrollmentToken,
   ExternalIdentity,
   LocalModel,
-  LocalUsageAggregate,
   LocalWorkSession,
   Organization,
   OrganizationDomain,
@@ -81,7 +78,6 @@ export type {
   SignalsActivityEvent,
   SignalsPolicy,
   SignalsSession,
-  Team,
   TeamInviteAllowlist,
   TeamInviteLink,
   TelemetryEndpoint,

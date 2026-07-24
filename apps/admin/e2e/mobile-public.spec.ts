@@ -20,7 +20,6 @@ const routes = [
   "/i/invalid-token",
   "/join/invalid-token",
   "/join/company/missing-org",
-  "/connect-invite/invalid-token",
 ];
 
 async function expectNoPageOverflow(page: import("@playwright/test").Page) {

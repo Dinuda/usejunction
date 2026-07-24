@@ -262,7 +262,7 @@ export function buildDailyReportEmailDocument(input: {
   const tokens = formatCompactNumber(report.kpis.tokens);
   const requests = formatCompactNumber(report.kpis.requests);
   const planPct = report.plan?.usedPercent != null ? formatPct(report.plan.usedPercent, 0) : "—";
-  const planStatus = report.plan?.statusLabel ?? "No quota data";
+  const planStatus = report.plan?.statusLabel ?? "Offline";
 
   const insightBits = buildInsightBits(report, isTeamWeek);
   const hasDelta =

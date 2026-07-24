@@ -222,13 +222,6 @@ function localAggregateKey(row: NormalizedLocalUsageRow): string {
   return `${row.dateKey}|${row.toolName}|${row.model}|${row.source}|${repoKey}`;
 }
 
-function repositoryKeyForAggregate(row: NormalizedLocalUsageRow): string {
-  if (row.repository) {
-    return `${row.repository.host}/${row.repository.owner}/${row.repository.name}`;
-  }
-  return "";
-}
-
 /**
  * Collapse duplicates that would violate bulk INSERT ON CONFLICT targets.
  * Last-write-wins matches the old per-row Prisma upsert loop.
@@ -286,79 +279,6 @@ function chunkRows<T>(rows: T[], size: number): T[][] {
 
 function metadataJson(value: Prisma.InputJsonValue): string {
   return JSON.stringify(value);
-}
-
-async function bulkUpsertLocalUsageAggregates(
-  tx: Prisma.TransactionClient,
-  orgId: string,
-  userId: string,
-  deviceId: string,
-  rows: NormalizedLocalUsageRow[],
-) {
-  for (const batch of chunkRows(rows, BULK_CHUNK)) {
-    const values = batch.map(
-      (row) => Prisma.sql`(
-        ${newRowId()},
-        ${orgId},
-        ${userId},
-        ${deviceId},
-        ${row.dateKey}::date,
-        ${row.toolName},
-        ${row.model},
-        ${repositoryKeyForAggregate(row)},
-        ${row.inputTokens},
-        ${row.outputTokens},
-        ${BigInt(row.cacheReadTokens)},
-        ${BigInt(row.cacheWriteTokens)},
-        ${BigInt(row.reasoningTokens)},
-        ${row.suggestedLines},
-        ${row.acceptedLines},
-        ${row.addedLines},
-        ${row.deletedLines},
-        ${row.commits},
-        ${row.aiPercent},
-        ${row.requests},
-        ${row.estimatedCost},
-        ${row.source},
-        ${row.verified},
-        ${row.metricKind},
-        ${row.costKind},
-        ${row.calculationVersion},
-        ${metadataJson(row.metadata)}::jsonb
-      )`,
-    );
-
-    await tx.$executeRaw`
-      INSERT INTO local_usage_aggregates (
-        id, org_id, user_id, device_id, date, tool_name, model, repository_key,
-        input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
-        suggested_lines, accepted_lines, added_lines, deleted_lines, commits,
-        ai_percent, requests, estimated_cost, source, verified, metric_kind, cost_kind,
-        calculation_version, metadata
-      )
-      VALUES ${Prisma.join(values)}
-      ON CONFLICT (device_id, date, tool_name, model, source, repository_key) DO UPDATE SET
-        input_tokens = EXCLUDED.input_tokens,
-        output_tokens = EXCLUDED.output_tokens,
-        cache_read_tokens = EXCLUDED.cache_read_tokens,
-        cache_write_tokens = EXCLUDED.cache_write_tokens,
-        reasoning_tokens = EXCLUDED.reasoning_tokens,
-        suggested_lines = EXCLUDED.suggested_lines,
-        accepted_lines = EXCLUDED.accepted_lines,
-        added_lines = EXCLUDED.added_lines,
-        deleted_lines = EXCLUDED.deleted_lines,
-        commits = EXCLUDED.commits,
-        ai_percent = EXCLUDED.ai_percent,
-        requests = EXCLUDED.requests,
-        estimated_cost = EXCLUDED.estimated_cost,
-        source = EXCLUDED.source,
-        verified = EXCLUDED.verified,
-        metric_kind = EXCLUDED.metric_kind,
-        cost_kind = EXCLUDED.cost_kind,
-        calculation_version = EXCLUDED.calculation_version,
-        metadata = EXCLUDED.metadata
-    `;
-  }
 }
 
 async function bulkUpsertUsageDaily(
@@ -453,7 +373,7 @@ export type LocalUsageBatchResult = {
   sample: Array<{ date: string; toolName: string; model: string; requests: number; tokens: number }>;
 };
 
-/** Normalize, resolve repos, and bulk-upsert both local + daily tables. */
+/** Normalize, resolve repos, and bulk-upsert usage_daily. */
 export async function ingestLocalUsageBatch(params: {
   orgId: string;
   userId: string;
@@ -473,7 +393,6 @@ export async function ingestLocalUsageBatch(params: {
   const observedAt = params.observedAt ?? new Date();
 
   await prisma.$transaction(async (tx) => {
-    await bulkUpsertLocalUsageAggregates(tx, params.orgId, params.userId, params.deviceId, rows);
     await bulkUpsertUsageDaily(
       tx,
       params.orgId,

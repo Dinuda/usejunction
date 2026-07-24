@@ -19,6 +19,8 @@ const ROLE_LABELS: Record<(typeof ASSIGNABLE_ROLES)[number], string> = {
   user: "User",
 };
 
+export { ROLE_LABELS };
+
 export function MemberRoleSelect({
   developerId,
   role,

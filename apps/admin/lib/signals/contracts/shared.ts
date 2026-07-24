@@ -1,6 +1,5 @@
 export type SignalsDimensionFilters = {
   developerId?: string;
-  teamId?: string;
   tool?: string;
 };
 

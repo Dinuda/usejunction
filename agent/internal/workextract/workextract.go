@@ -3,9 +3,9 @@
 //
 // Supported today: Cursor (composer headers in state.vscdb + agent transcripts),
 // Codex (~/.codex/sessions JSONL), Claude Code (~/.claude/projects JSONL),
-// Antigravity (trajectorySummaries in state.vscdb + optional brain metadata).
-// Copilot / Cline / OpenCode / Continue are usage-scanned elsewhere but do not
-// yet emit work sessions.
+// Antigravity (trajectorySummaries in state.vscdb + optional brain metadata),
+// OpenCode (~/.local/share/opencode/opencode.db session index).
+// Copilot / Cline / Continue are usage-scanned elsewhere but do not yet emit work sessions.
 //
 // It never reads raw prompts, chat message bodies, tool argument values beyond
 // skill identifiers, or file contents — only titles/summaries (when the tool
@@ -51,6 +51,7 @@ func Collect(opts Options) []client.WorkSession {
 	out = append(out, extractCodex()...)
 	out = append(out, extractClaude()...)
 	out = append(out, extractAntigravity()...)
+	out = append(out, extractOpenCode()...)
 
 	if !opts.NotBefore.IsZero() {
 		out = FilterAtOrAfter(out, opts.NotBefore)

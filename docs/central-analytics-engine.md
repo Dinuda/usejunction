@@ -5,13 +5,13 @@ UseJunction analytical reads run through one central engine. Pages, read models,
 The runtime flow is:
 
 ```text
-ingestion -> UsageDaily -> central SQL query engine -> AnalyticsQueryCache -> read-model composers -> server pages
+ingestion -> UsageDaily -> central SQL query engine -> read-model composers -> server pages
                                       ^
                                       |
                          POST /api/insights/query
 ```
 
-`UsageDaily` is the canonical materialized fact table. The engine aggregates inside PostgreSQL and returns normalized query results. It does not cache intermediate objects or raw fact sets.
+`UsageDaily` is the canonical materialized fact table. The engine aggregates inside PostgreSQL and returns normalized query results. Dashboard org rollups also use `org_usage_day_snapshots` with a dirty-day overlay; daily reports keep their own sealed snapshots.
 
 ## Source Of Truth
 
@@ -30,7 +30,7 @@ Authenticated clients use `POST /api/insights/query`. The endpoint accepts `Usag
 - `window`: either `{ "preset": 7 | 30 | 90 }` or `{ "from": "YYYY-MM-DD", "to": "YYYY-MM-DD" }`.
 - `timezone`: only `"UTC"`.
 - `measures`: one or more allowlisted measures.
-- `dimensions`: up to three allowlisted dimensions.
+- `dimensions`: up to four allowlisted dimensions.
 - `filters`: allowlisted list filters only.
 - `orderBy`: up to three allowlisted fields.
 - `limit`: 1 to 500 rows.
@@ -76,7 +76,7 @@ Responses use the versioned insight envelope pattern:
     ]
   },
   "meta": {
-    "cache": { "status": "miss", "expiresAt": "2026-07-15T00:05:00.000Z" }
+    "cache": { "status": "bypass", "expiresAt": null }
   }
 }
 ```
@@ -110,28 +110,15 @@ sources, metricKinds, costKinds
 
 All SQL is compiled from these allowlists and parameterized values. Do not accept caller-supplied SQL fragments.
 
-## Cache Behavior
+## Freshness
 
-`AnalyticsQueryCache` stores final normalized query results. The key includes:
+Query results are always computed live in PostgreSQL. There is no `analytics_query_cache` table.
 
-- query contract version
-- accounting policy version
-- calculation and pricing versions
-- organization id
-- effective data scope
-- stable normalized query JSON
+Dashboard org rollups read sealed `org_usage_day_snapshots`, with dirty days overlaid from live `usage_daily` until rematerialization. Daily reports keep sealed `daily_report_usage_snapshots`.
 
-TTL policy:
+Writes that affect `UsageDaily` mark dirty snapshot days and enqueue rematerialization. They do not invalidate a query-result cache.
 
-- Five minutes when the normalized window includes today.
-- Twenty-four hours for fully historical windows.
-- Results larger than 1 MiB are returned but not cached.
-
-On a miss or expired entry, the engine computes synchronously in PostgreSQL. It uses a transaction-scoped advisory lock, then rechecks the cache so identical concurrent misses do not all recompute the same result.
-
-Writes that affect `UsageDaily` invalidate all cache entries for the organization. TTL remains the fallback if invalidation is missed.
-
-Do not cache:
+Do not introduce a query-result cache for:
 
 - device health
 - configuration health
@@ -180,19 +167,16 @@ When adding a new analytical surface:
 1. Add the measure, dimension, or filter to `apps/admin/lib/analytics/query/contracts.ts`.
 2. Map it in `apps/admin/lib/analytics/query/sql.ts` using allowlisted `Prisma.sql` fragments.
 3. Decide whether the value belongs to activity, cost, productivity, or an operational read model.
-4. Update cache-key inputs if the change depends on a new policy or calculation version.
-5. Add tests for normalization, authorization scope, SQL result shape, and cache behavior when the change affects caching.
-6. Use the query endpoint in E2E coverage for analytical assertions.
+4. Add tests for normalization, authorization scope, and SQL result shape.
+5. Use the query endpoint in E2E coverage for analytical assertions.
 
 For UI data, prefer server-loaded props and `router.refresh()` after mutations. Client components should not refetch removed read routes.
 
 ## Operations
 
-The cache table is additive, so application rollback does not require reversing the migration. Start with an empty cache after deployment.
-
 Structured query logs include:
 
-- cache status
+- cache status (`bypass` for live SQL)
 - query duration
 - result row count
 - result byte size

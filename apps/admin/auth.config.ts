@@ -31,7 +31,6 @@ export function isPublicPath(pathname: string): boolean {
     pathname.startsWith("/blog") ||
     pathname.startsWith("/authors") ||
     pathname.startsWith("/join") ||
-    pathname.startsWith("/connect-invite") ||
     pathname.startsWith("/auth/") ||
     pathname.startsWith("/i/") ||
     pathname.startsWith("/verify") ||
@@ -46,7 +45,6 @@ export function isPublicPath(pathname: string): boolean {
     pathname.startsWith("/api/contact") ||
     pathname.startsWith("/api/health") ||
     pathname.startsWith("/api/join") ||
-    pathname.startsWith("/api/connect-invite") ||
     pathname.startsWith("/api/i/") ||
     pathname.startsWith("/api/enroll") ||
     pathname.startsWith("/api/ingest") ||

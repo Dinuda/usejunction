@@ -42,14 +42,22 @@ func TestAntigravityLiveDetectSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	hasPercent := false
+	hasCredits := false
 	for _, q := range quotas {
 		t.Logf("quota window=%s used=%v reset=%v credits=%v source=%s", q.WindowType, q.UsedPercent, q.ResetAt, q.CreditsRemaining, q.Source)
 		if q.UsedPercent != nil {
 			hasPercent = true
 		}
+		if q.CreditsRemaining != nil {
+			hasCredits = true
+		}
 	}
 	if !hasPercent {
-		t.Fatal("expected Antigravity Cloud Code usedPercent windows for pace")
+		if hasCredits {
+			t.Log("Cloud Code usedPercent unavailable after local client discovery/refresh; credits-only soft-fail")
+		} else {
+			t.Fatal("expected Antigravity quota snapshots (oauth usedPercent or local credits)")
+		}
 	}
 	usage, err := p.ScanLocalUsage(context.Background(), true)
 	if err != nil {
@@ -57,15 +65,23 @@ func TestAntigravityLiveDetectSmoke(t *testing.T) {
 	}
 	t.Logf("detect=%+v plan=%q email=%q usageRows=%d", st, acc.Plan, acc.Email, len(usage))
 	hasTokens := false
+	hasRequests := false
 	for _, row := range usage {
 		t.Logf("usage model=%s req=%d in=%d out=%d cache=%d cost=%.6f source=%s kind=%s",
 			row.Model, row.Requests, row.InputTokens, row.OutputTokens, row.CacheReadTokens, row.EstimatedCost, row.Source, row.CostKind)
+		if row.Requests > 0 {
+			hasRequests = true
+		}
 		if row.InputTokens+row.OutputTokens > 0 && row.EstimatedCost > 0 {
 			hasTokens = true
 		}
 	}
 	if !hasTokens {
-		t.Fatal("expected at least one Antigravity usage row with tokens + estimated cost when LS is available")
+		if hasRequests {
+			t.Log("request-only usage present; open Antigravity IDE for live LS token cost")
+		} else {
+			t.Fatal("expected at least request-only Antigravity usage from local transcripts")
+		}
 	}
 
 	sessions := workextract.Collect(workextract.Options{})

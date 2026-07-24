@@ -29,30 +29,38 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
-  if (developer.role === "owner") {
-    return NextResponse.json({ error: "cannot change owner role" }, { status: 403 });
-  }
-
+  let membershipRole: string | null = null;
   if (developer.authUserId) {
     const membership = await prisma.organizationMembership.findUnique({
       where: { userId_orgId: { userId: developer.authUserId, orgId: auth.orgId } },
       select: { role: true },
     });
-    if (membership?.role === "owner") {
-      return NextResponse.json({ error: "cannot change owner role" }, { status: 403 });
-    }
+    membershipRole = membership?.role ?? null;
+  }
+
+  // Linked users: OrganizationMembership.role is authoritative.
+  // Unlinked roster rows: Developer.role only.
+  const currentRole = developer.authUserId ? (membershipRole ?? developer.role) : developer.role;
+  if (currentRole === "owner") {
+    return NextResponse.json({ error: "cannot change owner role" }, { status: 403 });
   }
 
   const nextRole = parsed.data.role;
 
   await prisma.$transaction(async (tx) => {
-    await tx.developer.update({
-      where: { id: developer.id },
-      data: { role: nextRole },
-    });
     if (developer.authUserId) {
       await tx.organizationMembership.updateMany({
         where: { userId: developer.authUserId, orgId: auth.orgId },
+        data: { role: nextRole },
+      });
+      // Mirror for compatibility with any remaining UI reads of Developer.role.
+      await tx.developer.update({
+        where: { id: developer.id },
+        data: { role: nextRole },
+      });
+    } else {
+      await tx.developer.update({
+        where: { id: developer.id },
         data: { role: nextRole },
       });
     }
@@ -71,7 +79,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     action: "member.role_updated",
     targetType: "developer",
     targetId: developer.id,
-    metadata: { email: developer.email, from: developer.role, to: nextRole },
+    metadata: { email: developer.email, from: currentRole, to: nextRole },
   });
 
   return NextResponse.json({ id: developer.id, role: nextRole });

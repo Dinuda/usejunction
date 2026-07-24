@@ -45,10 +45,18 @@ export async function applyDeviceAccountInventory(params: {
   items: AccountInventoryItem[];
   contentHash: string;
   runPlanSync?: boolean;
-}): Promise<{ upserted: number; reported: Array<{ toolName: string; plan: string | null; email: string | null }> }> {
+}): Promise<{
+  upserted: number;
+  reported: Array<{ toolName: string; plan: string | null; email: string | null; authPresent: boolean }>;
+}> {
   const started = Date.now();
   let upserted = 0;
-  const reported: Array<{ toolName: string; plan: string | null; email: string | null }> = [];
+  const reported: Array<{
+    toolName: string;
+    plan: string | null;
+    email: string | null;
+    authPresent: boolean;
+  }> = [];
 
   for (const acct of params.items) {
     const toolName = String(acct.toolName ?? "").trim();
@@ -63,6 +71,7 @@ export async function applyDeviceAccountInventory(params: {
     const incomingEmail = typeof acct.email === "string" ? acct.email.trim() : "";
     const plan = incomingPlan || existing?.plan || null;
     const email = incomingEmail || existing?.email || null;
+    const authPresent = Boolean(acct.authPresent);
 
     await prisma.toolAccount.upsert({
       where: { deviceId_toolName: { deviceId: params.deviceId, toolName } },
@@ -70,7 +79,7 @@ export async function applyDeviceAccountInventory(params: {
         email,
         plan,
         loginMethod: acct.loginMethod?.trim() || "unknown",
-        authPresent: Boolean(acct.authPresent),
+        authPresent,
         updatedAt: new Date(),
       },
       create: {
@@ -81,10 +90,10 @@ export async function applyDeviceAccountInventory(params: {
         email,
         plan,
         loginMethod: acct.loginMethod?.trim() || "unknown",
-        authPresent: Boolean(acct.authPresent),
+        authPresent,
       },
     });
-    reported.push({ toolName, plan, email });
+    reported.push({ toolName, plan, email, authPresent });
     upserted += 1;
   }
 

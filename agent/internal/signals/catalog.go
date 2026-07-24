@@ -24,6 +24,7 @@ var aiTextTools = []struct {
 	{"copilot", "copilot"},
 	{"cursor", "cursor"},
 	{"codex", "codex"},
+	{"opencode", "opencode"},
 }
 
 func aiTool(app string, domain *string, title string) string {

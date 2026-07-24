@@ -77,14 +77,12 @@ export async function createWorkspaceForUser(
       const org = await tx.organization.create({
         data: { name, slug, color, plan: "community" },
       });
-      const team = await tx.team.create({ data: { orgId: org.id, name: "Platform" } });
       await tx.organizationMembership.create({
         data: { userId: authUser.id, orgId: org.id, role: "owner" },
       });
       await tx.developer.create({
         data: {
           orgId: org.id,
-          teamId: team.id,
           authUserId: authUser.id,
           name: authUser.name?.trim() || authUser.email.split("@")[0],
           email: authUser.email.trim().toLowerCase(),

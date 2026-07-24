@@ -123,6 +123,13 @@ export const {
     async signIn({ user, account }) {
       if (!user.email || !user.id) return;
 
+      if (account?.provider && ["google", "microsoft-entra-id", "github"].includes(account.provider)) {
+        await prisma.user.updateMany({
+          where: { id: user.id, emailVerified: null },
+          data: { emailVerified: new Date() },
+        });
+      }
+
       const dbUser = await prisma.user.findUnique({
         where: { id: user.id },
         select: { createdAt: true, email: true, name: true },

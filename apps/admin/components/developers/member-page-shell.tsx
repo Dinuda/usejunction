@@ -7,6 +7,7 @@ import { teamMemberKey } from "@/lib/app-pages/query-keys";
 import { flattenSearchParams, searchParamsToQueryString } from "@/lib/app-pages/search-params";
 import { makeServerQueryClient } from "@/lib/app-pages/server-query-client";
 import { loadTeamMemberPage } from "@/lib/app-pages/team-member";
+import { rolesFor } from "@/lib/rbac/permissions";
 
 type MemberSection = "overview" | "coding" | "fleet" | "work";
 
@@ -28,7 +29,7 @@ export async function MemberPageShell({
 }) {
   const flat = flattenSearchParams(searchParams);
   const periodQuery = searchParamsToQueryString(searchParams);
-  const principal = await principalFromWorkspace(["owner", "admin"]);
+  const principal = await principalFromWorkspace(rolesFor("org_overview"));
   const queryClient = makeServerQueryClient();
   await queryClient.prefetchQuery({
     queryKey: teamMemberKey(developerId, section, periodQuery),

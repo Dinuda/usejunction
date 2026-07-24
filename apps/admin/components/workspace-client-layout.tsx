@@ -19,6 +19,8 @@ type WorkspaceSyncState = {
   lastUsageSyncAt: string | null;
   lastAccountSyncAt: string | null;
   watermark: string;
+  dashboardReady?: boolean;
+  dirtyDayCount?: number;
 };
 
 type WorkspaceContext = {
@@ -54,6 +56,11 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
         if (!data?.current?.onboardingCompleted) return false;
         const syncState = data.sync;
         if (!syncState || syncState.deviceCount <= 0) return false;
+        // Poll faster while history rematerialize is still draining so the
+        // dashboard does not sit on a stale "Last synced" / $0 view.
+        if (syncState.dashboardReady === false || (syncState.dirtyDayCount ?? 0) > 0) {
+          return 5_000;
+        }
         return 15_000;
       },
     },

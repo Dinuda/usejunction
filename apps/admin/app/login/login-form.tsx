@@ -36,7 +36,7 @@ export function LoginForm() {
   const authErrorCopy = authError ? LOGIN_ERROR_COPY[authError] : undefined;
   const verified = searchParams.get("verified") === "1";
   const joiningInvite =
-    from.startsWith("/i/") || from.startsWith("/join/") || from.startsWith("/connect-invite/");
+    from.startsWith("/i/") || from.startsWith("/join/");
   const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);

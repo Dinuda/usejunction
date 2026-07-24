@@ -27,7 +27,6 @@ type SignalsActivityPayload = {
   cycleView: CycleView;
   rollingPeriod: RollingPeriod;
   developerId?: string;
-  teamId?: string;
   tool?: string;
   options: Awaited<ReturnType<typeof readSignalsFilterOptions>>;
   work: Awaited<ReturnType<typeof getWorkActivity>>["data"];
@@ -42,7 +41,7 @@ export default function SignalsActivityClientScreen() {
   );
   if (query.isPending) return <AppPageSkeleton />;
   if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
-  const { scope, cycleView, rollingPeriod, developerId, teamId, tool, options, work, youUnlinked } = query.data;
+  const { scope, cycleView, rollingPeriod, developerId, tool, options, work, youUnlinked } = query.data;
   const isYou = scope === "you";
 
   return (
@@ -68,11 +67,9 @@ export default function SignalsActivityClientScreen() {
       ) : (
         <>
           <SignalsFilters
-            value={{ teamId, tool, developerId: isYou ? undefined : developerId }}
-            teams={options.teams}
+            value={{ tool, developerId: isYou ? undefined : developerId }}
             tools={options.tools}
             developers={options.developers}
-            showTeam={!isYou}
             showPerson={!isYou}
           />
 

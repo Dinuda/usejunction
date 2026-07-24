@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
   teamInviteAllowlistDeleteMany: vi.fn(),
   teamInviteAllowlistFindMany: vi.fn(),
   organizationInviteFindFirst: vi.fn(),
+  organizationInviteFindMany: vi.fn(),
   organizationInviteCreate: vi.fn(),
+  organizationInviteUpdate: vi.fn(),
   organizationInviteDeleteMany: vi.fn(),
   developerFindUnique: vi.fn(),
   userFindUnique: vi.fn(),
@@ -41,7 +43,9 @@ vi.mock("@usejunction/db", () => ({
     },
     organizationInvite: {
       findFirst: mocks.organizationInviteFindFirst,
+      findMany: mocks.organizationInviteFindMany,
       create: mocks.organizationInviteCreate,
+      update: mocks.organizationInviteUpdate,
       deleteMany: mocks.organizationInviteDeleteMany,
     },
     developer: { findUnique: mocks.developerFindUnique },
@@ -100,6 +104,7 @@ beforeEach(() => {
     orgId: "org_1",
     userId: "user_1",
     email: "owner@example.com",
+    role: "owner",
   });
   mocks.audit.mockResolvedValue(undefined);
   mocks.teamInviteLinkFindUnique.mockResolvedValue(link);
@@ -107,7 +112,9 @@ beforeEach(() => {
   mocks.userFindUnique.mockResolvedValue({ name: "Owner", email: "owner@example.com" });
   mocks.developerFindUnique.mockResolvedValue(null);
   mocks.organizationInviteFindFirst.mockResolvedValue(null);
+  mocks.organizationInviteFindMany.mockResolvedValue([]);
   mocks.organizationInviteCreate.mockResolvedValue({ id: "invite_1" });
+  mocks.organizationInviteUpdate.mockResolvedValue({ id: "invite_1" });
   mocks.sendTeamInviteEmail.mockResolvedValue(undefined);
   mocks.notifyTeamSeatsAdded.mockResolvedValue(undefined);
   mocks.teamInviteAllowlistUpsert.mockImplementation(async ({ create }: { create: { email: string } }) => ({
@@ -133,6 +140,158 @@ test("PUT clears allowlist rows for invited emails after processing", async () =
     where: { linkId: "link_1", email: { in: ["alice@acme.com", "bob@acme.com"] } },
   });
   assert.equal(mocks.organizationInviteCreate.mock.calls.length, 2);
+});
+
+test("PUT email send records pending OrganizationInvite for Invited tab", async () => {
+  const { PUT } = await import("../app/api/team/invite-link/route");
+  const response = await PUT(
+    putRequest({ emails: ["alice@acme.com"], sendEmail: true }),
+  );
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.emailResults, [{ email: "alice@acme.com", status: "sent" }]);
+  assert.equal(mocks.sendTeamInviteEmail.mock.calls.length, 1);
+  assert.equal(mocks.sendTeamInviteEmail.mock.calls[0][0].to, "alice@acme.com");
+  assert.equal(mocks.organizationInviteCreate.mock.calls.length, 1);
+  assert.equal(mocks.organizationInviteCreate.mock.calls[0][0].data.email, "alice@acme.com");
+  assert.equal(mocks.organizationInviteCreate.mock.calls[0][0].data.orgId, "org_1");
+  assert.equal(mocks.organizationInviteFindFirst.mock.calls.length, 1);
+  assert.equal(mocks.developerFindUnique.mock.calls.length, 1);
+});
+
+test("PUT refreshes expiry when a pending invite already exists", async () => {
+  mocks.organizationInviteFindFirst.mockResolvedValue({ id: "invite_existing" });
+  const { PUT } = await import("../app/api/team/invite-link/route");
+  const response = await PUT(
+    putRequest({ emails: ["alice@acme.com"], sendEmail: false }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(mocks.organizationInviteCreate.mock.calls.length, 0);
+  assert.equal(mocks.organizationInviteUpdate.mock.calls.length, 1);
+  assert.equal(mocks.organizationInviteUpdate.mock.calls[0][0].where.id, "invite_existing");
+});
+
+test("PUT skips pending invite when email is already an active member", async () => {
+  mocks.developerFindUnique.mockResolvedValue({ id: "dev_1", removedAt: null });
+  const { PUT } = await import("../app/api/team/invite-link/route");
+  const response = await PUT(
+    putRequest({ emails: ["alice@acme.com"], sendEmail: false }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(mocks.organizationInviteCreate.mock.calls.length, 0);
+  assert.equal(mocks.organizationInviteUpdate.mock.calls.length, 0);
+  assert.equal(mocks.organizationInviteFindFirst.mock.calls.length, 0);
+});
+
+test("PUT records invite with requested assignable role", async () => {
+  const { PUT } = await import("../app/api/team/invite-link/route");
+  const response = await PUT(
+    putRequest({ emails: ["alice@acme.com"], sendEmail: false, role: "manager" }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(mocks.organizationInviteCreate.mock.calls[0][0].data.role, "manager");
+});
+
+test("PUT rejects elevated roles for managers", async () => {
+  mocks.requireOrgRole.mockResolvedValue({
+    orgId: "org_1",
+    userId: "user_2",
+    email: "manager@example.com",
+    role: "manager",
+  });
+  const { PUT } = await import("../app/api/team/invite-link/route");
+  const response = await PUT(
+    putRequest({ emails: ["alice@acme.com"], sendEmail: false, role: "admin" }),
+  );
+
+  assert.equal(response.status, 403);
+  assert.equal(mocks.organizationInviteCreate.mock.calls.length, 0);
+});
+
+test("PATCH updates pending invite role", async () => {
+  mocks.organizationInviteFindFirst.mockResolvedValue({
+    id: "invite_1",
+    email: "alice@acme.com",
+    role: "user",
+  });
+  mocks.organizationInviteUpdate.mockResolvedValue({
+    id: "invite_1",
+    email: "alice@acme.com",
+    role: "admin",
+  });
+  const { PATCH } = await import("../app/api/team/invite-link/route");
+  const response = await PATCH(
+    new NextRequest("https://usejunction.dev/api/team/invite-link", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "alice@acme.com", role: "admin" }),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.role, "admin");
+  assert.equal(mocks.organizationInviteUpdate.mock.calls[0][0].data.role, "admin");
+  assert.equal(mocks.audit.mock.calls[0][0].action, "invite.role_updated");
+});
+
+test("PATCH resend mints a new token for expired invites", async () => {
+  mocks.organizationInviteFindMany.mockResolvedValue([
+    {
+      id: "invite_expired",
+      email: "alice@acme.com",
+      expiresAt: new Date(Date.now() - 60_000),
+    },
+  ]);
+  const { PATCH } = await import("../app/api/team/invite-link/route");
+  const response = await PATCH(
+    new NextRequest("https://usejunction.dev/api/team/invite-link", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "alice@acme.com" }),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.emailResults, [{ email: "alice@acme.com", status: "sent" }]);
+  assert.equal(typeof body.expiresAt, "string");
+  assert.equal(mocks.organizationInviteUpdate.mock.calls.length, 1);
+  const update = mocks.organizationInviteUpdate.mock.calls[0][0];
+  assert.equal(update.where.id, "invite_expired");
+  assert.equal(typeof update.data.tokenHash, "string");
+  assert.ok(update.data.expiresAt instanceof Date);
+  assert.ok(update.data.expiresAt.getTime() > Date.now());
+  assert.equal(mocks.sendTeamInviteEmail.mock.calls.length, 1);
+  assert.equal(mocks.sendTeamInviteEmail.mock.calls[0][0].to, "alice@acme.com");
+});
+
+test("PATCH resend does not remint token for active invites", async () => {
+  mocks.organizationInviteFindMany.mockResolvedValue([
+    {
+      id: "invite_active",
+      email: "alice@acme.com",
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60_000),
+    },
+  ]);
+  const { PATCH } = await import("../app/api/team/invite-link/route");
+  const response = await PATCH(
+    new NextRequest("https://usejunction.dev/api/team/invite-link", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "alice@acme.com" }),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.emailResults, [{ email: "alice@acme.com", status: "sent" }]);
+  assert.equal(mocks.organizationInviteUpdate.mock.calls.length, 0);
+  assert.equal(mocks.sendTeamInviteEmail.mock.calls.length, 1);
 });
 
 test("DELETE removes allowlist entry and revokes pending OrganizationInvite", async () => {

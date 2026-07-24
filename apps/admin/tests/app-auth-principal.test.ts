@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { rolesFor } from "@/lib/rbac/permissions";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -93,6 +94,50 @@ describe("requireAppPrincipal", () => {
     await expect(response.json()).resolves.toMatchObject({
       error: { code: "FORBIDDEN" },
     });
+  });
+
+  it("accepts manager for org_overview routes", async () => {
+    mocks.auth.mockResolvedValue({
+      user: {
+        id: "user-mgr",
+        email: "manager@example.test",
+        orgId: "org-1",
+        role: "manager",
+      },
+    });
+
+    const { requireAppPrincipal } = await import("@/lib/api/app-auth");
+    const principal = await requireAppPrincipal(
+      new NextRequest("https://usejunction.dev/api/app/team"),
+      rolesFor("org_overview"),
+    );
+
+    expect(principal).toMatchObject({
+      userId: "user-mgr",
+      orgId: "org-1",
+      role: "manager",
+    });
+  });
+
+  it("rejects developer user for org_overview routes", async () => {
+    mocks.auth.mockResolvedValue({
+      user: {
+        id: "user-1",
+        email: "dev@example.test",
+        orgId: "org-1",
+        role: "user",
+      },
+    });
+
+    const { requireAppPrincipal } = await import("@/lib/api/app-auth");
+    const response = await requireAppPrincipal(
+      new NextRequest("https://usejunction.dev/api/app/team"),
+      rolesFor("org_overview"),
+    );
+
+    expect(response).toBeInstanceOf(Response);
+    if (!(response instanceof Response)) throw new Error("expected error response");
+    expect(response.status).toBe(403);
   });
 
   it("returns UNAUTHENTICATED when there is no session", async () => {

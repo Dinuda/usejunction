@@ -1,13 +1,12 @@
 /**
- * Mark dirty snapshot days and invalidate only query-cache rows whose window
- * overlaps those days. Always enqueues a durable materialization job.
+ * Mark dirty snapshot days and enqueue durable materialization.
+ * Query results are always live SQL — no analytics_query_cache rows to delete.
  *
  * Inline rematerialize is opt-in for non-sync writers (legacy local-usage,
  * small dirty sets). The usage sync pipeline must pass `rematerialize: false`
  * on chunks — commit owns settle via settleSyncProjections / materializeOrgNow.
  */
-import { Prisma, prisma } from "@usejunction/db";
-import { logServerError } from "@/lib/errors/public";
+import { prisma } from "@usejunction/db";
 import {
   markOrgUsageDaysDirty,
   materializeDirtyOrgUsageDays,
@@ -43,17 +42,6 @@ export async function invalidateAnalyticsCache(
   const dirtyDates = options.dirtyDates?.length ? options.dirtyDates : [new Date()];
   const marked = await markOrgUsageDaysDirty(orgId, dirtyDates);
   if (!marked.length) return { marked: [] as string[], rematerialized: false };
-
-  const minDirty = marked[0]!;
-  const maxDirty = marked[marked.length - 1]!;
-  await prisma.$executeRaw`
-    DELETE FROM analytics_query_cache
-    WHERE org_id = ${orgId}
-      AND (normalized_query->'window'->>'from') IS NOT NULL
-      AND (normalized_query->'window'->>'to') IS NOT NULL
-      AND (normalized_query->'window'->>'from')::date <= ${maxDirty}::date
-      AND (normalized_query->'window'->>'to')::date >= ${minDirty}::date
-  `;
 
   await enqueueMaterializationJob(orgId);
 
@@ -101,54 +89,6 @@ export async function invalidateAnalyticsCache(
   }
 
   return { marked, rematerialized: false };
-}
-
-/** Expire all analytics query caches whose TTL has passed (preferred over global wipe). */
-export async function purgeAllExpiredAnalyticsCaches(now: Date = new Date()): Promise<number> {
-  try {
-    const result = await prisma.analyticsQueryCache.deleteMany({
-      where: { expiresAt: { lte: now } },
-    });
-    return result.count;
-  } catch (error) {
-    logServerError("analytics/cache_purge_expired_all", error);
-    return 0;
-  }
-}
-
-/**
- * @deprecated Prefer purgeAllExpiredAnalyticsCaches — full wipe forces cold starts for all orgs.
- * Kept for calculation-version bumps that must invalidate every cached window.
- */
-export async function invalidateAllAnalyticsCaches(): Promise<number> {
-  try {
-    const result = await prisma.analyticsQueryCache.deleteMany({});
-    return result.count;
-  } catch (error) {
-    logServerError("analytics/cache_invalidation_all", error);
-    return 0;
-  }
-}
-
-/** Expire only this org's stale cache rows (hot-path housekeeping). */
-export async function purgeExpiredAnalyticsCache(orgId: string, now: Date = new Date()) {
-  try {
-    await prisma.analyticsQueryCache.deleteMany({
-      where: { orgId, expiresAt: { lte: now } },
-    });
-  } catch (error) {
-    logServerError("analytics/cache_purge_expired", error, { orgId });
-  }
-}
-
-export async function purgeExpiredAnalyticsCacheInTx(
-  tx: Prisma.TransactionClient,
-  orgId: string,
-  now: Date,
-) {
-  await tx.analyticsQueryCache.deleteMany({
-    where: { orgId, expiresAt: { lte: now } },
-  });
 }
 
 export { isoDay as invalidateIsoDay };

@@ -87,32 +87,52 @@ test("actual ingest: multi-tool batch with repo lands in both tables", { skip: !
           estimatedCost: 0.05,
           requests: 3,
         },
+        {
+          date: "2026-07-21",
+          toolName: "opencode",
+          model: "opencode-go/kimi-k2.7-code",
+          source: "opencode_usage",
+          inputTokens: 5_000,
+          outputTokens: 200,
+          estimatedCost: 0.42,
+          costKind: "actual_spend",
+          requests: 4,
+        },
+        {
+          date: "2026-07-21",
+          toolName: "opencode",
+          model: "opencode",
+          source: "opencode_local",
+          metricKind: "productivity",
+          addedLines: 42,
+          deletedLines: 7,
+          requests: 1,
+        },
       ],
     });
 
-    assert.equal(result.upserted, 3);
+    assert.equal(result.upserted, 5);
     assert.ok(result.totalTokens > 0);
-
-    const aggregates = await prisma.localUsageAggregate.findMany({
-      where: { deviceId: device.id },
-      orderBy: [{ date: "asc" }, { toolName: "asc" }],
-    });
-    assert.equal(aggregates.length, 3);
-    const codex = aggregates.find((row) => row.toolName === "codex");
-    assert.ok(codex);
-    assert.equal(codex.repositoryKey, "github.com/acme/app");
-    assert.equal(codex.inputTokens, 7_225_706);
 
     const daily = await prisma.usageDaily.findMany({
       where: { orgId: org.id, deviceId: device.id },
       orderBy: [{ date: "asc" }, { toolName: "asc" }],
     });
-    assert.equal(daily.length, 3);
-    const dailyCodex = daily.find((row) => row.toolName === "codex");
-    assert.ok(dailyCodex);
-    assert.equal(dailyCodex.source, "device_observed");
-    assert.equal(Number(dailyCodex.inputTokens), 7_225_706);
-    assert.ok(dailyCodex.repositoryId, "expected repository row linked");
+    assert.equal(daily.length, 5);
+    const codex = daily.find((row) => row.toolName === "codex");
+    assert.ok(codex);
+    assert.equal(codex.source, "device_observed");
+    assert.equal(Number(codex.inputTokens), 7_225_706);
+    assert.ok(codex.repositoryId, "expected repository row linked");
+
+    const opencodeUsage = daily.find((row) => row.toolName === "opencode" && row.model === "opencode-go/kimi-k2.7-code");
+    assert.ok(opencodeUsage);
+    assert.equal(opencodeUsage.costKind, "actual_spend");
+    assert.equal(opencodeUsage.metricKind, "usage");
+
+    const opencodeLocal = daily.find((row) => row.toolName === "opencode" && row.metricKind === "productivity");
+    assert.ok(opencodeLocal);
+    assert.equal(opencodeLocal.addedLines, 42);
 
     // Idempotent re-ingest
     const again = await ingestLocalUsageBatch({
@@ -134,10 +154,10 @@ test("actual ingest: multi-tool batch with repo lands in both tables", { skip: !
       ],
     });
     assert.equal(again.upserted, 1);
-    const updated = await prisma.localUsageAggregate.findFirst({
+    const updated = await prisma.usageDaily.findFirst({
       where: { deviceId: device.id, toolName: "codex" },
     });
-    assert.equal(updated?.inputTokens, 7_300_000);
+    assert.equal(Number(updated?.inputTokens), 7_300_000);
   } finally {
     await prisma.organization.delete({ where: { id: org.id } });
   }

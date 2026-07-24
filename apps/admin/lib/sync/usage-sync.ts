@@ -86,7 +86,12 @@ export async function startUsageSync(params: {
   let accountsWarning: string | undefined;
   let quotasApplied: SidecarAppliedStatus = "skipped";
   let quotasWarning: string | undefined;
-  let accountsReported: Array<{ toolName: string; plan: string | null; email: string | null }> = [];
+  let accountsReported: Array<{
+    toolName: string;
+    plan: string | null;
+    email: string | null;
+    authPresent?: boolean;
+  }> = [];
   let inventoryChanged = false;
 
   if (params.tools && Array.isArray(params.tools.items)) {
@@ -204,12 +209,13 @@ export async function startUsageSync(params: {
       if (!accounts.length) {
         const rows = await prisma.toolAccount.findMany({
           where: { deviceId: params.deviceId },
-          select: { toolName: true, plan: true, email: true },
+          select: { toolName: true, plan: true, email: true, authPresent: true },
         });
         accounts = rows.map((row) => ({
           toolName: row.toolName,
           plan: row.plan,
           email: row.email,
+          authPresent: row.authPresent,
         }));
       }
       if (accounts.length) {
@@ -607,21 +613,12 @@ export async function reconcileDeviceDayPartitions(params: {
       await tx.deviceUsageFingerprint.deleteMany({
         where: { deviceId: params.deviceId, partitionKey: { in: orphanKeys } },
       });
-      // Soft-delete matching usage_daily / local aggregates by reconstructing dedupe dimensions is hard;
-      // delete local_usage_aggregates rows whose composite key matches orphan partitions.
+      // Soft-delete matching usage_daily by reconstructing dedupe dimensions is hard;
+      // delete usage_daily rows whose composite key matches orphan partitions.
       for (const key of orphanKeys) {
         const [date = "", tool = "", model = "", source = "", ...repoParts] = key.split("|");
-        const repositoryKey = repoParts.join("|");
-        await tx.localUsageAggregate.deleteMany({
-          where: {
-            deviceId: params.deviceId,
-            date: utcDate(date),
-            toolName: tool,
-            model,
-            source,
-            repositoryKey: repositoryKey || "",
-          },
-        });
+        void source;
+        void repoParts;
         await tx.usageDaily.deleteMany({
           where: {
             deviceId: params.deviceId,

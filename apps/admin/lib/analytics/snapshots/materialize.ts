@@ -202,12 +202,14 @@ async function materializeOrgUsageRangeUnlocked(
           WHEN 'cursor_local' THEN 'device_observed'
           WHEN 'antigravity_local' THEN 'device_observed'
           WHEN 'antigravity_usage' THEN 'device_observed'
+          WHEN 'opencode_local' THEN 'device_observed'
+          WHEN 'opencode_usage' THEN 'device_observed'
           WHEN 'cursor_usage_events' THEN 'vendor_verified'
           WHEN 'cursor_plan_percent' THEN 'device_observed'
           ELSE source
         END AS normalized_source,
         CASE
-          WHEN source = 'cursor_local' OR metric_kind = 'productivity' THEN 'productivity'
+          WHEN source = 'cursor_local' OR source = 'opencode_local' OR metric_kind = 'productivity' THEN 'productivity'
           ELSE COALESCE(NULLIF(metric_kind, ''), metadata->>'metricKind', 'usage')
         END AS effective_metric_kind,
         CASE
@@ -219,7 +221,7 @@ async function materializeOrgUsageRangeUnlocked(
         CASE
           WHEN source IN ('vendor_verified', 'cursor_usage_events') THEN 0
           WHEN source = 'otel_observed' THEN 1
-          WHEN source IN ('device_observed', 'local_scan', 'cursor_local', 'antigravity_local', 'antigravity_usage', 'cursor_plan_percent') THEN 2
+          WHEN source IN ('device_observed', 'local_scan', 'cursor_local', 'antigravity_local', 'antigravity_usage', 'opencode_local', 'opencode_usage', 'cursor_plan_percent') THEN 2
           WHEN source = 'gateway_observed' THEN 3
           WHEN source = 'estimated' THEN 4
           ELSE 99
@@ -227,7 +229,7 @@ async function materializeOrgUsageRangeUnlocked(
         CASE
           WHEN source IN ('vendor_verified', 'cursor_usage_events', 'invoice_imported') THEN 0
           WHEN source = 'gateway_observed' THEN 1
-          WHEN source IN ('estimated', 'device_observed', 'local_scan', 'cursor_local', 'antigravity_local', 'antigravity_usage', 'cursor_plan_percent') THEN 2
+          WHEN source IN ('estimated', 'device_observed', 'local_scan', 'cursor_local', 'antigravity_local', 'antigravity_usage', 'opencode_local', 'opencode_usage', 'cursor_plan_percent') THEN 2
           WHEN source = 'otel_observed' THEN 3
           ELSE 99
         END AS cost_priority

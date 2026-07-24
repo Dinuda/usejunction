@@ -42,7 +42,7 @@ beforeEach(() => {
     role: "owner",
   });
   mocks.listSubscriptions.mockResolvedValue([]);
-  mocks.readSignalsFilterOptions.mockResolvedValue({ teams: [], tools: [], developers: [] });
+  mocks.readSignalsFilterOptions.mockResolvedValue({ tools: [], developers: [] });
   mocks.getOrgSignalsPolicy.mockResolvedValue({ workExtractionEnabled: true });
   mocks.getWorkActivity.mockResolvedValue({ data: { enabled: true, sessions: [] } });
   mocks.getWorkOverview.mockResolvedValue({
@@ -79,7 +79,7 @@ describe("signals activity audience scope", () => {
     assert.equal(input.teamId, undefined);
   });
 
-  test("scope=team keeps optional developer and team filters", async () => {
+  test("scope=team keeps optional developer filter and strips teamId", async () => {
     vi.resetModules();
     const { GET } = await import("@/app/api/app/signals/activity/route");
     const response = await GET(
@@ -91,11 +91,11 @@ describe("signals activity audience scope", () => {
     const body = await response.json();
     assert.equal(body.data.scope, "team");
     assert.equal(body.data.developerId, "dev-2");
-    assert.equal(body.data.teamId, "team-9");
+    assert.equal(body.data.teamId, undefined);
     assert.equal(mocks.resolveLinkedDeveloperId.mock.calls.length, 0);
     const input = mocks.getWorkActivity.mock.calls[0][1];
     assert.equal(input.developerId, "dev-2");
-    assert.equal(input.teamId, "team-9");
+    assert.equal(input.teamId, undefined);
   });
 
   test("scope=you with no linked developer returns youUnlinked without querying work", async () => {

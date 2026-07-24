@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -23,7 +22,7 @@ const (
 	antigravityOAuthTokenURL = "https://oauth2.googleapis.com/token"
 	antigravityQuotaSource   = "oauth_api"
 	// Antigravity's desktop OAuth client lives in the IDE / language_server binary.
-	// Do not commit those credentials; supply them at runtime for token refresh.
+	// Discover it on-device (cached under ~/.usejunction); env overrides are labs-only.
 	antigravityOAuthClientIDEnv     = "UJ_ANTIGRAVITY_OAUTH_CLIENT_ID"
 	antigravityOAuthClientSecretEnv = "UJ_ANTIGRAVITY_OAUTH_CLIENT_SECRET"
 )
@@ -43,17 +42,17 @@ var (
 )
 
 func antigravityOAuthClientID() string {
-	if v := strings.TrimSpace(antigravityOAuthClientIDOverride); v != "" {
-		return v
+	if client := resolveAntigravityOAuthClient(); client != nil {
+		return client.ClientID
 	}
-	return strings.TrimSpace(os.Getenv(antigravityOAuthClientIDEnv))
+	return ""
 }
 
 func antigravityOAuthClientSecret() string {
-	if v := strings.TrimSpace(antigravityOAuthClientSecretOverride); v != "" {
-		return v
+	if client := resolveAntigravityOAuthClient(); client != nil {
+		return client.ClientSecret
 	}
-	return strings.TrimSpace(os.Getenv(antigravityOAuthClientSecretEnv))
+	return ""
 }
 
 type antigravityOAuthTokens struct {
@@ -201,46 +200,58 @@ func decodeAntigravityBase64Candidates(text string) [][]byte {
 }
 
 func refreshAntigravityAccessToken(ctx context.Context, refreshToken string) (string, error) {
-	clientID := antigravityOAuthClientID()
-	clientSecret := antigravityOAuthClientSecret()
-	if clientID == "" || clientSecret == "" {
-		return "", fmt.Errorf("antigravity oauth: set %s and %s", antigravityOAuthClientIDEnv, antigravityOAuthClientSecretEnv)
+	clients := resolveAntigravityOAuthClients()
+	if len(clients) == 0 {
+		return "", fmt.Errorf("antigravity oauth: no local Antigravity OAuth client found (install Antigravity or set %s/%s for labs)", antigravityOAuthClientIDEnv, antigravityOAuthClientSecretEnv)
 	}
 	endpoint := antigravityOAuthTokenURL
 	if antigravityOAuthTokenURLOverride != "" {
 		endpoint = antigravityOAuthTokenURLOverride
 	}
-	form := url.Values{}
-	form.Set("client_id", clientID)
-	form.Set("client_secret", clientSecret)
-	form.Set("grant_type", "refresh_token")
-	form.Set("refresh_token", refreshToken)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	var lastErr error
+	for _, client := range clients {
+		form := url.Values{}
+		form.Set("client_id", client.ClientID)
+		form.Set("client_secret", client.ClientSecret)
+		form.Set("grant_type", "refresh_token")
+		form.Set("refresh_token", refreshToken)
 
-	resp, err := antigravityHTTPClient.Do(req)
-	if err != nil {
-		return "", err
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		resp, err := antigravityHTTPClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode >= 300 {
+			lastErr = fmt.Errorf("antigravity oauth refresh http %d", resp.StatusCode)
+			continue
+		}
+		var parsed struct {
+			AccessToken string `json:"access_token"`
+		}
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			lastErr = err
+			continue
+		}
+		if strings.TrimSpace(parsed.AccessToken) == "" {
+			lastErr = fmt.Errorf("antigravity oauth refresh: empty access_token")
+			continue
+		}
+		return parsed.AccessToken, nil
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
-		return "", fmt.Errorf("antigravity oauth refresh http %d", resp.StatusCode)
+	if lastErr != nil {
+		return "", lastErr
 	}
-	var parsed struct {
-		AccessToken string `json:"access_token"`
-	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(parsed.AccessToken) == "" {
-		return "", fmt.Errorf("antigravity oauth refresh: empty access_token")
-	}
-	return parsed.AccessToken, nil
+	return "", fmt.Errorf("antigravity oauth refresh failed")
 }
 
 func antigravityCloudCodeBase() string {

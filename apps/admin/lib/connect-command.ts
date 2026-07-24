@@ -21,18 +21,14 @@ function powerShellLiteral(value: string) {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
-function buildPowerShellCommand(
-  tokenFlag: "Token" | "Connect",
-  token: string,
-  controlPlaneUrl: string,
-) {
+function buildPowerShellInstallCommand(token: string, controlPlaneUrl: string) {
   const base = controlPlaneUrl.replace(/\/$/, "");
   const scriptUrl = powerShellLiteral(`${base}/install.ps1`);
-  return `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((Invoke-RestMethod -UseBasicParsing ${scriptUrl}))) -${tokenFlag} ${powerShellLiteral(token)} -Url ${powerShellLiteral(base)}"`;
+  return `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((Invoke-RestMethod -UseBasicParsing ${scriptUrl}))) -Token ${powerShellLiteral(token)} -Url ${powerShellLiteral(base)}"`;
 }
 
 export function buildWindowsInstallCommand(token: string, controlPlaneUrl: string) {
-  return buildPowerShellCommand("Token", token, controlPlaneUrl);
+  return buildPowerShellInstallCommand(token, controlPlaneUrl);
 }
 
 export function buildPlatformInstallCommands(token: string, controlPlaneUrl: string): PlatformCommands {
@@ -40,27 +36,6 @@ export function buildPlatformInstallCommands(token: string, controlPlaneUrl: str
     macosLinux: buildInstallCommand(token, controlPlaneUrl),
     windows: buildWindowsInstallCommand(token, controlPlaneUrl),
   };
-}
-
-export function buildConnectInviteCommand(token: string, controlPlaneUrl: string) {
-  const base = controlPlaneUrl.replace(/\/$/, "");
-  return `curl -fsSL ${base}/install.sh | sh -s -- --connect ${token} --url ${base}`;
-}
-
-export function buildWindowsConnectInviteCommand(token: string, controlPlaneUrl: string) {
-  return buildPowerShellCommand("Connect", token, controlPlaneUrl);
-}
-
-export function buildPlatformConnectInviteCommands(token: string, controlPlaneUrl: string): PlatformCommands {
-  return {
-    macosLinux: buildConnectInviteCommand(token, controlPlaneUrl),
-    windows: buildWindowsConnectInviteCommand(token, controlPlaneUrl),
-  };
-}
-
-export function buildConnectInviteUrl(token: string, controlPlaneUrl: string) {
-  const base = controlPlaneUrl.replace(/\/$/, "");
-  return `${base}/connect-invite/${encodeURIComponent(token)}`;
 }
 
 export function buildTeamInviteLinkUrl(token: string, controlPlaneUrl: string) {

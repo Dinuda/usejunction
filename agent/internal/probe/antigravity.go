@@ -121,6 +121,11 @@ func AntigravityAccountFromLocal() (*types.ToolAccount, error) {
 	if !auth {
 		return &types.ToolAccount{ToolName: "antigravity", LoginMethod: "local_app", AuthPresent: false}, nil
 	}
+	// OAuth can be present while userStatus lacks a parseable tier. Default to
+	// the free Individual catalog plan so admin can auto-create a cycle seat.
+	if strings.TrimSpace(plan) == "" {
+		plan = "individual"
+	}
 	return &types.ToolAccount{
 		ToolName:    "antigravity",
 		Email:       email,

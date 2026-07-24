@@ -1,20 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { Prisma, prisma } from "@usejunction/db";
+import { prisma } from "@usejunction/db";
 import { buildInstallCommand, buildPlatformInstallCommands, getPublicAppUrl } from "@/lib/connect-command";
-import { hasVerifiedIdentity, linkDeveloperToUser, normalizeEmail } from "@/lib/developer-identity";
-import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/quantity";
+import { getIdentityVerificationStatus, normalizeEmail } from "@/lib/developer-identity";
 import { assertCanAddUser } from "@/lib/saas-billing/status";
 import { audit } from "@/lib/rbac";
-import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
+import { hashOpaqueToken } from "@/lib/security";
+import { acceptWorkspaceInvite } from "@/lib/workspace-join";
+import { issueEnrollmentToken } from "@/lib/enrollment-token";
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const session = await auth();
   if (!session?.user?.id || !session.user.email) {
     return NextResponse.json({ error: "authentication required" }, { status: 401 });
   }
-  if (!(await hasVerifiedIdentity(session.user.id))) {
-    return NextResponse.json({ error: "verified identity required" }, { status: 403 });
+  const identity = await getIdentityVerificationStatus(session.user.id);
+  if (!identity.verified) {
+    return NextResponse.json({ error: identity.error }, { status: identity.status });
   }
 
   const { token } = await params;
@@ -33,25 +35,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
   }
 
   // Possession of the invite link is enough — admins only share it with people who should join.
+  // Do not write teamInviteAllowlist here: that table is only for staged invite emails in the
+  // admin UI, and concurrent redeem (e.g. React Strict Mode) races on (link_id, email).
   const sessionEmail = normalizeEmail(session.user.email);
   const userGate = await assertCanAddUser(link.orgId, { userId: session.user.id, email: sessionEmail });
   if (!userGate.allowed) return NextResponse.json({ error: userGate.message }, { status: 403 });
-
-  try {
-    await prisma.teamInviteAllowlist.upsert({
-      where: { linkId_email: { linkId: link.id, email: sessionEmail } },
-      update: {},
-      create: { linkId: link.id, email: sessionEmail },
-    });
-  } catch (error) {
-    // Prisma upsert is not guaranteed to be race-free when two redeem requests
-    // arrive before either transaction has committed (React Strict Mode can
-    // trigger this in development). The unique index is the source of truth,
-    // so a duplicate means the allowlist entry was created concurrently.
-    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
-      throw error;
-    }
-  }
 
   const pendingInvite = await prisma.organizationInvite.findFirst({
     where: {
@@ -63,58 +51,41 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
     orderBy: { createdAt: "desc" },
   });
 
-  const developer = await prisma.$transaction(async (tx) => {
-    if (pendingInvite) {
-      await tx.organizationMembership.upsert({
-        where: { userId_orgId: { userId: session.user!.id, orgId: link.orgId } },
-        update: { role: pendingInvite.role },
-        create: { userId: session.user!.id, orgId: link.orgId, role: pendingInvite.role },
+  const existingMembership = pendingInvite
+    ? null
+    : await prisma.organizationMembership.findUnique({
+        where: { userId_orgId: { userId: session.user.id, orgId: link.orgId } },
+        select: { role: true },
       });
-      const linked = await linkDeveloperToUser({
-        tx,
-        orgId: link.orgId,
-        userId: session.user!.id,
-        email: sessionEmail,
-        name: session.user!.name,
-        role: pendingInvite.role,
-      });
-      await tx.organizationInvite.update({
-        where: { id: pendingInvite.id },
-        data: { acceptedAt: new Date() },
-      });
-      return linked;
-    }
-
-    await tx.organizationMembership.upsert({
-      where: { userId_orgId: { userId: session.user!.id, orgId: link.orgId } },
-      update: {},
-      create: { userId: session.user!.id, orgId: link.orgId, role: "user" },
-    });
-    return linkDeveloperToUser({
+  const role = pendingInvite?.role ?? existingMembership?.role ?? "user";
+  const { developerId } = await prisma.$transaction(async (tx) => {
+    const joined = await acceptWorkspaceInvite({
       tx,
       orgId: link.orgId,
       userId: session.user!.id,
       email: sessionEmail,
       name: session.user!.name,
-      role: "user",
+      role,
+      source: "team_invite_link.redeemed",
     });
+    if (pendingInvite) {
+      await tx.organizationInvite.update({
+        where: { id: pendingInvite.id },
+        data: { acceptedAt: new Date() },
+      });
+    }
+    return joined;
   });
 
-  await syncTeamSeatQuantityBestEffort(link.orgId, "team_invite_link.redeemed");
+  const developer = await prisma.developer.findUniqueOrThrow({
+    where: { id: developerId },
+    select: { id: true },
+  });
 
-  const enrollmentToken = generateOpaqueToken("uj_enroll", 32);
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-  await prisma.$transaction(async (tx) => {
-    await tx.enrollmentToken.deleteMany({ where: { developerId: developer.id, usedAt: null } });
-    await tx.enrollmentToken.create({
-      data: {
-        orgId: link.orgId,
-        teamId: developer.teamId,
-        developerId: developer.id,
-        tokenHash: hashOpaqueToken(enrollmentToken),
-        expiresAt,
-      },
-    });
+  const issued = await issueEnrollmentToken({
+    orgId: link.orgId,
+    developerId: developer.id,
+    rotate: false,
   });
 
   await audit({
@@ -127,18 +98,19 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
   });
 
   const base = getPublicAppUrl();
-  const installCommand = buildInstallCommand(enrollmentToken, base);
-  const installCommands = buildPlatformInstallCommands(enrollmentToken, base);
+  const installCommand = buildInstallCommand(issued.token, base);
+  const installCommands = buildPlatformInstallCommands(issued.token, base);
 
   return NextResponse.json({
     status: "ready",
     orgId: link.orgId,
     organization: link.organization,
     developerId: developer.id,
+    role,
     email: sessionEmail,
-    enrollmentToken,
+    enrollmentToken: issued.token,
     installCommand,
     installCommands,
-    expiresAt: expiresAt.toISOString(),
+    expiresAt: issued.expiresAt.toISOString(),
   });
 }

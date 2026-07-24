@@ -29,6 +29,12 @@ for ($i = 0; $i -lt 120; $i++) {
 Stop-ScheduledTask -TaskName $TaskName
 Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
 Start-Sleep -Milliseconds 500
+$installDir = Join-Path $RootDir "bin"
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($userPath) {
+  $parts = $userPath -split ';' | Where-Object { $_ -and ($_.TrimEnd('\') -ine $installDir.TrimEnd('\')) }
+  [Environment]::SetEnvironmentVariable("Path", ($parts -join ';'), "User")
+}
 Remove-Item -Recurse -Force $RootDir
 Remove-Item -Force $MyInvocation.MyCommand.Path
 `

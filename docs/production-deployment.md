@@ -67,7 +67,8 @@ Set these on the `admin` project for **Production**. Build/runtime fail closed w
 | Variable | Notes |
 |----------|--------|
 | `RESEND_API_KEY` | Resend API key |
-| `AUTH_EMAIL_FROM` | Verified sender, e.g. `UseJunction <auth@usejunction.dev>` |
+| `AUTH_EMAIL_FROM` | Verified sender for auth flows, e.g. `UseJunction <auth@usejunction.dev>` |
+| `INVITE_EMAIL_FROM` | Verified sender for team/workspace invites, e.g. `UseJunction <invites@usejunction.dev>` |
 
 ### OAuth (optional)
 

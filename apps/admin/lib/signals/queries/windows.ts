@@ -9,7 +9,6 @@ export type SignalsQueryWindows = {
   prior: MetricWindow;
   filters: {
     developerId?: string;
-    teamId?: string;
     tool?: string;
   };
 };
@@ -76,7 +75,6 @@ export function resolveSignalsWindows(
     prior,
     filters: {
       developerId: input.developerId,
-      teamId: input.teamId,
       tool: input.tool,
     },
   };

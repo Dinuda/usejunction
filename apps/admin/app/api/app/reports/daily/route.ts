@@ -8,14 +8,16 @@ import {
   type DailyReportKind,
   type DailyReportPeriod,
 } from "@/lib/reports/daily-report";
+import { canManageSettings } from "@/lib/rbac/permissions";
+import type { OrganizationRole } from "@/lib/rbac/permissions";
 
 /** Map audience scope (+ legacy kind) to the report builder kind. */
 function resolveReportKind(input: {
-  role: string;
+  role: OrganizationRole;
   scopeParam: string | null;
   kindParam: string | null;
 }): { kind: DailyReportKind; scope: AudienceScope; canSwitchAudience: boolean } {
-  const canSwitchAudience = input.role === "owner" || input.role === "admin";
+  const canSwitchAudience = canManageSettings(input.role);
 
   // Role user is always You / personal.
   if (input.role === "user") {

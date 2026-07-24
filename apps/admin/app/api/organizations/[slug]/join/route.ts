@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
-import { hasVerifiedIdentity, linkDeveloperToUser, normalizeEmail } from "@/lib/developer-identity";
-import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/quantity";
+import { hasVerifiedIdentity, normalizeEmail } from "@/lib/developer-identity";
 import { assertCanAddUser } from "@/lib/saas-billing/status";
 import { audit } from "@/lib/rbac";
+import { acceptWorkspaceInvite } from "@/lib/workspace-join";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const organization = await prisma.organization.findUnique({
@@ -31,15 +31,22 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
   const userGate = await assertCanAddUser(organization.id, { userId: session.user.id, email });
   if (!userGate.allowed) return NextResponse.json({ error: userGate.message }, { status: 403 });
 
-  const developer = await prisma.$transaction(async (tx) => {
-    await tx.organizationMembership.upsert({
-      where: { userId_orgId: { userId: session.user.id, orgId: organization.id } },
-      update: {},
-      create: { userId: session.user.id, orgId: organization.id, role: "user" },
-    });
-    return linkDeveloperToUser({ tx, orgId: organization.id, userId: session.user.id, email, name: session.user.name });
+  const existingMembership = await prisma.organizationMembership.findUnique({
+    where: { userId_orgId: { userId: session.user.id, orgId: organization.id } },
+    select: { role: true },
   });
-  await syncTeamSeatQuantityBestEffort(organization.id, "domain_join.accepted");
-  await audit({ orgId: organization.id, actorType: "user", actorId: session.user.id, action: "domain_join.accepted", targetType: "developer", targetId: developer.id, metadata: { domain: emailDomain } });
-  return NextResponse.json({ orgId: organization.id, developerId: developer.id, role: "user" });
+  const role = existingMembership?.role ?? "user";
+  const { developerId } = await prisma.$transaction(async (tx) =>
+    acceptWorkspaceInvite({
+      tx,
+      orgId: organization.id,
+      userId: session.user.id,
+      email,
+      name: session.user.name,
+      role,
+      source: "domain_join.accepted",
+    }),
+  );
+  await audit({ orgId: organization.id, actorType: "user", actorId: session.user.id, action: "domain_join.accepted", targetType: "developer", targetId: developerId, metadata: { domain: emailDomain } });
+  return NextResponse.json({ orgId: organization.id, developerId, role });
 }

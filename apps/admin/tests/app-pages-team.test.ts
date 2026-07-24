@@ -5,11 +5,13 @@ const mocks = vi.hoisted(() => ({
   getDeveloperRoster: vi.fn(),
   getPlanUsage: vi.fn(),
   deviceFindFirst: vi.fn(),
+  organizationInviteFindMany: vi.fn(),
 }));
 
 vi.mock("@usejunction/db", () => ({
   prisma: {
     device: { findFirst: mocks.deviceFindFirst },
+    organizationInvite: { findMany: mocks.organizationInviteFindMany },
   },
 }));
 
@@ -31,6 +33,7 @@ beforeEach(() => {
   mocks.getDeveloperRoster.mockResolvedValue({ developers: [] });
   mocks.getPlanUsage.mockResolvedValue({ data: { developers: [] } });
   mocks.deviceFindFirst.mockResolvedValue({ id: "device-1" });
+  mocks.organizationInviteFindMany.mockResolvedValue([]);
 });
 
 describe("loadTeamPage", () => {
@@ -56,6 +59,7 @@ describe("loadTeamPage", () => {
       developers: [],
       subscriptions: [],
       planUsage: [],
+      pendingInvites: [],
     });
     expect(data.cycleView).toBe("current_cycles");
   });
@@ -73,5 +77,64 @@ describe("loadTeamPage", () => {
       {},
     );
     expect(data.empty).toBe(true);
+  });
+
+  it("returns pending invites excluding emails already on the roster", async () => {
+    mocks.getDeveloperRoster.mockResolvedValue({
+      developers: [{ id: "dev-1", email: "joined@example.test", name: "Joined" }],
+    });
+    mocks.organizationInviteFindMany.mockResolvedValue([
+      {
+        id: "inv-1",
+        email: "pending@example.test",
+        role: "user",
+        expiresAt: new Date("2026-08-01T00:00:00.000Z"),
+        createdAt: new Date("2026-07-20T00:00:00.000Z"),
+      },
+      {
+        id: "inv-2",
+        email: "joined@example.test",
+        role: "user",
+        expiresAt: new Date("2026-08-01T00:00:00.000Z"),
+        createdAt: new Date("2026-07-20T00:00:00.000Z"),
+      },
+      {
+        id: "inv-3",
+        email: "expired@example.test",
+        role: "manager",
+        expiresAt: new Date("2026-07-01T00:00:00.000Z"),
+        createdAt: new Date("2026-06-24T00:00:00.000Z"),
+      },
+    ]);
+    const { loadTeamPage } = await import("@/lib/app-pages/team");
+    const data = await loadTeamPage(
+      {
+        userId: "user-1",
+        email: "owner@example.test",
+        orgId: "org-1",
+        role: "owner",
+      },
+      {},
+    );
+    expect(mocks.organizationInviteFindMany.mock.calls[0][0].where).toEqual({
+      orgId: "org-1",
+      acceptedAt: null,
+    });
+    expect(data.pendingInvites).toEqual([
+      {
+        id: "inv-1",
+        email: "pending@example.test",
+        role: "user",
+        expiresAt: "2026-08-01T00:00:00.000Z",
+        createdAt: "2026-07-20T00:00:00.000Z",
+      },
+      {
+        id: "inv-3",
+        email: "expired@example.test",
+        role: "manager",
+        expiresAt: "2026-07-01T00:00:00.000Z",
+        createdAt: "2026-06-24T00:00:00.000Z",
+      },
+    ]);
   });
 });

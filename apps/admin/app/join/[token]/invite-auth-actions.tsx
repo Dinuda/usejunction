@@ -11,12 +11,18 @@ export function InviteAuthActions({ token }: { token: string }) {
     <div className="space-y-4">
       <OAuthProviderButtons callbackUrl={callbackUrl} showEmailDivider={hasOAuth} emailDividerLabel="or use email" />
       <div className="space-y-3">
-        <Button asChild className="w-full">
+        <Button asChild className="w-full text-white">
           <a href={`/signup?from=${encodeURIComponent(callbackUrl)}`}>Create account</a>
         </Button>
-        <Button asChild variant="outline" className="w-full">
-          <a href={`/login?from=${encodeURIComponent(callbackUrl)}`}>Sign in</a>
-        </Button>
+        <p className="text-center text-sm text-muted-foreground">
+          Already have an account?{" "}
+          <a
+            href={`/login?from=${encodeURIComponent(callbackUrl)}`}
+            className="font-medium text-foreground underline-offset-4 hover:underline"
+          >
+            Sign in
+          </a>
+        </p>
       </div>
     </div>
   );

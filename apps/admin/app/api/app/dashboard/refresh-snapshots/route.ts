@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
         rows: result.rows,
         dirtyRemaining: result.dirtyRemaining,
         dashboardReady: readiness.dashboardReady,
+        dirtyDayCount: readiness.dirtyDayCount,
       },
       {
         serverTiming: timingHeader({

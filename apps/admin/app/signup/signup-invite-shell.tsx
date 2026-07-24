@@ -8,7 +8,7 @@ export function SignupInviteShell({ children }: { children: React.ReactNode }) {
   const params = useSearchParams();
   const from = params.get("from") || "";
   const joiningInvite =
-    from.startsWith("/i/") || from.startsWith("/join/") || from.startsWith("/connect-invite/");
+    from.startsWith("/i/") || from.startsWith("/join/");
   const hasOAuth = getEnabledOAuthProviders().length > 0;
 
   if (joiningInvite) {

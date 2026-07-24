@@ -57,3 +57,16 @@ test.each([
     (error) => error instanceof InvalidSignalsWindowError && message.test(error.message),
   );
 });
+
+test("Signals windows keep developer/tool filters and ignore teamId", () => {
+  const windows = resolveSignalsWindows(
+    { days: 7, developerId: "d1", teamId: "t1", tool: "cursor" } as {
+      days: number;
+      developerId: string;
+      teamId?: string;
+      tool: string;
+    },
+    now,
+  );
+  assert.deepEqual(windows.filters, { developerId: "d1", tool: "cursor" });
+});

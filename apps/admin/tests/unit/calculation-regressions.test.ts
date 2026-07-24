@@ -278,9 +278,17 @@ test("Signals flow keys and windows are stable for generated and invalid routes"
   assert.equal(sessionMatchesFlowKey({ domainBefore: "github.com", appBefore: null, aiTool: "Claude", domainAfter: "slack.com", appAfter: null }, generated), false);
   assert.equal(signalsFlow({ domainBefore: null, appBefore: null, aiTool: "Cursor", domainAfter: null, appAfter: null }), "unknown -> Cursor -> unknown");
 
-  const windows = resolveSignalsWindows({ days: 7, developerId: "d1", teamId: "t1", tool: "cursor" }, day("2026-07-16"));
+  const windows = resolveSignalsWindows(
+    { days: 7, developerId: "d1", teamId: "t1", tool: "cursor" } as {
+      days: number;
+      developerId: string;
+      teamId?: string;
+      tool: string;
+    },
+    day("2026-07-16"),
+  );
   assert.equal(windows.windowDays, 7);
-  assert.deepEqual(windows.filters, { developerId: "d1", teamId: "t1", tool: "cursor" });
+  assert.deepEqual(windows.filters, { developerId: "d1", tool: "cursor" });
   assert.equal(windows.current.from.toISOString(), "2026-07-10T00:00:00.000Z");
   assert.equal(windows.prior.to.toISOString(), "2026-07-09T23:59:59.999Z");
   assert.equal(resolveSignalsWindows({}, day("2026-07-16")).windowDays, 30);

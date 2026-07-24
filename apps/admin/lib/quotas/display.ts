@@ -84,7 +84,12 @@ export function quotaRemainingLabel(
   if (/rate_limit_resets/i.test(windowType)) {
     return `${rounded} reset${rounded === "1" ? "" : "s"} left`;
   }
-  if (/promo|grant|bonus|^credits$/i.test(windowType)) {
+  // Antigravity (and similar) report unit credits — not USD.
+  if (/^credits$/i.test(windowType)) {
+    return `${rounded} credit${rounded === "1" ? "" : "s"} left`;
+  }
+  // Cursor/Codex promo grants and bonuses are dollar balances.
+  if (/promo|grant|bonus/i.test(windowType)) {
     return `$${rounded} left`;
   }
   return `${rounded} left`;

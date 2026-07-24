@@ -19,74 +19,89 @@ var (
 	enrollSetup     bool
 )
 
-var enrollCmd = &cobra.Command{
-	Use:   "enroll",
-	Short: "Enroll this device with the UseJunction control plane",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if enrollToken == "" {
-			return fmt.Errorf("--token is required")
-		}
-		if controlPlaneURL == "" {
-			controlPlaneURL = os.Getenv("USEJUNCTION_URL")
-		}
-		if controlPlaneURL == "" {
-			controlPlaneURL = "http://localhost:3001"
-		}
+type enrollResult struct {
+	cfg *config.Config
+}
 
-		osName, arch := platformInfo()
-		resp, err := client.Enroll(controlPlaneURL, client.EnrollRequest{
-			Token:        enrollToken,
-			Email:        enrollEmail,
-			Name:         enrollName,
-			Hostname:     hostname(),
-			OS:           osName,
-			Architecture: arch,
-			AgentVersion: config.Version,
-		})
-		if err != nil {
-			return err
-		}
+type enrollOptions struct {
+	Token         string
+	URL           string
+	Email         string
+	Name          string
+	Setup         bool
+	Quiet         bool // suppress enroll success lines (onboard owns the narrative)
+	NoReportPrint bool // run report but suppress its text output
+}
 
-		cfg := &config.Config{
-			ControlPlaneURL: controlPlaneURL,
-			DeviceToken:     resp.DeviceToken,
-			DeviceID:        resp.DeviceID,
-			UserID:          resp.UserID,
-			OrgID:           resp.OrgID,
-			// Never store or use a gateway URL. Local tools keep their own
-			// vendor configs (e.g. ~/.codex/config.toml) untouched.
-		}
-		if resp.Otel != nil {
-			cfg.OtelEnabled = resp.Otel.Enabled
-			cfg.OtelMetricsEndpoint = resp.Otel.MetricsEndpoint
-		}
-		if _, err := cfg.EnsureLocalSyncCredentials(); err != nil {
-			return fmt.Errorf("local sync credentials: %w", err)
-		}
-		// Drop prior-enrollment upload fingerprints so history is re-uploaded
-		// into this device instead of being skipped against an empty DB.
-		if err := scan.ClearUsageUploadStore(); err != nil {
-			return fmt.Errorf("clear usage upload cache: %w", err)
-		}
-		if err := config.Save(cfg); err != nil {
-			return fmt.Errorf("saving config: %w", err)
-		}
+func doEnroll(opts enrollOptions) (*enrollResult, error) {
+	if opts.Token == "" {
+		return nil, fmt.Errorf("--token is required")
+	}
+	url := opts.URL
+	if url == "" {
+		url = os.Getenv("USEJUNCTION_URL")
+	}
+	if url == "" {
+		url = "http://localhost:3001"
+	}
 
-		if err := configure.RepairLegacyCodexGatewayConfig(); err != nil {
-			fmt.Printf("codex config repair warning: %v\n", err)
-		}
+	osName, arch := platformInfo()
+	resp, err := client.Enroll(url, client.EnrollRequest{
+		Token:        opts.Token,
+		Email:        opts.Email,
+		Name:         opts.Name,
+		Hostname:     hostname(),
+		OS:           osName,
+		Architecture: arch,
+		AgentVersion: config.Version,
+	})
+	if err != nil {
+		return nil, err
+	}
 
-		if enrollSetup {
-			if err := configure.RunSetup(cfg, configure.SetupOptions{
-				EnableOtel: true,
-			}); err != nil {
-				fmt.Printf("setup warning: %v\n", err)
-			}
-			if err := runReport(cmd, args); err != nil {
-				fmt.Printf("initial report warning: %v\n", err)
-			}
-		}
+	cfg := &config.Config{
+		ControlPlaneURL: url,
+		DeviceToken:     resp.DeviceToken,
+		DeviceID:        resp.DeviceID,
+		UserID:          resp.UserID,
+		OrgID:           resp.OrgID,
+		// Never store or use a gateway URL. Local tools keep their own
+		// vendor configs (e.g. ~/.codex/config.toml) untouched.
+	}
+	if resp.Otel != nil {
+		cfg.OtelEnabled = resp.Otel.Enabled
+		cfg.OtelMetricsEndpoint = resp.Otel.MetricsEndpoint
+	}
+	if _, err := cfg.EnsureLocalSyncCredentials(); err != nil {
+		return nil, fmt.Errorf("local sync credentials: %w", err)
+	}
+	// Drop prior-enrollment upload fingerprints so history is re-uploaded
+	// into this device instead of being skipped against an empty DB.
+	if err := scan.ClearUsageUploadStore(); err != nil {
+		return nil, fmt.Errorf("clear usage upload cache: %w", err)
+	}
+	if err := config.Save(cfg); err != nil {
+		return nil, fmt.Errorf("saving config: %w", err)
+	}
 
+	if err := configure.RepairLegacyCodexGatewayConfig(); err != nil {
+		fmt.Printf("codex config repair warning: %v\n", err)
+	}
+
+	if opts.Setup {
+		if err := configure.RunSetup(cfg, configure.SetupOptions{
+			EnableOtel: true,
+		}); err != nil {
+			fmt.Printf("setup warning: %v\n", err)
+		}
+		if stats, err := runInitialReport(opts.NoReportPrint); err != nil {
+			fmt.Printf("initial report warning: %v\n", err)
+		} else {
+			_ = stats
+		}
+	}
+
+	if !opts.Quiet {
 		if format == "json" {
 			printJSON(map[string]any{
 				"deviceId": resp.DeviceID,
@@ -96,7 +111,64 @@ var enrollCmd = &cobra.Command{
 			fmt.Printf("Enrolled device %s for org %s\n", resp.DeviceID, resp.OrgID)
 			fmt.Printf("Config saved to %s\n", config.ConfigPath())
 		}
-		return nil
+	}
+
+	return &enrollResult{cfg: cfg}, nil
+}
+
+type reportStats struct {
+	Tools    int
+	Accounts int
+	Quotas   int
+	Usage    int
+}
+
+// runInitialReport runs the initial collect/report. When quiet, suppresses
+// stdout so onboard can wrap it in a progress step.
+func runInitialReport(quiet bool) (*reportStats, error) {
+	cfg, err := requireConfig()
+	if err != nil {
+		return nil, err
+	}
+	if changed, err := cfg.EnsureLocalSyncCredentials(); err != nil {
+		return nil, err
+	} else if changed {
+		_ = config.Save(cfg)
+	}
+	tools, accounts, quotas, usage, err := collectAndReport(client.New(cfg), true)
+	if err != nil {
+		return nil, err
+	}
+	stats := &reportStats{Tools: tools, Accounts: accounts, Quotas: quotas, Usage: usage}
+	if quiet {
+		return stats, nil
+	}
+	if format == "json" {
+		printJSON(map[string]any{
+			"ok":       true,
+			"tools":    tools,
+			"accounts": accounts,
+			"quotas":   quotas,
+			"usage":    usage,
+		})
+	} else {
+		fmt.Printf("Reported %d tool(s), %d account(s), %d quota window(s), %d usage row(s).\n", tools, accounts, quotas, usage)
+	}
+	return stats, nil
+}
+
+var enrollCmd = &cobra.Command{
+	Use:   "enroll",
+	Short: "Enroll this device with the UseJunction control plane",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		_, err := doEnroll(enrollOptions{
+			Token: enrollToken,
+			URL:   controlPlaneURL,
+			Email: enrollEmail,
+			Name:  enrollName,
+			Setup: enrollSetup,
+		})
+		return err
 	},
 }
 

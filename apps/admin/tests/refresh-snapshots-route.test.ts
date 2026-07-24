@@ -49,6 +49,7 @@ test("sync-now refresh-snapshots rematerializes dirty days for the session org",
   assert.equal(body.data.dirtyDays, 3);
   assert.equal(body.data.dirtyRemaining, 0);
   assert.equal(body.data.dashboardReady, true);
+  assert.equal(body.data.dirtyDayCount, 0);
   assert.equal(mocks.rematerializeOrgSnapshots.mock.calls.length, 1);
   assert.deepEqual(mocks.rematerializeOrgSnapshots.mock.calls[0], [
     "org-sync-1",

@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   audit: vi.fn(),
   developerFindFirst: vi.fn(),
   membershipFindUnique: vi.fn(),
+  developerUpdate: vi.fn(),
+  membershipUpdateMany: vi.fn(),
   transaction: vi.fn(),
 }));
 
@@ -42,15 +44,95 @@ beforeEach(() => {
   });
   mocks.audit.mockResolvedValue(undefined);
   mocks.updateSession.mockResolvedValue({ user: { orgId: "org-1", role: "manager" } });
+  mocks.developerUpdate.mockResolvedValue({});
+  mocks.membershipUpdateMany.mockResolvedValue({ count: 1 });
   mocks.transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
     fn({
-      developer: { update: vi.fn() },
-      organizationMembership: { updateMany: vi.fn() },
+      developer: { update: mocks.developerUpdate },
+      organizationMembership: { updateMany: mocks.membershipUpdateMany },
     }),
   );
 });
 
 describe("PATCH /api/developers/[id]/role", () => {
+  it("updates membership.role for linked users and mirrors Developer.role", async () => {
+    mocks.developerFindFirst.mockResolvedValue({
+      id: "dev-2",
+      role: "user",
+      authUserId: "user-2",
+      email: "member@example.test",
+    });
+    mocks.membershipFindUnique.mockResolvedValue({ role: "user" });
+
+    const { PATCH } = await import("@/app/api/developers/[id]/role/route");
+    const response = await PATCH(
+      new NextRequest("https://usejunction.dev/api/developers/dev-2/role", {
+        method: "PATCH",
+        body: JSON.stringify({ role: "manager" }),
+      }),
+      { params: Promise.resolve({ id: "dev-2" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.membershipUpdateMany).toHaveBeenCalledWith({
+      where: { userId: "user-2", orgId: "org-1" },
+      data: { role: "manager" },
+    });
+    expect(mocks.developerUpdate).toHaveBeenCalledWith({
+      where: { id: "dev-2" },
+      data: { role: "manager" },
+    });
+    expect(mocks.updateSession).not.toHaveBeenCalled();
+  });
+
+  it("updates Developer.role only for unlinked roster rows", async () => {
+    mocks.developerFindFirst.mockResolvedValue({
+      id: "dev-unlinked",
+      role: "user",
+      authUserId: null,
+      email: "vendor@example.test",
+    });
+
+    const { PATCH } = await import("@/app/api/developers/[id]/role/route");
+    const response = await PATCH(
+      new NextRequest("https://usejunction.dev/api/developers/dev-unlinked/role", {
+        method: "PATCH",
+        body: JSON.stringify({ role: "manager" }),
+      }),
+      { params: Promise.resolve({ id: "dev-unlinked" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.membershipFindUnique).not.toHaveBeenCalled();
+    expect(mocks.membershipUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.developerUpdate).toHaveBeenCalledWith({
+      where: { id: "dev-unlinked" },
+      data: { role: "manager" },
+    });
+  });
+
+  it("refuses when membership.role is owner even if Developer.role differs", async () => {
+    mocks.developerFindFirst.mockResolvedValue({
+      id: "dev-owner",
+      role: "admin",
+      authUserId: "user-owner",
+      email: "owner@example.test",
+    });
+    mocks.membershipFindUnique.mockResolvedValue({ role: "owner" });
+
+    const { PATCH } = await import("@/app/api/developers/[id]/role/route");
+    const response = await PATCH(
+      new NextRequest("https://usejunction.dev/api/developers/dev-owner/role", {
+        method: "PATCH",
+        body: JSON.stringify({ role: "manager" }),
+      }),
+      { params: Promise.resolve({ id: "dev-owner" }) },
+    );
+
+    expect(response.status).toBe(403);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   it("refreshes JWT claims when the actor updates their own membership role", async () => {
     mocks.developerFindFirst.mockResolvedValue({
       id: "dev-1",
@@ -71,6 +153,10 @@ describe("PATCH /api/developers/[id]/role", () => {
 
     expect(response).toBeInstanceOf(NextResponse);
     expect(response.status).toBe(200);
+    expect(mocks.membershipUpdateMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", orgId: "org-1" },
+      data: { role: "manager" },
+    });
     expect(mocks.updateSession).toHaveBeenCalledWith({ user: { orgId: "org-1" } });
   });
 

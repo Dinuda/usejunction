@@ -11,7 +11,7 @@ import { logServerError } from "@/lib/errors/public";
 const MAX_PASSWORD_BYTES = 256;
 
 function isInviteSignup(from: string) {
-  return from.startsWith("/i/") || from.startsWith("/join/") || from.startsWith("/connect-invite/");
+  return from.startsWith("/i/") || from.startsWith("/join/");
 }
 
 export async function POST(request: NextRequest) {

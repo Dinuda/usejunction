@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
     await prisma.enrollmentToken.create({
-      data: { orgId, teamId: developer.teamId, developerId: developer.id, tokenHash, expiresAt },
+      data: { orgId, developerId: developer.id, tokenHash, expiresAt },
     });
 
     return NextResponse.json({
@@ -55,7 +55,6 @@ export async function GET(req: NextRequest) {
       select: {
         id: true,
         orgId: true,
-        teamId: true,
         developerId: true,
         expiresAt: true,
         usedAt: true,

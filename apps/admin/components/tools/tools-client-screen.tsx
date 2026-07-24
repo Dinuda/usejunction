@@ -95,7 +95,7 @@ function PersonalTools({
         <SignalsKpi
           label="Assigned plans"
           className="sm:border-l sm:border-border sm:pl-8"
-          value={data.developer.assignedPlans.length}
+          value={data.developer.vendorSeats.length}
           sub="Available to you"
         />
       </div>

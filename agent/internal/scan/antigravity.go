@@ -36,6 +36,10 @@ const (
 //  2. Live LS GetCascadeTrajectoryGeneratorMetadata → antigravity_usage (merged by provider)
 //  3. brain transcript.jsonl MODEL turns → antigravity_local (requests only)
 //
+// Note: newer Antigravity IDE builds store conversations as *.pb (not *.db). Those
+// blobs are not gen_metadata and do not yield tokens offline — open the IDE so the
+// live LS path can supply antigravity_usage, otherwise cost stays $0.
+//
 // Never as usage rows: modelCredits, oauth, prompt bodies.
 
 // antigravityRootsOverride is set by tests.

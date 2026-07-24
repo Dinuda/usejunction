@@ -14,13 +14,11 @@ async function main() {
     update: {
       developerId: developer.id,
       orgId: developer.orgId,
-      teamId: developer.teamId,
       expiresAt: new Date(Date.now() + 15 * 60 * 1000),
       usedAt: null,
     },
     create: {
       orgId: developer.orgId,
-      teamId: developer.teamId,
       developerId: developer.id,
       tokenHash,
       expiresAt: new Date(Date.now() + 15 * 60 * 1000),

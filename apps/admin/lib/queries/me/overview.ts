@@ -18,6 +18,7 @@ import {
 } from "@/lib/billing/actual-spend";
 import type { CycleView } from "@/lib/dashboard/cycle-view";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
+import { resolveModelUsageCostKind } from "@/lib/usage/classify";
 
 export interface AiCodingMetrics {
   suggestedLines: number;
@@ -88,7 +89,7 @@ export interface MeOverviewData {
         updatedAt: Date;
       }>;
     }>;
-    assignedPlans: Array<{
+    vendorSeats: Array<{
       provider: string;
       product: string;
       plan: string | null;
@@ -289,7 +290,7 @@ async function buildMeOverview(
         "commits",
         "costMicros",
       ],
-      dimensions: ["tool", "model", "source"],
+      dimensions: ["tool", "model", "source", "costKind"],
     }),
     prisma.developerPlanAssignment.findMany({
       where: {
@@ -354,10 +355,12 @@ async function buildMeOverview(
 
   const modelUsageRows: ModelUsageRow[] = models.data.rows.flatMap((row) => {
     const source = dimension(row, "source");
+    const storedCostKind = dimension(row, "costKind");
     const requests = metricNumber(row, "requests");
     const rowInputTokens = metricNumber(row, "inputTokens");
     const rowOutputTokens = metricNumber(row, "outputTokens");
     const cost = metricNumber(row, "costMicros") / 1_000_000;
+    const costKind = resolveModelUsageCostKind({ source, cost, storedCostKind });
     const suggestedLines = metricNumber(row, "suggestedLines");
     const acceptedLines = metricNumber(row, "acceptedLines");
     const productivity = suggestedLines > 0 || acceptedLines > 0 || metricNumber(row, "commits") > 0;
@@ -379,8 +382,8 @@ async function buildMeOverview(
       requests,
       suggestedLines: 0,
       acceptedLines: 0,
-      verified: source === "vendor_verified",
-      costKind: source === "vendor_verified" ? "verified_usage" : cost > 0 ? "estimated_api" : null,
+      verified: costKind === "verified_usage",
+      costKind,
       metricKind: "usage",
     });
     if (productivity) output.push({
@@ -463,7 +466,7 @@ async function buildMeOverview(
         accounts: device.toolAccounts,
         quotas: device.quotaSnapshots,
       })),
-      assignedPlans: developer.seatAssignments,
+      vendorSeats: developer.seatAssignments,
       reportedTools: developer.toolClaims,
     },
     usage30d: {

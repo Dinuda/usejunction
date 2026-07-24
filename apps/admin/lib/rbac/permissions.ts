@@ -29,6 +29,16 @@ export function canSeeOrgOverview(role: OrganizationRole | null | undefined): bo
   return hasCapability(role, "org_overview");
 }
 
+/** Admins/managers/owners pick manage-team vs connect; developers go straight to connect. */
+export function canChooseOnboardingPath(role: OrganizationRole | null | undefined): boolean {
+  return canSeeOrgOverview(role);
+}
+
+/** Individual developers must connect a machine before leaving onboarding. */
+export function requiresDeviceOnboarding(role: OrganizationRole | null | undefined): boolean {
+  return role === "user";
+}
+
 export function isSelfScopedRole(role: OrganizationRole | null | undefined): boolean {
   return role === "user";
 }

@@ -3,7 +3,8 @@ import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
 import { buildInstallCommand, buildWindowsInstallCommand, getPublicAppUrl } from "@/lib/connect-command";
 import { hasVerifiedIdentity, normalizeEmail } from "@/lib/developer-identity";
-import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
+import { hashOpaqueToken } from "@/lib/security";
+import { issueEnrollmentToken } from "@/lib/enrollment-token";
 
 /**
  * Downloads a macOS .command file by default, or a PowerShell launcher when
@@ -42,25 +43,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     );
   }
 
-  const enrollmentToken = generateOpaqueToken("uj_enroll", 32);
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-  await prisma.$transaction(async (tx) => {
-    await tx.enrollmentToken.deleteMany({ where: { developerId: developer.id, usedAt: null } });
-    await tx.enrollmentToken.create({
-      data: {
-        orgId: link.orgId,
-        teamId: developer.teamId,
-        developerId: developer.id,
-        tokenHash: hashOpaqueToken(enrollmentToken),
-        expiresAt,
-      },
-    });
+  const issued = await issueEnrollmentToken({
+    orgId: link.orgId,
+    developerId: developer.id,
+    rotate: false,
   });
 
   const base = getPublicAppUrl();
-  const installCommand = buildInstallCommand(enrollmentToken, base);
+  const installCommand = buildInstallCommand(issued.token, base);
   if (req.nextUrl.searchParams.get("platform") === "windows") {
-    const windowsCommand = buildWindowsInstallCommand(enrollmentToken, base);
+    const windowsCommand = buildWindowsInstallCommand(issued.token, base);
     const script = [
       "$ErrorActionPreference = \"Stop\"",
       "Write-Host \"Installing UseJunction agent...\"",
@@ -75,7 +67,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
         "content-type": "text/plain; charset=utf-8",
         "content-disposition": 'attachment; filename="install-usejunction.ps1"',
         "cache-control": "no-store",
-        "x-enrollment-expires-at": expiresAt.toISOString(),
+        "x-enrollment-expires-at": issued.expiresAt.toISOString(),
       },
     });
   }
@@ -97,7 +89,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       "content-type": "application/x-shellscript",
       "content-disposition": 'attachment; filename="install-usejunction.command"',
       "cache-control": "no-store",
-      "x-enrollment-expires-at": expiresAt.toISOString(),
+      "x-enrollment-expires-at": issued.expiresAt.toISOString(),
     },
   });
 }

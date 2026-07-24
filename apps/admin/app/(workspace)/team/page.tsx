@@ -5,6 +5,7 @@ import { teamKey } from "@/lib/app-pages/query-keys";
 import { flattenSearchParams, searchParamsToQueryString } from "@/lib/app-pages/search-params";
 import { makeServerQueryClient } from "@/lib/app-pages/server-query-client";
 import { loadTeamPage } from "@/lib/app-pages/team";
+import { rolesFor } from "@/lib/rbac/permissions";
 
 export default async function TeamPage({
   searchParams,
@@ -14,7 +15,7 @@ export default async function TeamPage({
   const raw = await searchParams;
   const flat = flattenSearchParams(raw);
   const queryString = searchParamsToQueryString(raw);
-  const principal = await principalFromWorkspace(["owner", "admin"]);
+  const principal = await principalFromWorkspace(rolesFor("org_overview"));
   const queryClient = makeServerQueryClient();
   await queryClient.prefetchQuery({
     queryKey: teamKey(queryString),

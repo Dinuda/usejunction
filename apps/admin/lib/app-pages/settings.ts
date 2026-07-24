@@ -5,6 +5,7 @@ import { getOrgActivitySettings } from "@/lib/activity/service";
 import { getOrCreateNotificationPrefs } from "@/lib/notifications/preferences";
 import { getOrgSignalsPolicy } from "@/lib/signals/service";
 import { getOrgBillingStatus } from "@/lib/saas-billing/status";
+import { canManageSettings } from "@/lib/rbac/permissions";
 
 export async function loadNotificationPreferences(principal: AppPrincipal) {
   const [user, prefs] = await Promise.all([
@@ -53,7 +54,7 @@ export async function loadOrgSettingsPage(principal: AppPrincipal) {
 
 /** Parallel prefs + org settings for settings RSC shell. */
 export async function loadSettingsPage(principal: AppPrincipal) {
-  const canManageOrg = principal.role === "owner" || principal.role === "admin";
+  const canManageOrg = canManageSettings(principal.role);
   const [prefs, orgSettings] = await Promise.all([
     loadNotificationPreferences(principal),
     canManageOrg ? loadOrgSettingsPage(principal) : Promise.resolve(null),

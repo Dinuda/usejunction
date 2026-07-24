@@ -53,7 +53,7 @@ test("projectQuotaPace computes Antigravity model-family windows", () => {
   assert.notEqual(pace.code, "UNKNOWN");
   assert.equal(pace.usedPercent, 40);
   assert.ok(pace.daysToReset != null && pace.daysToReset > 0);
-  assert.notEqual(paceVerdictLabel(pace.code), "Pace unavailable");
+  assert.notEqual(paceVerdictLabel(pace.code), "Offline");
 });
 
 test("projectQuotaPace flags excess when burn empties before reset", () => {
@@ -190,7 +190,7 @@ test("projectQuotaPace keeps missing, expired, and stale vendor timing unavailab
   for (const quota of snapshots) {
     const pace = projectQuotaPace(quota, now);
     assert.equal(pace.code, "UNKNOWN");
-    assert.equal(paceVerdictLabel(pace.code), "Pace unavailable");
+    assert.equal(paceVerdictLabel(pace.code), "Offline");
   }
 });
 

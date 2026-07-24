@@ -4,6 +4,8 @@ import {
   CAPABILITIES,
   canManageSettings,
   canSeeOrgOverview,
+  canChooseOnboardingPath,
+  requiresDeviceOnboarding,
   hasCapability,
   isAssignableRole,
   isSelfScopedRole,
@@ -23,6 +25,15 @@ describe("RBAC capabilities", () => {
     expect(rolesFor("org_overview")).toEqual(["owner", "admin", "manager"]);
     expect(canSeeOrgOverview("manager")).toBe(true);
     expect(canSeeOrgOverview("user")).toBe(false);
+  });
+
+  it("lets managers choose onboarding path; developers connect only", () => {
+    expect(canChooseOnboardingPath("owner")).toBe(true);
+    expect(canChooseOnboardingPath("admin")).toBe(true);
+    expect(canChooseOnboardingPath("manager")).toBe(true);
+    expect(canChooseOnboardingPath("user")).toBe(false);
+    expect(requiresDeviceOnboarding("user")).toBe(true);
+    expect(requiresDeviceOnboarding("manager")).toBe(false);
   });
 
   it("maps self_view to all roles", () => {

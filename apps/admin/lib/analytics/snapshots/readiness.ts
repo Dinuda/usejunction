@@ -20,10 +20,13 @@ export type DashboardReadiness = {
    * snapshots that conflict with usage. Dirty history backlog does not block.
    */
   dashboardReady: boolean;
-  /** Dirty days outside the live-read horizon (history rematerialize backlog). */
+  /**
+   * Full rematerialize backlog (live horizon + history). Used for sync progress
+   * UI — do not treat "Last synced" as complete while this is > 0.
+   */
   dirtyDayCount: number;
   stubConflictDayCount: number;
-  /** Age in seconds of the oldest history dirty day; null when clean. */
+  /** Age in seconds of the oldest dirty day; null when clean. */
   snapshotLagSeconds: number | null;
   oldestDirtyDay: string | null;
 };
@@ -98,42 +101,24 @@ export async function getDashboardReadiness(
       : null;
   const historyFrom = historyTo && historyTo.getTime() >= fromDay.getTime() ? fromDay : null;
 
-  const [dirty, stubConflictDayCount] = await Promise.all([
-    historyFrom && historyTo
-      ? prisma.analyticsDirtyDay.findMany({
-          where: {
-            orgId,
-            metricVersion,
-            date: { gte: historyFrom, lte: historyTo },
-          },
-          orderBy: { date: "asc" },
-          select: { date: true, createdAt: true },
-        })
-      : Promise.resolve([] as Array<{ date: Date; createdAt: Date }>),
+  const [stubConflictDayCount, pendingDirty] = await Promise.all([
     historyFrom && historyTo
       ? countStubConflicts(orgId, historyFrom, historyTo, metricVersion)
       : Promise.resolve(0),
+    prisma.analyticsDirtyDay.findMany({
+      where: { orgId, metricVersion },
+      orderBy: [{ createdAt: "asc" }, { date: "asc" }],
+      select: { date: true, createdAt: true },
+    }),
   ]);
 
-  // Live-horizon reads come from usage_daily, so dirty/stub history alone does not
-  // block the recent dashboard — only history stub conflicts matter for "ready".
-  if (stubConflictDayCount === 0) {
-    const oldest = dirty[0];
-    const lagMs = oldest ? Math.max(0, Date.now() - oldest.createdAt.getTime()) : null;
-    return {
-      dashboardReady: true,
-      dirtyDayCount: dirty.length,
-      stubConflictDayCount: 0,
-      snapshotLagSeconds: lagMs == null ? null : Math.floor(lagMs / 1000),
-      oldestDirtyDay: oldest ? isoDay(oldest.date) : null,
-    };
-  }
-
-  const oldest = dirty[0];
+  // Progress counts the full backlog. Readiness for live KPIs only fails when
+  // history stubs conflict — recent days are served from usage_daily.
+  const oldest = pendingDirty[0];
   const lagMs = oldest ? Math.max(0, Date.now() - oldest.createdAt.getTime()) : null;
   return {
-    dashboardReady: false,
-    dirtyDayCount: dirty.length,
+    dashboardReady: stubConflictDayCount === 0,
+    dirtyDayCount: pendingDirty.length,
     stubConflictDayCount,
     snapshotLagSeconds: lagMs == null ? null : Math.floor(lagMs / 1000),
     oldestDirtyDay: oldest ? isoDay(oldest.date) : null,

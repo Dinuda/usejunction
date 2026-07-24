@@ -36,13 +36,11 @@ export function disabledSignalsPolicy(): EffectiveSignalsPolicy {
   };
 }
 
-export async function getEffectiveSignalsPolicy(orgId: string, teamId?: string | null): Promise<EffectiveSignalsPolicy> {
-  const policies = await prisma.signalsPolicy.findMany({
-    where: { orgId, OR: [{ teamId: teamId ?? undefined }, { teamId: null }] },
-    orderBy: [{ teamId: "desc" }, { updatedAt: "desc" }],
-    take: 2,
+export async function getEffectiveSignalsPolicy(orgId: string): Promise<EffectiveSignalsPolicy> {
+  const policy = await prisma.signalsPolicy.findFirst({
+    where: { orgId },
+    orderBy: { updatedAt: "desc" },
   });
-  const policy = policies.find((item) => item.teamId === teamId) ?? policies.find((item) => item.teamId === null);
   if (!policy) return disabledSignalsPolicy();
   return {
     // Classic app/domain journey sampling is off for this release.
@@ -61,7 +59,7 @@ export async function getEffectiveSignalsPolicy(orgId: string, teamId?: string |
 }
 
 export async function getOrgSignalsPolicy(orgId: string): Promise<EffectiveSignalsPolicy> {
-  return getEffectiveSignalsPolicy(orgId, null);
+  return getEffectiveSignalsPolicy(orgId);
 }
 
 export async function enforceSignalsRetention(orgId: string, retentionDays: number) {

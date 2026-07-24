@@ -25,6 +25,8 @@ const SOURCE_ALIASES: Record<string, string> = {
   cursor_plan_percent: "device_observed",
   antigravity_local: "device_observed",
   antigravity_usage: "device_observed",
+  opencode_local: "device_observed",
+  opencode_usage: "device_observed",
 };
 
 export function normalizeSource(source: string): string {
@@ -33,7 +35,7 @@ export function normalizeSource(source: string): string {
 
 export function isProductivityMetric(metricKind: string | null | undefined, source: string): boolean {
   if (metricKind === "productivity") return true;
-  return source === "cursor_local";
+  return source === "cursor_local" || source === "opencode_local";
 }
 
 export function costKindForRow(input: {

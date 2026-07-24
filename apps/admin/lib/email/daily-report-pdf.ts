@@ -250,7 +250,7 @@ export function buildDailyReportPdfHtml(input: {
   const requests = formatCompactNumber(report.kpis.requests);
   const planPct =
     report.plan?.usedPercent != null ? formatPct(report.plan.usedPercent, 0) : "—";
-  const planStatus = report.plan?.statusLabel ?? "No quota data";
+  const planStatus = report.plan?.statusLabel ?? "Offline";
 
   const insightHtml = buildInsightLine(report, isTeamWeek);
 

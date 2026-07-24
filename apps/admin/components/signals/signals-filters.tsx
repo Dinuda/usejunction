@@ -12,17 +12,14 @@ export type SignalsFilterOption = {
 };
 
 export type SignalsFiltersValue = {
-  teamId?: string;
   tool?: string;
   developerId?: string;
 };
 
 type SignalsFiltersProps = {
   value: SignalsFiltersValue;
-  teams?: SignalsFilterOption[];
   tools?: string[];
   developers?: SignalsFilterOption[];
-  showTeam?: boolean;
   showTool?: boolean;
   showPerson?: boolean;
   className?: string;
@@ -35,14 +32,13 @@ function buildHref(
   pathname: string,
   next: SignalsFiltersValue,
   searchParams: URLSearchParams,
-  fields: { showTeam: boolean; showTool: boolean; showPerson: boolean },
+  fields: { showTool: boolean; showPerson: boolean },
 ) {
   const params = new URLSearchParams();
   for (const key of ["view", "days", "from", "to", "scope"] as const) {
     const value = searchParams.get(key);
     if (value) params.set(key, value);
   }
-  if (fields.showTeam && next.teamId) params.set("teamId", next.teamId);
   if (fields.showTool && next.tool) params.set("tool", next.tool);
   if (fields.showPerson && next.developerId) params.set("developerId", next.developerId);
   const query = params.toString();
@@ -51,10 +47,8 @@ function buildHref(
 
 export function SignalsFilters({
   value,
-  teams = [],
   tools = [],
   developers = [],
-  showTeam = true,
   showTool = true,
   showPerson = false,
   className,
@@ -68,7 +62,7 @@ export function SignalsFilters({
 
   useEffect(() => {
     setDraft(value);
-  }, [value.teamId, value.tool, value.developerId]);
+  }, [value.tool, value.developerId]);
 
   useEffect(() => {
     return () => {
@@ -81,7 +75,7 @@ export function SignalsFilters({
       const next = { ...prev, ...patch };
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
-        const href = buildHref(pathname, next, searchParams, { showTeam, showTool, showPerson });
+        const href = buildHref(pathname, next, searchParams, { showTool, showPerson });
         startTransition(() => {
           router.push(href);
         });
@@ -104,23 +98,6 @@ export function SignalsFilters({
             {developers.map((developer) => (
               <option key={developer.id} value={developer.id}>
                 {developer.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-      {showTeam ? (
-        <label className="min-w-0 space-y-1.5 text-xs font-medium text-muted-foreground">
-          Team
-          <select
-            value={draft.teamId ?? ""}
-            onChange={(event) => scheduleApply({ teamId: event.target.value || undefined })}
-            className={cn(selectClassName, "md:min-w-[11rem]")}
-          >
-            <option value="">All teams</option>
-            {teams.map((team) => (
-              <option key={team.id} value={team.id}>
-                {team.name}
               </option>
             ))}
           </select>

@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/spf13/cobra"
 	"github.com/usejunction/agent/internal/providers"
 	"github.com/usejunction/agent/internal/types"
+	"github.com/usejunction/agent/internal/ui"
 )
 
 var doctorCmd = &cobra.Command{
@@ -36,18 +36,8 @@ var doctorCmd = &cobra.Command{
 			return nil
 		}
 
-		fmt.Printf("%-14s  %-10s  %-14s  %s\n", "TOOL", "DETECTED", "CONFIGURED", "CONFIG PATH")
-		fmt.Printf("%-14s  %-10s  %-14s  %s\n", "----", "--------", "----------", "-----------")
-
-		for _, r := range detected {
-			configured := "no"
-			if r.Configured {
-				configured = "yes"
-			}
-			fmt.Printf("%-14s  %-10s  %-14s  %s\n", r.ToolName, "yes", configured, r.ConfigPath)
-		}
-
-		fmt.Printf("\n%d tool(s) detected.\n", len(detected))
+		ui.SetNoColor(noColor)
+		ui.DoctorTable(detected)
 		return nil
 	},
 }

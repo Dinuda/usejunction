@@ -8,6 +8,7 @@ import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
 import { getWorkOverview } from "@/lib/signals";
 import { getOrgSignalsPolicy } from "@/lib/signals/service";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
+import { canManageSettings } from "@/lib/rbac/permissions";
 
 export type SignalsOverviewSearch = {
   view?: string | null;
@@ -16,7 +17,6 @@ export type SignalsOverviewSearch = {
   to?: string | null;
   scope?: string | null;
   developerId?: string | null;
-  teamId?: string | null;
   tool?: string | null;
 };
 
@@ -54,7 +54,6 @@ export async function loadSignalsOverviewPage(principal: AppPrincipal, search: S
           from: reportWindow.from.toISOString().slice(0, 10),
           to: reportWindow.to.toISOString().slice(0, 10),
           developerId,
-          teamId: scope === "team" ? (search.teamId || undefined) : undefined,
           tool: scope === "team" ? (search.tool || undefined) : undefined,
         },
         { policy },
@@ -62,7 +61,7 @@ export async function loadSignalsOverviewPage(principal: AppPrincipal, search: S
 
   return jsonSafe({
     scope,
-    canSwitchAudience: true,
+    canSwitchAudience: canManageSettings(principal.role),
     youUnlinked,
     cycleView,
     rollingPeriod,

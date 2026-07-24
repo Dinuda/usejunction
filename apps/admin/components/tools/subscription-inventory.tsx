@@ -24,7 +24,6 @@ import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-u
 import { cn } from "@/lib/utils";
 import { formatCompactNumber, formatMicrosAsCurrency } from "@/lib/format";
 import { AddSubscriptionSheet } from "./add-subscription-sheet";
-import { ApiCreditInventory } from "./api-credit-inventory";
 import { ToolLogoTile } from "./tool-brand-icon";
 import { aggregateTeamQuotas, teamQuotaSummaryLabel } from "@/lib/quotas/display";
 import { canonicalToolKey, findCatalogTool, subscriptionToolKeys } from "@/lib/tools/catalog";
@@ -32,9 +31,9 @@ import type { DashboardToolsData } from "@/lib/queries/dashboard/tools";
 import type { CycleView } from "@/lib/dashboard/cycle-view";
 import { DEFAULT_ROLLING_PERIOD, type RollingPeriod } from "@/lib/dashboard/period-prefs";
 
+// API Credits UI intentionally omitted; ApiCreditPool + /api/tools/api-credit-pools remain frozen.
 const toolsViews = [
   { id: "subscriptions", label: "Subscriptions" },
-  { id: "api_credits", label: "API Credits" },
   { id: "activity", label: "Activity" },
 ] as const;
 
@@ -314,8 +313,6 @@ export function SubscriptionInventory({
             )}
           </Panel>
         </div>
-      ) : view === "api_credits" ? (
-        <ApiCreditInventory />
       ) : (
         <ActivityPanel
           data={detected}

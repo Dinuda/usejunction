@@ -462,6 +462,8 @@ a {
 
 .auth-shell [data-slot="button"][data-variant="default"] {
   background-image: none;
+  /* Beat global `a { color: inherit }` when Button uses asChild + <a> */
+  color: #ffffff;
 }
 
 .auth-shell [data-slot="input"]:focus-visible,

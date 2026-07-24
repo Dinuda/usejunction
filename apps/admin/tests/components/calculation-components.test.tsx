@@ -154,24 +154,25 @@ describe("calculation-bearing components", () => {
     try {
       render(
         <SignalsFilters
-          value={{ teamId: "team-1", tool: "cursor", developerId: "dev-1" }}
-          teams={[{ id: "team-1", name: "Platform" }]}
+          value={{ tool: "cursor", developerId: "dev-1" }}
           tools={["cursor", "claude"]}
           developers={[{ id: "dev-1", name: "Alice" }]}
           showPerson
         />,
       );
 
+      expect(screen.queryByLabelText("Team")).not.toBeInTheDocument();
+
       fireEvent.change(screen.getByLabelText("AI tool"), { target: { value: "claude" } });
       expect(router.push).not.toHaveBeenCalled();
       vi.advanceTimersByTime(399);
       expect(router.push).not.toHaveBeenCalled();
       vi.advanceTimersByTime(1);
-      expect(router.push).toHaveBeenCalledWith("/signals/activity?teamId=team-1&tool=claude&developerId=dev-1");
+      expect(router.push).toHaveBeenCalledWith("/signals/activity?tool=claude&developerId=dev-1");
 
-      fireEvent.change(screen.getByLabelText("Team"), { target: { value: "" } });
+      fireEvent.change(screen.getByLabelText("Person"), { target: { value: "" } });
       vi.advanceTimersByTime(400);
-      expect(router.push).toHaveBeenLastCalledWith("/signals/activity?tool=claude&developerId=dev-1");
+      expect(router.push).toHaveBeenLastCalledWith("/signals/activity?tool=claude");
     } finally {
       vi.useRealTimers();
     }

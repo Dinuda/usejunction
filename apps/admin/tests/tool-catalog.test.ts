@@ -5,13 +5,14 @@ import {
   canonicalToolKey,
   findCatalogPlan,
   findCatalogTool,
+  catalogPlanHasZeroSeat,
   serializeCatalog,
   subscriptionToolKeys,
   toolDisplayName,
   toolUsageNames,
 } from "../lib/tools/catalog";
-import { deriveSubscription } from "../lib/tools/subscriptions";
-import { mapVendorPlanToCatalog, hasReportedVendorPlan } from "../lib/tools/sync-detected";
+import { deriveSubscription, isVisibleSubscription } from "../lib/tools/subscriptions";
+import { mapVendorPlanToCatalog, hasReportedVendorPlan, canAutoCreateDetectedSeat } from "../lib/tools/sync-detected";
 
 test("catalog contains the supported branded tools and stable aliases", () => {
   assert.deepEqual(TOOL_CATALOG.map((tool) => tool.key), [
@@ -20,6 +21,7 @@ test("catalog contains the supported branded tools and stable aliases", () => {
     "cursor",
     "antigravity",
     "github-copilot",
+    "opencode",
   ]);
   assert.equal(canonicalToolKey("chatgpt"), "chatgpt-codex");
   assert.equal(canonicalToolKey("codex"), "chatgpt-codex");
@@ -29,11 +31,24 @@ test("catalog contains the supported branded tools and stable aliases", () => {
   assert.equal(canonicalToolKey("github-copilot"), "github-copilot");
   assert.equal(canonicalToolKey("agy"), "antigravity");
   assert.equal(canonicalToolKey("gemini-antigravity"), "antigravity");
+  assert.equal(canonicalToolKey("open-code"), "opencode");
+  assert.equal(canonicalToolKey("opencode"), "opencode");
   for (const tool of TOOL_CATALOG) {
     assert.equal(tool.lastVerifiedAt, "2026-07-23");
     assert.match(tool.sourceUrl, /^https:\/\//);
-    assert.ok(tool.plans.length >= 4);
+    assert.ok(tool.plans.length >= 2);
   }
+  assert.equal(findCatalogPlan("opencode", "zen")?.key, "zen");
+  assert.equal(findCatalogPlan("opencode", "multi_provider")?.key, "multi_provider");
+  assert.equal(mapVendorPlanToCatalog("opencode", "zen"), "zen");
+  assert.equal(mapVendorPlanToCatalog("opencode", "multi-provider"), "multi_provider");
+  assert.equal(mapVendorPlanToCatalog("opencode", null), "multi_provider");
+  assert.equal(catalogPlanHasZeroSeat("opencode", "zen"), true);
+  assert.equal(catalogPlanHasZeroSeat("opencode", "multi_provider"), true);
+  assert.equal(catalogPlanHasZeroSeat("cursor", "pro"), false);
+  assert.equal(mapVendorPlanToCatalog("github-copilot", "individual/free_educational_quota"), "student");
+  assert.equal(mapVendorPlanToCatalog("github-copilot", "free_educational_quota"), "student");
+  assert.equal(mapVendorPlanToCatalog("github-copilot", "individual"), "free");
 });
 
 test("tool display names cover catalog keys, aliases, and fallbacks", () => {
@@ -130,11 +145,18 @@ test("serialized catalog is JSON-safe", () => {
   assert.equal(serialized[0].plans[2].prices.monthly, "20000000");
 });
 
-test("detected seat sync requires a reported vendor plan", () => {
+test("detected seat sync requires a reported vendor plan or auth with catalog default", () => {
   assert.equal(hasReportedVendorPlan(null), false);
   assert.equal(hasReportedVendorPlan(""), false);
   assert.equal(hasReportedVendorPlan("   "), false);
   assert.equal(hasReportedVendorPlan("pro_plus"), true);
+
+  assert.equal(canAutoCreateDetectedSeat("antigravity", { hasVendorPlan: false, authPresent: true }), true);
+  assert.equal(canAutoCreateDetectedSeat("antigravity", { hasVendorPlan: false, authPresent: false }), false);
+  assert.equal(canAutoCreateDetectedSeat("antigravity", { hasVendorPlan: true, authPresent: false }), true);
+  assert.equal(canAutoCreateDetectedSeat("cursor", { hasVendorPlan: false, authPresent: true }), true);
+  // Detection alone (no auth, no plan) still cannot invent a seat.
+  assert.equal(canAutoCreateDetectedSeat("unknown-tool", { hasVendorPlan: false, authPresent: true }), false);
 });
 
 test("vendor plan strings map onto catalog plan keys with safe defaults", () => {
@@ -146,9 +168,17 @@ test("vendor plan strings map onto catalog plan keys with safe defaults", () => 
   assert.equal(mapVendorPlanToCatalog("chatgpt-codex", undefined), "free");
   assert.equal(mapVendorPlanToCatalog("claude", "max"), "max-5x");
   assert.equal(mapVendorPlanToCatalog("github-copilot", "Pro Plus"), "pro-plus");
+  assert.equal(mapVendorPlanToCatalog("github-copilot", "individual/free_educational_quota"), "student");
+  assert.equal(mapVendorPlanToCatalog("github-copilot", "free_educational_quota"), "student");
   assert.equal(mapVendorPlanToCatalog("antigravity", null), "individual");
 	assert.equal(mapVendorPlanToCatalog("antigravity", "g1-pro-tier"), "google-ai-pro");
   assert.equal(mapVendorPlanToCatalog("antigravity", "Google AI Ultra"), "google-ai-ultra");
   assert.equal(mapVendorPlanToCatalog("antigravity", "g1-plus-tier"), "google-ai-plus");
   assert.equal(mapVendorPlanToCatalog("unknown-tool", "pro"), "free");
+});
+
+test("isVisibleSubscription hides orphan detected templates but keeps manual plans", () => {
+  assert.equal(isVisibleSubscription({ priceSource: "detected", assignedSeats: 0 }), false);
+  assert.equal(isVisibleSubscription({ priceSource: "detected", assignedSeats: 1 }), true);
+  assert.equal(isVisibleSubscription({ priceSource: "manual", assignedSeats: 0 }), true);
 });

@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 import {
-  buildPlatformConnectInviteCommands,
   buildPlatformInstallCommands,
   buildWindowsInstallCommand,
 } from "../lib/connect-command";
+
+const adminRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 test("platform install commands preserve Unix and add PowerShell onboarding", () => {
   const commands = buildPlatformInstallCommands("uj_enroll_token", "https://usejunction.dev/");
@@ -22,8 +26,8 @@ test("PowerShell command literals escape single quotes", () => {
   assert.match(command, /o''rg/);
 });
 
-test("connect invite commands use platform-specific token flags", () => {
-  const commands = buildPlatformConnectInviteCommands("uj_connect_token", "https://usejunction.dev");
-  assert.match(commands.macosLinux, /--connect uj_connect_token/);
-  assert.match(commands.windows, /-Connect 'uj_connect_token'/);
+test("connect-invite routes and team API are removed", () => {
+  assert.equal(existsSync(path.join(adminRoot, "app/api/connect-invite")), false);
+  assert.equal(existsSync(path.join(adminRoot, "app/connect-invite")), false);
+  assert.equal(existsSync(path.join(adminRoot, "app/api/team/connect-invite")), false);
 });

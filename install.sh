@@ -2,7 +2,6 @@
 set -euo pipefail
 
 ENROLL_TOKEN=""
-CONNECT_TOKEN=""
 CONTROL_PLANE_URL="${USEJUNCTION_URL:-http://localhost:3001}"
 INSTALL_DIR="${HOME}/.usejunction/bin"
 APP_NAME="UseJunction"
@@ -12,14 +11,13 @@ VERSION="0.1.0"
 UPGRADE_ONLY=false
 
 usage() {
-  echo "Usage: curl -fsSL <control-plane>/install.sh | sh -s -- [(--token <token> | --connect <token>) | --upgrade] [--url <control-plane>]"
+  echo "Usage: curl -fsSL <control-plane>/install.sh | sh -s -- [--token <token> | --upgrade] [--url <control-plane>]"
   exit 1
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --token|--enroll-token) ENROLL_TOKEN="$2"; shift 2 ;;
-    --connect) CONNECT_TOKEN="$2"; shift 2 ;;
     --url) CONTROL_PLANE_URL="$2"; shift 2 ;;
     --upgrade) UPGRADE_ONLY=true; shift ;;
     -h|--help) usage ;;
@@ -42,7 +40,7 @@ if [[ -z "${USEJUNCTION_ROOT:-}" && -f "$DEV_SOURCE_FILE" ]]; then
   fi
 fi
 
-if [[ -z "$ENROLL_TOKEN" && -z "$CONNECT_TOKEN" && "$UPGRADE_ONLY" != true ]]; then
+if [[ -z "$ENROLL_TOKEN" && "$UPGRADE_ONLY" != true ]]; then
   usage
 fi
 
@@ -51,10 +49,15 @@ if [[ "$UPGRADE_ONLY" == true && ! -f "${HOME}/.usejunction/config.json" ]]; the
   exit 1
 fi
 
+# Only treat a version as installable when the control plane publishes it.
+# The hardcoded 0.1.0 default must never silently pull an ancient GitHub build
+# when the local admin has no agent-releases row.
+HAS_PUBLISHED_RELEASE=false
 LATEST_JSON="$(curl -fsSL "${CONTROL_PLANE_URL}/api/agent-releases/latest" 2>/dev/null || true)"
 LATEST_VERSION="$(printf '%s' "$LATEST_JSON" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
 if [[ "$LATEST_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
   VERSION="$LATEST_VERSION"
+  HAS_PUBLISHED_RELEASE=true
 elif [[ "$UPGRADE_ONLY" == true ]]; then
   echo "No active agent release is available from ${CONTROL_PLANE_URL}." >&2
   exit 1
@@ -69,22 +72,123 @@ esac
 
 mkdir -p "$INSTALL_DIR"
 
+PATH_MARKER="# UseJunction CLI"
+
+detect_shell_rc() {
+  local shell_name="${SHELL##*/}"
+  local rc=""
+  case "$shell_name" in
+    zsh) rc="${HOME}/.zshrc" ;;
+    bash)
+      if [[ "$OS" == "darwin" && -f "${HOME}/.bash_profile" && ! -f "${HOME}/.bashrc" ]]; then
+        rc="${HOME}/.bash_profile"
+      else
+        rc="${HOME}/.bashrc"
+      fi
+      ;;
+    fish) rc="${HOME}/.config/fish/config.fish" ;;
+    *)
+      if [[ -f "${HOME}/.zshrc" ]]; then
+        rc="${HOME}/.zshrc"
+      elif [[ -f "${HOME}/.bashrc" ]]; then
+        rc="${HOME}/.bashrc"
+      fi
+      ;;
+  esac
+  if [[ -n "$rc" ]]; then
+    printf '%s\n' "$rc"
+  fi
+}
+
+shell_rc_has_usejunction_path() {
+  local rc="$1"
+  [[ -f "$rc" ]] || return 1
+  grep -qF '.usejunction/bin' "$rc" 2>/dev/null || grep -qF "$PATH_MARKER" "$rc" 2>/dev/null
+}
+
+ensure_cli_on_path() {
+  local rc
+  rc="$(detect_shell_rc || true)"
+  if [[ -n "$rc" ]]; then
+    if ! shell_rc_has_usejunction_path "$rc"; then
+      mkdir -p "$(dirname "$rc")"
+      if [[ "${SHELL##*/}" == "fish" ]]; then
+        cat >>"$rc" <<'EOF'
+
+# UseJunction CLI
+fish_add_path ~/.usejunction/bin
+EOF
+      else
+        cat >>"$rc" <<'EOF'
+
+# UseJunction CLI
+export PATH="$HOME/.usejunction/bin:$PATH"
+EOF
+      fi
+      echo "Added UseJunction CLI to ${rc}"
+    fi
+  else
+    echo "Could not detect a shell rc file; add ~/.usejunction/bin to your PATH manually."
+  fi
+  export PATH="$INSTALL_DIR:$PATH"
+}
+
+print_cli_instructions() {
+  echo ""
+  echo "UseJunction installed. Admin panel: ${CONTROL_PLANE_URL}"
+  echo "CLI: ${INSTALL_DIR}/usejunction"
+  echo "Next: open a new terminal, or run: export PATH=\"${INSTALL_DIR}:\$PATH\""
+  echo "Then: usejunction status"
+  echo "Rollback an update: usejunction update --rollback"
+}
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd || true)"
 BINARY="$INSTALL_DIR/usejunction"
 ARCHIVE="usejunction-${OS}-${ARCH}"
 
+is_local_control_plane() {
+  case "$CONTROL_PLANE_URL" in
+    http://localhost:*|https://localhost:*|http://127.0.0.1:*|https://127.0.0.1:*|http://[::1]:*|https://[::1]:*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+write_dev_source_pin() {
+  local root="$1"
+  [[ -n "$root" && -f "${root}/agent/main.go" ]] || return 0
+  mkdir -p "${HOME}/.usejunction"
+  printf '%s\n' "$root" > "$DEV_SOURCE_FILE"
+  echo "Pinned local checkout at ${DEV_SOURCE_FILE} → ${root}"
+}
+
+# Remember the monorepo root whenever we locate agent sources so packaging and
+# later curl|install.sh runs keep using this checkout instead of a stale release.
+remember_usejunction_root() {
+  local agent_src="$1"
+  local root
+  root="$(cd "$(dirname "$agent_src")" 2>/dev/null && pwd || true)"
+  [[ -n "$root" && -f "${root}/agent/main.go" ]] || return 0
+  USEJUNCTION_ROOT="$root"
+  export USEJUNCTION_ROOT
+}
+
 find_agent_src() {
   if [[ -n "${USEJUNCTION_ROOT:-}" && -f "${USEJUNCTION_ROOT}/agent/main.go" ]]; then
+    remember_usejunction_root "${USEJUNCTION_ROOT}/agent"
     printf '%s\n' "${USEJUNCTION_ROOT}/agent"
     return 0
   fi
   if [[ -n "${SCRIPT_DIR:-}" && -f "${SCRIPT_DIR}/agent/main.go" ]]; then
+    remember_usejunction_root "${SCRIPT_DIR}/agent"
     printf '%s\n' "${SCRIPT_DIR}/agent"
     return 0
   fi
   local dir="${PWD:-.}"
   while [[ "$dir" != "/" ]]; do
     if [[ -f "$dir/agent/main.go" ]]; then
+      remember_usejunction_root "$dir/agent"
       printf '%s\n' "$dir/agent"
       return 0
     fi
@@ -261,12 +365,24 @@ install_agent() {
   local agent_src=""
   local prefer_source=false
   local stamp_version="$VERSION"
+  local allow_release_download=false
 
-  # Local pin / explicit build-from-source: always compile from the checkout and
-  # stamp 0.0.0-dev.* so OTA cannot treat a published release as "newer".
+  if [[ "$HAS_PUBLISHED_RELEASE" == true ]] || [[ "$FORCE_RELEASE" == "1" ]]; then
+    allow_release_download=true
+  fi
+
+  # Prefer a local checkout whenever:
+  # - USEJUNCTION_ROOT / BUILD_FROM_SOURCE is set (dev pin / injected by local admin)
+  # - the control plane has no published agent release (typical localhost)
+  # - install is running against a loopback control plane and source is available
   if [[ "${USEJUNCTION_BUILD_FROM_SOURCE:-}" == "1" ]] || [[ -n "${USEJUNCTION_ROOT:-}" && -f "${USEJUNCTION_ROOT}/agent/main.go" ]]; then
     prefer_source=true
+  elif [[ "$HAS_PUBLISHED_RELEASE" != true ]] && [[ "$FORCE_RELEASE" != "1" ]]; then
+    prefer_source=true
+  elif is_local_control_plane && [[ "$FORCE_RELEASE" != "1" ]]; then
+    prefer_source=true
   fi
+
   if [[ "$prefer_source" == true ]] && agent_src="$(find_agent_src)" && command -v go >/dev/null 2>&1; then
     stamp_version="$(dev_build_version)"
     echo "Building agent from source (${agent_src}) as v${stamp_version}..."
@@ -278,6 +394,7 @@ install_agent() {
       install_macos_app_bundle "$tmp_binary"
       rm -f "$tmp_binary"
       link_macos_cli
+      write_dev_source_pin "${USEJUNCTION_ROOT:-}"
       return 0
     fi
     local tmp_binary
@@ -285,6 +402,7 @@ install_agent() {
     (cd "$agent_src" && go build -ldflags "-X github.com/usejunction/agent/internal/config.Version=${stamp_version}" -o "$tmp_binary" .)
     VERSION="$stamp_version"
     atomic_install_binary "$tmp_binary" "$BINARY"
+    write_dev_source_pin "${USEJUNCTION_ROOT:-}"
     return 0
   fi
 
@@ -304,18 +422,20 @@ install_agent() {
     fi
   fi
 
-  if [[ "$OS" == "darwin" ]]; then
-    if [[ "$UPGRADE_ONLY" != true ]] && agent_src="$(find_agent_src)" && command -v go >/dev/null 2>&1; then
-      echo "Building agent from source (${agent_src})..."
-      local tmp_binary
-      tmp_binary="$(mktemp)"
-      (cd "$agent_src" && go build -ldflags "-X github.com/usejunction/agent/internal/config.Version=${VERSION}" -o "$tmp_binary" .)
-      install_macos_app_bundle "$tmp_binary"
-      rm -f "$tmp_binary"
-      link_macos_cli
-      return 0
-    fi
+  # Never invent GitHub agent-v0.1.0 when this control plane has no release.
+  # That binary is the legacy gateway-era build and breaks local observability.
+  if [[ "$allow_release_download" != true ]]; then
+    echo "No active agent release is published on ${CONTROL_PLANE_URL}, and no local checkout was available to build from." >&2
+    echo "Customers download published releases from the control plane; local/dev installs must build from source." >&2
+    echo "Fix options:" >&2
+    echo "  1. From this repo:  ./install.sh --token <token> --url ${CONTROL_PLANE_URL}" >&2
+    echo "  2. Or: USEJUNCTION_ROOT=/path/to/usejunction curl -fsSL ${CONTROL_PLANE_URL}/install.sh | sh -s -- --token <token> --url ${CONTROL_PLANE_URL}" >&2
+    echo "  3. Or enroll then: pnpm agent:reinstall" >&2
+    echo "  4. Or publish an agent release on the control plane, then re-run install." >&2
+    exit 1
+  fi
 
+  if [[ "$OS" == "darwin" ]]; then
     local tmp_dir
     tmp_dir="$(mktemp -d)"
     trap 'if [ -n "${tmp_dir:-}" ]; then rm -rf "$tmp_dir"; fi' EXIT
@@ -344,15 +464,6 @@ install_agent() {
       echo "Download from ${base} failed; trying next source..."
     done
   else
-    if [[ "$UPGRADE_ONLY" != true ]] && agent_src="$(find_agent_src)" && command -v go >/dev/null 2>&1; then
-      echo "Building agent from source (${agent_src})..."
-      local tmp_binary
-      tmp_binary="$(mktemp "${INSTALL_DIR}/.usejunction-build.XXXXXX")"
-      (cd "$agent_src" && go build -ldflags "-X github.com/usejunction/agent/internal/config.Version=${VERSION}" -o "$tmp_binary" .)
-      atomic_install_binary "$tmp_binary" "$BINARY"
-      return 0
-    fi
-
     local tmp_dir
     tmp_dir="$(mktemp -d)"
     trap 'if [ -n "${tmp_dir:-}" ]; then rm -rf "$tmp_dir"; fi' EXIT
@@ -489,7 +600,7 @@ if [[ "$OS" == "darwin" ]]; then
 else
   chmod +x "$BINARY"
 fi
-export PATH="$INSTALL_DIR:$PATH"
+ensure_cli_on_path
 
 if [[ "$UPGRADE_ONLY" == true ]]; then
   echo "Restarting existing background agent…"
@@ -505,50 +616,12 @@ if [[ "$UPGRADE_ONLY" == true ]]; then
   fi
   "$BINARY" status
   echo "UseJunction agent upgraded to v${VERSION}."
+  echo "CLI: ${INSTALL_DIR}/usejunction"
+  echo "Next: open a new terminal, or run: export PATH=\"${INSTALL_DIR}:\$PATH\""
   exit 0
 fi
 
-if [[ -n "$CONNECT_TOKEN" ]]; then
-  JOIN_URL="${CONTROL_PLANE_URL}/connect-invite/${CONNECT_TOKEN}"
-  echo "Opening browser to authenticate…"
-  echo "  ${JOIN_URL}"
-  if command -v open >/dev/null 2>&1; then
-    open "$JOIN_URL" >/dev/null 2>&1 || true
-  elif command -v xdg-open >/dev/null 2>&1; then
-    xdg-open "$JOIN_URL" >/dev/null 2>&1 || true
-  fi
-
-  echo "Waiting for you to sign in (up to 10 minutes)…"
-  ATTEMPTS=0
-  MAX_ATTEMPTS=120
-  while [[ $ATTEMPTS -lt $MAX_ATTEMPTS ]]; do
-    STATUS_JSON="$(curl -fsS "${CONTROL_PLANE_URL}/api/connect-invite/${CONNECT_TOKEN}/status" 2>/dev/null || true)"
-    STATUS="$(printf '%s' "$STATUS_JSON" | sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
-    if [[ "$STATUS" == "ready" ]]; then
-      ENROLL_TOKEN="$(printf '%s' "$STATUS_JSON" | sed -n 's/.*"enrollmentToken"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
-      if [[ -n "$ENROLL_TOKEN" ]]; then
-        echo "Authenticated. Enrolling device…"
-        break
-      fi
-    fi
-    if [[ "$STATUS" == "expired" || "$STATUS" == "used" ]]; then
-      echo "Connect invite ${STATUS}. Ask your admin for a new command."
-      exit 1
-    fi
-    ATTEMPTS=$((ATTEMPTS + 1))
-    sleep 5
-  done
-  if [[ -z "$ENROLL_TOKEN" ]]; then
-    echo "Timed out waiting for browser authentication."
-    exit 1
-  fi
-fi
-
-echo "Enrolling device..."
-"$BINARY" enroll --token "$ENROLL_TOKEN" --url "$CONTROL_PLANE_URL" --setup
-
-echo "Detecting tools..."
-"$BINARY" doctor
+"$BINARY" onboard --token "$ENROLL_TOKEN" --url "$CONTROL_PLANE_URL"
 
 # macOS launchd user agent
 if [[ "$OS" == "darwin" ]]; then
@@ -603,7 +676,4 @@ EOF
   echo "Started background agent (systemd user)."
 fi
 
-"$BINARY" status
-echo ""
-echo "UseJunction installed. Admin panel: ${CONTROL_PLANE_URL}"
-echo "Rollback an update: usejunction update --rollback"
+"$BINARY" onboard --complete

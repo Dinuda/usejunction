@@ -37,6 +37,15 @@ function authEmailFrom() {
   );
 }
 
+export function inviteEmailFrom() {
+  return (
+    process.env.INVITE_EMAIL_FROM ??
+    (process.env.NODE_ENV === "production"
+      ? "UseJunction <invites@usejunction.dev>"
+      : "UseJunction <onboarding@resend.dev>")
+  );
+}
+
 export async function sendAuthEmail({
   to,
   subject,
@@ -44,6 +53,7 @@ export async function sendAuthEmail({
   text,
   html,
   attachments,
+  from,
 }: {
   to: string;
   subject: string;
@@ -56,6 +66,7 @@ export async function sendAuthEmail({
     contentType?: string;
     contentId?: string;
   }>;
+  from?: string;
 }) {
   const key = process.env.RESEND_API_KEY;
   const bodyText = text ?? `Use this link to continue: ${url}`;
@@ -66,10 +77,10 @@ export async function sendAuthEmail({
     return;
   }
 
-  const from = authEmailFrom();
+  const sender = from ?? authEmailFrom();
   const resend = new Resend(key);
   const { data, error } = await resend.emails.send({
-    from,
+    from: sender,
     to,
     subject,
     text: bodyText,
@@ -82,7 +93,7 @@ export async function sendAuthEmail({
     throw new Error("Unable to send email");
   }
 
-  console.info(`[auth email] sent id=${data?.id} to=${to} from=${from}`);
+  console.info(`[auth email] sent id=${data?.id} to=${to} from=${sender}`);
 }
 
 async function loadTeamInviteInlineAssets() {
@@ -142,7 +153,7 @@ export async function sendTeamInviteEmail({
     }).html;
   }
 
-  await sendAuthEmail({ to, subject, url: inviteUrl, text, html, attachments });
+  await sendAuthEmail({ to, subject, url: inviteUrl, text, html, attachments, from: inviteEmailFrom() });
 }
 
 export async function createAuthActionToken(userId: string, type: string, ttlMs: number) {

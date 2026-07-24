@@ -15,7 +15,6 @@ const developerEmail = process.env.E2E_DEVELOPER_EMAIL ?? "developer@example.com
 const password = process.env.E2E_OWNER_PASSWORD ?? "e2e-password";
 const teamInviteToken = process.env.E2E_TEAM_INVITE_TOKEN ?? "uj_team_e2e_calculation_invite";
 const orgInviteToken = process.env.E2E_ORG_INVITE_TOKEN ?? "uj_invite_e2e_calculation_member";
-const connectInviteToken = process.env.E2E_CONNECT_INVITE_TOKEN ?? "uj_connect_e2e_calculation_machine";
 const inviteeEmail = process.env.E2E_INVITEE_EMAIL ?? "invitee@example.com";
 const now = new Date("2026-07-16T12:00:00.000Z");
 const inviteExpiresAt = new Date("2026-08-16T12:00:00.000Z");
@@ -80,6 +79,18 @@ async function main() {
       detected: true,
       configured: true,
       version: "1.0.0",
+      lastCheckedAt: now,
+    },
+  });
+  await prisma.toolInstallation.create({
+    data: {
+      orgId: org.id,
+      userId: developer.id,
+      deviceId: device.id,
+      toolName: "opencode",
+      detected: true,
+      configured: true,
+      version: "1.17.16",
       lastCheckedAt: now,
     },
   });
@@ -223,7 +234,33 @@ async function main() {
       {
         orgId: org.id, connectionId: anthropicConnection.id, date: new Date("2026-07-13T00:00:00.000Z"), provider: "anthropic", product: "api_platform", toolName: "anthropic-api", source: "vendor_verified", verified: true, costMicros: BigInt(8_000_000), costKind: "verified_usage", dedupeKey: "e2e:anthropic:cost", observedAt: now, metadata: { workspaceId: "workspace-ai", description: "Claude usage" },
       },
+      {
+        orgId: org.id, developerId: developer.id, deviceId: device.id, date: new Date("2026-07-14T00:00:00.000Z"), provider: "opencode", product: "opencode", toolName: "opencode", model: "opencode-go/kimi-k2.7-code", source: "device_observed", verified: false, requests: 28, inputTokens: BigInt(121_126), outputTokens: BigInt(8_927), costMicros: BigInt(376_150), costKind: "actual_spend", metricKind: "usage", dedupeKey: "e2e:opencode:usage:2026-07-14", observedAt: now,
+      },
+      {
+        orgId: org.id, developerId: developer.id, deviceId: device.id, date: new Date("2026-07-14T00:00:00.000Z"), provider: "opencode", product: "opencode", toolName: "opencode", model: "opencode", source: "device_observed", verified: false, requests: 3, addedLines: 120, deletedLines: 30, metricKind: "productivity", dedupeKey: "e2e:opencode:local:2026-07-14", observedAt: now,
+      },
     ],
+  });
+  await prisma.localWorkSession.create({
+    data: {
+      id: "e2e-opencode-work-session",
+      orgId: org.id,
+      developerId: developer.id,
+      deviceId: device.id,
+      localId: "opencode:ses-work-1",
+      toolName: "opencode",
+      model: "opencode/big-pickle",
+      title: "Ship onboarding polish",
+      observedAt: new Date("2026-07-14T11:30:00.000Z"),
+      startedAt: new Date("2026-07-14T11:00:00.000Z"),
+      endedAt: new Date("2026-07-14T11:30:00.000Z"),
+      source: "opencode_sessions",
+      trace: {
+        location: { kind: "workspace", project: "acme-web" },
+        stats: { linesAdded: 42, linesRemoved: 7, filesChanged: 3 },
+      },
+    },
   });
   await prisma.signalsPolicy.create({
     data: { orgId: org.id, enabled: false, retentionDays: 90, collectionMode: "app_domain", excludedApps: [], excludedDomains: [], storeEvents: false, updatedByUserId: ownerUser.id },
@@ -269,15 +306,6 @@ async function main() {
       invitedByUserId: ownerUser.id,
     },
   });
-  await prisma.connectInvite.create({
-    data: {
-      orgId: org.id,
-      email: inviteeEmail,
-      tokenHash: hashOpaqueToken(connectInviteToken),
-      status: "pending",
-      expiresAt: inviteExpiresAt,
-    },
-  });
 
   console.log(
     JSON.stringify({
@@ -288,7 +316,6 @@ async function main() {
       journey,
       teamInviteToken,
       orgInviteToken,
-      connectInviteToken,
       inviteeEmail,
     }),
   );

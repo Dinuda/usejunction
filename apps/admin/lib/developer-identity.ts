@@ -1,17 +1,33 @@
 import { prisma, type Prisma } from "@usejunction/db";
 
+const OAUTH_PROVIDERS = new Set(["google", "microsoft-entra-id", "github"]);
+
 export function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-export async function hasVerifiedIdentity(userId: string) {
+export type IdentityVerificationStatus =
+  | { verified: true }
+  | { verified: false; status: 401; error: string }
+  | { verified: false; status: 403; error: string };
+
+export async function getIdentityVerificationStatus(userId: string): Promise<IdentityVerificationStatus> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { emailVerified: true, accounts: { select: { provider: true } } },
   });
-  if (!user) return false;
-  if (user.emailVerified) return true;
-  return user.accounts.some((account) => ["google", "microsoft-entra-id", "github"].includes(account.provider));
+  if (!user) {
+    return { verified: false, status: 401, error: "session expired, sign in again" };
+  }
+  if (user.emailVerified) return { verified: true };
+  if (user.accounts.some((account) => OAUTH_PROVIDERS.has(account.provider))) {
+    return { verified: true };
+  }
+  return { verified: false, status: 403, error: "verify your email to continue" };
+}
+
+export async function hasVerifiedIdentity(userId: string) {
+  return (await getIdentityVerificationStatus(userId)).verified;
 }
 
 export async function linkDeveloperToUser(input: {

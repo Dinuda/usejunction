@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { z } from "zod";
-import { appUrl, sendAuthEmail } from "@/lib/auth-actions";
+import { appUrl, inviteEmailFrom, sendAuthEmail } from "@/lib/auth-actions";
 import { normalizeEmail } from "@/lib/developer-identity";
 import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
@@ -43,7 +43,12 @@ export async function POST(req: NextRequest) {
     let status: "sent" | "email_failed" = "sent";
     let error: string | null = null;
     try {
-      await sendAuthEmail({ to: email, subject: "Join your UseJunction workspace", url });
+      await sendAuthEmail({
+        to: email,
+        subject: "Join your UseJunction workspace",
+        url,
+        from: inviteEmailFrom(),
+      });
     } catch (cause) {
       status = "email_failed";
       logServerError("organizations/invites", cause);

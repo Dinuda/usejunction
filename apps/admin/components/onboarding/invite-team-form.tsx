@@ -1,14 +1,28 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Check, Clipboard, Link2, Loader2, Mail, RefreshCw, Send, X } from "lucide-react";
 import { toast } from "sonner";
+import { ROLE_LABELS } from "@/components/developers/member-role-select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { userFacingError } from "@/lib/errors/user-facing";
+import {
+  ASSIGNABLE_ROLES,
+  canManageSettings,
+  type OrganizationRole,
+} from "@/lib/rbac/permissions";
 import { cn } from "@/lib/utils";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -19,6 +33,7 @@ export type InviteResult = {
 };
 
 type AllowlistRow = { email: string; createdAt: string };
+type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 
 function parseEmails(raw: string) {
   return [...new Set(raw.split(/[\s,;]+/).map((item) => item.trim().toLowerCase()).filter(Boolean))];
@@ -40,6 +55,8 @@ export function InviteTeamForm({
   variant?: "default" | "dashboard";
 }) {
   const dashboard = variant === "dashboard";
+  const { data: session } = useSession();
+  const canAssignRoles = canManageSettings(session?.user?.role as OrganizationRole | null | undefined);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [linkMeta, setLinkMeta] = useState<{ expiresAt: string | null; enabled: boolean } | null>(null);
   const [allowlist, setAllowlist] = useState<AllowlistRow[]>([]);
@@ -48,6 +65,7 @@ export function InviteTeamForm({
   const [rotating, setRotating] = useState(false);
   const [value, setValue] = useState("");
   const [emails, setEmails] = useState<string[]>([]);
+  const [role, setRole] = useState<AssignableRole>("user");
   const [sendEmail, setSendEmail] = useState(true);
   const [adding, setAdding] = useState(false);
   const [resending, setResending] = useState<string | null>(null);
@@ -195,7 +213,11 @@ export function InviteTeamForm({
     const response = await fetch("/api/team/invite-link", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ emails: all, sendEmail: dashboard ? true : sendEmail }),
+      body: JSON.stringify({
+        emails: all,
+        sendEmail: dashboard ? true : sendEmail,
+        role: canAssignRoles ? role : "user",
+      }),
     });
     const data = await response.json().catch(() => ({}));
     setAdding(false);
@@ -261,6 +283,30 @@ export function InviteTeamForm({
     }
   }
 
+  const roleSelect = canAssignRoles ? (
+    <div className="flex items-center gap-2">
+      <Label htmlFor={dashboard ? "dashboard-invite-role" : "invite-role"} className="text-xs text-muted-foreground">
+        Role
+      </Label>
+      <Select value={role} onValueChange={(next) => setRole(next as AssignableRole)}>
+        <SelectTrigger
+          id={dashboard ? "dashboard-invite-role" : "invite-role"}
+          className="h-8 w-[140px] rounded-none"
+          aria-label="Invite role"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {ASSIGNABLE_ROLES.map((item) => (
+            <SelectItem key={item} value={item}>
+              {ROLE_LABELS[item]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  ) : null;
+
   const notifyForm = (
     <form onSubmit={addPeople} className="space-y-3" aria-busy={adding}>
       <Label htmlFor={dashboard ? "dashboard-invite-emails" : "invite-emails"} className="sr-only">
@@ -293,15 +339,18 @@ export function InviteTeamForm({
           className={cn("resize-none border-0 shadow-none focus-visible:ring-0", dashboard ? "min-h-14" : "min-h-16")}
         />
         <div className="flex flex-col gap-3 border-t bg-muted/20 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
-          <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              className="size-3.5 accent-foreground"
-              checked={sendEmail}
-              onChange={(event) => setSendEmail(event.target.checked)}
-            />
-            Email instructions (link + install steps)
-          </label>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                className="size-3.5 accent-foreground"
+                checked={sendEmail}
+                onChange={(event) => setSendEmail(event.target.checked)}
+              />
+              Email instructions (link + install steps)
+            </label>
+            {roleSelect}
+          </div>
           <Button type="submit" size="sm" disabled={!canAdd}>
             {adding ? <Loader2 className="animate-spin" /> : sendEmail ? <Mail /> : null}
             {adding
@@ -410,21 +459,24 @@ export function InviteTeamForm({
         ) : null}
 
         <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-2">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline disabled:opacity-50"
-            disabled={loadingLink || copyingLink}
-            onClick={() => void copyInviteLink()}
-          >
-            {loadingLink || copyingLink ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : copied === "link" ? (
-              <Check className="size-3.5" />
-            ) : (
-              <Link2 className="size-3.5" />
-            )}
-            {copied === "link" ? "Copied" : "Copy invite link"}
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline disabled:opacity-50"
+              disabled={loadingLink || copyingLink}
+              onClick={() => void copyInviteLink()}
+            >
+              {loadingLink || copyingLink ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : copied === "link" ? (
+                <Check className="size-3.5" />
+              ) : (
+                <Link2 className="size-3.5" />
+              )}
+              {copied === "link" ? "Copied" : "Copy invite link"}
+            </button>
+            {roleSelect}
+          </div>
 
           <Button
             type="submit"

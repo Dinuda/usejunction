@@ -30,15 +30,36 @@ import type { OrgOverviewV1, OverviewInput } from "@/lib/insights/contracts/over
 import { buildAttentionItems } from "@/lib/insights/policies/attention";
 import { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
 import { rollupSubscriptionCyclesByTool, enrichSubscriptionCyclesWithUtilization, filterActiveSubscriptionCycles } from "@/lib/insights/queries/rollup-subscription-cycles";
+import { mergeUsageBackedCycleSources } from "@/lib/insights/queries/usage-backed-cycle-sources";
 import { readDeviceCoverage } from "@/lib/insights/readers/devices";
 import { getDashboardConfigHealth } from "@/lib/queries/dashboard/config-health";
 import { reportWindowForCycleOffset } from "@/lib/dashboard/cycle-view";
-import { isCodingTool, toolDisplayName, toolUsageNames } from "@/lib/tools/catalog";
+import { canonicalToolKey, isCodingTool, toolDisplayName, toolUsageNames } from "@/lib/tools/catalog";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { fillOverviewTrend } from "@/lib/insights/policies/overview-trend";
+import { rolesFor } from "@/lib/rbac/permissions";
 
 function isoDay(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+/** Match snapshot tool names to subscription usage aliases (casing / agy / etc.). */
+function toolDayMatchesUsageNames(usageNames: string[], toolName: string): boolean {
+  const dayKey = canonicalToolKey(toolName);
+  if (!dayKey) return false;
+  return usageNames.some((name) => canonicalToolKey(name) === dayKey);
+}
+
+/** Report-window request totals keyed by canonical tool — floors cycle modelCalls. */
+function requestsByCanonicalTool(toolDays: Array<{ toolName: string; requests: number }>) {
+  const totals = new Map<string, number>();
+  for (const day of toolDays) {
+    if (day.requests <= 0) continue;
+    const key = canonicalToolKey(day.toolName);
+    if (!key) continue;
+    totals.set(key, (totals.get(key) ?? 0) + day.requests);
+  }
+  return totals;
 }
 
 function toMetricWindow(from: Date, to: Date): MetricWindow {
@@ -199,8 +220,6 @@ async function readAllocatedCycleUsage(
     usageBySlice.set(slice.id, { modelCalls: 0, verifiedUsageCost: 0, estimatedApiCost: 0 });
   }
 
-  const toolNameSet = (names: string[]) => new Set(names);
-
   if (view !== "last_30_days") {
     const groups = new Map<string, { slices: SubscriptionSlice[]; totalSeats: number; toolNames: string[]; from: Date; to: Date }>();
     for (const slice of slices) {
@@ -217,14 +236,13 @@ async function readAllocatedCycleUsage(
       groups.set(key, group);
     }
     for (const group of groups.values()) {
-      const names = toolNameSet(group.toolNames);
       const fromKey = isoDay(group.from);
       const toKey = isoDay(group.to);
       let modelCalls = 0;
       let verifiedUsageCost = 0;
       let estimatedApiCost = 0;
       for (const day of toolDays) {
-        if (!names.has(day.toolName)) continue;
+        if (!toolDayMatchesUsageNames(group.toolNames, day.toolName)) continue;
         if (day.date < fromKey || day.date > toKey) continue;
         modelCalls += day.requests;
         verifiedUsageCost += day.verifiedUsageCost;
@@ -251,11 +269,10 @@ async function readAllocatedCycleUsage(
   }
 
   for (const group of groups.values()) {
-    const names = toolNameSet(group.toolNames);
     const toolSlices = group.slices;
     const daily = new Map<string, { modelCalls: number; verifiedUsageCost: number; estimatedApiCost: number }>();
     for (const day of toolDays) {
-      if (!names.has(day.toolName)) continue;
+      if (!toolDayMatchesUsageNames(group.toolNames, day.toolName)) continue;
       const existing = daily.get(day.date) ?? { modelCalls: 0, verifiedUsageCost: 0, estimatedApiCost: 0 };
       existing.modelCalls += day.requests;
       existing.verifiedUsageCost += day.verifiedUsageCost;
@@ -284,7 +301,7 @@ export async function getOrgOverview(
   context: InsightContext,
   input: OverviewInput,
 ): Promise<InsightEnvelope<OrgOverviewV1>> {
-  assertInsightRoles(context, ["owner", "admin"]);
+  assertInsightRoles(context, rolesFor("org_overview"));
 
   const orgId = context.orgId;
   const cycleView: CycleView = input.cycleView;
@@ -388,8 +405,16 @@ export async function getOrgOverview(
   const previousTrend = previousUsage.trend;
   const toolRows = currentUsage.tools;
 
-  const subscriptionSlices = buildSubscriptionSlices({
+  // Surface coding tools with traffic even without a billing_plan_template
+  // (free / detected / $0 plans included). Real subscriptions win when present.
+  const cycleSubscriptions = mergeUsageBackedCycleSources(
     subscriptions,
+    currentUsage.toolDays,
+    context.now,
+  );
+
+  const subscriptionSlices = buildSubscriptionSlices({
+    subscriptions: cycleSubscriptions,
     view: cycleView,
     now: context.now,
     last30: { from: dates.from, toExclusive: dates.toExclusive },
@@ -414,6 +439,10 @@ export async function getOrgOverview(
   }
 
   const allocatedUsage = await readAllocatedCycleUsage(subscriptionSlices, cycleView, allocationToolDays);
+  // Floor modelCalls with report-window traffic so a seat whose own billing
+  // anchor excludes recent usage (common for newly detected Ultra seats) still
+  // surfaces on Current cycles when Tools already shows requests.
+  const reportWindowRequests = requestsByCanonicalTool(currentUsage.toolDays);
   const cycleCommitment = subscriptionSlices.reduce(
     (sum, slice) => sum + microsToDollars(slice.spendMicros),
     0,
@@ -509,7 +538,13 @@ export async function getOrgOverview(
               billingCycle: cycleToJson(slice.cycle),
             };
           }),
-        ),
+        ).map((row) => {
+          // Seat billing anchors can start after recent traffic (newly detected
+          // Ultra). Floor with report-window requests so Current cycles matches Tools.
+          const key = canonicalToolKey(row.toolKey ?? row.toolName);
+          const reportCalls = reportWindowRequests.get(key) ?? 0;
+          return reportCalls > row.modelCalls ? { ...row, modelCalls: reportCalls } : row;
+        }),
         planUsage.data.subscriptions,
         { includeLiveQuota: cycleView !== "previous_cycles" },
       ),

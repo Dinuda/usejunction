@@ -255,23 +255,48 @@ function CycleSectionHeader({
   );
 }
 
+function formatPaceDays(days: number | null | undefined): string | null {
+  if (days == null || !Number.isFinite(days) || days < 0) return null;
+  if (days < 1) return "<1d";
+  if (days < 1.5) return "1d";
+  return `${Math.round(days)}d`;
+}
+
+function runwayLabel(
+  daysToExhaust?: number | null,
+  expectedEndDate?: string | null,
+): string | null {
+  let days = daysToExhaust;
+  if (days == null && expectedEndDate) {
+    const end = new Date(expectedEndDate).getTime();
+    if (!Number.isNaN(end)) {
+      days = (end - Date.now()) / 86_400_000;
+    }
+  }
+  const runway = formatPaceDays(days);
+  return runway ? `~${runway} runway` : null;
+}
+
 function CycleStatus({
   code,
   expectedEndDate,
+  daysToExhaust,
 }: {
   code: PlanVerdictCode;
   /** Projected date the plan allowance runs out at current burn. */
   expectedEndDate?: string | null;
+  daysToExhaust?: number | null;
 }) {
   const expectedEndDateLabel = expectedEndDate ? formatShortDate(expectedEndDate) : null;
-  const hint = verdictHint(code, { expectedEndDateLabel });
+  const hint = code === "NEAR_LIMIT" ? null : verdictHint(code, { expectedEndDateLabel });
+  const runway = runwayLabel(daysToExhaust, expectedEndDate);
+  const statusLabel =
+    code === "NEAR_LIMIT"
+      ? [verdictLabel(code), expectedEndDateLabel, runway].filter(Boolean).join(" · ")
+      : verdictLabel(code);
   return (
     <div className="mt-1.5">
-      <p className={cn("text-xs font-medium", verdictToneClass(code))}>
-        {code === "NEAR_LIMIT" && expectedEndDateLabel
-          ? `${verdictLabel(code)} · ${expectedEndDateLabel}`
-          : verdictLabel(code)}
-      </p>
+      <p className={cn("text-xs font-medium", verdictToneClass(code))}>{statusLabel}</p>
       {hint ? <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
@@ -306,20 +331,60 @@ function personalPlanWindowLabel(card: MemberPlanBoardCard) {
   return `${plan} · Renews ${formatShortDate(reset.toISOString())}`;
 }
 
-function formatPaceDays(days: number | null | undefined): string | null {
-  if (days == null || !Number.isFinite(days) || days < 0) return null;
-  if (days < 1) return "<1d";
-  if (days < 1.5) return "1d";
-  return `${Math.round(days)}d`;
+function hasNoQuotaSignal(
+  percent: number | null,
+  verdictCode: PlanVerdictCode | null | undefined,
+) {
+  return percent == null && (verdictCode == null || verdictCode === "UNKNOWN");
+}
+
+function showNoPlanMeterBar(toolKey: string, noQuota: boolean) {
+  const key = canonicalToolKey(toolKey);
+  return noQuota && (key === "opencode" || key === "github-copilot");
+}
+
+function openCodeFreePlanNote(usageCost: number) {
+  return (
+    <p className="mt-1.5 text-xs text-muted-foreground">
+      Free plan · {formatUsd(0)}/mo
+      {usageCost > 0 ? ` · Token cost this cycle ${formatUsd(usageCost)}` : null}
+    </p>
+  );
+}
+
+function noPlanMeterProps(
+  shouldShow: boolean,
+  utilization: {
+    percent: number | null;
+    displayPercent: number | null;
+    verdictCode: PlanVerdictCode | null;
+  },
+) {
+  if (!shouldShow) return utilization;
+  return {
+    percent: 100,
+    displayPercent: 100,
+    verdictCode: null,
+  };
 }
 
 /** Tertiary stats under the meter: usage $ + runway/reset (not the hero). */
-function personalPlanMeta(card: MemberPlanBoardCard): string | null {
+function personalPlanMeta(
+  card: MemberPlanBoardCard,
+  options: { isOpenCodeFreePlan?: boolean } = {},
+): string | null {
+  if (options.isOpenCodeFreePlan) {
+    const parts = [`Free plan · ${formatUsd(0)}/mo`];
+    if (card.usage && card.usage.cost > 0) {
+      parts.push(`Token cost this cycle ${formatUsd(card.usage.cost)}`);
+    }
+    return parts.join(" · ");
+  }
   const parts: string[] = [];
   if (card.usage && card.usage.cost > 0) {
     parts.push(`Usage ${formatUsd(card.usage.cost)}`);
   }
-  if (card.pace.code === "EXCESS" || card.pace.code === "ALREADY_EXCEEDED") {
+  if (card.pace.code === "ALREADY_EXCEEDED") {
     const runway = formatPaceDays(card.pace.daysToExhaust);
     if (runway) parts.push(`~${runway} runway`);
   }
@@ -425,10 +490,16 @@ function PersonalHome({
   const planCards = buildMemberPlanBoard({
     snapshots: quotaSnapshots,
     accounts,
-    assignedPlans: data.developer.assignedPlans,
+    vendorSeats: data.developer.vendorSeats,
     toolsUsage: data.toolsUsage30d,
   });
   const { avgUtilization } = personalCycleSummary(planCards);
+  const historyUpdating =
+    data.sync.dashboardReady === false || (data.sync.dirtyDayCount ?? 0) > 0;
+  const historySubtitle =
+    (data.sync.dirtyDayCount ?? 0) > 0
+      ? `Importing usage history (${data.sync.dirtyDayCount} day${data.sync.dirtyDayCount === 1 ? "" : "s"} remaining)…`
+      : "Building your usage snapshot…";
 
   return (
     <>
@@ -463,6 +534,14 @@ function PersonalHome({
               dirtyDayCount={data.sync.dirtyDayCount}
             />
           </div>
+          {historyUpdating ? (
+            <DashboardCrunchingState
+              title="Updating usage history."
+              subtitle={historySubtitle}
+              revealAfterMs={0}
+            />
+          ) : (
+            <>
           <div className="grid grid-cols-2 items-stretch gap-y-5 sm:gap-y-8 xl:grid-cols-4">
             <Kpi
               label="Subscription commitment"
@@ -525,9 +604,16 @@ function PersonalHome({
               <ul>
                 {planCards.map((card) => {
                   const href = findCatalogTool(card.toolKey) ? `/tools/${card.toolKey}` : null;
-                  const used = card.pace.usedPercent;
-                  const verdictCode = paceToVerdictCode(card.pace.code, used);
-                  const meta = personalPlanMeta(card);
+                  const verdictCode = paceToVerdictCode(card.pace.code, card.pace.usedPercent);
+                  const noQuota = hasNoQuotaSignal(card.pace.usedPercent, verdictCode);
+                  const isOpenCodeFreePlan = card.toolKey === "opencode" && noQuota;
+                  const meter = noPlanMeterProps(showNoPlanMeterBar(card.toolKey, noQuota), {
+                    percent: card.pace.usedPercent,
+                    displayPercent: card.pace.usedPercent,
+                    verdictCode,
+                  });
+                  const used = meter.percent;
+                  const meta = personalPlanMeta(card, { isOpenCodeFreePlan });
                   const showStatus =
                     verdictCode === "NEAR_LIMIT" || verdictCode === "LIMIT_EXCEEDED";
                   const body = (
@@ -547,18 +633,22 @@ function PersonalHome({
                             <p
                               className={cn(
                                 "text-sm font-semibold tabular-nums",
-                                paceToneClass(card.pace.code),
+                                isOpenCodeFreePlan ? "text-primary" : paceToneClass(card.pace.code),
                               )}
                             >
-                              {used != null ? `${Math.round(used)}%` : "—"}
+                              {isOpenCodeFreePlan
+                                ? "Free"
+                                : used != null
+                                  ? `${Math.round(used)}%`
+                                  : "—"}
                             </p>
                             <p
                               className={cn(
                                 "mt-0.5 text-[0.7rem] font-medium",
-                                paceToneClass(card.pace.code),
+                                isOpenCodeFreePlan ? "text-primary" : paceToneClass(card.pace.code),
                               )}
                             >
-                              {paceVerdictLabel(card.pace.code)}
+                              {isOpenCodeFreePlan ? "Free plan" : paceVerdictLabel(card.pace.code)}
                             </p>
                           </div>
                           {href ? (
@@ -568,10 +658,14 @@ function PersonalHome({
                       </div>
                       <div className="mt-3">
                         <CycleUtilizationBar
-                          percent={used}
-                          displayPercent={used == null ? null : Math.min(100, Math.max(0, used))}
-                          expectedPercent={card.pace.expectedPercent}
-                          verdictCode={verdictCode}
+                          percent={meter.percent}
+                          displayPercent={
+                            meter.displayPercent == null
+                              ? null
+                              : Math.min(100, Math.max(0, meter.displayPercent))
+                          }
+                          expectedPercent={isOpenCodeFreePlan ? null : card.pace.expectedPercent}
+                          verdictCode={meter.verdictCode}
                           label={card.toolLabel}
                           showPercent={false}
                         />
@@ -580,7 +674,11 @@ function PersonalHome({
                         <p className="mt-2 text-xs text-muted-foreground">{meta}</p>
                       ) : null}
                       {showStatus ? (
-                        <CycleStatus code={verdictCode} expectedEndDate={card.pace.exhaustAt} />
+                        <CycleStatus
+                          code={verdictCode}
+                          expectedEndDate={card.pace.exhaustAt}
+                          daysToExhaust={card.pace.daysToExhaust}
+                        />
                       ) : null}
                     </>
                   );
@@ -671,6 +769,8 @@ function PersonalHome({
               )}
             </Panel>
           </div>
+            </>
+          )}
         </>
       )}
     </>
@@ -756,6 +856,13 @@ export default function DashboardPage() {
   const { cycleView, rollingPeriod, error, needsPersonalConnect, syncContext } = query.data;
   const data = query.data.overview;
   const empty = data && !data.hasActivity && data.coverage.devices === 0;
+  const historyUpdating =
+    !!syncContext &&
+    (syncContext.dashboardReady === false || (syncContext.dirtyDayCount ?? 0) > 0);
+  const historySubtitle =
+    syncContext && (syncContext.dirtyDayCount ?? 0) > 0
+      ? `Importing usage history (${syncContext.dirtyDayCount} day${syncContext.dirtyDayCount === 1 ? "" : "s"} remaining)…`
+      : "Building your usage snapshot…";
 
   return (
     <>
@@ -796,6 +903,12 @@ export default function DashboardPage() {
         </Alert>
       ) : empty ? (
         <DashboardSetupPanel />
+      ) : historyUpdating ? (
+        <DashboardCrunchingState
+          title="Updating usage history."
+          subtitle={historySubtitle}
+          revealAfterMs={0}
+        />
       ) : data ? (
         <>
           <div className="grid grid-cols-2 items-stretch gap-y-5 sm:gap-y-8 xl:grid-cols-4">
@@ -863,6 +976,13 @@ export default function DashboardPage() {
                   const toolKey = canonicalToolKey(row.toolKey ?? row.toolName);
                   const href = findCatalogTool(toolKey) ? `/tools/${toolKey}` : null;
                   const usageCost = row.verifiedUsageCost + row.estimatedApiCost;
+                  const noQuota = hasNoQuotaSignal(row.utilizationPercent, row.verdictCode);
+                  const isOpenCodeFreePlan = toolKey === "opencode" && row.cycleSpend <= 0 && noQuota;
+                  const meter = noPlanMeterProps(showNoPlanMeterBar(toolKey, noQuota), {
+                    percent: row.utilizationPercent,
+                    displayPercent: row.utilizationDisplayPercent,
+                    verdictCode: row.verdictCode,
+                  });
                   const body = (
                     <>
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -889,13 +1009,16 @@ export default function DashboardPage() {
                       </div>
                       <div className="mt-3">
                         <CycleUtilizationBar
-                          percent={row.utilizationPercent}
-                          displayPercent={row.utilizationDisplayPercent}
-                          verdictCode={row.verdictCode}
+                          percent={meter.percent}
+                          displayPercent={meter.displayPercent}
+                          verdictCode={meter.verdictCode}
                           label={toolDisplayName(row.toolKey ?? row.toolName)}
+                          showPercent={!showNoPlanMeterBar(toolKey, noQuota)}
                         />
                       </div>
-                      {row.verdictCode && row.verdictCode !== "UNKNOWN" ? (
+                      {isOpenCodeFreePlan ? (
+                        openCodeFreePlanNote(usageCost)
+                      ) : row.verdictCode && row.verdictCode !== "UNKNOWN" ? (
                         <CycleStatus
                           code={row.verdictCode}
                           expectedEndDate={row.expectedEndAt}

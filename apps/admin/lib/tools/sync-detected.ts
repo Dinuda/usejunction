@@ -16,6 +16,7 @@ const DEFAULT_PLAN_KEYS: Record<string, string> = {
   cursor: "hobby",
   antigravity: "individual",
   "github-copilot": "free",
+  opencode: "multi_provider",
 };
 
 const VENDOR_PLAN_ALIASES: Record<string, Record<string, string>> = {
@@ -84,6 +85,9 @@ const VENDOR_PLAN_ALIASES: Record<string, Record<string, string>> = {
   "github-copilot": {
     free: "free",
     student: "student",
+    educational: "student",
+    "free-educational-quota": "student",
+    "individual-free-educational-quota": "student",
     pro: "pro",
     "pro-plus": "pro-plus",
     proplus: "pro-plus",
@@ -91,17 +95,60 @@ const VENDOR_PLAN_ALIASES: Record<string, Record<string, string>> = {
     business: "business",
     enterprise: "enterprise",
   },
+  opencode: {
+    zen: "zen",
+    multi_provider: "multi_provider",
+    "multi-provider": "multi_provider",
+    multiprovider: "multi_provider",
+    free: "multi_provider",
+  },
 };
 
 export type DetectedAccount = {
   toolName: string;
   plan?: string | null;
   email?: string | null;
+  authPresent?: boolean;
 };
 
 /** True when the agent reported a non-empty vendor plan (required before auto seat sync). */
 export function hasReportedVendorPlan(plan: string | null | undefined): boolean {
   return Boolean(plan?.trim());
+}
+
+/**
+ * Auto-create a detected seat when the vendor reported a plan, or when auth is
+ * present for a catalog tool that has an explicit default plan key.
+ *
+ * Antigravity often reports OAuth/auth without a parseable plan string; without
+ * this fallback Current cycles never gets a subscription row even though usage
+ * already shows up in the Tools list.
+ */
+export function canAutoCreateDetectedSeat(
+  toolKey: string,
+  input: { hasVendorPlan: boolean; authPresent?: boolean },
+): boolean {
+  if (input.hasVendorPlan) return true;
+  return Boolean(input.authPresent && DEFAULT_PLAN_KEYS[toolKey]);
+}
+
+function normalizeVendorPlan(plan: string) {
+  return plan
+    .trim()
+    .toLowerCase()
+    .replace(/\+/g, "plus")
+    .replace(/[/\s_]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function vendorPlanCandidates(vendorPlan: string) {
+  const normalized = normalizeVendorPlan(vendorPlan);
+  const segments = vendorPlan
+    .split("/")
+    .map((part) => normalizeVendorPlan(part))
+    .filter(Boolean);
+  return [...new Set([normalized, ...segments])];
 }
 
 export function mapVendorPlanToCatalog(toolKey: string, vendorPlan: string | null | undefined): string {
@@ -110,13 +157,13 @@ export function mapVendorPlanToCatalog(toolKey: string, vendorPlan: string | nul
   if (!tool) return fallback;
   if (!vendorPlan?.trim()) return fallback;
 
-  const normalized = vendorPlan
-    .trim()
-    .toLowerCase()
-    .replace(/\+/g, "plus")
-    .replace(/[_\s]+/g, "-");
-  if (tool.plans.some((plan) => plan.key === normalized)) return normalized;
-  return VENDOR_PLAN_ALIASES[toolKey]?.[normalized] ?? fallback;
+  const aliases = VENDOR_PLAN_ALIASES[toolKey];
+  for (const candidate of vendorPlanCandidates(vendorPlan)) {
+    if (tool.plans.some((plan) => plan.key === candidate)) return candidate;
+    const alias = aliases?.[candidate];
+    if (alias) return alias;
+  }
+  return fallback;
 }
 
 function utcDateOnly(date = new Date()) {
@@ -368,23 +415,34 @@ export async function syncDetectedPlansForDevice(input: {
   toolNames?: string[];
   accounts?: DetectedAccount[];
 }) {
-  const byTool = new Map<string, { plan: string | null; email: string | null; hasVendorPlan: boolean }>();
+  const byTool = new Map<
+    string,
+    { plan: string | null; email: string | null; hasVendorPlan: boolean; authPresent: boolean }
+  >();
 
   for (const name of input.toolNames ?? []) {
     const toolKey = canonicalToolKey(name);
     if (!findCatalogTool(toolKey)) continue;
-    if (!byTool.has(toolKey)) byTool.set(toolKey, { plan: null, email: null, hasVendorPlan: false });
+    if (!byTool.has(toolKey)) {
+      byTool.set(toolKey, { plan: null, email: null, hasVendorPlan: false, authPresent: false });
+    }
   }
 
   for (const account of input.accounts ?? []) {
     const toolKey = canonicalToolKey(account.toolName);
     if (!findCatalogTool(toolKey)) continue;
-    const existing = byTool.get(toolKey) ?? { plan: null, email: null, hasVendorPlan: false };
+    const existing = byTool.get(toolKey) ?? {
+      plan: null,
+      email: null,
+      hasVendorPlan: false,
+      authPresent: false,
+    };
     const hasVendorPlan = hasReportedVendorPlan(account.plan);
     byTool.set(toolKey, {
       plan: account.plan ?? existing.plan,
       email: account.email ?? existing.email,
       hasVendorPlan: existing.hasVendorPlan || hasVendorPlan,
+      authPresent: existing.authPresent || Boolean(account.authPresent),
     });
   }
 
@@ -419,9 +477,10 @@ export async function syncDetectedPlansForDevice(input: {
         orderBy: { createdAt: "desc" },
       });
 
-      // Never invent a seat from tool detection alone — require a vendor plan.
-      // If a prior auto-detected seat lost its vendor plan (expired auth), end it.
-      if (!meta.hasVendorPlan) {
+      // Never invent a seat from tool detection alone — require a vendor plan or
+      // authenticated account with a catalog default (e.g. Antigravity → individual).
+      // If a prior auto-detected seat lost both vendor plan and auth, end it.
+      if (!canAutoCreateDetectedSeat(toolKey, meta)) {
         if (existingAssignment?.source === "detected") {
           await prisma.developerPlanAssignment.update({
             where: { id: existingAssignment.id },
@@ -464,10 +523,14 @@ export async function syncDetectedPlansForDevice(input: {
         // Keep admin-confirmed coverage; only migrate auto-detected seats when vendor plan differs.
         if (existingAssignment.source !== "detected") continue;
         if (existingAssignment.template.catalogPlanKey === catalogPlanKey) continue;
+        const previousTemplateId = existingAssignment.planTemplateId;
         await prisma.developerPlanAssignment.update({
           where: { id: existingAssignment.id },
           data: { active: false, endDate: utcDateOnly(), seatStatus: "ended" },
         });
+        if (previousTemplateId) {
+          await deactivateOrphanDetectedTemplate(input.orgId, previousTemplateId);
+        }
       }
 
       await ensureSeatAndAssign({
@@ -536,10 +599,14 @@ export async function applyDetectedPlanForDeveloper(input: {
 
   if (existingAssignment) {
     if (existingAssignment.source !== "detected") throw new Error("ADMIN_ASSIGNMENT_LOCKED");
+    const previousTemplateId = existingAssignment.planTemplateId;
     await prisma.developerPlanAssignment.update({
       where: { id: existingAssignment.id },
       data: { active: false, endDate: utcDateOnly(), seatStatus: "ended" },
     });
+    if (previousTemplateId) {
+      await deactivateOrphanDetectedTemplate(input.orgId, previousTemplateId);
+    }
   }
 
   await ensureSeatAndAssign({

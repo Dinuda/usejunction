@@ -41,6 +41,10 @@ function CostBadge({ row }: { row: ModelUsageRow }) {
   if (row.costKind === "estimated_api") {
     return <Badge variant="secondary" className="rounded-none">Estimated</Badge>;
   }
+  // Request-only local extracts (e.g. antigravity_local) have calls but no tokens/cost.
+  if (row.requests > 0 && row.cost <= 0 && row.inputTokens + row.outputTokens <= 0) {
+    return <Badge variant="outline" className="rounded-none">Request-only</Badge>;
+  }
   return <Badge variant="outline" className="rounded-none">{row.source}</Badge>;
 }
 

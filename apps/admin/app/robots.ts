@@ -18,7 +18,6 @@ export default function robots(): MetadataRoute.Robots {
           "/api/",
           "/onboarding",
           "/join",
-          "/connect-invite",
           "/i/",
           "/me",
           "/login",

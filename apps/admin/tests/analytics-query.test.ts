@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { analyticsCacheKey } from "../lib/analytics/query/execute";
 import { normalizeUsageQuery, stableQueryJson } from "../lib/analytics/query/normalize";
 
 const now = new Date("2026-07-15T18:00:00.000Z");
 
-test("usage query normalization makes unordered selections and filters cache-stable", () => {
+test("usage query normalization makes unordered selections and filters stable", () => {
   const first = normalizeUsageQuery({
     window: { preset: 30 },
     measures: ["costMicros", "requests"],
@@ -38,21 +37,19 @@ test("usage query requires order fields to be selected", () => {
   }, now), /orderBy field must be selected/);
 });
 
-test("analytics cache keys isolate organization and developer scopes", () => {
-  const query = normalizeUsageQuery({ window: { preset: 7 }, measures: ["requests"] }, now);
-  const org = analyticsCacheKey({ orgId: "org-a", actorId: "owner-a", role: "owner" }, query);
-  const sameOrgOtherOwner = analyticsCacheKey({ orgId: "org-a", actorId: "owner-b", role: "owner" }, query);
-  const developer = analyticsCacheKey({
-    orgId: "org-a",
-    actorId: "developer-a",
-    role: "user",
-    developerId: "developer-a",
-  }, query);
-  const otherOrg = analyticsCacheKey({ orgId: "org-b", actorId: "owner-a", role: "owner" }, query);
+test("usage query accepts up to four dimensions and rejects more", () => {
+  const fourDimensions = normalizeUsageQuery({
+    window: { preset: 30 },
+    measures: ["costMicros"],
+    dimensions: ["tool", "model", "source", "costKind"],
+  }, now);
+  assert.deepEqual(fourDimensions.dimensions, ["costKind", "model", "source", "tool"]);
 
-  assert.equal(org, sameOrgOtherOwner);
-  assert.notEqual(org, developer);
-  assert.notEqual(org, otherOrg);
+  assert.throws(() => normalizeUsageQuery({
+    window: { preset: 30 },
+    measures: ["costMicros"],
+    dimensions: ["tool", "model", "source", "costKind", "day"],
+  }, now));
 });
 
 test("usage query includes DATE rows on the inclusive cycle start day", { skip: !process.env.DATABASE_URL }, async () => {
@@ -102,6 +99,66 @@ test("usage query includes DATE rows on the inclusive cycle start day", { skip: 
 
     assert.equal(metricNumber(result.data.rows[0], "requests"), 7);
     assert.equal(metricNumber(result.data.rows[0], "costMicros"), 1_230_000);
+    assert.equal(result.meta.cache.status, "bypass");
+    assert.equal(result.meta.cache.expiresAt, null);
+  } finally {
+    await prisma.organization.delete({ where: { id: orgId } }).catch(() => {});
+  }
+});
+
+test("live usage queries re-run SQL on every read", { skip: !process.env.DATABASE_URL }, async () => {
+  const [{ prisma }, { UTC_TIMEZONE }, { metricNumber, readUsageMetrics }] = await Promise.all([
+    import("@usejunction/db"),
+    import("../lib/analytics/contracts/time-window"),
+    import("../lib/analytics/query"),
+  ]);
+  const orgId = `test_org_live_${Date.now()}`;
+  await prisma.organization.create({
+    data: { id: orgId, name: "Live Query Test", slug: orgId },
+  });
+  try {
+    await prisma.usageDaily.create({
+      data: {
+        id: `${orgId}_usage`,
+        orgId,
+        date: new Date("2026-07-12T00:00:00.000Z"),
+        provider: "openai",
+        product: "codex",
+        toolName: "codex",
+        model: "gpt-5",
+        source: "device_observed",
+        requests: 3,
+        costMicros: BigInt(900_000),
+        metricKind: "usage",
+        costKind: "estimated_api",
+        dedupeKey: `${orgId}:codex:2026-07-12`,
+      },
+    });
+
+    const window = {
+      from: new Date("2026-07-01T00:00:00.000Z"),
+      to: new Date("2026-07-15T00:00:00.000Z"),
+      timezone: UTC_TIMEZONE,
+      grain: "day" as const,
+    };
+    const first = await readUsageMetrics({
+      orgId,
+      window,
+      measures: ["requests", "costMicros"],
+      filters: { toolNames: ["codex"] },
+    });
+    const second = await readUsageMetrics({
+      orgId,
+      window,
+      measures: ["requests", "costMicros"],
+      filters: { toolNames: ["codex"] },
+    });
+
+    assert.equal(first.meta.cache.status, "bypass");
+    assert.equal(second.meta.cache.status, "bypass");
+    assert.equal(metricNumber(first.data.rows[0], "requests"), 3);
+    assert.equal(metricNumber(second.data.rows[0], "requests"), 3);
+    assert.equal(metricNumber(second.data.rows[0], "costMicros"), 900_000);
   } finally {
     await prisma.organization.delete({ where: { id: orgId } }).catch(() => {});
   }

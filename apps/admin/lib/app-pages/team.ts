@@ -31,7 +31,19 @@ export async function loadTeamPage(principal: AppPrincipal, search: TeamSearch =
     .catch(() => false);
   const subscriptions = await subscriptionsPromise;
   const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
-  const [hasDevice, roster, planUsage] = await Promise.all([
+  const pendingInvitesPromise = prisma.organizationInvite
+    .findMany({
+      where: {
+        orgId: principal.orgId,
+        acceptedAt: null,
+      },
+      select: { id: true, email: true, role: true, expiresAt: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    })
+    .catch(() => [] as Array<{ id: string; email: string; role: string; expiresAt: Date; createdAt: Date }>);
+
+  const [hasDevice, roster, planUsage, pendingInvitesRaw] = await Promise.all([
     hasDevicePromise,
     getDeveloperRoster(principal.orgId, { reportWindow }),
     getPlanUsage(
@@ -39,7 +51,12 @@ export async function loadTeamPage(principal: AppPrincipal, search: TeamSearch =
       { reportWindow },
       { subscriptions },
     ),
+    pendingInvitesPromise,
   ]);
+
+  const rosterEmails = new Set(roster.developers.map((developer) => developer.email.toLowerCase()));
+  const pendingInvites = pendingInvitesRaw.filter((invite) => !rosterEmails.has(invite.email.toLowerCase()));
+
   return jsonSafe({
     cycleView,
     rollingPeriod,
@@ -47,5 +64,6 @@ export async function loadTeamPage(principal: AppPrincipal, search: TeamSearch =
     developers: roster.developers,
     subscriptions,
     planUsage: planUsage.data.developers,
+    pendingInvites,
   });
 }

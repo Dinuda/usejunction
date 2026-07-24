@@ -97,16 +97,24 @@ export async function listSubscriptions(orgId: string) {
     },
     orderBy: [{ toolKey: "asc" }, { name: "asc" }],
   });
-  return plans.map(({ assignments, ...plan }) => {
-    const assignedSeats = assignments.reduce((sum, assignment) => sum + assignment.seatCount, 0);
-    return {
-      ...plan,
-      cycle: resolveBillingCycle(plan),
-      assignedSeats,
-      availableSeats: Math.max(0, plan.seatCapacity - assignedSeats),
-      estimatedCycleMicros: plan.cycleSeatMicros * BigInt(plan.seatCapacity),
-    };
-  });
+  return plans
+    .map(({ assignments, ...plan }) => {
+      const assignedSeats = assignments.reduce((sum, assignment) => sum + assignment.seatCount, 0);
+      return {
+        ...plan,
+        cycle: resolveBillingCycle(plan),
+        assignedSeats,
+        availableSeats: Math.max(0, plan.seatCapacity - assignedSeats),
+        estimatedCycleMicros: plan.cycleSeatMicros * BigInt(plan.seatCapacity),
+      };
+    })
+    .filter(isVisibleSubscription);
+}
+
+/** Hide stale auto-detected templates with no active seats (e.g. after plan-tier migration). */
+export function isVisibleSubscription(plan: { priceSource: string; assignedSeats: number }) {
+  if (plan.priceSource !== "detected") return true;
+  return plan.assignedSeats > 0;
 }
 
 export async function activeAssignedSeats(orgId: string, planTemplateId: string) {

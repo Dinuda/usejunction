@@ -128,6 +128,21 @@ export const TOOL_CATALOG: readonly CatalogTool[] = [
       { key: "enterprise", name: "Enterprise", tier: "Enterprise", description: "GitHub Enterprise integration and controls", prices: { monthly: usd(39) }, includedCycleMicros: zero },
     ],
   },
+  {
+    key: "opencode",
+    name: "OpenCode",
+    shortName: "OpenCode",
+    provider: "opencode",
+    product: "opencode",
+    toolName: "opencode",
+    aliases: ["opencode", "open-code"],
+    sourceUrl: "https://opencode.ai",
+    lastVerifiedAt: verified,
+    plans: [
+      { key: "zen", name: "Zen", tier: "Zen", description: "OpenCode Zen models and managed routing", prices: {}, includedCycleMicros: zero, customPrice: true },
+      { key: "multi_provider", name: "Multi-provider", tier: "Multi-provider", description: "Bring your own upstream provider keys", prices: { monthly: zero }, includedCycleMicros: zero },
+    ],
+  },
 ];
 
 export function findCatalogTool(key: string) {
@@ -176,6 +191,18 @@ export function catalogPrice(plan: CatalogPlan, cadence: BillingCadence) {
   const price = plan.prices[cadence];
   if (price === undefined) return undefined;
   return cadence === "annual" ? price * BigInt(12) : price;
+}
+
+/** True when the catalog plan has no fixed monthly seat price ($0 or custom-priced). */
+export function catalogPlanHasZeroSeat(toolKey: string, planKey?: string | null) {
+  const normalizedKey =
+    planKey?.trim() || findCatalogTool(toolKey)?.plans[0]?.key || "";
+  if (!normalizedKey) return false;
+  const plan = findCatalogPlan(toolKey, normalizedKey);
+  if (!plan) return false;
+  if (plan.customPrice) return true;
+  const monthly = plan.prices.monthly;
+  return monthly !== undefined && monthly <= zero;
 }
 
 /** True when the tool is a known AI coding subscription in the catalog. */

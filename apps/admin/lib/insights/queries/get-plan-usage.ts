@@ -29,6 +29,7 @@ import { readAssignments } from "@/lib/insights/readers/assignments";
 import { readQuotas } from "@/lib/insights/readers/quotas";
 import { readSubscriptions } from "@/lib/insights/readers/subscriptions";
 import { paceAwarePlanVerdict } from "@/lib/quotas/pace";
+import { rolesFor } from "@/lib/rbac/permissions";
 import { canonicalToolKey } from "@/lib/tools/catalog";
 
 function emptyVerdict(): PlanVerdict {
@@ -68,12 +69,12 @@ export async function getPlanUsage(
   input: PlanUsageInput,
   options: { subscriptions?: Awaited<ReturnType<typeof readSubscriptions>> } = {},
 ): Promise<InsightEnvelope<PlanUsageV1>> {
-  assertInsightRoles(context, ["owner", "admin"]);
+  assertInsightRoles(context, rolesFor("org_overview"));
 
   const analyticsScope = internalAnalyticsScope(context.orgId, input.developerId);
   // Billing facts only depend on the resolved scope/window, so start this
   // expensive analytics read with the independent plan readers instead of
-  // waiting for them to finish first. Cached via AnalyticsQueryCache.
+  // waiting for them to finish first.
   const billingFactsPromise = readCachedCanonicalBillingFacts(analyticsScope, input.reportWindow);
   const [subscriptions, assignments, quotaRows, dataThrough, billingFactsResult] = await Promise.all([
     options.subscriptions ? Promise.resolve(options.subscriptions) : readSubscriptions(context.orgId),

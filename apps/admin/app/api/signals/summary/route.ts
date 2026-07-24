@@ -38,7 +38,6 @@ export async function GET(req: NextRequest) {
           ? (req.nextUrl.searchParams.get("to") ?? undefined)
           : undefined,
         developerId: req.nextUrl.searchParams.get("developerId") || undefined,
-        teamId: req.nextUrl.searchParams.get("teamId") || undefined,
         tool: req.nextUrl.searchParams.get("tool") || undefined,
       },
     );

@@ -14,10 +14,14 @@ test("canonical source aliases retain accounting priority", () => {
   assert.equal(normalizeSource("cursor_local"), "device_observed");
   assert.equal(normalizeSource("antigravity_local"), "device_observed");
   assert.equal(normalizeSource("antigravity_usage"), "device_observed");
+  assert.equal(normalizeSource("opencode_local"), "device_observed");
+  assert.equal(normalizeSource("opencode_usage"), "device_observed");
   assert.equal(activityPriority("cursor_usage_events"), activityPriority("vendor_verified"));
   assert.equal(costPriority("local_scan"), costPriority("device_observed"));
   assert.equal(activityPriority("antigravity_local"), activityPriority("device_observed"));
   assert.equal(activityPriority("antigravity_usage"), activityPriority("device_observed"));
+  assert.equal(activityPriority("opencode_usage"), activityPriority("device_observed"));
+  assert.equal(activityPriority("opencode_local"), activityPriority("device_observed"));
 });
 
 test("activity and cost use independent source priorities", () => {
@@ -27,6 +31,7 @@ test("activity and cost use independent source priorities", () => {
 
 test("productivity and synthetic estimates are not observed model activity", () => {
   assert.equal(isProductivityMetric("usage", "cursor_local"), true);
+  assert.equal(isProductivityMetric("usage", "opencode_local"), true);
   assert.equal(isProductivityMetric("productivity", "device_observed"), true);
   assert.equal(isObservedSource("estimated"), false);
   assert.equal(isObservedSource("vendor_verified"), true);

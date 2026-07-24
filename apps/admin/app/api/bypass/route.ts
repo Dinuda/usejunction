@@ -4,6 +4,16 @@ import { usageDayFilter, usageWindowDays } from "@/lib/metrics/date-range";
 import { requireOrgRole, rolesFor } from "@/lib/rbac";
 import { logServerError } from "@/lib/errors/public";
 
+/** Canonical + legacy device-local sources that count as "local" for bypass detection. */
+const LOCAL_BYPASS_SOURCES = [
+  "device_observed",
+  "local_scan",
+  "cursor_local",
+  "antigravity_local",
+  "antigravity_usage",
+  "cursor_plan_percent",
+] as const;
+
 export async function GET(req: NextRequest) {
   const auth = await requireOrgRole(req, rolesFor("settings_billing"));
   if (auth instanceof NextResponse) return auth;
@@ -20,10 +30,15 @@ export async function GET(req: NextRequest) {
       _sum: { totalTokens: true, estimatedCost: true },
     });
 
-    const localByUser = await prisma.localUsageAggregate.groupBy({
-      by: ["userId"],
-      where: { orgId, date: usageDayFilter(usage30d.from, usage30d.to) },
-      _sum: { inputTokens: true, outputTokens: true, estimatedCost: true },
+    const localByUser = await prisma.usageDaily.groupBy({
+      by: ["developerId"],
+      where: {
+        orgId,
+        date: usageDayFilter(usage30d.from, usage30d.to),
+        source: { in: [...LOCAL_BYPASS_SOURCES] },
+        developerId: { not: null },
+      },
+      _sum: { inputTokens: true, outputTokens: true, costMicros: true },
     });
 
     const users = await prisma.developer.findMany({
@@ -33,7 +48,7 @@ export async function GET(req: NextRequest) {
 
     const userMap = new Map(users.map((u) => [u.id, u]));
     const gatewayMap = new Map(gatewayByUser.map((g) => [g.userId, g]));
-    const localMap = new Map(localByUser.map((l) => [l.userId, l]));
+    const localMap = new Map(localByUser.map((l) => [l.developerId, l]));
 
     const allUserIds = new Set([...gatewayMap.keys(), ...localMap.keys()].filter(Boolean) as string[]);
 
@@ -42,7 +57,8 @@ export async function GET(req: NextRequest) {
         const g = gatewayMap.get(userId);
         const l = localMap.get(userId);
         const gatewayTokens = g?._sum.totalTokens ?? 0;
-        const localTokens = (l?._sum.inputTokens ?? 0) + (l?._sum.outputTokens ?? 0);
+        const localTokens = Number(l?._sum.inputTokens ?? BigInt(0)) + Number(l?._sum.outputTokens ?? BigInt(0));
+        const localCost = Number(l?._sum.costMicros ?? BigInt(0)) / 1_000_000;
         const bypassRatio = localTokens > 0 && gatewayTokens === 0 ? 1 : localTokens / (gatewayTokens + localTokens || 1);
 
         return {
@@ -52,7 +68,7 @@ export async function GET(req: NextRequest) {
           gatewayTokens,
           gatewayCost: g?._sum.estimatedCost ?? 0,
           localTokens,
-          localCost: l?._sum.estimatedCost ?? 0,
+          localCost,
           bypassRatio: Math.round(bypassRatio * 100),
           flagged: bypassRatio > 0.5 && localTokens > 1000,
         };

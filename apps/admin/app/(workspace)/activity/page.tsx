@@ -7,6 +7,7 @@ import { activityKey, activityReportsInlineKey } from "@/lib/app-pages/query-key
 import { flattenSearchParams, searchParamsToQueryString } from "@/lib/app-pages/search-params";
 import { makeServerQueryClient } from "@/lib/app-pages/server-query-client";
 import { parseAudienceScope } from "@/lib/audience-scope";
+import { canManageSettings } from "@/lib/rbac/permissions";
 
 export default async function ActivityPage({
   searchParams,
@@ -17,7 +18,7 @@ export default async function ActivityPage({
   const flat = flattenSearchParams(raw);
   const queryString = searchParamsToQueryString(raw);
   const principal = await principalFromWorkspace();
-  const canSwitchAudience = principal.role === "owner" || principal.role === "admin";
+  const canSwitchAudience = canManageSettings(principal.role);
   const audience =
     principal.role === "user" ? ("you" as const) : parseAudienceScope(flat.scope ?? null);
 

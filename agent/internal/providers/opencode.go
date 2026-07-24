@@ -51,5 +51,6 @@ func (p *OpenCodeProvider) ProbeQuota(ctx context.Context) ([]types.QuotaSnapsho
 }
 
 func (p *OpenCodeProvider) ScanLocalUsage(ctx context.Context, refresh bool) ([]types.DailyUsage, error) {
-	return scan.ScanClineFamily(p.ID(), refresh)
+	_ = ctx
+	return scan.ScanOpenCode(refresh)
 }

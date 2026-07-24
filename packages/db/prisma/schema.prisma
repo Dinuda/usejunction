@@ -23,7 +23,6 @@ model Organization {
   currentPeriodEnd           DateTime? @map("current_period_end")
   createdAt                  DateTime  @default(now()) @map("created_at")
 
-  teams                  Team[]
   developers             Developer[]
   memberships            OrganizationMembership[]
   devices                Device[]
@@ -33,11 +32,9 @@ model Organization {
   enrollmentTokens       EnrollmentToken[]
   toolAccounts           ToolAccount[]
   quotaSnapshots         QuotaSnapshot[]
-  localUsageAggregates   LocalUsageAggregate[]
   planInterests          PlanInterest[]
   domains                OrganizationDomain[]
   invites                OrganizationInvite[]
-  connectInvites         ConnectInvite[]
   teamInviteLinks        TeamInviteLink[]
   providerConnections    ProviderConnection[]
   providerSyncRuns       ProviderSyncRun[]
@@ -47,7 +44,6 @@ model Organization {
   seatAssignments        SeatAssignment[]
   repositories           Repository[]
   usageDaily             UsageDaily[]
-  analyticsQueryCaches   AnalyticsQueryCache[]
   orgUsageDaySnapshots   OrgUsageDaySnapshot[]
   analyticsDirtyDays     AnalyticsDirtyDay[]
   analyticsWatermarks    AnalyticsWatermark[]
@@ -73,39 +69,22 @@ model Organization {
   @@map("organizations")
 }
 
-model Team {
-  id        String   @id @default(cuid())
-  orgId     String   @map("org_id")
-  name      String
-  createdAt DateTime @default(now()) @map("created_at")
-
-  organization     Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  users            Developer[]
-  enrollmentTokens EnrollmentToken[]
-  signalsPolicies  SignalsPolicy[]
-
-  @@map("teams")
-}
-
 model Developer {
   id         String    @id @default(cuid())
   orgId      String    @map("org_id")
   name       String
   email      String
-  teamId     String?   @map("team_id")
   authUserId String?   @map("auth_user_id")
   role       String    @default("user")
   removedAt  DateTime? @map("removed_at")
   createdAt  DateTime  @default(now()) @map("created_at")
 
   organization          Organization              @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  team                  Team?                     @relation(fields: [teamId], references: [id])
   devices               Device[]
   toolInstallations     ToolInstallation[]
   localModels           LocalModel[]
   requestMetadata       RequestMetadata[]
   toolAccounts          ToolAccount[]
-  localUsageAggregates  LocalUsageAggregate[]
   authUser              User?                     @relation(fields: [authUserId], references: [id], onDelete: SetNull)
   enrollmentTokens      EnrollmentToken[]
   externalIdentities    ExternalIdentity[]
@@ -156,7 +135,6 @@ model Device {
   requestMetadata        RequestMetadata[]
   toolAccounts           ToolAccount[]
   quotaSnapshots         QuotaSnapshot[]
-  localUsageAggregates   LocalUsageAggregate[]
   usageDaily             UsageDaily[]
   syncRuns               SyncRun[]
   syncChunks             SyncChunk[]
@@ -335,15 +313,14 @@ model RequestMetadata {
 model EnrollmentToken {
   id          String    @id @default(cuid())
   orgId       String    @map("org_id")
-  teamId      String?   @map("team_id")
   developerId String?   @map("developer_id")
   tokenHash   String    @unique @map("token_hash")
+  tokenReveal String?   @map("token_reveal") @db.Text
   expiresAt   DateTime  @map("expires_at")
   usedAt      DateTime? @map("used_at")
   createdAt   DateTime  @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  team         Team?        @relation(fields: [teamId], references: [id])
   developer    Developer?   @relation(fields: [developerId], references: [id], onDelete: Cascade)
 
   @@map("enrollment_tokens")
@@ -386,45 +363,6 @@ model QuotaSnapshot {
 
   @@index([deviceId, toolName, windowType])
   @@map("quota_snapshots")
-}
-
-model LocalUsageAggregate {
-  id                 String   @id @default(cuid())
-  orgId              String   @map("org_id")
-  userId             String   @map("user_id")
-  deviceId           String   @map("device_id")
-  date               DateTime @db.Date
-  toolName           String   @map("tool_name")
-  model              String   @default("")
-  /// Stable repo identity for unique keying (host/owner/name); empty when unknown.
-  repositoryKey      String   @default("") @map("repository_key")
-  inputTokens        Int      @default(0) @map("input_tokens")
-  outputTokens       Int      @default(0) @map("output_tokens")
-  cacheReadTokens    BigInt   @default(0) @map("cache_read_tokens")
-  cacheWriteTokens   BigInt   @default(0) @map("cache_write_tokens")
-  reasoningTokens    BigInt   @default(0) @map("reasoning_tokens")
-  suggestedLines     Int      @default(0) @map("suggested_lines")
-  acceptedLines      Int      @default(0) @map("accepted_lines")
-  addedLines         Int      @default(0) @map("added_lines")
-  deletedLines       Int      @default(0) @map("deleted_lines")
-  commits            Int      @default(0)
-  aiPercent          Float?   @map("ai_percent")
-  requests           Int      @default(0)
-  estimatedCost      Float    @default(0) @map("estimated_cost")
-  source             String   @default("local_scan")
-  verified           Boolean  @default(false)
-  metricKind         String   @default("usage") @map("metric_kind")
-  costKind           String?  @map("cost_kind")
-  calculationVersion String?  @map("calculation_version")
-  metadata           Json?
-
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  user         Developer    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-
-  @@unique([deviceId, date, toolName, model, source, repositoryKey])
-  @@index([orgId, userId, date, toolName])
-  @@map("local_usage_aggregates")
 }
 
 model User {
@@ -573,25 +511,6 @@ model OrganizationInvite {
 
   @@index([orgId, email])
   @@map("organization_invites")
-}
-
-model ConnectInvite {
-  id                    String    @id @default(cuid())
-  orgId                 String    @map("org_id")
-  email                 String
-  tokenHash             String    @unique @map("token_hash")
-  inviteId              String?   @map("invite_id")
-  status                String    @default("pending")
-  enrollmentTokenHash   String?   @map("enrollment_token_hash")
-  enrollmentTokenReveal String?   @map("enrollment_token_reveal") @db.Text
-  expiresAt             DateTime  @map("expires_at")
-  usedAt                DateTime? @map("used_at")
-  createdAt             DateTime  @default(now()) @map("created_at")
-
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId, email])
-  @@map("connect_invites")
 }
 
 model TeamInviteLink {
@@ -849,27 +768,6 @@ model UsageDaily {
   @@map("usage_daily")
 }
 
-model AnalyticsQueryCache {
-  key                String    @id
-  orgId              String    @map("org_id")
-  scopeHash          String    @map("scope_hash")
-  contractVersion    String    @map("contract_version")
-  calculationVersion String    @map("calculation_version")
-  normalizedQuery    Json      @map("normalized_query")
-  result             Json
-  generatedAt        DateTime  @map("generated_at")
-  dataThrough        DateTime? @map("data_through")
-  expiresAt          DateTime  @map("expires_at")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
-
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId, expiresAt])
-  @@index([expiresAt])
-  @@map("analytics_query_cache")
-}
-
 /// Source-priority-resolved org/tool/developer daily rollup for dashboard reads.
 /// `developerId = ""` is the org rollup; non-empty is that developer's sealed slice.
 /// `toolName = ""` is the day total for that developer (or org); other rows are per-tool.
@@ -1034,7 +932,6 @@ model TelemetryEndpoint {
 model SignalsPolicy {
   id                    String   @id @default(cuid())
   orgId                 String   @map("org_id")
-  teamId                String?  @map("team_id")
   enabled               Boolean  @default(false)
   retentionDays         Int      @default(90) @map("retention_days")
   collectionMode        String   @default("app_domain") @map("collection_mode")
@@ -1049,9 +946,8 @@ model SignalsPolicy {
   updatedAt             DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  team         Team?        @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  @@index([orgId, teamId])
+  @@index([orgId])
   @@map("signals_policies")
 }
 

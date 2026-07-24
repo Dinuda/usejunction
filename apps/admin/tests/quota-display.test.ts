@@ -50,6 +50,9 @@ test("quota remaining labels describe inventory without fake percents", () => {
   assert.equal(quotaRemainingLabel(4, "rate_limit_resets"), "4 resets left");
   assert.equal(quotaRemainingLabel(1, "rate_limit_resets"), "1 reset left");
   assert.equal(quotaRemainingLabel(15, "promo_grant"), "$15 left");
+  assert.equal(quotaRemainingLabel(5, "credit_grant"), "$5 left");
+  assert.equal(quotaRemainingLabel(1000, "credits"), "1000 credits left");
+  assert.equal(quotaRemainingLabel(1, "credits"), "1 credit left");
   assert.equal(quotaRemainingLabel(200, "copilot_premium_interactions"), "200 left");
   assert.equal(quotaRemainingLabel(1.25, "plan"), "1.25 left");
   assert.equal(quotaRemainingLabel(Number.NaN, "credits"), null);
@@ -75,6 +78,10 @@ test("quota signal label prefers percent then remaining then dash", () => {
   );
   assert.equal(quotaSignalLabel({ windowType: "plan" }), "—");
   assert.equal(quotaSignalLabel({ windowType: "plan", rawRatio: 0.425 }), "43%");
+  assert.equal(
+    quotaSignalLabel({ windowType: "credits", remaining: 1000 }),
+    "1000 credits left",
+  );
 });
 
 test("team quota aggregate averages each person's primary window, not every chip", () => {

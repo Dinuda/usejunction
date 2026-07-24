@@ -8,6 +8,7 @@ import (
 	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/providers"
 	"github.com/usejunction/agent/internal/types"
+	"github.com/usejunction/agent/internal/ui"
 )
 
 var statusCmd = &cobra.Command{
@@ -48,18 +49,8 @@ var statusCmd = &cobra.Command{
 			return nil
 		}
 
-		fmt.Printf("Status:       enrolled\n")
-		fmt.Printf("Device ID:    %s\n", cfg.DeviceID)
-		fmt.Printf("Org ID:       %s\n", cfg.OrgID)
-		fmt.Printf("Agent:        v%s\n", config.Version)
-		fmt.Printf("Tools found:  %d\n", len(tools))
-		for _, t := range tools {
-			tag := ""
-			if t.Configured {
-				tag = " [ready]"
-			}
-			fmt.Printf("  • %s%s\n", t.ToolName, tag)
-		}
+		ui.SetNoColor(noColor)
+		ui.StatusCard(cfg.DeviceID, cfg.OrgID, config.Version, tools)
 		return nil
 	},
 }

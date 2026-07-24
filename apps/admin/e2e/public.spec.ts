@@ -2,7 +2,6 @@ import { expect, test } from "@playwright/test";
 
 const teamInviteToken = process.env.E2E_TEAM_INVITE_TOKEN ?? "uj_team_e2e_calculation_invite";
 const orgInviteToken = process.env.E2E_ORG_INVITE_TOKEN ?? "uj_invite_e2e_calculation_member";
-const connectInviteToken = process.env.E2E_CONNECT_INVITE_TOKEN ?? "uj_connect_e2e_calculation_machine";
 
 const publicRoutes = [
   "/",
@@ -14,7 +13,6 @@ const publicRoutes = [
   "/i/invalid-token",
   "/join/invalid-token",
   "/join/company/missing-org",
-  "/connect-invite/invalid-token",
 ];
 
 for (const route of publicRoutes) {
@@ -138,9 +136,6 @@ test("invalid invite routes show unavailable messaging", async ({ page }) => {
   await page.goto("/join/invalid-token");
   await expect(page.getByRole("heading", { name: /This invitation is unavailable/i })).toBeVisible();
 
-  await page.goto("/connect-invite/invalid-token");
-  await expect(page.getByRole("heading", { name: /This link is unavailable/i })).toBeVisible();
-
   await page.goto("/join/company/missing-org");
   await expect(page.getByRole("heading", { name: /Company join is unavailable/i })).toBeVisible();
 });
@@ -150,10 +145,8 @@ test("seeded invite links render join flows", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /Join Calculation E2E/i })).toBeVisible();
   await expect(page.getByRole("link", { name: "Create account" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
+  await expect(page.getByText(/You're already signed in/i)).toHaveCount(0);
 
   await page.goto(`/join/${orgInviteToken}`);
-  await expect(page.getByRole("heading", { name: /Join Calculation E2E/i })).toBeVisible();
-
-  await page.goto(`/connect-invite/${connectInviteToken}`);
   await expect(page.getByRole("heading", { name: /Join Calculation E2E/i })).toBeVisible();
 });

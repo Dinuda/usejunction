@@ -23,11 +23,19 @@ export async function GET(request: NextRequest) {
 
   const membership = await prisma.organizationMembership.findUnique({
     where: { userId_orgId: { userId: session.user.id, orgId } },
-    select: { onboardingCompletedAt: true },
+    select: { onboardingCompletedAt: true, role: true },
   });
 
   if (!membership?.onboardingCompletedAt) {
     return NextResponse.redirect(new URL("/onboarding", request.url));
+  }
+
+  if (membership.role === "user") {
+    const { hasPersonalDeviceReady } = await import("@/lib/onboarding-status");
+    const ready = await hasPersonalDeviceReady(session.user.id, orgId);
+    if (!ready) {
+      return NextResponse.redirect(new URL("/onboarding", request.url));
+    }
   }
 
   const destination = from === "/onboarding" ? "/dashboard" : from;

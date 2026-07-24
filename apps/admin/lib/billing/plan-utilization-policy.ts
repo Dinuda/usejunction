@@ -94,6 +94,10 @@ function windowRank(windowType: string): number {
  * Interim primary quota: prefer monthly, then weekly, then highest rawRatio.
  * Secondary windows (promo/grant/bonus/resets/credits) never win when a
  * billing-pressure window exists.
+ *
+ * Among same-rank windows (e.g. Antigravity gemini_5h / claude_5h / gpt_5h),
+ * pick the hottest used% first — a later unused family reset must not hide
+ * the family that actually has pressure.
  */
 export function selectPrimaryQuota(rows: QuotaUtilization[]): QuotaUtilization | null {
   const primaryCandidates = rows.filter((row) => !isSecondaryQuotaWindow(row.windowType));
@@ -105,11 +109,11 @@ export function selectPrimaryQuota(rows: QuotaUtilization[]): QuotaUtilization |
   return [...pool].sort((a, b) => {
     const rank = windowRank(a.windowType) - windowRank(b.windowType);
     if (rank !== 0) return rank;
+    const ratioDelta = (b.rawRatio ?? -1) - (a.rawRatio ?? -1);
+    if (ratioDelta !== 0) return ratioDelta;
     const resetDelta = timestamp(b.resetsAt) - timestamp(a.resetsAt);
     if (resetDelta !== 0) return resetDelta;
-    const observedDelta = timestamp(b.observedAt) - timestamp(a.observedAt);
-    if (observedDelta !== 0) return observedDelta;
-    return (b.rawRatio ?? -1) - (a.rawRatio ?? -1);
+    return timestamp(b.observedAt) - timestamp(a.observedAt);
   })[0];
 }
 
@@ -287,9 +291,9 @@ export function verdictLabel(code: PlanVerdictCode): string {
     case "LIMIT_EXCEEDED":
       return "Over quota";
     case "DATA_STALE":
-      return "No quota data";
+      return "Offline";
     default:
-      return "No quota data";
+      return "Offline";
   }
 }
 
@@ -315,9 +319,9 @@ export function verdictHint(
     case "LIMIT_EXCEEDED":
       return "Included plan quota is already used up";
     case "DATA_STALE":
-      return "Last quota reading is too old";
+      return "Offline · last quota reading is too old";
     default:
-      return null;
+      return "Open the tool while signed in to refresh plan pace";
   }
 }
 

@@ -61,7 +61,6 @@ beforeEach(() => {
     userId: "developer_1",
     agentVersion: "0.3.1",
     createdAt: new Date("2026-07-19T09:00:00.000Z"),
-    user: { teamId: null },
   });
   mocks.getEffectiveSignalsPolicy.mockResolvedValue({
     workExtractionEnabled: true,
@@ -102,7 +101,6 @@ test("work ingest rejects agents from before the forward-only release", async ()
     userId: "developer_1",
     agentVersion: "0.3.0",
     createdAt: new Date("2026-07-19T09:00:00.000Z"),
-    user: { teamId: null },
   });
   const { POST } = await import("../app/api/ingest/work-sessions/route");
   const response = await POST(request([session("later", "2026-07-19T10:00:01.000Z")]));
@@ -119,7 +117,6 @@ test("work ingest applies device enrollment when it is later than workspace enab
     userId: "developer_1",
     agentVersion: "0.3.1",
     createdAt: new Date("2026-07-19T11:00:00.000Z"),
-    user: { teamId: null },
   });
   const { POST } = await import("../app/api/ingest/work-sessions/route");
   const response = await POST(request([
@@ -131,4 +128,29 @@ test("work ingest applies device enrollment when it is later than workspace enab
   assert.equal((await response.json()).beforeCollectionStartSkipped, 1);
   assert.equal(mocks.workSessionUpsert.mock.calls.length, 1);
   assert.equal(mocks.workSessionUpsert.mock.calls[0][0].create.localId, "after-enrollment");
+});
+
+test("accepts opencode work sessions from local db extraction", async () => {
+  const { POST } = await import("../app/api/ingest/work-sessions/route");
+  const response = await POST(request([
+    {
+      localId: "opencode:ses-work-1",
+      toolName: "opencode",
+      title: "Ship onboarding polish",
+      model: "opencode/big-pickle",
+      observedAt: "2026-07-21T12:00:00.000Z",
+      startedAt: "2026-07-21T11:00:00.000Z",
+      endedAt: "2026-07-21T12:00:00.000Z",
+      source: "opencode_sessions",
+      trace: {
+        location: { kind: "workspace", project: "acme-web" },
+        stats: { linesAdded: 42, linesRemoved: 7, filesChanged: 3 },
+      },
+    },
+  ]));
+
+  assert.equal(response.status, 200);
+  assert.equal(mocks.workSessionUpsert.mock.calls.length, 1);
+  assert.equal(mocks.workSessionUpsert.mock.calls[0][0].create.toolName, "opencode");
+  assert.equal(mocks.workSessionUpsert.mock.calls[0][0].create.source, "opencode_sessions");
 });

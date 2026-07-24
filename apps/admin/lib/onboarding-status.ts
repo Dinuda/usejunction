@@ -124,27 +124,16 @@ function statusFromMembership(
   };
 }
 
-/** True when the email has a redeemable org or connect invite and should not get a personal workspace. */
+/** True when the email has a redeemable org invite and should not get a personal workspace. */
 export async function hasPendingWorkspaceInvite(email: string): Promise<boolean> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return false;
   const now = new Date();
-  const [orgInvite, connectInvite] = await Promise.all([
-    prisma.organizationInvite.findFirst({
-      where: { email: normalized, acceptedAt: null, expiresAt: { gt: now } },
-      select: { id: true },
-    }),
-    prisma.connectInvite.findFirst({
-      where: {
-        email: normalized,
-        status: "pending",
-        usedAt: null,
-        expiresAt: { gt: now },
-      },
-      select: { id: true },
-    }),
-  ]);
-  return Boolean(orgInvite || connectInvite);
+  const orgInvite = await prisma.organizationInvite.findFirst({
+    where: { email: normalized, acceptedAt: null, expiresAt: { gt: now } },
+    select: { id: true },
+  });
+  return Boolean(orgInvite);
 }
 
 export async function buildOnboardingStatusForOrg(
@@ -180,4 +169,12 @@ export async function buildOnboardingStatus(
     ? await loadDeveloper(userId, membership.organization.id)
     : undefined;
   return statusFromMembership(membership, developer, includeDeveloper);
+}
+
+/** True when this user has an enrolled device that has reported at least one tool. */
+export async function hasPersonalDeviceReady(userId: string, orgId: string): Promise<boolean> {
+  const developer = await loadDeveloper(userId, orgId);
+  return Boolean(
+    developer?.devices.some((device) => (device.toolInstallations?.length ?? 0) > 0),
+  );
 }

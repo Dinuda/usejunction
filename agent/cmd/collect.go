@@ -421,7 +421,7 @@ func collectProvider(ctx context.Context, p providers.Provider, refresh bool) pr
 		plan = strings.TrimSpace(acc.Plan)
 	}
 	// Attach when auth is present or a vendor plan was probed — syncDetected
-	// creates seats only when plan is non-null; empty-email accounts are fine.
+	// creates seats from a non-empty plan, or auth + catalog default plan.
 	if acc != nil && (acc.AuthPresent || plan != "") {
 		toolName := strings.TrimSpace(acc.ToolName)
 		if toolName == "" {
@@ -435,7 +435,7 @@ func collectProvider(ctx context.Context, p providers.Provider, refresh bool) pr
 			AuthPresent: acc.AuthPresent || plan != "",
 		})
 		if plan == "" && len(quotaSnaps) > 0 {
-			fmt.Printf("[collect] %s: auth/quota present but plan empty — subscription seat will not auto-create\n", toolName)
+			fmt.Printf("[collect] %s: auth/quota present but plan empty — seat sync will use catalog default when available\n", toolName)
 		}
 	}
 

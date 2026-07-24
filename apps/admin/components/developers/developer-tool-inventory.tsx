@@ -12,7 +12,6 @@ import { CycleUtilizationBar } from "@/components/dashboard/cycle-utilization-ba
 import { cn } from "@/lib/utils";
 import { AddSubscriptionSheet } from "@/components/tools/add-subscription-sheet";
 import { Panel } from "@/components/panel";
-import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import {
   aggregateRosterPlanUsage,
   RosterPlanUsage,
@@ -22,7 +21,6 @@ import { SubscriptionChoices } from "@/components/developers/member-plans-panel"
 import { formatCompactNumber } from "@/lib/format";
 import type { PlanUsageDeveloperRow } from "@/lib/insights/contracts/plan-usage.v1";
 import { countActiveDevices } from "@/lib/devices/presence";
-import { toolDisplayName } from "@/lib/tools/catalog";
 import { useInvalidateAppData } from "@/lib/api/client";
 
 type Subscription = {
@@ -36,20 +34,6 @@ type Subscription = {
   billingCadence: string;
   cycleSeatMicros: string;
   estimatedCycleMicros: string;
-};
-type ManualPlan = {
-  id: string;
-  planTemplateId: string;
-  toolName: string;
-  planName: string;
-  planTier: string | null;
-  seatCount: number;
-  seatStatus: string;
-  startDate: string;
-  endDate: string | null;
-  cycleSeatMicros: string;
-  vendorAccountEmail: string | null;
-  template: { toolKey: string | null; catalogPlanKey: string | null };
 };
 type Developer = {
   id: string;
@@ -66,7 +50,6 @@ type Developer = {
     toolInstallations: Array<{ toolName: string }>;
   }>;
   toolEvidence: Array<{ toolName: string }>;
-  manualPlans: ManualPlan[];
 };
 
 const utcToday = () => new Date().toISOString().slice(0, 10);
@@ -338,27 +321,6 @@ export function DeveloperToolInventory({
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">{developer.email}</p>
                           {meta ? <p className="mt-1.5 text-xs text-muted-foreground">{meta}</p> : null}
                           {rosterPlans.length ? <RosterPlanUsage plans={rosterPlans} /> : null}
-                          {developer.manualPlans.length ? (
-                            <div className="mt-3 flex min-w-0 flex-wrap gap-2">
-                              {developer.manualPlans.map((plan) => (
-                                <span
-                                  key={plan.id}
-                                  className="inline-flex max-w-full min-w-0 items-center gap-1.5 bg-brand-yellow-pale py-1 pr-2.5 pl-1 text-xs font-medium text-brand-yellow-dark"
-                                  title={`${toolDisplayName(plan.template.toolKey ?? plan.toolName)} ${plan.planName}`}
-                                >
-                                  <ToolLogoTile
-                                    tool={plan.template.toolKey ?? plan.toolName}
-                                    size="sm"
-                                    className="size-6 border-0 shadow-none"
-                                  />
-                                  <span className="min-w-0 truncate">
-                                    {toolDisplayName(plan.template.toolKey ?? plan.toolName)} {plan.planName}
-                                    {(plan.seatCount ?? 1) > 1 ? ` ×${plan.seatCount}` : ""}
-                                  </span>
-                                </span>
-                              ))}
-                            </div>
-                          ) : null}
                         </div>
 
                         <span

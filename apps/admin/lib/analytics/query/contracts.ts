@@ -52,7 +52,7 @@ export const usageQueryV1Schema = z
     ]),
     timezone: z.literal("UTC").default("UTC"),
     measures: z.array(z.enum(usageMeasures)).min(1).max(usageMeasures.length),
-    dimensions: z.array(z.enum(usageDimensions)).max(3).default([]),
+    dimensions: z.array(z.enum(usageDimensions)).max(4).default([]),
     filters: z
       .object({
         developerIds: stringList,

@@ -502,3 +502,34 @@ func TestOpenCodeAccountFromAuthJSON(t *testing.T) {
 		t.Fatalf("empty = %+v", empty)
 	}
 }
+
+func TestOpenCodeServiceIDsFromAccountJSON(t *testing.T) {
+	ids := opencodeServiceIDsFromAccountJSON([]byte(`{
+		"version": 1,
+		"accounts": {
+			"a1": {"id":"a1","serviceID":"github-copilot","credential":{"type":"oauth","access":"SECRET"}},
+			"a2": {"id":"a2","serviceID":"opencode","credential":{"type":"api","key":"SECRET"}}
+		},
+		"active": {"github-copilot":"a1","opencode":"a2","zai":"a3"}
+	}`))
+	want := map[string]bool{"github-copilot": true, "opencode": true, "zai": true}
+	if len(ids) != 3 {
+		t.Fatalf("ids = %#v", ids)
+	}
+	for _, id := range ids {
+		if !want[id] {
+			t.Fatalf("unexpected id %q in %#v", id, ids)
+		}
+		if id == "SECRET" || id == "a1" {
+			t.Fatalf("leaked credential material: %#v", ids)
+		}
+	}
+	account := opencodeAccountFromProviders(map[string]struct{}{
+		"github-copilot": {},
+		"opencode":       {},
+		"zai":            {},
+	})
+	if account.Plan != "zen" || !account.AuthPresent || account.LoginMethod != "multi" {
+		t.Fatalf("account = %+v", account)
+	}
+}

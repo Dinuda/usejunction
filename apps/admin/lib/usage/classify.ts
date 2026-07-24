@@ -20,7 +20,9 @@ export function normalizeCanonicalSource(source: string): string {
     source === "local_scan" ||
     source === "cursor_local" ||
     source === "antigravity_local" ||
-    source === "antigravity_usage"
+    source === "antigravity_usage" ||
+    source === "opencode_local" ||
+    source === "opencode_usage"
   ) {
     return "device_observed";
   }
@@ -41,7 +43,7 @@ export function inferMetricKind(
   source: string,
 ): UusMetricKind {
   if (row.metricKind === "productivity" || row.metricKind === "usage") return row.metricKind;
-  if (source === "cursor_local") return "productivity";
+  if (source === "cursor_local" || source === "opencode_local") return "productivity";
   if (
     (row.suggestedLines ?? 0) + (row.acceptedLines ?? 0) + (row.addedLines ?? 0) + (row.commits ?? 0) > 0 &&
     (row.inputTokens ?? 0) + (row.outputTokens ?? 0) === 0
@@ -69,6 +71,21 @@ export function inferCostKind(
   }
   if (source === "invoice_imported") return "actual_spend";
   return "estimated_api";
+}
+
+/** Resolve model-row cost kind from stored analytics dimension when present. */
+export function resolveModelUsageCostKind(input: {
+  source: string;
+  cost: number;
+  storedCostKind?: string | null;
+}): UusCostKind | null {
+  const stored = input.storedCostKind?.trim();
+  if (stored === "verified_usage" || stored === "estimated_api" || stored === "actual_spend") {
+    return stored;
+  }
+  if (input.source === "vendor_verified") return "verified_usage";
+  if (input.cost > 0) return "estimated_api";
+  return null;
 }
 
 /** Classify a normalized UUS record into server canonical fields. */

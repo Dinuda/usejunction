@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
-import { hasVerifiedIdentity, linkDeveloperToUser, normalizeEmail } from "@/lib/developer-identity";
-import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/quantity";
+import { hasVerifiedIdentity, normalizeEmail } from "@/lib/developer-identity";
 import { assertCanAddUser } from "@/lib/saas-billing/status";
 import { audit } from "@/lib/rbac";
 import { hashOpaqueToken } from "@/lib/security";
+import { acceptWorkspaceInvite } from "@/lib/workspace-join";
 
 function maskEmail(email: string) {
   const [local, domain] = email.split("@");
@@ -41,17 +41,19 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
   const userGate = await assertCanAddUser(invite.orgId, { userId: session.user.id, email: invite.email });
   if (!userGate.allowed) return NextResponse.json({ error: userGate.message }, { status: 403 });
 
-  const developer = await prisma.$transaction(async (tx) => {
-    await tx.organizationMembership.upsert({
-      where: { userId_orgId: { userId: session.user.id, orgId: invite.orgId } },
-      update: { role: invite.role },
-      create: { userId: session.user.id, orgId: invite.orgId, role: invite.role },
+  const { developerId } = await prisma.$transaction(async (tx) => {
+    const joined = await acceptWorkspaceInvite({
+      tx,
+      orgId: invite.orgId,
+      userId: session.user.id,
+      email: invite.email,
+      name: session.user.name,
+      role: invite.role,
+      source: "invite.accepted",
     });
-    const linked = await linkDeveloperToUser({ tx, orgId: invite.orgId, userId: session.user.id, email: invite.email, name: session.user.name, role: invite.role });
     await tx.organizationInvite.update({ where: { id: invite.id }, data: { acceptedAt: new Date() } });
-    return linked;
+    return joined;
   });
-  await syncTeamSeatQuantityBestEffort(invite.orgId, "invite.accepted");
-  await audit({ orgId: invite.orgId, actorType: "user", actorId: session.user.id, action: "invite.accepted", targetType: "developer", targetId: developer.id });
-  return NextResponse.json({ orgId: invite.orgId, developerId: developer.id, role: invite.role });
+  await audit({ orgId: invite.orgId, actorType: "user", actorId: session.user.id, action: "invite.accepted", targetType: "developer", targetId: developerId });
+  return NextResponse.json({ orgId: invite.orgId, developerId, role: invite.role });
 }

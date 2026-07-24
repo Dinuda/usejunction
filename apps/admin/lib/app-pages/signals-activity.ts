@@ -7,6 +7,7 @@ import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
 import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
 import { getWorkActivity, readSignalsFilterOptions } from "@/lib/signals";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
+import { canManageSettings } from "@/lib/rbac/permissions";
 
 export type SignalsActivitySearch = {
   view?: string | null;
@@ -15,7 +16,6 @@ export type SignalsActivitySearch = {
   to?: string | null;
   scope?: string | null;
   developerId?: string | null;
-  teamId?: string | null;
   tool?: string | null;
 };
 
@@ -45,7 +45,6 @@ export async function loadSignalsActivityPage(principal: AppPrincipal, search: S
     }
   }
 
-  const teamId = scope === "team" ? (search.teamId || undefined) : undefined;
   const tool = search.tool || undefined;
 
   const envelope = youUnlinked
@@ -56,7 +55,6 @@ export async function loadSignalsActivityPage(principal: AppPrincipal, search: S
           from: reportWindow.from.toISOString().slice(0, 10),
           to: reportWindow.to.toISOString().slice(0, 10),
           developerId,
-          teamId,
           tool,
           limit: 100,
         },
@@ -64,12 +62,11 @@ export async function loadSignalsActivityPage(principal: AppPrincipal, search: S
 
   return jsonSafe({
     scope,
-    canSwitchAudience: true,
+    canSwitchAudience: canManageSettings(principal.role),
     youUnlinked,
     cycleView,
     rollingPeriod,
     developerId,
-    teamId,
     tool,
     options,
     work: envelope?.data ?? { enabled: false, sessions: [] },

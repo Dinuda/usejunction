@@ -19,7 +19,6 @@ export type SignalsActivityV1 = {
   windowDays: number;
   filters: {
     developerId: string | null;
-    teamId: string | null;
     tool: string | null;
   };
   sessions: SignalsActivitySession[];

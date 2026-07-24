@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { purgeAllExpiredAnalyticsCaches } from "@/lib/analytics/query";
 import { logServerError } from "@/lib/errors/public";
 import { setFullUsageRescanDay, utcDayString } from "@/lib/runtime-settings";
 import {
@@ -31,7 +30,7 @@ function authorizeCron(req: NextRequest): NextResponse | null {
 
 /**
  * Seals the UTC day for agent full usage rescans, marks active orgs dirty,
- * drains the materialization job queue, and purges expired analytics caches.
+ * and drains the materialization job queue.
  */
 async function handle(req: NextRequest) {
   const denied = authorizeCron(req);
@@ -53,7 +52,6 @@ async function handle(req: NextRequest) {
     }
 
     const drain = await drainMaterializationJobs({ limit: 80, maxDurationMs: 45_000 });
-    const cachesInvalidated = await purgeAllExpiredAnalyticsCaches();
     return NextResponse.json({
       ok: true,
       day,
@@ -61,7 +59,6 @@ async function handle(req: NextRequest) {
       jobsProcessed: drain.processed,
       dirtyCleared: drain.dirtyCleared,
       remainingJobs: drain.remainingJobs,
-      cachesInvalidated,
     });
   } catch (error) {
     logServerError("cron/usage-daily-refresh", error);

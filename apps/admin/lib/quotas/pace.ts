@@ -222,7 +222,7 @@ export function paceVerdictLabel(code: QuotaPaceCode): string {
     case "UNDER":
       return "Underutilized";
     default:
-      return "Pace unavailable";
+      return "Offline";
   }
 }
 

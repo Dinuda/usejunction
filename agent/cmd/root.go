@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/usejunction/agent/internal/config"
+	"github.com/usejunction/agent/internal/ui"
 )
 
 var (
@@ -32,6 +33,9 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&format, "format", "text", "Output format: text|json")
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "Verbose output")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable color output")
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		ui.SetNoColor(noColor)
+	}
 }
 
 // printJSON pretty-prints v as indented JSON to stdout.

@@ -2,6 +2,7 @@ import type { AppPrincipal } from "@/lib/api/app-auth";
 import { jsonSafe } from "@/lib/api/app-response";
 import { parseAudienceScope } from "@/lib/audience-scope";
 import { listSentReports, type SentReportKindFilter } from "@/lib/reports/sent-reports";
+import { canManageSettings } from "@/lib/rbac/permissions";
 
 function parseKindFilter(value: string | null | undefined): SentReportKindFilter {
   if (value === "personal" || value === "org") return value;
@@ -16,7 +17,7 @@ export type ActivityReportsSearch = {
 };
 
 export async function loadActivityReportsPage(principal: AppPrincipal, search: ActivityReportsSearch = {}) {
-  const canSwitchAudience = principal.role === "owner" || principal.role === "admin";
+  const canSwitchAudience = canManageSettings(principal.role);
   const audience =
     principal.role === "user" ? ("you" as const) : parseAudienceScope(search.scope ?? null);
   const limit = Math.min(Math.max(Number(search.limit ?? "5"), 1), 50);

@@ -11,7 +11,11 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { canonicalToolKey } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
-import { canManageSettings } from "@/lib/rbac/permissions";
+import {
+  canChooseOnboardingPath,
+  requiresDeviceOnboarding,
+  type OrganizationRole,
+} from "@/lib/rbac/permissions";
 
 type OnboardingStatus = {
   configured: boolean;
@@ -112,12 +116,18 @@ function ChoiceCard({
   );
 }
 
+function hasReadyDevice(status: OnboardingStatus | null) {
+  return Boolean(
+    status?.developer?.devices.find((item) => (item.toolInstallations?.length ?? 0) > 0),
+  );
+}
+
 export function OnboardingExperience() {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [invitePending, setInvitePending] = useState(false);
   const [finishing, setFinishing] = useState(false);
-  const [path, setPath] = useState<Path>("choose");
+  const [path, setPath] = useState<Path | null>(null);
 
   const refresh = useCallback(async (mode: "bootstrap" | "poll" = "poll") => {
     const response =
@@ -139,7 +149,7 @@ export function OnboardingExperience() {
       return;
     }
     if (response.status === 409) {
-      const body = await response.json().catch(() => null) as { error?: string } | null;
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
       if (body?.error === "invite_pending") {
         setInvitePending(true);
         setLoading(false);
@@ -147,12 +157,24 @@ export function OnboardingExperience() {
       }
     }
 
-    const next = response.ok ? await response.json() as OnboardingStatus : null;
-    if (next?.onboardingCompletedAt) {
-      window.location.href = "/dashboard";
-      return;
+    const next = response.ok ? ((await response.json()) as OnboardingStatus) : null;
+    if (next) {
+      const role = next.role as OrganizationRole | null;
+      const deviceReady = hasReadyDevice(next);
+      // Developers without a connected machine always stay in onboarding.
+      const canLeave =
+        Boolean(next.onboardingCompletedAt) &&
+        (deviceReady || !requiresDeviceOnboarding(role));
+      if (canLeave) {
+        window.location.href = "/dashboard";
+        return;
+      }
+      setStatus(next);
+      setPath((current) => {
+        if (current) return current;
+        return canChooseOnboardingPath(role) ? "choose" : "connect";
+      });
     }
-    if (next) setStatus(next);
     setLoading(false);
   }, []);
 
@@ -191,7 +213,7 @@ export function OnboardingExperience() {
     );
   }
 
-  if (loading || !status) {
+  if (loading || !status || !path) {
     return (
       <AuthShell
         size="md"
@@ -209,10 +231,10 @@ export function OnboardingExperience() {
     );
   }
 
-  const isFounder = canManageSettings(status.role as "owner" | "admin" | "manager" | "user" | null);
+  const role = status.role as OrganizationRole | null;
+  const canChoose = canChooseOnboardingPath(role);
+  const mustConnect = requiresDeviceOnboarding(role);
   const workspaceName = status.organization?.name ?? "your workspace";
-  // Only treat as connected once the agent has reported detected tools —
-  // enroll alone is too early (install still detecting/configuring).
   const device = status.developer?.devices.find(
     (item) => (item.toolInstallations?.length ?? 0) > 0,
   );
@@ -252,13 +274,13 @@ export function OnboardingExperience() {
     );
   }
 
-  if (path === "connect" || !isFounder) {
+  if (path === "connect" || !canChoose) {
     return (
       <AuthShell
         size="md"
         accent="cyan"
         contentAlign="top"
-        title="Run this in Terminal."
+        title="Connect this computer."
         description="Copy the command and paste it in Terminal. We’ll detect the machine automatically."
         statement="One command. Real data."
       >
@@ -266,27 +288,29 @@ export function OnboardingExperience() {
           <DeviceConnectCard
             compact
             onConnected={() => {
-              // Refresh UI only — do not mark onboarding complete or redirect yet.
-              // User clicks Open dashboard after tools are detected.
               void refresh("poll");
             }}
           />
           <div className="space-y-1 pt-2 text-center text-sm text-muted-foreground">
-            {isFounder ? (
+            {canChoose ? (
               <button
                 type="button"
-                onClick={() => setPath("invite")}
+                onClick={() => setPath("choose")}
                 className="inline-flex items-center gap-1.5 hover:text-foreground"
               >
                 <ArrowLeft className="size-3.5" />
-                Invite the team instead
+                Back to options
               </button>
             ) : null}
-            <div>
-              <TextLink onClick={() => void finish("skip")} disabled={finishing}>
-                Skip for now
-              </TextLink>
-            </div>
+            {!mustConnect ? (
+              <div>
+                <TextLink onClick={() => void finish("skip")} disabled={finishing}>
+                  Skip for now
+                </TextLink>
+              </div>
+            ) : (
+              <p className="text-xs">Connect a computer to open your workspace.</p>
+            )}
           </div>
         </div>
       </AuthShell>
@@ -300,7 +324,7 @@ export function OnboardingExperience() {
         accent="cyan"
         contentAlign="top"
         title="Invite teammates."
-        description="Invite someone else to help you build out the workspace."
+        description="Share a join link so your team can start reporting."
         statement="Visibility before control."
       >
         <div className="space-y-6">
@@ -308,15 +332,15 @@ export function OnboardingExperience() {
           <div className="space-y-1 pt-2 text-center text-sm text-muted-foreground">
             <button
               type="button"
-              onClick={() => setPath("connect")}
+              onClick={() => setPath("choose")}
               className="inline-flex items-center gap-1.5 hover:text-foreground"
             >
               <ArrowLeft className="size-3.5" />
-              Connect a computer instead
+              Back to options
             </button>
             <div>
               <TextLink onClick={() => void finish("skip")} disabled={finishing}>
-                Skip for now
+                Open dashboard without inviting
               </TextLink>
             </div>
           </div>
@@ -330,8 +354,8 @@ export function OnboardingExperience() {
       size="md"
       accent="cyan"
       contentAlign="top"
-      title={workspaceName}
-      description="Connect this computer or invite the team. You can rename the workspace anytime from settings."
+      title={`Welcome to ${workspaceName}.`}
+      description="How do you want to get started?"
       statement="Visibility before control."
     >
       <div className="flex flex-col gap-3 sm:flex-row">
@@ -339,22 +363,16 @@ export function OnboardingExperience() {
           primary
           iconSrc="/images/laptop-tile.png"
           title="Connect this computer"
-          description="Install the agent and start reporting tools."
+          description="Install the agent and start reporting tools from this machine."
           onClick={() => setPath("connect")}
         />
         <ChoiceCard
           dark
           iconSrc="/images/person-tile.png"
-          title="Invite the team"
-          description="Share a join link for teammates."
+          title="I’m here to manage my team"
+          description="Invite teammates and open the workspace without connecting first."
           onClick={() => setPath("invite")}
         />
-      </div>
-      <div className="mt-5 space-y-1 text-center text-sm text-muted-foreground">
-        <p>You can invite your team later.</p>
-        <TextLink onClick={() => void finish("skip")} disabled={finishing}>
-          Skip for now
-        </TextLink>
       </div>
     </AuthShell>
   );

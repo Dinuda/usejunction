@@ -19,6 +19,8 @@ import { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
 import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
 import { getOrgOverview, overviewInputFromBounds, overviewInputFromRange } from "@/lib/insights";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
+import { logServerError } from "@/lib/errors/public";
+import { canManageSettings } from "@/lib/rbac/permissions";
 
 function overviewInputForView(cycleView: CycleView, period: RollingPeriod) {
   if (cycleView !== "last_30_days") return { cycleView };
@@ -36,7 +38,7 @@ export type DashboardSearch = {
 
 export async function loadDashboardPage(principal: AppPrincipal, search: DashboardSearch = {}) {
   const isDeveloper = principal.role === "user";
-  const canSwitchAudience = principal.role === "owner" || principal.role === "admin";
+  const canSwitchAudience = canManageSettings(principal.role);
   const scope = canSwitchAudience ? parseAudienceScope(search.scope ?? null) : "team";
 
   const [settings, subscriptions] = await Promise.all([
@@ -110,7 +112,10 @@ export async function loadDashboardPage(principal: AppPrincipal, search: Dashboa
       overviewInputForView(cycleView, rollingPeriod),
     )
       .then((envelope) => ({ data: envelope.data, error: null as string | null }))
-      .catch(() => ({ data: null, error: "Could not load dashboard." })),
+      .catch((error) => {
+        logServerError("dashboard/overview", error);
+        return { data: null, error: "Could not load dashboard." };
+      }),
     getLocalSyncContext(principal.orgId, principal.userId),
   ]);
 

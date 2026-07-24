@@ -27,7 +27,6 @@ type WorkSessionWindowOpts = {
   from: Date;
   to: Date;
   developerId?: string;
-  teamId?: string;
   tool?: string;
   take?: number;
   /** When true, round-robin across tools so one source cannot bury another. */
@@ -46,7 +45,6 @@ function workSessionWhere(orgId: string, opts: WorkSessionWindowOpts) {
     },
     ...(opts.developerId ? { developerId: opts.developerId } : {}),
     ...(opts.tool ? { toolName: opts.tool } : {}),
-    ...(opts.teamId ? { developer: { teamId: opts.teamId } } : {}),
   };
 }
 
@@ -60,7 +58,6 @@ function workSessionSqlFilters(orgId: string, opts: WorkSessionWindowOpts) {
   ];
   if (opts.developerId) filters.push(Prisma.sql`lws.developer_id = ${opts.developerId}`);
   if (opts.tool) filters.push(Prisma.sql`lws.tool_name = ${opts.tool}`);
-  if (opts.teamId) filters.push(Prisma.sql`d.team_id = ${opts.teamId}`);
   return Prisma.join(filters, " AND ");
 }
 
@@ -189,20 +186,8 @@ export async function readLocalWorkSessionOverviewAggregates(
   opts: WorkSessionWindowOpts,
 ): Promise<WorkSessionOverviewAggregates> {
   const whereSql = workSessionSqlFilters(orgId, opts);
-  const joinDevelopers = Boolean(opts.teamId);
 
-  const kpiQuery = joinDevelopers
-    ? prisma.$queryRaw<KpiRow[]>`
-        SELECT
-          COUNT(*)::bigint AS sessions,
-          COUNT(DISTINCT lws.developer_id)::bigint AS active_people,
-          COUNT(DISTINCT lws.model) FILTER (WHERE lws.model IS NOT NULL)::bigint AS models,
-          MAX(lws.observed_at) AS data_through
-        FROM local_work_sessions lws
-        INNER JOIN users d ON d.id = lws.developer_id
-        WHERE ${whereSql}
-      `
-    : prisma.$queryRaw<KpiRow[]>`
+  const kpiQuery = prisma.$queryRaw<KpiRow[]>`
         SELECT
           COUNT(*)::bigint AS sessions,
           COUNT(DISTINCT lws.developer_id)::bigint AS active_people,
@@ -212,19 +197,7 @@ export async function readLocalWorkSessionOverviewAggregates(
         WHERE ${whereSql}
       `;
 
-  const trendQuery = joinDevelopers
-    ? prisma.$queryRaw<TrendRow[]>`
-        SELECT
-          TO_CHAR(DATE_TRUNC('day', lws.observed_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS date,
-          COUNT(*)::bigint AS sessions,
-          COUNT(DISTINCT lws.developer_id)::bigint AS people
-        FROM local_work_sessions lws
-        INNER JOIN users d ON d.id = lws.developer_id
-        WHERE ${whereSql}
-        GROUP BY 1
-        ORDER BY 1 ASC
-      `
-    : prisma.$queryRaw<TrendRow[]>`
+  const trendQuery = prisma.$queryRaw<TrendRow[]>`
         SELECT
           TO_CHAR(DATE_TRUNC('day', lws.observed_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS date,
           COUNT(*)::bigint AS sessions,
@@ -235,20 +208,7 @@ export async function readLocalWorkSessionOverviewAggregates(
         ORDER BY 1 ASC
       `;
 
-  const toolsQuery = joinDevelopers
-    ? prisma.$queryRaw<ToolRow[]>`
-        SELECT
-          lws.tool_name AS tool,
-          COUNT(*)::bigint AS sessions,
-          COUNT(DISTINCT lws.developer_id)::bigint AS people
-        FROM local_work_sessions lws
-        INNER JOIN users d ON d.id = lws.developer_id
-        WHERE ${whereSql}
-        GROUP BY lws.tool_name
-        ORDER BY COUNT(*) DESC, lws.tool_name ASC
-        LIMIT 10
-      `
-    : prisma.$queryRaw<ToolRow[]>`
+  const toolsQuery = prisma.$queryRaw<ToolRow[]>`
         SELECT
           lws.tool_name AS tool,
           COUNT(*)::bigint AS sessions,

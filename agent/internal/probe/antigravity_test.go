@@ -124,6 +124,25 @@ func TestNormalizeAntigravityPlan(t *testing.T) {
 	}
 }
 
+func TestAntigravityAccountDefaultsPlanWhenAuthOnly(t *testing.T) {
+	// OAuth token present, but userStatus has no parseable plan tier.
+	dbPath := writeAntigravityStateFixture(t, "", "", "")
+	prev := antigravityStateDBPathOverride
+	antigravityStateDBPathOverride = dbPath
+	defer func() { antigravityStateDBPathOverride = prev }()
+
+	account, err := AntigravityAccountFromLocal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if account == nil || !account.AuthPresent {
+		t.Fatalf("account = %#v", account)
+	}
+	if account.Plan != "individual" {
+		t.Fatalf("plan = %q, want individual default when auth-only", account.Plan)
+	}
+}
+
 func TestAntigravityAccountMissingDB(t *testing.T) {
 	prev := antigravityStateDBPathOverride
 	antigravityStateDBPathOverride = filepath.Join(t.TempDir(), "missing.vscdb")

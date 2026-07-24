@@ -30,7 +30,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "invalid signals policy", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const existing = await prisma.signalsPolicy.findFirst({ where: { orgId: auth.orgId, teamId: null } });
+  const existing = await prisma.signalsPolicy.findFirst({ where: { orgId: auth.orgId } });
   const wasWorkExtractionEnabled = existing?.workExtractionEnabled ?? false;
   const workExtractionEnabled =
     parsed.data.workExtractionEnabled ?? existing?.workExtractionEnabled ?? false;
@@ -58,7 +58,7 @@ export async function PATCH(req: NextRequest) {
   };
   const policy = existing
     ? await prisma.signalsPolicy.update({ where: { id: existing.id }, data })
-    : await prisma.signalsPolicy.create({ data: { orgId: auth.orgId, teamId: null, ...data } });
+    : await prisma.signalsPolicy.create({ data: { orgId: auth.orgId, ...data } });
 
   const turningWorkExtractionOn = !wasWorkExtractionEnabled && policy.workExtractionEnabled;
   const agentRollout = turningWorkExtractionOn

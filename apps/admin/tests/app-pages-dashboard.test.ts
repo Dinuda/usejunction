@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getLocalSyncContext: vi.fn(),
   resolveLinkedDeveloperId: vi.fn(),
   getOrgOverview: vi.fn(),
+  logServerError: vi.fn(),
 }));
 
 vi.mock("@/lib/tools/subscriptions", () => ({
@@ -33,6 +34,10 @@ vi.mock("@/lib/insights", () => ({
   getOrgOverview: mocks.getOrgOverview,
   overviewInputFromBounds: vi.fn(),
   overviewInputFromRange: vi.fn((days: number) => ({ rangeDays: days })),
+}));
+
+vi.mock("@/lib/errors/public", () => ({
+  logServerError: mocks.logServerError,
 }));
 
 beforeEach(() => {
@@ -162,5 +167,58 @@ describe("loadDashboardPage personal period window", () => {
     const dayMs = 24 * 60 * 60 * 1000;
     const spanDays = Math.round((reportWindow.to.getTime() - reportWindow.from.getTime()) / dayMs) + 1;
     expect(spanDays).toBe(7);
+  });
+});
+
+describe("loadDashboardPage manager org overview", () => {
+  it("loads organization overview for manager with team scope and no audience switcher", async () => {
+    const { loadDashboardPage } = await import("@/lib/app-pages/dashboard");
+    const data = await loadDashboardPage(
+      {
+        userId: "user-mgr",
+        email: "manager@example.test",
+        orgId: "org-1",
+        role: "manager",
+      },
+      { scope: "team" },
+    );
+
+    expect(data).toMatchObject({
+      kind: "organization",
+      scope: "team",
+      canSwitchAudience: false,
+      error: null,
+      overview: { hasActivity: true },
+    });
+    expect(mocks.getOrgOverview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        actorId: "user-mgr",
+        roles: ["manager"],
+      }),
+      expect.any(Object),
+    );
+    expect(mocks.getMeOverview).not.toHaveBeenCalled();
+  });
+
+  it("surfaces error string when org overview throws", async () => {
+    mocks.getOrgOverview.mockRejectedValueOnce(new Error("FORBIDDEN"));
+    const { loadDashboardPage } = await import("@/lib/app-pages/dashboard");
+    const data = await loadDashboardPage(
+      {
+        userId: "user-mgr",
+        email: "manager@example.test",
+        orgId: "org-1",
+        role: "manager",
+      },
+      {},
+    );
+
+    expect(data).toMatchObject({
+      kind: "organization",
+      error: "Could not load dashboard.",
+      overview: null,
+    });
+    expect(mocks.logServerError).toHaveBeenCalledWith("dashboard/overview", expect.any(Error));
   });
 });

@@ -148,7 +148,7 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
             data?: { sync?: { dashboardReady?: boolean; dirtyDayCount?: number } };
           };
           const sync = ctx.data?.sync;
-          if (sync && sync.dashboardReady === false) {
+          if (sync && (sync.dashboardReady === false || (sync.dirtyDayCount ?? 0) > 0)) {
             setWaitingForTools(true);
             setImportProgress(
               sync.dirtyDayCount && sync.dirtyDayCount > 0
@@ -171,7 +171,7 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
     }
   }, [device?.id, knownIds, markConnected, refreshStatus]);
 
-  const generateToken = useCallback(async (): Promise<EnrollmentCredentials | null> => {
+  const generateToken = useCallback(async (rotate = false): Promise<EnrollmentCredentials | null> => {
     setError(null);
     const bootstrap = await fetch("/api/onboarding", {
       method: "POST",
@@ -196,7 +196,7 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
         "content-type": "application/json",
         "x-requested-with": "usejunction-web",
       },
-      body: "{}",
+      body: JSON.stringify({ rotate }),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -391,7 +391,7 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
                 <div />
               )}
               {expired && (
-                <Button variant="outline" size="sm" onClick={() => void generateToken()}>
+                <Button variant="outline" size="sm" onClick={() => void generateToken(true)}>
                   Refresh expired command
                 </Button>
               )}

@@ -79,12 +79,10 @@ function sessionTouchesExcluded(
 export async function POST(req: NextRequest) {
   const started = Date.now();
   try {
-    const device = await findDeviceByBearerToken(req, {
-      include: { user: { select: { teamId: true } } },
-    });
+    const device = await findDeviceByBearerToken(req, {});
     if (!device) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-    const policy = await getEffectiveSignalsPolicy(device.orgId, device.user.teamId);
+    const policy = await getEffectiveSignalsPolicy(device.orgId);
     if (!policy.enabled) return NextResponse.json({ error: "signals disabled" }, { status: 403 });
 
     const parsedBody = await limitedJson(req, 128 * 1024);
@@ -137,35 +135,6 @@ export async function POST(req: NextRequest) {
           ...session,
         },
       });
-
-      if (policy.storeEvents) {
-        const steps = session.steps as Array<{ app?: string | null; domain?: string | null; startedAt: string }>;
-        for (const [index, step] of steps.entries()) {
-          const observedAt = asDate(step.startedAt);
-          if (!observedAt) continue;
-          await prisma.signalsActivityEvent.upsert({
-            where: { deviceId_localId: { deviceId: device.id, localId: `${session.localId}:${index}` } },
-            update: {
-              observedAt,
-              app: step.app ?? null,
-              domain: normalizeDomain(step.domain),
-              eventType: "foreground_segment",
-              collectionMode: session.collectionMode,
-            },
-            create: {
-              orgId: device.orgId,
-              developerId: device.userId,
-              deviceId: device.id,
-              localId: `${session.localId}:${index}`,
-              observedAt,
-              app: step.app ?? null,
-              domain: normalizeDomain(step.domain),
-              eventType: "foreground_segment",
-              collectionMode: session.collectionMode,
-            },
-          });
-        }
-      }
 
       if (sample.length < 8) {
         sample.push({

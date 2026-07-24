@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAppPrincipal } from "@/lib/api/app-auth";
 import { appData, appError, timingHeader } from "@/lib/api/app-response";
 import { loadToolDetailPage } from "@/lib/app-pages/tool-detail";
+import { rolesFor } from "@/lib/rbac/permissions";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ toolKey: string }> }) {
   const started = performance.now();
-  const principal = await requireAppPrincipal(request, ["owner", "admin"]);
+  const principal = await requireAppPrincipal(request, rolesFor("org_overview"));
   const authenticated = performance.now();
   if (principal instanceof NextResponse) return principal;
 

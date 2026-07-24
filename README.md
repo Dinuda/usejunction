@@ -123,18 +123,17 @@ One-liner (downloads a prebuilt binary from the control plane, or builds from so
 curl -fsSL http://localhost:3001/install.sh | sh -s -- --token <token> --url http://localhost:3001
 ```
 
+The installer adds `~/.usejunction/bin` to your shell `PATH`. Open a new terminal (or run `export PATH="$HOME/.usejunction/bin:$PATH"`) before using `usejunction` commands.
+
 Windows 10/11 PowerShell (x64 or ARM64, no administrator shell required):
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((Invoke-RestMethod -UseBasicParsing 'http://localhost:3001/install.ps1'))) -Token '<token>' -Url 'http://localhost:3001'"
 ```
 
-Teammate connect (from Team → Share connect command):
+The Windows installer adds `%USERPROFILE%\.usejunction\bin` to your user `PATH`. Open a new terminal before using `usejunction` commands.
 
-```bash
-curl -fsSL http://localhost:3001/install.sh | sh -s -- --connect <token> --url http://localhost:3001
-# opens browser to authenticate with the invited email, then enrolls
-```
+Teammate connect uses the shared team invite link (`/i/<token>`). After signing in there, the UI shows the install command with an enrollment `--token`.
 
 The onboarding and invite screens provide a separate Windows PowerShell command. Windows installs run through a per-user Scheduled Task at logon and collect native Windows coding-tool data; WSL stores are not scanned.
 
@@ -161,7 +160,9 @@ pnpm dev:agent
 # or: ./scripts/dev-agent-watch.sh
 ```
 
-Requires an existing `~/.usejunction/config.json` (from `./install.sh --token …`). This path stamps a `0.0.0-dev.<sha>.<unix>` version, swaps the local binary/app bundle, and restarts launchd/systemd. It does **not** publish a control-plane release or enroll a new device.
+Requires an existing `~/.usejunction/config.json` (from `./install.sh --token …` or the connect curl). This path stamps a `0.0.0-dev.<sha>.<unix>` version, swaps the local binary/app bundle, and restarts launchd/systemd. It does **not** publish a control-plane release or enroll a new device.
+
+When you enroll against a **local** control plane (`http://localhost:3001`), `/install.sh` injects `USEJUNCTION_ROOT` so `curl | sh` builds the agent from this checkout as `0.0.0-dev.*` instead of downloading a published release. Production hosts still serve the plain customer installer (published releases only).
 
 For faster change detection, install `fswatch` (`brew install fswatch`). Without it, the watcher polls every ~750ms.
 
@@ -184,6 +185,8 @@ Analytical reads are centralized through `UsageDaily`, the SQL query engine, and
 Signals collection is documented in [docs/signals-collection.md](docs/signals-collection.md). It covers the optional activity-flow layer that collects AI-adjacent app/domain sessions from the enrolled desktop agent.
 
 ## CLI commands
+
+After install, `usejunction` is on your `PATH` in new terminals (`~/.usejunction/bin` on macOS/Linux, `%USERPROFILE%\.usejunction\bin` on Windows). You can also run the binary directly if needed.
 
 | Command | Description |
 |---------|-------------|

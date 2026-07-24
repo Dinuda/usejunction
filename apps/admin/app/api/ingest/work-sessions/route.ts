@@ -399,12 +399,10 @@ function cleanSession(row: WorkSessionInput, allowRawWorkText: boolean) {
 export async function POST(req: NextRequest) {
   const started = Date.now();
   try {
-    const device = await findDeviceByBearerToken(req, {
-      include: { user: { select: { teamId: true } } },
-    });
+    const device = await findDeviceByBearerToken(req, {});
     if (!device) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-    const policy = await getEffectiveSignalsPolicy(device.orgId, device.user.teamId);
+    const policy = await getEffectiveSignalsPolicy(device.orgId);
     if (!policy.workExtractionEnabled) {
       return NextResponse.json({ error: "work extraction disabled" }, { status: 403 });
     }

@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
       device = await prisma.$transaction(async (tx) => {
         const consumed = await tx.enrollmentToken.updateMany({
           where: { id: enrollment.id, usedAt: null, expiresAt: { gt: new Date() } },
-          data: { usedAt: new Date() },
+          data: { usedAt: new Date(), tokenReveal: null },
         });
         if (consumed.count !== 1) throw new Error("TOKEN_CONSUMED");
         return tx.device.create({

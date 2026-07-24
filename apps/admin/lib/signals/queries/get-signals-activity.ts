@@ -33,7 +33,6 @@ export async function getSignalsActivity(
       windowDays: windows.windowDays,
       filters: {
         developerId: windows.filters.developerId ?? null,
-        teamId: windows.filters.teamId ?? null,
         tool: windows.filters.tool ?? null,
       },
       sessions: sessions.map((session) => ({

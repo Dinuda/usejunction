@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -53,6 +53,7 @@ type SnapshotRefreshResult = {
   rows?: number;
   dirtyRemaining?: number;
   dashboardReady?: boolean;
+  dirtyDayCount?: number;
   error?: string;
   message?: string;
 };
@@ -170,6 +171,10 @@ async function refreshSnapshots(): Promise<
   }
 }
 
+function historyProgressLabel(days: number) {
+  return `updating history (${days} day${days === 1 ? "" : "s"} remaining)`;
+}
+
 export function LocalSyncPanel({
   lastSeenAt,
   lastUsageSyncAt,
@@ -188,10 +193,56 @@ export function LocalSyncPanel({
   const [pending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "syncing" | "ok" | "unreachable" | "error">("idle");
   const [detail, setDetail] = useState<string | null>(null);
+  const [pendingDays, setPendingDays] = useState(dirtyDayCount ?? 0);
+  const drainingRef = useRef(false);
   const uploadedAt = latestTimestamp(lastUsageSyncAt, lastAccountSyncAt) ?? lastSeenAt;
   // Live-horizon KPIs come from usage_daily; only honor dashboardReady from the
-  // server (history stub conflicts). Dirty history backlog must not block the UI.
+  // server (history stub conflicts). Dirty backlog is reported separately as progress.
   const ready = dashboardReady !== false;
+  const historyPending = pendingDays > 0;
+
+  useEffect(() => {
+    setPendingDays(dirtyDayCount ?? 0);
+  }, [dirtyDayCount]);
+
+  // Keep draining rematerialize while history is pending so the label shows
+  // live progress instead of a false "Last synced" after upload.
+  useEffect(() => {
+    if (!historyPending || status === "syncing" || drainingRef.current) return;
+    let cancelled = false;
+    drainingRef.current = true;
+
+    async function drainHistory() {
+      try {
+        for (let attempt = 0; attempt < 30 && !cancelled; attempt += 1) {
+          const refresh = await refreshSnapshots();
+          if (cancelled) return;
+          if (!refresh.ok) {
+            setDetail(refresh.message);
+            return;
+          }
+          const remaining = refresh.result.dirtyRemaining ?? 0;
+          setPendingDays(remaining);
+          if (remaining === 0) {
+            setDetail(null);
+            await invalidateAppData();
+            startTransition(() => router.refresh());
+            return;
+          }
+          setDetail(`Uploaded · ${historyProgressLabel(remaining)}…`);
+          await sleep(2_000);
+        }
+      } finally {
+        drainingRef.current = false;
+      }
+    }
+
+    void drainHistory();
+    return () => {
+      cancelled = true;
+      drainingRef.current = false;
+    };
+  }, [historyPending, status, invalidateAppData, router, startTransition]);
 
   async function loadInfo(): Promise<LocalSyncInfo | null> {
     const res = await fetch("/api/me/local-sync", { cache: "no-store" });
@@ -202,7 +253,7 @@ export function LocalSyncPanel({
   async function finishAfterAgentUpload(warnings?: string[]) {
     setDetail("Updating dashboard…");
     let remaining = 0;
-    for (let attempt = 0; attempt < 5; attempt += 1) {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
       const refresh = await refreshSnapshots();
       if (!refresh.ok) {
         setStatus("error");
@@ -210,20 +261,17 @@ export function LocalSyncPanel({
         return;
       }
       remaining = refresh.result.dirtyRemaining ?? 0;
+      setPendingDays(remaining);
       if (remaining === 0) break;
-      setDetail(
-        `Uploaded · dashboard still updating (${remaining} day${remaining === 1 ? "" : "s"} pending)…`,
-      );
-      await new Promise((resolve) => window.setTimeout(resolve, 1_500));
+      setDetail(`Uploaded · ${historyProgressLabel(remaining)}…`);
+      await sleep(1_500);
     }
     if (remaining > 0) {
       setStatus("ok");
-      setDetail(
-        `Uploaded · dashboard still updating (${remaining} day${remaining === 1 ? "" : "s"} pending)`,
-      );
+      setDetail(`Uploaded · ${historyProgressLabel(remaining)}`);
     } else {
       setStatus("ok");
-      setDetail(formatSyncDetail({ warnings }) ?? "Dashboard updated");
+      setDetail(formatSyncDetail({ warnings }));
     }
     await invalidateAppData();
     startTransition(() => router.refresh());
@@ -369,8 +417,8 @@ export function LocalSyncPanel({
 
   const statusLabel = !ready
     ? `Uploaded ${formatRelativeTime(uploadedAt)} · updating dashboard`
-    : dirtyDayCount && dirtyDayCount > 0
-      ? `Last synced ${formatRelativeTime(uploadedAt)} · history still updating`
+    : historyPending
+      ? `Uploaded ${formatRelativeTime(uploadedAt)} · ${historyProgressLabel(pendingDays)}`
       : `Last synced ${formatRelativeTime(uploadedAt)}`;
 
   return (

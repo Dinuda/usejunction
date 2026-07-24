@@ -72,11 +72,11 @@ const nextConfig: NextConfig = {
         headers: [...commonHeaders, { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" }],
       },
       {
-        source: "/:tokenPath(join|i|connect-invite|reset-password|verify)/:path*",
+        source: "/:tokenPath(join|i|reset-password|verify)/:path*",
         headers: [...commonHeaders, { key: "Referrer-Policy", value: "no-referrer" }],
       },
       {
-        source: "/api/:tokenPath(join|i|connect-invite|auth)/:path*",
+        source: "/api/:tokenPath(join|i|auth)/:path*",
         headers: [...commonHeaders, { key: "Referrer-Policy", value: "no-referrer" }],
       },
     ];

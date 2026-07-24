@@ -62,6 +62,22 @@ export async function getDeveloperRoster(
     }),
   ]);
 
+  const authUserIds = [
+    ...new Set(
+      developers
+        .map((developer) => developer.authUserId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const memberships =
+    authUserIds.length > 0
+      ? await prisma.organizationMembership.findMany({
+          where: { orgId, userId: { in: authUserIds } },
+          select: { userId: true, role: true },
+        })
+      : [];
+  const roleByUserId = new Map(memberships.map((row) => [row.userId, row.role]));
+
   const activityMap = new Map(
     activity.data.rows.map((row) => [
       dimension(row, "developer"),
@@ -88,12 +104,13 @@ export async function getDeveloperRoster(
       name: developer.name,
       email: developer.email,
       authUserId: developer.authUserId,
-      role: developer.role,
-      teamId: developer.teamId,
+      role:
+        developer.authUserId != null
+          ? (roleByUserId.get(developer.authUserId) ?? developer.role)
+          : developer.role,
       createdAt: developer.createdAt,
       devices: developer.devices,
-      assignedPlans: developer.seatAssignments,
-      manualPlans: [] as Array<never>,
+      vendorSeats: developer.seatAssignments,
       toolEvidence: developer.toolClaims,
       usedTools: [...new Set(usedToolsMap.get(developer.id) ?? [])],
       ...(activityMap.get(developer.id) ?? { requests: 0, cost: 0 }),

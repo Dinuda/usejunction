@@ -39,7 +39,6 @@ function sessionWhere(orgId: string, filters: SignalsSessionWindowFilters) {
     },
     ...(filters.developerId ? { developerId: filters.developerId } : {}),
     ...(filters.tool ? { aiTool: filters.tool } : {}),
-    ...(filters.teamId ? { developer: { teamId: filters.teamId } } : {}),
   };
 }
 

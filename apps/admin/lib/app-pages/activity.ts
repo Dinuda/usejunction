@@ -10,6 +10,7 @@ import { getMeOverview } from "@/lib/queries/me/overview";
 import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
 import { getPersonalSignalsLedger } from "@/lib/signals/read";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
+import { canManageSettings } from "@/lib/rbac/permissions";
 
 export type ActivitySearch = {
   view?: string | null;
@@ -21,7 +22,7 @@ export type ActivitySearch = {
 
 export async function loadActivityPage(principal: AppPrincipal, search: ActivitySearch = {}) {
   const isDeveloper = principal.role === "user";
-  const canSwitchAudience = principal.role === "owner" || principal.role === "admin";
+  const canSwitchAudience = canManageSettings(principal.role);
   const scope = canSwitchAudience ? parseAudienceScope(search.scope ?? null) : "team";
   const [settings, subscriptions] = await Promise.all([
     getOrgActivitySettings(principal.orgId),

@@ -10,19 +10,24 @@ import {
   providerForTool,
   repositoryKey,
 } from "@/lib/ingest/local-usage-batch";
+import { resolveModelUsageCostKind } from "@/lib/usage/classify";
 
 describe("local-usage-batch normalize", () => {
   it("maps providers and canonical sources", () => {
     expect(providerForTool("claude")).toBe("anthropic");
     expect(providerForTool("codex")).toBe("openai");
     expect(providerForTool("cursor")).toBe("cursor");
+    expect(providerForTool("opencode")).toBe("opencode");
     expect(normalizeCanonicalSource("local_scan")).toBe("device_observed");
     expect(normalizeCanonicalSource("cursor_usage_events")).toBe("vendor_verified");
     expect(normalizeCanonicalSource("otel_observed")).toBe("otel_observed");
+    expect(normalizeCanonicalSource("opencode_usage")).toBe("device_observed");
+    expect(normalizeCanonicalSource("opencode_local")).toBe("device_observed");
   });
 
   it("infers productivity metric kind for cursor_local and line-only rows", () => {
     expect(inferMetricKind({ date: "2026-07-21", toolName: "cursor" }, "cursor_local")).toBe("productivity");
+    expect(inferMetricKind({ date: "2026-07-21", toolName: "opencode" }, "opencode_local")).toBe("productivity");
     expect(
       inferMetricKind(
         { date: "2026-07-21", toolName: "cursor", suggestedLines: 10, acceptedLines: 4 },
@@ -35,6 +40,12 @@ describe("local-usage-batch normalize", () => {
         "local_scan",
       ),
     ).toBe("usage");
+    expect(
+      inferMetricKind(
+        { date: "2026-07-21", toolName: "opencode", inputTokens: 10, outputTokens: 2, requests: 1 },
+        "opencode_usage",
+      ),
+    ).toBe("usage");
   });
 
   it("infers cost kinds from verified / estimated signals", () => {
@@ -42,6 +53,12 @@ describe("local-usage-batch normalize", () => {
     expect(inferCostKind({ date: "d", toolName: "t", verified: true }, "local_scan", 1.2)).toBe("verified_usage");
     expect(inferCostKind({ date: "d", toolName: "t" }, "cursor_usage_events", 1.2)).toBe("verified_usage");
     expect(inferCostKind({ date: "d", toolName: "t" }, "local_scan", 1.2)).toBe("estimated_api");
+  });
+
+  it("resolves stored model usage cost kinds for device-observed spend", () => {
+    expect(resolveModelUsageCostKind({ source: "device_observed", cost: 0.42, storedCostKind: "actual_spend" })).toBe("actual_spend");
+    expect(resolveModelUsageCostKind({ source: "device_observed", cost: 0.42, storedCostKind: null })).toBe("estimated_api");
+    expect(resolveModelUsageCostKind({ source: "vendor_verified", cost: 1.2, storedCostKind: null })).toBe("verified_usage");
   });
 
   it("drops invalid rows and builds dedupe keys", () => {
@@ -139,6 +156,42 @@ describe("local-usage-batch normalize", () => {
     expect(collapsed).toHaveLength(2);
     expect(collapsed.map((row) => row.source).sort()).toEqual(["cursor_local", "local_scan"]);
   });
+
+  it("normalizes opencode usage and productivity sources", () => {
+    const normalized = normalizeLocalUsageRows(
+      [
+        {
+          date: "2026-07-21",
+          toolName: "opencode",
+          model: "opencode-go/kimi-k2.7-code",
+          source: "opencode_usage",
+          inputTokens: 5000,
+          outputTokens: 200,
+          estimatedCost: 0.42,
+          costKind: "actual_spend",
+          requests: 4,
+        },
+        {
+          date: "2026-07-21",
+          toolName: "opencode",
+          model: "opencode",
+          source: "opencode_local",
+          addedLines: 42,
+          deletedLines: 7,
+          requests: 1,
+        },
+      ],
+      { deviceId: "device-1" },
+    );
+    expect(normalized).toHaveLength(2);
+    const usage = normalized.find((row) => row.source === "opencode_usage");
+    const productivity = normalized.find((row) => row.source === "opencode_local");
+    expect(usage?.canonicalSource).toBe("device_observed");
+    expect(usage?.costKind).toBe("actual_spend");
+    expect(usage?.metricKind).toBe("usage");
+    expect(productivity?.metricKind).toBe("productivity");
+    expect(productivity?.requests).toBe(0);
+  });
 });
 
 describe("local-usage-batch ingest", () => {
@@ -190,7 +243,6 @@ describe("local-usage-batch ingest", () => {
       expect(first.upserted).toBe(50);
       expect(second.upserted).toBe(50);
       expect(await prisma.usageDaily.count({ where: { orgId } })).toBe(50);
-      expect(await prisma.localUsageAggregate.count({ where: { orgId } })).toBe(50);
 
       const updated = await prisma.usageDaily.findFirst({
         where: { orgId, model: "model-0" },
@@ -200,7 +252,6 @@ describe("local-usage-batch ingest", () => {
       expect(updated?.inputTokens).toBe(BigInt(105));
     } finally {
       await prisma.usageDaily.deleteMany({ where: { orgId } });
-      await prisma.localUsageAggregate.deleteMany({ where: { orgId } });
       await prisma.device.deleteMany({ where: { orgId } });
       await prisma.developer.deleteMany({ where: { orgId } });
       await prisma.organization.delete({ where: { id: orgId } });
@@ -245,13 +296,11 @@ describe("local-usage-batch ingest", () => {
       });
       expect(result.upserted).toBe(1);
       expect(await prisma.usageDaily.count({ where: { orgId } })).toBe(1);
-      expect(await prisma.localUsageAggregate.count({ where: { orgId } })).toBe(1);
       const row = await prisma.usageDaily.findFirst({ where: { orgId }, select: { inputTokens: true, requests: true } });
       expect(row?.inputTokens).toBe(BigInt(55));
       expect(row?.requests).toBe(3);
     } finally {
       await prisma.usageDaily.deleteMany({ where: { orgId } });
-      await prisma.localUsageAggregate.deleteMany({ where: { orgId } });
       await prisma.device.deleteMany({ where: { orgId } });
       await prisma.developer.deleteMany({ where: { orgId } });
       await prisma.organization.delete({ where: { id: orgId } });
@@ -323,11 +372,89 @@ describe("local-usage-batch ingest", () => {
         ],
       });
       expect(second.upserted).toBe(2);
-      expect(await prisma.localUsageAggregate.count({ where: { orgId } })).toBe(2);
       expect(await prisma.usageDaily.count({ where: { orgId } })).toBe(2);
     } finally {
       await prisma.usageDaily.deleteMany({ where: { orgId } });
-      await prisma.localUsageAggregate.deleteMany({ where: { orgId } });
+      await prisma.device.deleteMany({ where: { orgId } });
+      await prisma.developer.deleteMany({ where: { orgId } });
+      await prisma.organization.delete({ where: { id: orgId } });
+    }
+  });
+
+  it("persists opencode usage and productivity rows", { skip: !process.env.DATABASE_URL, timeout: 30_000 }, async () => {
+    const { prisma } = await import("@usejunction/db");
+    const { ingestLocalUsageBatch } = await import("@/lib/ingest/local-usage-batch");
+    const suffix = Date.now();
+    const orgId = `bulk_oc_${suffix}`;
+    const userId = `bulk_oc_dev_${suffix}`;
+    const deviceId = `bulk_oc_device_${suffix}`;
+
+    await prisma.organization.create({ data: { id: orgId, name: "Bulk OC", slug: orgId } });
+    await prisma.developer.create({
+      data: { id: userId, orgId, name: "Bulk OC", email: `bulk_oc_${suffix}@example.com`, role: "user" },
+    });
+    await prisma.device.create({
+      data: {
+        id: deviceId,
+        orgId,
+        userId,
+        hostname: "test",
+        os: "darwin",
+        architecture: "arm64",
+        agentVersion: "0.3.1",
+        deviceToken: `tok_oc_${suffix}`,
+      },
+    });
+
+    try {
+      const result = await ingestLocalUsageBatch({
+        orgId,
+        userId,
+        deviceId,
+        rows: [
+          {
+            date: "2026-07-21",
+            toolName: "opencode",
+            model: "opencode-go/kimi-k2.7-code",
+            source: "opencode_usage",
+            inputTokens: 121_126,
+            outputTokens: 8_927,
+            estimatedCost: 0.37615,
+            costKind: "actual_spend",
+            requests: 28,
+          },
+          {
+            date: "2026-07-21",
+            toolName: "opencode",
+            model: "opencode",
+            source: "opencode_local",
+            metricKind: "productivity",
+            addedLines: 120,
+            deletedLines: 30,
+            requests: 3,
+          },
+        ],
+      });
+      expect(result.upserted).toBe(2);
+
+      const usage = await prisma.usageDaily.findFirst({
+        where: { orgId, model: "opencode-go/kimi-k2.7-code" },
+        select: { costKind: true, costMicros: true, metricKind: true, source: true },
+      });
+      expect(usage?.costKind).toBe("actual_spend");
+      expect(usage?.metricKind).toBe("usage");
+      expect(usage?.source).toBe("device_observed");
+      expect(usage?.costMicros).toBe(BigInt(376_150));
+
+      const productivity = await prisma.usageDaily.findFirst({
+        where: { orgId, model: "opencode", metricKind: "productivity" },
+        select: { addedLines: true, deletedLines: true, requests: true },
+      });
+      expect(productivity?.addedLines).toBe(120);
+      expect(productivity?.deletedLines).toBe(30);
+      expect(productivity?.requests).toBe(0);
+    } finally {
+      await prisma.usageDaily.deleteMany({ where: { orgId } });
       await prisma.device.deleteMany({ where: { orgId } });
       await prisma.developer.deleteMany({ where: { orgId } });
       await prisma.organization.delete({ where: { id: orgId } });

@@ -19,7 +19,7 @@ export function SignupForm() {
       : from;
   const emailPrefill = params.get("email") ?? "";
   const joiningInvite =
-    from.startsWith("/i/") || from.startsWith("/join/") || from.startsWith("/connect-invite/");
+    from.startsWith("/i/") || from.startsWith("/join/");
   const hasOAuth = getEnabledOAuthProviders().length > 0;
 
   const [name, setName] = useState("");

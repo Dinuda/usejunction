@@ -68,7 +68,6 @@ test("unknown routes show branded 404 recovery", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /This page isn’t here/i })).toBeVisible();
   await expect(page.getByRole("link", { name: "Go to home" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open dashboard" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Helpful links" })).toBeVisible();
 });
 
 test("owner chrome exposes nav, active-plan badge, and workspace switcher", async ({ page }) => {

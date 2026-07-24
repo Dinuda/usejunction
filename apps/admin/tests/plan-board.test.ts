@@ -5,6 +5,48 @@ import {
   planBoardLeadLabel,
 } from "../lib/quotas/plan-board";
 
+test("buildMemberPlanBoard uses vendorSeats when account plan is missing", () => {
+  const now = new Date("2026-07-18T12:00:00.000Z");
+  const cards = buildMemberPlanBoard({
+    now,
+    accounts: [{ toolName: "cursor", plan: null, email: "dev@example.com" }],
+    vendorSeats: [{ provider: "anysphere", product: "cursor", plan: "Pro" }],
+    toolsUsage: [{ toolName: "cursor", requests: 10, tokens: 1000, cost: 5 }],
+    snapshots: [
+      {
+        toolName: "cursor",
+        windowType: "monthly",
+        usedPercent: 20,
+        creditsRemaining: null,
+        resetAt: new Date("2026-08-01T00:00:00.000Z"),
+        source: "cli_rpc",
+        updatedAt: now,
+      },
+    ],
+  });
+
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0]?.planName, "Pro");
+  assert.equal(cards[0]?.accountEmail, "dev@example.com");
+});
+
+test("buildMemberPlanBoard maps Copilot educational vendor plan to Student", () => {
+  const cards = buildMemberPlanBoard({
+    accounts: [
+      {
+        toolName: "copilot",
+        plan: "individual/free_educational_quota",
+        email: "Dinuda",
+      },
+    ],
+    toolsUsage: [{ toolName: "copilot", requests: 5, tokens: 500, cost: 0 }],
+    snapshots: [],
+  });
+
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0]?.planName, "Student");
+});
+
 test("buildMemberPlanBoard groups primary pace and promo/credit windows per tool", () => {
   const now = new Date("2026-07-18T12:00:00.000Z");
   const cards = buildMemberPlanBoard({
@@ -128,7 +170,7 @@ test("planBoardLeadLabel calls out unavailable timing instead of reporting stead
   });
 
   assert.deepEqual(planBoardLeadLabel(cards), {
-    value: "Pace unavailable for 1 plan",
+    value: "Offline for 1 plan",
     sub: "1 plan · 1 unavailable",
   });
 });
@@ -172,4 +214,32 @@ test("planBoardLeadLabel distinguishes underutilized and all-on-pace plans", () 
     value: "All plans on pace",
     sub: "2 plans · 2 on pace",
   });
+});
+
+test("buildMemberPlanBoard keeps request-only usage without tokens or quota", () => {
+  const now = new Date("2026-07-24T12:00:00.000Z");
+  const cards = buildMemberPlanBoard({
+    now,
+    accounts: [{ toolName: "antigravity", plan: "google-ai-pro", email: "dev@example.com" }],
+    toolsUsage: [{ toolName: "antigravity", requests: 39, tokens: 0, cost: 0 }],
+    snapshots: [],
+  });
+
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0]?.toolKey, "antigravity");
+  assert.equal(cards[0]?.usage?.requests, 39);
+  assert.equal(cards[0]?.usage?.tokens, 0);
+  assert.equal(cards[0]?.primary, null);
+});
+
+test("buildMemberPlanBoard still drops tools with neither quota nor usage", () => {
+  const now = new Date("2026-07-24T12:00:00.000Z");
+  const cards = buildMemberPlanBoard({
+    now,
+    accounts: [{ toolName: "claude", plan: "Pro", email: "dev@example.com" }],
+    toolsUsage: [{ toolName: "claude", requests: 0, tokens: 0, cost: 0 }],
+    snapshots: [],
+  });
+
+  assert.equal(cards.length, 0);
 });

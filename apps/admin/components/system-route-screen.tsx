@@ -40,13 +40,6 @@ function ActionButton({
   );
 }
 
-const recoveryLinks = [
-  { href: "/", label: "Home" },
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/contact", label: "Contact" },
-  { href: "/login", label: "Sign in" },
-] as const;
-
 export function SystemRouteScreen({
   title,
   description,
@@ -70,21 +63,6 @@ export function SystemRouteScreen({
         <ActionButton action={primary} variant="default" />
         {secondary ? <ActionButton action={secondary} variant="outline" /> : null}
       </div>
-
-      <nav
-        aria-label="Helpful links"
-        className="mt-8 flex flex-wrap gap-x-5 gap-y-2 border-t border-border pt-6 text-sm text-muted-foreground"
-      >
-        {recoveryLinks.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className="underline-offset-4 hover:text-foreground hover:underline"
-          >
-            {link.label}
-          </Link>
-        ))}
-      </nav>
     </AuthShell>
   );
 }

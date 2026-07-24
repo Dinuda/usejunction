@@ -22,6 +22,7 @@ import {
   findCatalogTool,
   toolDisplayName,
 } from "@/lib/tools/catalog";
+import { mapVendorPlanToCatalog } from "@/lib/tools/sync-detected";
 
 export type PlanWindowKind = "plan" | "promo" | "credits" | "other";
 
@@ -92,6 +93,9 @@ function catalogPlanDisplayName(toolKey: string, planKey: string | null | undefi
   if (!raw) return null;
   const tool = findCatalogTool(toolKey);
   if (!tool) return raw;
+  const catalogKey = mapVendorPlanToCatalog(toolKey, raw);
+  const mapped = findCatalogPlan(toolKey, catalogKey);
+  if (mapped?.name) return mapped.name;
   const direct = findCatalogPlan(toolKey, raw);
   if (direct?.name) return direct.name;
   const normalized = raw.toLowerCase().replace(/[_\s]+/g, "-");
@@ -104,7 +108,7 @@ function catalogPlanDisplayName(toolKey: string, planKey: string | null | undefi
 function pickPlanName(
   toolKey: string,
   accounts: Array<{ toolName: string; plan: string | null; email: string | null }>,
-  assignedPlans: Array<{ provider: string; product: string; plan: string | null }>,
+  vendorSeats: Array<{ provider: string; product: string; plan: string | null }>,
 ): { planName: string | null; accountEmail: string | null } {
   const account = accounts.find((row) => canonicalToolKey(row.toolName) === toolKey);
   if (account?.plan?.trim()) {
@@ -113,15 +117,15 @@ function pickPlanName(
       accountEmail: account.email,
     };
   }
-  const assigned = assignedPlans.find((row) => {
+  const seat = vendorSeats.find((row) => {
     const hay = `${row.provider} ${row.product} ${row.plan ?? ""}`.toLowerCase();
     return hay.includes(toolKey.replace(/-/g, " ")) || hay.includes(toolKey);
   });
   return {
     planName:
-      catalogPlanDisplayName(toolKey, assigned?.plan) ||
-      assigned?.plan?.trim() ||
-      assigned?.product ||
+      catalogPlanDisplayName(toolKey, seat?.plan) ||
+      seat?.plan?.trim() ||
+      seat?.product ||
       null,
     accountEmail: account?.email ?? null,
   };
@@ -133,7 +137,7 @@ function pickPlanName(
 export function buildMemberPlanBoard(input: {
   snapshots: QuotaSnapshotInput[];
   accounts?: Array<{ toolName: string; plan: string | null; email: string | null }>;
-  assignedPlans?: Array<{ provider: string; product: string; plan: string | null }>;
+  vendorSeats?: Array<{ provider: string; product: string; plan: string | null }>;
   toolsUsage?: Array<{ toolName: string; requests: number; tokens: number; cost: number }>;
   now?: Date;
 }): MemberPlanBoardCard[] {
@@ -198,7 +202,7 @@ export function buildMemberPlanBoard(input: {
     const { planName, accountEmail } = pickPlanName(
       toolKey,
       input.accounts ?? [],
-      input.assignedPlans ?? [],
+      input.vendorSeats ?? [],
     );
     const usage = usageByTool.get(toolKey) ?? null;
 
@@ -224,7 +228,7 @@ export function buildMemberPlanBoard(input: {
     const { planName, accountEmail } = pickPlanName(
       toolKey,
       input.accounts ?? [],
-      input.assignedPlans ?? [],
+      input.vendorSeats ?? [],
     );
     cards.push({
       toolKey,
@@ -241,8 +245,11 @@ export function buildMemberPlanBoard(input: {
   }
 
   // Drop products with neither a live quota nor any usage this period.
+  // Request-only extraction (e.g. antigravity_local) counts as usage.
   const active = cards.filter(
-    (card) => card.primary != null || (card.usage != null && card.usage.tokens > 0),
+    (card) =>
+      card.primary != null ||
+      (card.usage != null && (card.usage.tokens > 0 || card.usage.requests > 0)),
   );
 
   return active.sort((a, b) => {
@@ -303,8 +310,8 @@ export function planBoardLeadLabel(cards: MemberPlanBoardCard[]): {
     return {
       value:
         unavailable === 1
-          ? "Pace unavailable for 1 plan"
-          : `Pace unavailable for ${unavailable} plans`,
+          ? "Offline for 1 plan"
+          : `Offline for ${unavailable} plans`,
       sub,
     };
   }

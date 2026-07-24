@@ -5,6 +5,7 @@ import { signalsOverviewKey } from "@/lib/app-pages/query-keys";
 import { flattenSearchParams, searchParamsToQueryString } from "@/lib/app-pages/search-params";
 import { makeServerQueryClient } from "@/lib/app-pages/server-query-client";
 import { loadSignalsOverviewPage } from "@/lib/app-pages/signals-overview";
+import { rolesFor } from "@/lib/rbac/permissions";
 
 export default async function SignalsOverviewPage({
   searchParams,
@@ -14,7 +15,7 @@ export default async function SignalsOverviewPage({
   const raw = await searchParams;
   const flat = flattenSearchParams(raw);
   const queryString = searchParamsToQueryString(raw);
-  const principal = await principalFromWorkspace(["owner", "admin"]);
+  const principal = await principalFromWorkspace(rolesFor("org_overview"));
   const queryClient = makeServerQueryClient();
   await queryClient.prefetchQuery({
     queryKey: signalsOverviewKey(queryString),
@@ -26,7 +27,6 @@ export default async function SignalsOverviewPage({
         to: flat.to,
         scope: flat.scope,
         developerId: flat.developerId,
-        teamId: flat.teamId,
         tool: flat.tool,
       }),
   });

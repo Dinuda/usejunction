@@ -5,8 +5,8 @@
 //   - Cursor: state.vscdb + ai-code-tracking.db (sqlite)
 //   - Antigravity: ~/.gemini/antigravity*/conversations/*.db (sqlite UsageMetadata)
 //   - Copilot Chat: agent-traces.db (sqlite) and optional debug JSONL
-//   - Cline / Roo / OpenCode: VS Code/Cursor globalStorage extension task JSON
-//     (not standalone ~/.local/share/opencode history)
+//   - Cline / Roo: VS Code/Cursor globalStorage extension task JSON
+//   - OpenCode: ~/.local/share/opencode/opencode.db (message-level tokens/cost)
 //   - Continue: ~/.continue session JSON/JSONL
 //
 // It never reads prompt text — only numeric usage metadata.

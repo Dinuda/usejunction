@@ -296,6 +296,56 @@ test("selectPrimaryQuota never promotes fresh bonus inventory over a stale plan 
   assert.equal(selectPrimaryQuota(rows)?.windowType, "plan");
 });
 
+test("selectPrimaryQuota prefers hottest Antigravity family window over a later unused 5h reset", () => {
+  const now = new Date("2026-07-24T16:30:00.000Z");
+  const rows = mapQuotaSnapshots(
+    [
+      {
+        toolName: "antigravity",
+        windowType: "credits",
+        usedPercent: null,
+        creditsRemaining: 1000,
+        resetAt: null,
+        source: "antigravity_model_credits",
+        updatedAt: now,
+      },
+      {
+        toolName: "antigravity",
+        windowType: "gemini_5h",
+        usedPercent: 1.5042,
+        creditsRemaining: null,
+        resetAt: new Date("2026-07-24T21:11:53.000Z"),
+        source: "oauth_api",
+        updatedAt: now,
+      },
+      {
+        toolName: "antigravity",
+        windowType: "gpt_5h",
+        usedPercent: 0,
+        creditsRemaining: null,
+        resetAt: new Date("2026-07-24T21:27:23.000Z"),
+        source: "oauth_api",
+        updatedAt: now,
+      },
+      {
+        toolName: "antigravity",
+        windowType: "claude_5h",
+        usedPercent: 0,
+        creditsRemaining: null,
+        resetAt: new Date("2026-07-24T21:27:23.000Z"),
+        source: "oauth_api",
+        updatedAt: now,
+      },
+    ],
+    now,
+  );
+
+  const primary = selectPrimaryQuota(rows);
+  assert.equal(primary?.windowType, "gemini_5h");
+  assert.ok(primary?.rawRatio != null && primary.rawRatio > 0);
+  assert.notEqual(evaluatePlanUtilization({ primaryQuota: primary, included: null }).code, "UNKNOWN");
+});
+
 test("included allowance caps display ratio but preserves raw over 100%", () => {
   const included = includedAllowanceUtilization({
     includedCycleMicros: BigInt(10_000_000),
@@ -402,6 +452,8 @@ test("verdictLabel and verdictHint describe within-allowance vs near-limit state
   assert.equal(verdictLabel("HEALTHY"), "On track");
   assert.equal(verdictLabel("NEAR_LIMIT"), "Near limit");
   assert.equal(verdictLabel("LIMIT_EXCEEDED"), "Over quota");
+  assert.equal(verdictLabel("UNKNOWN"), "Offline");
+  assert.equal(verdictLabel("DATA_STALE"), "Offline");
   assert.match(verdictHint("NEAR_LIMIT") ?? "", /plan cap before renewal/i);
   assert.equal(
     verdictHint("NEAR_LIMIT", { expectedEndDateLabel: "Aug 3" }),
@@ -412,6 +464,8 @@ test("verdictLabel and verdictHint describe within-allowance vs near-limit state
     verdictHint("HEALTHY", { expectedEndDateLabel: "Sep 12" }),
     "At this pace, runs out ~Sep 12",
   );
+  assert.match(verdictHint("UNKNOWN") ?? "", /signed in to refresh plan pace/i);
+  assert.match(verdictHint("DATA_STALE") ?? "", /too old/i);
 });
 
 test("resolveReportWindow uses range and rejects non-UTC", () => {
