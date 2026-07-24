@@ -69,7 +69,7 @@ describe("wow week strip", () => {
     assert.equal(wed.label, "Wed");
     assert.equal(wed.tokens, 100);
     assert.equal(wed.priorTokens, 20);
-    assert.equal(wed.deltaPct, -80);
+    assert.equal(wed.deltaPct, 400);
     assert.equal(wed.isOutlier, true);
     assert.equal(wed.isToday, true);
     assert.equal(wed.isPartial, true);
@@ -175,6 +175,6 @@ describe("wow week strip", () => {
     });
     const wed = strip.cells[2]!;
     assert.equal(wed.priorTokens, 80);
-    assert.equal(wed.deltaPct, 60);
+    assert.equal(wed.deltaPct, -37.5);
   });
 });

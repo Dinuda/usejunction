@@ -115,7 +115,15 @@ export const WORK_EXTRACTION_MIN_AGENT_VERSION = "0.3.1";
  */
 export const CLASSIC_SIGNALS_MIN_AGENT_VERSION = "0.4.0";
 
+/** Local checkout builds stamped by scripts/dev-agent-reinstall.sh. */
+export function isLocalDevAgentVersion(agentVersion: string) {
+  return String(agentVersion).trim().replace(/^v/i, "").startsWith("0.0.0-dev.");
+}
+
 export function isAgentCompatibleForWorkExtraction(agentVersion: string, minVersion = WORK_EXTRACTION_MIN_AGENT_VERSION) {
+  // Dev agents report 0.0.0-dev.* (intentionally below published semver) but ship
+  // current work-extraction code from the checkout.
+  if (isLocalDevAgentVersion(agentVersion)) return true;
   const comparison = compareAgentVersions(agentVersion, minVersion);
   return comparison !== null && comparison >= 0;
 }

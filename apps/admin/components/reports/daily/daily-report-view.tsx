@@ -4,11 +4,12 @@ import type { ReactNode } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/panel";
 import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
-import { ToolBrandIcon } from "@/components/tools/tool-brand-icon";
+import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { WowWeekStrip } from "@/components/reports/daily/wow-week-strip";
 import { DailyUsageAreaChart } from "@/components/reports/daily/daily-usage-area-chart";
 import { formatCompactNumber, formatUsd } from "@/lib/format";
 import type { DailyReportPayload } from "@/lib/reports/daily-report";
+import { formatPlanToolRunway, isPlanPressureStatus } from "@/lib/reports/day-plan-usage";
 import { cn } from "@/lib/utils";
 
 function Delta({ value, priorLabel }: { value: number | null; priorLabel: string }) {
@@ -28,30 +29,6 @@ function chartMetric(report: DailyReportPayload): "tokens" | "cost" | "requests"
   return "requests";
 }
 
-function toolUsageSub(
-  tool: {
-    requests: number;
-    tokens: number;
-    tokenSharePercent: number;
-    dayPlanUsedPercent?: number | null;
-  },
-  isDaily: boolean,
-): string {
-  const parts: string[] = [];
-  if (isDaily && tool.dayPlanUsedPercent != null) {
-    parts.push(`${tool.dayPlanUsedPercent.toFixed(0)}% of today's plan`);
-  }
-  if (tool.tokens <= 0 && tool.requests > 0) {
-    parts.push(`${formatCompactNumber(tool.requests)} requests · tokens not reported`);
-  } else {
-    parts.push(`${formatCompactNumber(tool.requests)} requests · ${formatCompactNumber(tool.tokens)} tokens`);
-    if (!isDaily || tool.dayPlanUsedPercent == null) {
-      parts.push(`${tool.tokenSharePercent.toFixed(0)}% of tokens`);
-    }
-  }
-  return parts.join(" · ");
-}
-
 export function DailyReportView({
   report,
   audienceSwitcher,
@@ -60,7 +37,7 @@ export function DailyReportView({
   audienceSwitcher?: ReactNode;
 }) {
   const isWeek = report.period === "week";
-  const priorLabel = isWeek ? "prior week" : "yesterday at 19:00";
+  const priorLabel = isWeek ? "prior week" : "yesterday";
   const metric = chartMetric(report);
   const spendLabel = isWeek ? "Period spend" : "Today's spend";
   const fourthLabel = report.kind === "org" ? "Active members" : "Plan usage";
@@ -113,7 +90,7 @@ export function DailyReportView({
           title="This week"
           description={
             report.wowStrip
-              ? "Daily intensity vs the prior calendar day."
+              ? "Daily token volume this week."
               : metric === "tokens"
                 ? isWeek
                   ? "Tokens across the week."
@@ -136,75 +113,113 @@ export function DailyReportView({
 
       {report.plan ? (
         <Panel as="section" className="mt-10 sm:p-6">
-        <SignalsSectionHeader
-          title="Plan status"
-          description={
-            report.plan.usedPercent != null
-              ? `${report.plan.statusLabel} · ${report.plan.usedPercent.toFixed(0)}% used this billing cycle.`
-              : `${report.plan.statusLabel}.`
-          }
-        />
+          <SignalsSectionHeader
+            title="Plan status"
+            action={
+              <div className="flex items-baseline gap-3 text-sm">
+                <span
+                  className={cn(
+                    "font-semibold",
+                    report.plan.withinAllowance ? "text-foreground" : "text-[color:#c0682c]",
+                  )}
+                >
+                  {report.plan.statusLabel}
+                </span>
+                {report.plan.withinAllowance !== false &&
+                report.plan.tools.some((t) => t.exhaustDateLabel) ? (
+                  <span className="font-medium tabular-nums text-muted-foreground">
+                    Runs out{" "}
+                    {report.plan.tools.find((t) => t.exhaustDateLabel)?.exhaustDateLabel}
+                  </span>
+                ) : report.plan.usedPercent != null ? (
+                  <span className="font-medium tabular-nums text-muted-foreground">
+                    {report.plan.usedPercent.toFixed(0)}% this cycle
+                  </span>
+                ) : null}
+              </div>
+            }
+          />
+          {report.plan.hint ? (
+            <p className="-mt-3 mb-5 text-xs text-muted-foreground">{report.plan.hint}</p>
+          ) : null}
           {report.plan.tools.length > 0 ? (
             <ul>
-              {report.plan.tools.map((tool) => (
-                <li
-                  key={tool.toolName}
-                  className="flex items-start justify-between gap-3 py-5 first:pt-0 last:pb-0"
-                >
-                  <div className="flex min-w-0 items-start gap-2">
-                    <span className="flex h-5 w-3.5 shrink-0 items-center justify-center">
-                      <ToolBrandIcon tool={tool.toolName} size={14} className="text-muted-foreground" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium leading-5">{tool.displayName}</p>
-                      <p className="mt-1 text-xs leading-4 text-muted-foreground">
-                        {tool.statusLabel}
+              {report.plan.tools.map((tool) => {
+                const warn = isPlanPressureStatus(tool.statusLabel);
+                return (
+                  <li
+                    key={tool.toolName}
+                    className="flex items-center justify-between gap-3 py-5 first:pt-0 last:pb-0"
+                  >
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <ToolLogoTile tool={tool.toolName} size="sm" light />
+                      <p
+                        className={cn(
+                          "truncate text-sm font-medium leading-5",
+                          warn && "text-[color:#c0682c]",
+                        )}
+                      >
+                        {tool.displayName}
                       </p>
                     </div>
-                  </div>
-                  <p className="shrink-0 text-sm font-medium tabular-nums">
-                    {tool.usedPercent != null ? `${tool.usedPercent.toFixed(0)}%` : "—"}
-                  </p>
-                </li>
-              ))}
+                    <div className="flex shrink-0 items-baseline gap-3 text-sm">
+                      <span
+                        className={cn(
+                          "font-medium",
+                          warn ? "text-[color:#c0682c]" : "text-muted-foreground",
+                        )}
+                      >
+                        {formatPlanToolRunway(tool)}
+                      </span>
+                      <span className="font-medium tabular-nums">
+                        {tool.usedPercent != null ? `${tool.usedPercent.toFixed(0)}%` : "—"}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           ) : null}
         </Panel>
       ) : null}
 
-      <Panel as="section" className="mt-10 sm:p-6">
+      <Panel as="section" className="mt-16 sm:p-6">
         <SignalsSectionHeader
           title={isWeek ? "Usage by tool" : "Usage by tool today"}
-          description={
-            report.topTools[0]
-              ? isWeek
-                ? `${report.topTools[0].displayName} led this week with ${formatCompactNumber(report.topTools[0].tokens)} tokens · ${formatUsd(report.topTools[0].cost)}.`
-                : `${report.topTools[0].displayName} led today with ${formatCompactNumber(report.topTools[0].tokens)} tokens · ${formatUsd(report.topTools[0].cost)}.`
-              : isWeek
-                ? "No usage recorded for this week yet."
-                : "No usage recorded for today yet."
+          action={
+            report.topTools[0] ? (
+              <div className="flex items-baseline gap-3 text-sm">
+                <span className="font-semibold text-foreground">{report.topTools[0].displayName}</span>
+                <span className="font-medium tabular-nums text-muted-foreground">
+                  {formatCompactNumber(report.topTools[0].tokens)} tok · {formatUsd(report.topTools[0].cost)}
+                </span>
+              </div>
+            ) : (
+              <span className="text-sm text-muted-foreground">
+                {isWeek ? "No usage this week" : "No usage today"}
+              </span>
+            )
           }
         />
         {report.topTools.length > 0 ? (
           <ul>
             {report.topTools.map((tool) => (
-              <li key={tool.toolName} className="flex items-start justify-between gap-3 py-5 first:pt-0 last:pb-0">
-                <div className="flex min-w-0 items-start gap-2">
-                  <span className="flex h-5 w-3.5 shrink-0 items-center justify-center">
-                    <ToolBrandIcon tool={tool.toolName} size={14} className="text-muted-foreground" />
-                  </span>
+              <li
+                key={tool.toolName}
+                className="flex items-center justify-between gap-3 py-5 first:pt-0 last:pb-0"
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <ToolLogoTile tool={tool.toolName} size="sm" light />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium leading-5">{tool.displayName}</p>
                     <p className="mt-1 text-xs leading-4 text-muted-foreground">
-                      {toolUsageSub(tool, !isWeek)}
+                      {tool.tokens <= 0 && tool.requests > 0
+                        ? `${formatCompactNumber(tool.requests)} requests · tokens not reported`
+                        : `${formatCompactNumber(tool.requests)} requests · ${formatCompactNumber(tool.tokens)} tokens today`}
                     </p>
                   </div>
                 </div>
-                <p className="shrink-0 text-sm font-medium tabular-nums">
-                  {!isWeek && tool.dayPlanUsedPercent != null
-                    ? `${tool.dayPlanUsedPercent.toFixed(0)}% of plan`
-                    : formatUsd(tool.cost)}
-                </p>
+                <p className="shrink-0 text-sm font-medium tabular-nums">{formatUsd(tool.cost)}</p>
               </li>
             ))}
           </ul>

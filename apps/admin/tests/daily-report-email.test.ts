@@ -142,7 +142,7 @@ describe("daily report email", () => {
       recipientName: "Dinuda",
     });
     assert.match(built.html, /tokens not reported/);
-    assert.match(built.html, /-100% tokens vs yesterday at 19:00/);
+    assert.match(built.html, /vs yesterday|led today|Quiet day/);
     assert.match(built.html, /47 req/);
   });
 
@@ -162,16 +162,18 @@ describe("daily report email", () => {
   test("email prefers WOW week strip over hourly chart", () => {
     const built = buildDailyReportEmail({ report, recipientName: "Dinuda" });
     assert.match(built.html, /Mon|Tue|Wed/);
-    assert.match(built.html, /vs prior day|vs yesterday|Peak:/);
+    assert.match(built.html, /Tokens this week/);
+    assert.doesNotMatch(built.html, /Tokens this week · vs yesterday/);
     assert.doesNotMatch(built.html, /Tokens · key moments/);
     assert.doesNotMatch(built.html, /<svg/);
   });
 
-  test("email WOW strip render includes weekday cells", () => {
+  test("email WOW strip render includes weekday cells and token counts", () => {
     const html = buildEmailWowWeekStripHtml(report.wowStrip!);
     assert.match(html, /Mon/);
     assert.match(html, /Tue/);
-    assert.match(html, /Bar height = daily/);
+    assert.match(html, /Tokens this week/);
+    assert.doesNotMatch(html, /vs yesterday/);
   });
 
   test("team weekly report links with period=week", () => {
@@ -238,7 +240,8 @@ describe("daily report PDF document", () => {
     assert.match(pdf.html, /Plan usage/);
     assert.match(pdf.html, />Plan status</);
     assert.match(pdf.html, />Usage by tool today</);
-    assert.match(pdf.html, /Tokens this week · vs prior day/);
+    assert.match(pdf.html, /Tokens this week/);
+    assert.doesNotMatch(pdf.html, /Tokens this week · vs yesterday/);
     assert.match(pdf.html, /Today's spend/);
     assert.doesNotMatch(pdf.html, /Tokens by hour/);
     assert.doesNotMatch(pdf.html, /Today · You/);

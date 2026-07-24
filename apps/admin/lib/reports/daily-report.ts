@@ -65,12 +65,17 @@ export type DailyReportToolRow = {
   /** Share of period tokens, 0–100. */
   tokenSharePercent: number;
   /**
-   * Cycle plan used % for this tool (same signal as dashboard “Your plans”).
+   * Billing-cycle plan used % for this tool (same signal as dashboard “Your plans”).
    * Null when the tool has no live quota reading.
    */
   planUsedPercent?: number | null;
   /** Pace-aware plan status for this tool (Near limit / Within allowance / …). */
   planStatusLabel?: string | null;
+  /**
+   * Projected date the cycle allowance runs out at current burn.
+   * Shown especially when the tool is not already near limit.
+   */
+  planExhaustDateLabel?: string | null;
 };
 
 export type DailyReportPlanTool = {
@@ -79,6 +84,8 @@ export type DailyReportPlanTool = {
   usedPercent: number | null;
   statusLabel: string;
   withinAllowance: boolean | null;
+  /** Projected exhaustion date label, e.g. "Aug 20". */
+  exhaustDateLabel?: string | null;
 };
 
 export type DailyReportPlanStatus = {
@@ -219,6 +226,13 @@ export function reportPlanStatusLabel(code: PlanVerdictCode): {
   }
 }
 
+function formatExhaustDateLabel(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const ms = new Date(iso).getTime();
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 /**
  * Plan utilization — same board + pace projection as dashboard “Your plans”.
  */
@@ -259,6 +273,7 @@ async function readPlanStatus(input: {
       usedPercent,
       statusLabel,
       withinAllowance,
+      exhaustDateLabel: formatExhaustDateLabel(card.pace.exhaustAt),
     };
   });
 
@@ -296,10 +311,13 @@ async function readPlanStatus(input: {
     ({ statusLabel, withinAllowance } = reportPlanStatusLabel(worstCode));
   }
 
-  const hintExhaust = cards.find((c) => c.pace.code === "EXCESS")?.pace.exhaustAt;
-  const expectedEndDateLabel = hintExhaust
-    ? new Date(hintExhaust).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-    : null;
+  // Prefer near-limit exhaustion; otherwise earliest projected run-out for within-pace tools.
+  const excessExhaust = cards.find((c) => c.pace.code === "EXCESS")?.pace.exhaustAt ?? null;
+  const withinExhaust = cards
+    .filter((c) => c.pace.exhaustAt && (c.pace.code === "ON_TRACK" || c.pace.code === "UNDER"))
+    .map((c) => c.pace.exhaustAt!)
+    .sort()[0] ?? null;
+  const expectedEndDateLabel = formatExhaustDateLabel(excessExhaust ?? withinExhaust);
 
   return {
     usedPercent,
@@ -457,11 +475,9 @@ export async function getDailyReportPayload(input: {
 
   // Prefer WOW week strip for chart series — avoids fake hourly dumps from daily totals.
   const series = wowStripToSeries(wowStrip);
-  const topTools = await enrichTopToolsWithDayPlanPercent({
-    orgId: input.orgId,
-    developerId,
+  const topTools = attachCyclePlanPercentToTools({
     tools: today.topTools,
-    now,
+    planTools: plan?.tools ?? [],
   });
 
   return {

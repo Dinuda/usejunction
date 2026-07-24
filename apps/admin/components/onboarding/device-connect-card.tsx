@@ -85,8 +85,24 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
   const [isPolling, setIsPolling] = useState(false);
   const [pollSession, setPollSession] = useState(0);
   const [importProgress, setImportProgress] = useState<string | null>(null);
+  /** Only flip after onConnected — keeps loading UI until the parent can take over. */
+  const [fullyConnected, setFullyConnected] = useState(false);
   const notifiedRef = useRef<string | null>(null);
   const refreshInFlightRef = useRef<Promise<EnrollmentCredentials | null> | null>(null);
+
+  const markConnected = useCallback(
+    (candidate: Device) => {
+      setWaitingForTools(false);
+      setIsPolling(false);
+      setImportProgress(null);
+      setFullyConnected(true);
+      if (notifiedRef.current !== candidate.id) {
+        notifiedRef.current = candidate.id;
+        onConnected?.(candidate);
+      }
+    },
+    [onConnected],
+  );
 
   const refreshStatus = useCallback(async () => {
     const response = await fetch("/api/onboarding?include=developer", { cache: "no-store" });
@@ -145,27 +161,15 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
       } catch {
         // Soft-fail: proceed with upload-ready if readiness probe fails.
       }
-      setWaitingForTools(false);
-      setIsPolling(false);
-      setImportProgress(null);
-      if (notifiedRef.current !== candidate.id) {
-        notifiedRef.current = candidate.id;
-        onConnected?.(candidate);
-      }
+      markConnected(candidate);
       return;
     }
 
     if (candidate && isReadyDevice(candidate)) {
-      setWaitingForTools(false);
-      setIsPolling(false);
-      setImportProgress(null);
       setDevice(candidate);
-      if (notifiedRef.current !== candidate.id) {
-        notifiedRef.current = candidate.id;
-        onConnected?.(candidate);
-      }
+      markConnected(candidate);
     }
-  }, [device?.id, knownIds, onConnected, refreshStatus]);
+  }, [device?.id, knownIds, markConnected, refreshStatus]);
 
   const generateToken = useCallback(async (): Promise<EnrollmentCredentials | null> => {
     setError(null);
@@ -267,9 +271,7 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
       setIsPolling(false);
       // Soft-complete on timeout once tools are present — usage may still be uploading.
       if (device && isReadyDevice(device) && notifiedRef.current !== device.id) {
-        notifiedRef.current = device.id;
-        setWaitingForTools(false);
-        onConnected?.(device);
+        markConnected(device);
       }
     }, POLL_DURATION_MS);
 
@@ -277,7 +279,7 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
       window.clearInterval(interval);
       window.clearTimeout(timeout);
     };
-  }, [checkEnrollment, device, onConnected, pollAfterCopy, pollSession]);
+  }, [checkEnrollment, device, markConnected, pollAfterCopy, pollSession]);
 
   const handleCopied = useCallback(() => {
     if (!pollAfterCopy) return;
@@ -309,7 +311,7 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
     );
   }
 
-  if (device && isReadyDevice(device)) {
+  if (fullyConnected && device && isReadyDevice(device)) {
     const connectedTools = [
       ...new Set((device.toolInstallations ?? []).map((tool) => canonicalToolKey(tool.toolName)).filter(hasToolBrandIcon)),
     ];
@@ -334,7 +336,8 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
   const expired = isEnrollmentTokenStale(expiresAt);
   const showWaiting = pollAfterCopy ? isPolling : true;
   const showStatusRow = !hideInlineStatus && (showWaiting || expired);
-  const enrolledAwaitingTools = waitingForTools && Boolean(device);
+  // Keep the waiting banner while prep is in flight — Connected panel only after onConnected.
+  const enrolledAwaitingTools = waitingForTools && Boolean(device) && !fullyConnected;
 
   return (
     <div className={cn(compact ? "space-y-0" : "space-y-4")}>

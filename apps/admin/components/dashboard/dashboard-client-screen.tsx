@@ -37,7 +37,7 @@ import {
   type CycleView,
 } from "@/lib/dashboard/cycle-view";
 import { buildMemberPlanBoard, type MemberPlanBoardCard } from "@/lib/quotas/plan-board";
-import type { QuotaPaceCode } from "@/lib/quotas/pace";
+import { paceVerdictLabel, type QuotaPaceCode } from "@/lib/quotas/pace";
 import { canonicalToolKey, findCatalogTool, toolDisplayName } from "@/lib/tools/catalog";
 import { formatCompactNumber, formatShortDate, formatUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -306,6 +306,34 @@ function personalPlanWindowLabel(card: MemberPlanBoardCard) {
   return `${plan} · Renews ${formatShortDate(reset.toISOString())}`;
 }
 
+function formatPaceDays(days: number | null | undefined): string | null {
+  if (days == null || !Number.isFinite(days) || days < 0) return null;
+  if (days < 1) return "<1d";
+  if (days < 1.5) return "1d";
+  return `${Math.round(days)}d`;
+}
+
+/** Tertiary stats under the meter: usage $ + runway/reset (not the hero). */
+function personalPlanMeta(card: MemberPlanBoardCard): string | null {
+  const parts: string[] = [];
+  if (card.usage && card.usage.cost > 0) {
+    parts.push(`Usage ${formatUsd(card.usage.cost)}`);
+  }
+  if (card.pace.code === "EXCESS" || card.pace.code === "ALREADY_EXCEEDED") {
+    const runway = formatPaceDays(card.pace.daysToExhaust);
+    if (runway) parts.push(`~${runway} runway`);
+  }
+  const reset = formatPaceDays(card.pace.daysToReset);
+  if (reset) parts.push(`resets in ${reset}`);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+function paceToneClass(code: QuotaPaceCode) {
+  if (code === "EXCESS" || code === "ALREADY_EXCEEDED") return "text-destructive";
+  if (code === "ON_TRACK") return "text-primary";
+  return "text-muted-foreground";
+}
+
 function personalCycleSummary(cards: MemberPlanBoardCard[]) {
   const withSignal = cards.filter((card) => card.pace.usedPercent != null);
   const avgUtilization =
@@ -499,6 +527,9 @@ function PersonalHome({
                   const href = findCatalogTool(card.toolKey) ? `/tools/${card.toolKey}` : null;
                   const used = card.pace.usedPercent;
                   const verdictCode = paceToVerdictCode(card.pace.code, used);
+                  const meta = personalPlanMeta(card);
+                  const showStatus =
+                    verdictCode === "NEAR_LIMIT" || verdictCode === "LIMIT_EXCEEDED";
                   const body = (
                     <>
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -512,9 +543,24 @@ function PersonalHome({
                           </div>
                         </div>
                         <div className="flex items-start gap-2">
-                          <p className="text-sm font-semibold tabular-nums">
-                            {card.usage && card.usage.cost > 0 ? formatUsd(card.usage.cost) : "—"}
-                          </p>
+                          <div className="text-right">
+                            <p
+                              className={cn(
+                                "text-sm font-semibold tabular-nums",
+                                paceToneClass(card.pace.code),
+                              )}
+                            >
+                              {used != null ? `${Math.round(used)}%` : "—"}
+                            </p>
+                            <p
+                              className={cn(
+                                "mt-0.5 text-[0.7rem] font-medium",
+                                paceToneClass(card.pace.code),
+                              )}
+                            >
+                              {paceVerdictLabel(card.pace.code)}
+                            </p>
+                          </div>
                           {href ? (
                             <ArrowUpRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
                           ) : null}
@@ -524,11 +570,16 @@ function PersonalHome({
                         <CycleUtilizationBar
                           percent={used}
                           displayPercent={used == null ? null : Math.min(100, Math.max(0, used))}
+                          expectedPercent={card.pace.expectedPercent}
                           verdictCode={verdictCode}
                           label={card.toolLabel}
+                          showPercent={false}
                         />
                       </div>
-                      {verdictCode !== "UNKNOWN" ? (
+                      {meta ? (
+                        <p className="mt-2 text-xs text-muted-foreground">{meta}</p>
+                      ) : null}
+                      {showStatus ? (
                         <CycleStatus code={verdictCode} expectedEndDate={card.pace.exhaustAt} />
                       ) : null}
                     </>

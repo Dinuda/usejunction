@@ -301,9 +301,13 @@ export function verdictHint(
   const expectedEnd = options?.expectedEndDateLabel?.trim() || null;
   switch (code) {
     case "LIGHT_USE":
-      return "Usage is well within the included plan allowance";
+      return expectedEnd
+        ? `At this pace, runs out ~${expectedEnd}`
+        : "Usage is well within the included plan allowance";
     case "HEALTHY":
-      return "Usage is within the included plan allowance";
+      return expectedEnd
+        ? `At this pace, runs out ~${expectedEnd}`
+        : "Usage is within the included plan allowance";
     case "NEAR_LIMIT":
       return expectedEnd
         ? `Likely to hit the plan cap by ${expectedEnd}`

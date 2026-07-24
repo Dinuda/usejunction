@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
-import { agentReleaseManifestSchema, isAgentCompatibleForWorkExtraction, normalizeAgentVersion, WORK_EXTRACTION_MIN_AGENT_VERSION } from "../lib/agent-updates/contracts";
+import {
+  agentReleaseManifestSchema,
+  isAgentCompatibleForWorkExtraction,
+  isLocalDevAgentVersion,
+  normalizeAgentVersion,
+  WORK_EXTRACTION_MIN_AGENT_VERSION,
+} from "../lib/agent-updates/contracts";
 import { requireAgentReleaseOps } from "../lib/agent-updates/ops-auth";
 import {
   artifactKey,
@@ -16,6 +22,12 @@ test("work extraction compatibility gates on minimum agent version", () => {
   assert.equal(isAgentCompatibleForWorkExtraction("0.3.0"), false);
   assert.equal(isAgentCompatibleForWorkExtraction("0.2.0"), false);
   assert.equal(isAgentCompatibleForWorkExtraction("0.4.0"), true);
+});
+
+test("local dev agent builds are always work-extraction compatible", () => {
+  assert.equal(isLocalDevAgentVersion("0.0.0-dev.6636130.1784810162"), true);
+  assert.equal(isLocalDevAgentVersion("0.3.4"), false);
+  assert.equal(isAgentCompatibleForWorkExtraction("0.0.0-dev.6636130.1784810162"), true);
 });
 
 test("normalizeAgentVersion coerces invalid versions so OTA can still target the device", () => {

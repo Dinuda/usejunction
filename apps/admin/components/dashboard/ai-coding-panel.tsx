@@ -29,6 +29,11 @@ function pct(value: number | null) {
   return `${Math.round(value)}%`;
 }
 
+function formatPricePerMillionTokens(cost: number, tokens: number) {
+  if (tokens <= 0) return null;
+  return formatUsd((cost * 1_000_000) / tokens);
+}
+
 function CostBadge({ row }: { row: ModelUsageRow }) {
   if (row.costKind === "verified_usage" || row.verified) {
     return <Badge variant="default" className="rounded-none">Verified</Badge>;
@@ -55,7 +60,7 @@ function ModelTable({ title, description, rows }: { title: string; description: 
   }, [query, rows]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageRows = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  const pageRows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   return (
     <div className="mt-8">
@@ -175,6 +180,101 @@ function ModelTable({ title, description, rows }: { title: string; description: 
   );
 }
 
+function PersonalValueKpis({ metrics }: { metrics: AiCodingMetrics }) {
+  const acceptance =
+    metrics.suggestedLines > 0 ? (metrics.acceptedLines / metrics.suggestedLines) * 100 : null;
+  const tokens = metrics.inputTokens + metrics.outputTokens;
+  const pricePerM = formatPricePerMillionTokens(metrics.cost, tokens);
+  const hasChurn = metrics.addedLines > 0 || metrics.deletedLines > 0;
+
+  return (
+    <div className="grid items-start gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
+      <SignalsKpi
+        label="Accept rate"
+        className="pl-5"
+        value={pct(acceptance)}
+        sub={
+          metrics.suggestedLines > 0
+            ? `${formatCompactNumber(metrics.acceptedLines)} accepted · ${formatCompactNumber(metrics.suggestedLines)} suggested`
+            : metrics.acceptedLines > 0
+              ? `${formatCompactNumber(metrics.acceptedLines)} accepted`
+              : "No suggestions in this window"
+        }
+      />
+      <SignalsKpi
+        label="AI-driven commits"
+        className="sm:border-l sm:border-border sm:pl-8"
+        value={formatCompactNumber(metrics.commits)}
+        sub={metrics.commits > 0 ? "scored commits" : "from Cursor tracking"}
+      />
+      <SignalsKpi
+        label="Lines changed"
+        className="xl:border-l xl:border-border xl:pl-8"
+        value={hasChurn ? formatCompactNumber(metrics.addedLines + metrics.deletedLines) : "—"}
+        sub={
+          hasChurn
+            ? `${formatCompactNumber(metrics.addedLines)} added · ${formatCompactNumber(metrics.deletedLines)} deleted`
+            : "No line churn reported"
+        }
+      />
+      <SignalsKpi
+        label="Tokens"
+        className="sm:border-l sm:border-border sm:pl-8 xl:border-l"
+        value={formatCompactNumber(tokens)}
+        sub={
+          pricePerM
+            ? `${pricePerM}/1M · ${formatCompactNumber(metrics.cacheReadTokens)} cache read`
+            : `${formatCompactNumber(metrics.cacheReadTokens)} cache read · ${formatCompactNumber(metrics.cacheWriteTokens)} write`
+        }
+      />
+    </div>
+  );
+}
+
+function FullSpendKpis({ metrics }: { metrics: AiCodingMetrics }) {
+  const acceptance =
+    metrics.suggestedLines > 0 ? (metrics.acceptedLines / metrics.suggestedLines) * 100 : null;
+
+  return (
+    <div className="mb-8 grid items-start gap-y-8 sm:grid-cols-2 xl:grid-cols-5">
+      <SignalsKpi
+        label="AI lines accepted"
+        className="pl-5"
+        value={formatCompactNumber(metrics.acceptedLines)}
+        sub={
+          metrics.suggestedLines > 0
+            ? `${formatCompactNumber(metrics.suggestedLines)} suggested · ${pct(acceptance)} accept`
+            : undefined
+        }
+      />
+      <SignalsKpi
+        label="AI-driven commits"
+        className="sm:border-l sm:border-border sm:pl-8"
+        value={metrics.aiPercent != null ? pct(metrics.aiPercent) : formatCompactNumber(metrics.commits)}
+        sub={metrics.commits > 0 ? `${metrics.commits} scored commits` : "from Cursor tracking"}
+      />
+      <SignalsKpi
+        label="Tokens"
+        className="xl:border-l xl:border-border xl:pl-8"
+        value={formatCompactNumber(metrics.inputTokens + metrics.outputTokens)}
+        sub={`${formatCompactNumber(metrics.cacheReadTokens)} cache read · ${formatCompactNumber(metrics.cacheWriteTokens)} write`}
+      />
+      <SignalsKpi
+        label="Verified usage"
+        className="sm:border-l sm:border-border sm:pl-8"
+        value={formatUsd(metrics.verifiedCost)}
+        sub="vendor-reported charges"
+      />
+      <SignalsKpi
+        label="Estimated API value"
+        className="xl:border-l xl:border-border xl:pl-8"
+        value={formatUsd(Math.max(0, metrics.cost - metrics.verifiedCost))}
+        sub="rate-card reconstruction"
+      />
+    </div>
+  );
+}
+
 export function AiCodingPanel({
   metrics,
   models,
@@ -184,8 +284,6 @@ export function AiCodingPanel({
   models: ModelUsageRow[];
   embedded?: boolean;
 }) {
-  const acceptance =
-    metrics.suggestedLines > 0 ? (metrics.acceptedLines / metrics.suggestedLines) * 100 : null;
   const usageModels = models.filter((row) => row.metricKind !== "productivity");
 
   const content = (
@@ -198,42 +296,7 @@ export function AiCodingPanel({
         />
       ) : null}
 
-      <div className={cn("grid items-start gap-y-8 sm:grid-cols-2 xl:grid-cols-5", !embedded && "mb-8")}>
-        <SignalsKpi
-          label="AI lines accepted"
-          className="pl-5"
-          value={formatCompactNumber(metrics.acceptedLines)}
-          sub={
-            metrics.suggestedLines > 0
-              ? `${formatCompactNumber(metrics.suggestedLines)} suggested · ${pct(acceptance)} accept`
-              : undefined
-          }
-        />
-        <SignalsKpi
-          label="AI-driven commits"
-          className="sm:border-l sm:border-border sm:pl-8"
-          value={metrics.aiPercent != null ? pct(metrics.aiPercent) : formatCompactNumber(metrics.commits)}
-          sub={metrics.commits > 0 ? `${metrics.commits} scored commits` : "from Cursor tracking"}
-        />
-        <SignalsKpi
-          label="Tokens"
-          className="xl:border-l xl:border-border xl:pl-8"
-          value={formatCompactNumber(metrics.inputTokens + metrics.outputTokens)}
-          sub={`${formatCompactNumber(metrics.cacheReadTokens)} cache read · ${formatCompactNumber(metrics.cacheWriteTokens)} write`}
-        />
-        <SignalsKpi
-          label="Verified usage"
-          className="sm:border-l sm:border-border sm:pl-8"
-          value={formatUsd(metrics.verifiedCost)}
-          sub="vendor-reported charges"
-        />
-        <SignalsKpi
-          label="Estimated API value"
-          className="xl:border-l xl:border-border xl:pl-8"
-          value={formatUsd(Math.max(0, metrics.cost - metrics.verifiedCost))}
-          sub="rate-card reconstruction"
-        />
-      </div>
+      {embedded ? <PersonalValueKpis metrics={metrics} /> : <FullSpendKpis metrics={metrics} />}
 
       <div className="mt-8">
         <h3 className="mb-3 text-sm font-medium">Token breakdown</h3>

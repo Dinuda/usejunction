@@ -165,7 +165,7 @@ export function SignalsSectionHeader({
   bordered?: boolean;
 }) {
   return (
-    <div className={cn("mb-6 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between", bordered && "border-b pb-4")}>
+    <div className={cn("mb-6 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-baseline sm:justify-between", bordered && "border-b pb-4")}>
       <div className="min-w-0">
         <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
         {description ? <p className="mt-1.5 text-xs text-muted-foreground">{description}</p> : null}

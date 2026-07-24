@@ -103,13 +103,17 @@ Frontend-only calculations/nuances:
 
 Sources: `apps/admin/lib/queries/me/overview.ts`, dashboard page, `components/dashboard/ai-coding-panel.tsx`.
 
-- Fixed 30-day UTC window.
+- Report window follows dashboard cycle view / rolling period (`reportWindowForCycleView`), not a fixed 30-day window.
 - Model calls and sessions come from the summary query.
 - Device KPI is the enrolled device count.
 - Tools are usage rows plus detected-only tools; each tool shows requests, input+output tokens, and cost.
+- Plan cards lead with utilization % and pace vs expected burn; usage dollars and reset/runway are tertiary. Status copy is shown only for near-limit / over-quota plans.
+- Top KPI strip is the single spend story (subscription commitment + estimated usage with verified · estimated split).
+- Embedded AI panel (You home) leads with accept rate, commits, line churn, and tokens with $/1M efficiency — it does **not** repeat verified/estimated spend.
+- Non-embedded AI panel (team coding) still shows verified usage and estimated API value.
 - AI coding acceptance = `acceptedLines / suggestedLines * 100`, or no percentage when suggested lines is 0.
-- AI-driven commits shows `aiPercent` when non-null, otherwise commit count. Current data builder sets `aiPercent` to null.
-- AI panel tokens = input + output; cache read/write are separate. Estimated API value = `max(0, total cost - verified cost)`.
+- AI-driven commits shows `aiPercent` when non-null on the full panel; embedded personal panel shows commit count. Current data builder sets `aiPercent` to null.
+- AI panel tokens = input + output; cache read/write are separate. Estimated API value (full panel) = `max(0, total cost - verified cost)`.
 - Token bar total = input + output + cache read + cache write; zero-valued segments are removed. Every nonzero segment gets a minimum 2% CSS width, so visual widths can exceed 100% when many tiny segments exist.
 - Model tables split usage and productivity rows, search case-insensitively across model/tool/source, use page size 25, reset to page 0 on search, and clamp Previous/Next to valid pages.
 

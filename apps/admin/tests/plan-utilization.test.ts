@@ -408,6 +408,10 @@ test("verdictLabel and verdictHint describe within-allowance vs near-limit state
     "Likely to hit the plan cap by Aug 3",
   );
   assert.match(verdictHint("LIGHT_USE") ?? "", /within the included plan allowance/i);
+  assert.equal(
+    verdictHint("HEALTHY", { expectedEndDateLabel: "Sep 12" }),
+    "At this pace, runs out ~Sep 12",
+  );
 });
 
 test("resolveReportWindow uses range and rejects non-UTC", () => {

@@ -86,17 +86,18 @@ export function pctDelta(current: number, previous: number): number | null {
   return ((current - previous) / previous) * 100;
 }
 
-/** Delta safe to show on the strip — null when prior baseline is noise or missing. */
-export function displayWowDeltaPct(prior: number, current: number): number | null {
-  if (prior <= 0 && current <= 0) return null;
-  if (prior <= 0) return null;
+/** Delta safe to show — null when prior baseline is noise or missing.
+ *  Direction is current vs prior (today vs yesterday): positive = up day. */
+export function displayWowDeltaPct(current: number, previous: number): number | null {
+  if (previous <= 0 && current <= 0) return null;
+  if (previous <= 0) return null;
   if (
     current > 0 &&
-    Math.min(prior, current) / Math.max(prior, current) < WOW_MIN_PRIOR_SHARE
+    Math.min(previous, current) / Math.max(previous, current) < WOW_MIN_PRIOR_SHARE
   ) {
     return null;
   }
-  return pctDelta(prior, current);
+  return pctDelta(current, previous);
 }
 
 export function metricOf(totals: WowDayTotals, metric: RhythmMetric): number {
@@ -201,7 +202,7 @@ export function buildWowWeekStrip(input: {
           : "requests";
     const currentMetric = metricOf(current, deltaMetric);
     const priorMetric = metricOf(prior, deltaMetric);
-    const deltaPct = isFuture ? null : displayWowDeltaPct(priorMetric, currentMetric);
+    const deltaPct = isFuture ? null : displayWowDeltaPct(currentMetric, priorMetric);
     const isOutlier =
       !isFuture &&
       deltaPct != null &&

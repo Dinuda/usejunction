@@ -1,58 +1,52 @@
-import { resolveBillingCycle } from "@/lib/billing/cycles";
-import { readAssignments } from "@/lib/insights/readers/assignments";
+import type { DailyReportPlanTool, DailyReportToolRow } from "@/lib/reports/daily-report";
 import { canonicalToolKey } from "@/lib/tools/catalog";
-import type { DailyReportToolRow } from "@/lib/reports/daily-report";
 
-type AssignmentRow = Awaited<ReturnType<typeof readAssignments>>[number];
-
-export function dayPlanUsedPercentFromAssignment(input: {
-  costMicros: number;
-  assignment: Pick<
-    AssignmentRow,
-    "includedCycleMicros" | "billingCadence" | "billingCycleAnchorDate" | "billingCycleDays"
-  >;
-  now: Date;
-}): number | null {
-  const included = input.assignment.includedCycleMicros;
-  if (included <= BigInt(0)) return null;
-  const cycle = resolveBillingCycle(
-    {
-      billingCadence: input.assignment.billingCadence,
-      billingCycleAnchorDate: input.assignment.billingCycleAnchorDate,
-      billingCycleDays: input.assignment.billingCycleDays,
-    },
-    input.now,
-  );
-  const dailyAllowanceMicros = Number(included) / cycle.totalDays;
-  if (!Number.isFinite(dailyAllowanceMicros) || dailyAllowanceMicros <= 0) return null;
-  return (input.costMicros / dailyAllowanceMicros) * 100;
-}
-
-export async function enrichTopToolsWithDayPlanPercent(input: {
-  orgId: string;
-  developerId?: string | null;
+/**
+ * Attach the same cycle plan % / status / exhaustion projection the dashboard
+ * shows onto today's tool rows.
+ * Do not invent a "daily plan %" from includedCycleMicros — that produced absurd
+ * figures (e.g. 2811%) for quota-based plans like Cursor.
+ */
+export function attachCyclePlanPercentToTools(input: {
   tools: DailyReportToolRow[];
-  now: Date;
-}): Promise<DailyReportToolRow[]> {
+  planTools: DailyReportPlanTool[];
+}): DailyReportToolRow[] {
   if (input.tools.length === 0) return input.tools;
-  const assignments = await readAssignments(input.orgId, {
-    developerId: input.developerId ?? undefined,
-  });
-  const byTool = new Map<string, AssignmentRow>();
-  for (const assignment of assignments) {
-    const key = canonicalToolKey(assignment.toolName);
-    if (!byTool.has(key)) byTool.set(key, assignment);
-  }
+  const byTool = new Map(
+    input.planTools.map((tool) => [canonicalToolKey(tool.toolName) || tool.toolName, tool]),
+  );
 
   return input.tools.map((tool) => {
-    const assignment = byTool.get(tool.toolName);
-    const dayPlanUsedPercent = assignment
-      ? dayPlanUsedPercentFromAssignment({
-          costMicros: Math.round(tool.cost * 1_000_000),
-          assignment,
-          now: input.now,
-        })
-      : null;
-    return { ...tool, dayPlanUsedPercent };
+    const plan = byTool.get(canonicalToolKey(tool.toolName) || tool.toolName);
+    return {
+      ...tool,
+      planUsedPercent: plan?.usedPercent ?? null,
+      planStatusLabel: plan?.statusLabel ?? null,
+      planExhaustDateLabel: plan?.exhaustDateLabel ?? null,
+    };
   });
+}
+
+/** True when the tool is already near/over the plan. */
+export function isPlanPressureStatus(statusLabel: string | null | undefined): boolean {
+  if (!statusLabel) return false;
+  const s = statusLabel.toLowerCase();
+  return s.includes("near limit") || s.includes("over quota");
+}
+
+/**
+ * Plan-status line for a tool: status + projected exhaustion on every tool that has a date.
+ */
+export function formatPlanToolRunway(tool: {
+  statusLabel?: string | null;
+  exhaustDateLabel?: string | null;
+  planStatusLabel?: string | null;
+  planExhaustDateLabel?: string | null;
+}): string {
+  const status = tool.statusLabel ?? tool.planStatusLabel ?? null;
+  const exhaust = tool.exhaustDateLabel ?? tool.planExhaustDateLabel ?? null;
+  const parts: string[] = [];
+  if (status) parts.push(status);
+  if (exhaust) parts.push(`Runs out ${exhaust}`);
+  return parts.join(" · ");
 }

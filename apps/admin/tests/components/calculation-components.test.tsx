@@ -95,6 +95,18 @@ describe("calculation-bearing components", () => {
     expect(screen.getByText("Showing 1–1 of 1")).toBeInTheDocument();
   });
 
+  test("AiCodingPanel embedded personal variant hides spend and leads with accept rate", () => {
+    render(<AiCodingPanel metrics={baseMetrics} models={[usageRow(0)]} embedded />);
+
+    expect(screen.getByText("Accept rate")).toBeInTheDocument();
+    expect(screen.getByText("25%")).toBeInTheDocument();
+    expect(screen.getByText(/25 accepted · 100 suggested/)).toBeInTheDocument();
+    expect(screen.getByText("Lines changed")).toBeInTheDocument();
+    expect(screen.getByText(/30 added · 5 deleted/)).toBeInTheDocument();
+    expect(screen.queryByText("Verified usage")).not.toBeInTheDocument();
+    expect(screen.queryByText("Estimated API value")).not.toBeInTheDocument();
+  });
+
   test("AiCodingPanel handles zero suggested lines and zero token breakdown", () => {
     render(
       <AiCodingPanel
