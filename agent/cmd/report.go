@@ -20,42 +20,84 @@ import (
 )
 
 const (
-	heartbeatInterval  = 15 * time.Minute
+	heartbeatInterval = 15 * time.Minute
+	// collectionInterval is the steady-state cadence between scheduled collects.
+	// The schedule is self-correcting: the next collect is scheduled relative to
+	// the previous one finishing, so it can never silently skip a slot.
 	collectionInterval = 30 * time.Minute
+	// collectTimeout hard-caps a single collect. If a collect exceeds this it is
+	// cancelled, reported, and rescheduled — it can never wedge the daemon.
+	collectTimeout = 5 * time.Minute
+	// collectRetryBase is the first backoff after a failed/incomplete collect.
+	// It doubles on repeated failures, capped at collectionInterval.
+	collectRetryBase = 1 * time.Minute
 )
 
 // errUsageQueuePending means the sync uploaded something but left rows queued.
-// Treated as non-fatal for UI, but must not suppress the next collect cycle.
+// Treated as non-fatal for the UI, but the scheduler retries sooner.
 var errUsageQueuePending = errors.New("usage upload queue still pending")
 
-type usageRunTracker struct {
-	mu             sync.RWMutex
-	lastSuccessful time.Time
+// collectStatus holds the outcome of the most recent scheduled collect so the
+// independent heartbeat goroutine can forward it to the control plane. It uses
+// report-once semantics (via a generation counter) so a single failure alerts
+// at most once, but is retried on the next heartbeat if the report itself fails.
+type collectStatus struct {
+	mu          sync.Mutex
+	gen         uint64
+	reportedGen uint64
+	status      string
+	at          time.Time
+	durationMs  int64
+	errMsg      string
+	warnings    []string
 }
 
-func (t *usageRunTracker) markSuccessful(at time.Time) {
-	t.mu.Lock()
-	if at.After(t.lastSuccessful) {
-		t.lastSuccessful = at
+func (c *collectStatus) set(status string, dur time.Duration, errMsg string, warnings []string) {
+	c.mu.Lock()
+	c.gen++
+	c.status = status
+	c.at = time.Now()
+	c.durationMs = dur.Milliseconds()
+	c.errMsg = errMsg
+	c.warnings = append([]string(nil), warnings...)
+	c.mu.Unlock()
+}
+
+// pending returns the latest unreported collect status (and its generation), or
+// nil when there is nothing new to report.
+func (c *collectStatus) pending() (*client.CollectStatus, uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.status == "" || c.gen == c.reportedGen {
+		return nil, 0
 	}
-	t.mu.Unlock()
+	out := &client.CollectStatus{
+		Status:     c.status,
+		At:         c.at.UTC().Format(time.RFC3339),
+		DurationMs: c.durationMs,
+		Error:      c.errMsg,
+	}
+	if len(c.warnings) > 0 {
+		// Cap payload size — a handful of warnings is enough to triage.
+		n := len(c.warnings)
+		if n > 8 {
+			n = 8
+		}
+		out.Warnings = append([]string(nil), c.warnings[:n]...)
+	}
+	return out, c.gen
 }
 
-func (t *usageRunTracker) markIncomplete() {
-	t.mu.Lock()
-	// Clear success watermark so the next heartbeat/collection retries soon.
-	t.lastSuccessful = time.Time{}
-	t.mu.Unlock()
+func (c *collectStatus) markReported(gen uint64) {
+	c.mu.Lock()
+	if gen > c.reportedGen {
+		c.reportedGen = gen
+	}
+	c.mu.Unlock()
 }
 
-func (t *usageRunTracker) due(now time.Time, maxAge time.Duration) bool {
-	t.mu.RLock()
-	lastSuccessful := t.lastSuccessful
-	t.mu.RUnlock()
-	return lastSuccessful.IsZero() || now.Sub(lastSuccessful) >= maxAge
-}
-
-// collectGate serializes all collect+report paths (tickers + localsync).
+// collectGate serializes overlapping collects (scheduled loop + localsync "Sync
+// now"). It never blocks the heartbeat goroutine.
 var collectGate sync.Mutex
 
 func withCollectGate(fn func() (int, int, int, int, []string, error)) (int, int, int, int, []string, error) {
@@ -92,26 +134,28 @@ var daemonCmd = &cobra.Command{
 		}
 
 		api := client.New(cfg)
-		usageRuns := &usageRunTracker{}
-		syncFn := func(ctx context.Context, refresh bool, progress localsync.ProgressFunc) (int, int, int, int, []string, error) {
+		collect := &collectStatus{}
+
+		// doCollect runs one gated collect+report and returns the real error
+		// (including errUsageQueuePending) so callers can classify the outcome.
+		doCollect := func(ctx context.Context, refresh bool, progress localsync.ProgressFunc) (int, int, int, int, []string, error) {
 			return withCollectGate(func() (int, int, int, int, []string, error) {
-				startedAt := time.Now()
-				tools, accounts, quotas, usage, warnings, syncErr := collectAndReportWithProgress(ctx, api, refresh, progress)
-				if syncErr == nil {
-					usageRuns.markSuccessful(startedAt)
-					return tools, accounts, quotas, usage, warnings, nil
-				}
-				if errors.Is(syncErr, errUsageQueuePending) {
-					usageRuns.markIncomplete()
-					// Surface as success to Sync now UI (warnings carry the queue detail).
-					return tools, accounts, quotas, usage, warnings, nil
-				}
-				return tools, accounts, quotas, usage, warnings, syncErr
+				return collectAndReportWithProgress(ctx, api, refresh, progress)
 			})
 		}
 
+		// localSyncFn adapts doCollect for the "Sync now" UI: queued-but-uploaded
+		// rows are surfaced as success (warnings carry the detail).
+		localSyncFn := func(ctx context.Context, refresh bool, progress localsync.ProgressFunc) (int, int, int, int, []string, error) {
+			tools, accounts, quotas, usage, warnings, err := doCollect(ctx, refresh, progress)
+			if errors.Is(err, errUsageQueuePending) {
+				return tools, accounts, quotas, usage, warnings, nil
+			}
+			return tools, accounts, quotas, usage, warnings, err
+		}
+
 		go func() {
-			srv := localsync.New(cfg, syncFn)
+			srv := localsync.New(cfg, localSyncFn)
 			fmt.Printf("Local sync endpoint: %s\n", cfg.LocalSyncURL())
 			if err := srv.ListenAndServe(); err != nil {
 				fmt.Printf("[daemon] local sync server stopped: %v\n", err)
@@ -155,70 +199,149 @@ var daemonCmd = &cobra.Command{
 		}
 
 		fmt.Println("Starting UseJunction daemon (Ctrl-C to stop)…")
-		// Incremental by default; Sync UI ?refresh=1 and daily heartbeat seal force full.
-		if _, _, _, _, _, err := syncFn(cmd.Context(), false, nil); err != nil && verbose {
-			fmt.Printf("[daemon] initial collect error: %v\n", err)
+
+		// The collection loop runs independently so a slow or hung collect can
+		// never starve heartbeats. Each collect is hard-capped by collectTimeout
+		// and the next run is scheduled relative to completion (self-correcting),
+		// with backoff on failure — no ticker drift, no silently skipped slots.
+		go runCollectLoop(cmd.Context(), doCollect, collect)
+
+		// Heartbeats own the main goroutine: they are the lifeline for presence,
+		// update directives, and uninstall, so they must always fire on cadence.
+		return runHeartbeatLoop(cmd.Context(), cfg, api, collect)
+	},
+}
+
+// classifyCollect maps a collect outcome to a compact status string and whether
+// the scheduler should retry sooner than the steady-state interval.
+func classifyCollect(timedOut bool, err error) (status string, retrySoon bool) {
+	switch {
+	case err == nil:
+		return "ok", false
+	case errors.Is(err, errUsageQueuePending):
+		return "queued", true
+	case timedOut || errors.Is(err, context.DeadlineExceeded):
+		return "timeout", true
+	default:
+		return "failed", true
+	}
+}
+
+// runCollectLoop performs the initial collect and then reschedules itself
+// relative to each run finishing. It never blocks heartbeats.
+func runCollectLoop(
+	ctx context.Context,
+	doCollect func(context.Context, bool, localsync.ProgressFunc) (int, int, int, int, []string, error),
+	collect *collectStatus,
+) {
+	backoff := collectRetryBase
+
+	runOnce := func() (retrySoon bool) {
+		if ctx.Err() != nil {
+			return false
 		}
+		cctx, cancel := context.WithTimeout(ctx, collectTimeout)
+		defer cancel()
+		startedAt := time.Now()
+		// Incremental by default; the daily heartbeat seal forces a full rescan.
+		_, _, _, _, warnings, err := doCollect(cctx, false, nil)
+		dur := time.Since(startedAt)
 
-		heartbeatTicker := time.NewTicker(heartbeatInterval)
-		collectionTicker := time.NewTicker(collectionInterval)
-		defer heartbeatTicker.Stop()
-		defer collectionTicker.Stop()
+		// A parent-context cancellation means the daemon is shutting down; don't
+		// record it as a collect failure.
+		if ctx.Err() != nil {
+			return false
+		}
+		timedOut := cctx.Err() == context.DeadlineExceeded
+		status, retrySoon := classifyCollect(timedOut, err)
+		errMsg := ""
+		if err != nil && status != "queued" {
+			errMsg = err.Error()
+		}
+		collect.set(status, dur, errMsg, warnings)
+		if (status == "failed" || status == "timeout") && verbose {
+			fmt.Printf("[daemon] collect %s after %s: %v\n", status, dur.Round(time.Second), err)
+		}
+		return retrySoon
+	}
 
-		for {
-			var loopErr error
-			select {
-			case <-heartbeatTicker.C:
-				var response *client.HeartbeatResponse
-				response, loopErr = heartbeat(api)
-				if errors.Is(loopErr, client.ErrUnauthorized) {
-					fmt.Println("Device credentials revoked; uninstalling…")
-					return uninstall.Run(verbose)
+	// Initial collect on startup, then schedule the next relative to completion.
+	next := collectionInterval
+	if runOnce() {
+		next = backoff
+		backoff = min(backoff*2, collectionInterval)
+	} else {
+		backoff = collectRetryBase
+	}
+
+	timer := time.NewTimer(next)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			if runOnce() {
+				timer.Reset(backoff)
+				backoff = min(backoff*2, collectionInterval)
+			} else {
+				backoff = collectRetryBase
+				timer.Reset(collectionInterval)
+			}
+		}
+	}
+}
+
+// runHeartbeatLoop registers presence on cadence and applies update/uninstall
+// directives. It forwards the latest collect status to the control plane so the
+// server can alert on failures without a separate endpoint.
+func runHeartbeatLoop(ctx context.Context, cfg *config.Config, api *client.APIClient, collect *collectStatus) error {
+	ticker := time.NewTicker(heartbeatInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			pending, gen := collect.pending()
+			response, err := heartbeatWithCollect(api, pending)
+			if errors.Is(err, client.ErrUnauthorized) {
+				fmt.Println("Device credentials revoked; uninstalling…")
+				return uninstall.Run(verbose)
+			}
+			if err != nil {
+				if verbose {
+					fmt.Printf("[daemon] heartbeat error: %v\n", err)
 				}
-				if loopErr == nil {
-					if response.Uninstall {
-						fmt.Println("Control plane requested uninstall; removing agent…")
-						return uninstall.Run(verbose)
-					}
-					if handoffErr := updater.ConsumeHandoffResult(cfg, api, config.Version); handoffErr != nil {
-						fmt.Printf("[daemon] update handoff: %v\n", handoffErr)
-					}
-					if _, confirmErr := updater.ConfirmPending(cfg, api, config.Version); confirmErr != nil {
-						fmt.Printf("[daemon] update confirmation: %v\n", confirmErr)
-					}
-					var updated bool
-					updated, loopErr = applyUpdate(cmd.Context(), cfg, api, response.Update)
-					if loopErr != nil {
-						fmt.Printf("[daemon] automatic update: %v\n", loopErr)
-						loopErr = nil
-					}
-					if updated {
-						fmt.Printf("Updated UseJunction agent; restarting service…\n")
-						if restartErr := restartBackgroundAgent(); restartErr != nil {
-							fmt.Printf("[daemon] update installed; restart warning: %v\n", restartErr)
-						}
-						return nil
-					}
-					// A scheduled collection may have failed while the control plane was
-					// unavailable. Every successful heartbeat is a chance to catch up.
-					if loopErr == nil && usageRuns.due(time.Now(), collectionInterval) {
-						_, _, _, _, _, loopErr = syncFn(cmd.Context(), false, nil)
-					}
+				continue
+			}
+			if pending != nil {
+				collect.markReported(gen)
+			}
+			if response.Uninstall {
+				fmt.Println("Control plane requested uninstall; removing agent…")
+				return uninstall.Run(verbose)
+			}
+			if handoffErr := updater.ConsumeHandoffResult(cfg, api, config.Version); handoffErr != nil {
+				fmt.Printf("[daemon] update handoff: %v\n", handoffErr)
+			}
+			if _, confirmErr := updater.ConfirmPending(cfg, api, config.Version); confirmErr != nil {
+				fmt.Printf("[daemon] update confirmation: %v\n", confirmErr)
+			}
+			updated, updateErr := applyUpdate(ctx, cfg, api, response.Update)
+			if updateErr != nil {
+				fmt.Printf("[daemon] automatic update: %v\n", updateErr)
+			}
+			if updated {
+				fmt.Printf("Updated UseJunction agent; restarting service…\n")
+				if restartErr := restartBackgroundAgent(); restartErr != nil {
+					fmt.Printf("[daemon] update installed; restart warning: %v\n", restartErr)
 				}
-			case <-collectionTicker.C:
-				// Rescan every 30 minutes; usage/work uploads stay incremental
-				// (scan snapshots + fingerprint deltas + ObservedAt watermark).
-				if usageRuns.due(time.Now(), collectionInterval) {
-					_, _, _, _, _, loopErr = syncFn(cmd.Context(), false, nil)
-				}
-			case <-cmd.Context().Done():
 				return nil
 			}
-			if loopErr != nil && verbose {
-				fmt.Printf("[daemon] report error: %v\n", loopErr)
-			}
 		}
-	},
+	}
 }
 
 func classicSignalsSupported(osName string) bool {
@@ -267,6 +390,10 @@ func sendHeartbeat(api *client.APIClient) error {
 }
 
 func heartbeat(api *client.APIClient) (*client.HeartbeatResponse, error) {
+	return heartbeatWithCollect(api, nil)
+}
+
+func heartbeatWithCollect(api *client.APIClient, collect *client.CollectStatus) (*client.HeartbeatResponse, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
@@ -285,6 +412,7 @@ func heartbeat(api *client.APIClient) (*client.HeartbeatResponse, error) {
 		LocalEndpoint:  cfg.LocalSyncURL(),
 		LocalSyncToken: cfg.LocalSyncToken,
 		TimeZone:       platformdirs.LocalIANATimeZone(),
+		LastCollect:    collect,
 	})
 }
 

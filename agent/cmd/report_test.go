@@ -1,29 +1,81 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 )
 
-func TestUsageRunTrackerIsDueAfterThirtyMinutes(t *testing.T) {
-	var tracker usageRunTracker
-	now := time.Date(2026, 7, 19, 19, 0, 0, 0, time.UTC)
+func TestClassifyCollect(t *testing.T) {
+	cases := []struct {
+		name      string
+		timedOut  bool
+		err       error
+		want      string
+		retrySoon bool
+	}{
+		{"success", false, nil, "ok", false},
+		{"queued", false, errUsageQueuePending, "queued", true},
+		{"timeout", true, context.DeadlineExceeded, "timeout", true},
+		{"failed", false, errors.New("boom"), "failed", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			status, retrySoon := classifyCollect(tc.timedOut, tc.err)
+			if status != tc.want {
+				t.Fatalf("status = %q, want %q", status, tc.want)
+			}
+			if retrySoon != tc.retrySoon {
+				t.Fatalf("retrySoon = %v, want %v", retrySoon, tc.retrySoon)
+			}
+		})
+	}
+}
 
-	if !tracker.due(now, collectionInterval) {
-		t.Fatal("a daemon with no successful usage run must collect on heartbeat")
+func TestCollectStatusReportOnce(t *testing.T) {
+	var c collectStatus
+
+	// Nothing set yet: nothing to report.
+	if got, _ := c.pending(); got != nil {
+		t.Fatal("expected no pending status before any collect")
 	}
 
-	tracker.markSuccessful(now)
-	if tracker.due(now.Add(collectionInterval-time.Second), collectionInterval) {
-		t.Fatal("a usage run from the last 30 minutes must suppress a catch-up collect")
-	}
-	if !tracker.due(now.Add(collectionInterval), collectionInterval) {
-		t.Fatal("a usage run that is 30 minutes old must be collected again")
+	c.set("failed", 2*time.Second, "network down", []string{"w1"})
+	got, gen := c.pending()
+	if got == nil || got.Status != "failed" || got.Error != "network down" {
+		t.Fatalf("unexpected pending status: %#v", got)
 	}
 
-	tracker.markSuccessful(now.Add(10 * time.Minute))
-	tracker.markSuccessful(now.Add(5 * time.Minute))
-	if tracker.due(now.Add(39*time.Minute), collectionInterval) {
-		t.Fatal("an older concurrent run must not replace the latest successful run")
+	// Still pending until explicitly reported (so a failed heartbeat retries).
+	if again, _ := c.pending(); again == nil {
+		t.Fatal("status must stay pending until reported")
+	}
+
+	c.markReported(gen)
+	if after, _ := c.pending(); after != nil {
+		t.Fatal("status must not be re-reported once acknowledged")
+	}
+
+	// A newer collect supersedes the reported generation.
+	c.set("ok", time.Second, "", nil)
+	if fresh, freshGen := c.pending(); fresh == nil || fresh.Status != "ok" || freshGen <= gen {
+		t.Fatalf("expected a fresh pending status after a new collect, got %#v gen %d", fresh, freshGen)
+	}
+}
+
+func TestCollectStatusWarningsCapped(t *testing.T) {
+	var c collectStatus
+	warnings := make([]string, 20)
+	for i := range warnings {
+		warnings[i] = "w"
+	}
+	c.set("failed", time.Second, "boom", warnings)
+	got, _ := c.pending()
+	if got == nil {
+		t.Fatal("expected pending status")
+	}
+	if len(got.Warnings) != 8 {
+		t.Fatalf("warnings = %d, want capped at 8", len(got.Warnings))
 	}
 }

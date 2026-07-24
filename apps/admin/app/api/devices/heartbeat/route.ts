@@ -12,6 +12,31 @@ import { logServerError } from "@/lib/errors/public";
 import { getFullUsageRescanDay } from "@/lib/runtime-settings";
 import { applyUserTimeZone } from "@/lib/notifications/preferences";
 import { isValidIanaTimeZone } from "@/lib/timezone";
+import { notifyServerIssue } from "@/lib/notifications/slack";
+
+type AgentCollectStatus = {
+  status: string;
+  at?: string;
+  durationMs?: number;
+  error?: string;
+  warnings?: string[];
+};
+
+function parseCollectStatus(raw: unknown): AgentCollectStatus | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const status = typeof r.status === "string" ? r.status.slice(0, 32) : "";
+  if (!status) return null;
+  return {
+    status,
+    at: typeof r.at === "string" ? r.at.slice(0, 40) : undefined,
+    durationMs: typeof r.durationMs === "number" && Number.isFinite(r.durationMs) ? r.durationMs : undefined,
+    error: typeof r.error === "string" ? r.error.slice(0, 2000) : undefined,
+    warnings: Array.isArray(r.warnings)
+      ? r.warnings.filter((w): w is string => typeof w === "string").slice(0, 8).map((w) => w.slice(0, 500))
+      : undefined,
+  };
+}
 
 export async function POST(req: NextRequest) {
   const started = Date.now();
@@ -160,6 +185,26 @@ export async function POST(req: NextRequest) {
       },
       durationMs: Date.now() - started,
     });
+
+    // Agent-reported collect outcome. Alert ops on failures/timeouts so we can
+    // ship a fix, rather than letting a broken collect silently fall behind.
+    const lastCollect = parseCollectStatus(body.lastCollect);
+    if (lastCollect && (lastCollect.status === "failed" || lastCollect.status === "timeout")) {
+      notifyServerIssue({
+        severity: lastCollect.status === "timeout" ? "warning" : "error",
+        scope: "agent/collect",
+        error: lastCollect.error || `agent collect ${lastCollect.status}`,
+        details: {
+          hostname,
+          agentVersion,
+          deviceId: device.id,
+          status: lastCollect.status,
+          ...(lastCollect.durationMs != null ? { durationMs: String(lastCollect.durationMs) } : {}),
+          ...(lastCollect.at ? { at: lastCollect.at } : {}),
+          ...(lastCollect.warnings?.length ? { warnings: lastCollect.warnings.join("\n") } : {}),
+        },
+      });
+    }
 
     let fullUsageRescanDay: string | null = null;
     try {

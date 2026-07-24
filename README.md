@@ -80,7 +80,7 @@ curl http://localhost:4000/v1/chat/completions \
 | Admin UI | http://localhost:3001 (`admin@example.com` / `admin`) |
 | Langfuse | http://localhost:3000 |
 | LiteLLM | http://localhost:4000 |
-| Postgres (host) | localhost:5433 |
+| Postgres (host) | localhost:5432 |
 
 ### Hybrid local dev
 

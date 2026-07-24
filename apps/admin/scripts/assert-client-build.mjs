@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const requiredStaticRoutes = [
+const requiredWorkspaceRoutes = [
   "/activity",
   "/dashboard",
   "/settings",
@@ -12,13 +12,15 @@ const requiredStaticRoutes = [
   "/tools",
 ];
 
-const manifestPath = resolve(process.cwd(), ".next/prerender-manifest.json");
+const manifestPath = resolve(process.cwd(), ".next/routes-manifest.json");
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-const prerendered = new Set(Object.keys(manifest.routes ?? {}));
-const missing = requiredStaticRoutes.filter((route) => !prerendered.has(route));
+const builtRoutes = new Set((manifest.staticRoutes ?? []).map((route) => route.page));
+const missing = requiredWorkspaceRoutes.filter((route) => !builtRoutes.has(route));
 
 if (missing.length) {
-  throw new Error(`Authenticated UI routes regressed to request-time rendering: ${missing.join(", ")}`);
+  throw new Error(`Authenticated workspace routes missing from production build: ${missing.join(", ")}`);
 }
 
-console.log(`Client-rendered route assertion passed (${requiredStaticRoutes.length} prerendered application routes).`);
+console.log(
+  `Client build route assertion passed (${requiredWorkspaceRoutes.length} workspace application routes present).`,
+);

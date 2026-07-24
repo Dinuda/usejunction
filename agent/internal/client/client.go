@@ -94,6 +94,20 @@ type HeartbeatPayload struct {
 	LocalSyncToken string `json:"localSyncToken,omitempty"`
 	// TimeZone is the machine IANA timezone when known (e.g. Asia/Colombo).
 	TimeZone string `json:"timeZone,omitempty"`
+	// LastCollect carries the outcome of the most recent scheduled collect so the
+	// control plane can alert (Slack) on failures/timeouts without a separate
+	// endpoint. Sent at most once per collect (report-once on the agent side).
+	LastCollect *CollectStatus `json:"lastCollect,omitempty"`
+}
+
+// CollectStatus is a compact summary of one scheduled collect cycle.
+// Status is one of: "ok", "queued", "failed", "timeout".
+type CollectStatus struct {
+	Status     string   `json:"status"`
+	At         string   `json:"at,omitempty"`
+	DurationMs int64    `json:"durationMs,omitempty"`
+	Error      string   `json:"error,omitempty"`
+	Warnings   []string `json:"warnings,omitempty"`
 }
 
 type AgentUpdateDirective struct {

@@ -43,7 +43,7 @@ It does **not** prove UI chrome, Playwright-only navigation, or gateway ingest p
 | **Org** | `e2e-calculation-fixture` (“Calculation E2E”) |
 | **Seed** | `apps/admin/e2e/seed.ts` |
 | **asOf** | Pinned `2026-07-16T12:00:00.000Z` |
-| **DB** | Usually root `.env` → `localhost:5433` (Docker Postgres) |
+| **DB** | Usually root `.env` → `localhost:5432` (Docker Postgres) |
 | **Script** | `apps/admin/scripts/verify-calculation-run.ts` (CLI) / `apps/admin/scripts/lib/run-calculation-verification.ts` (library) |
 | **Purpose** | CI-friendly correctness; fixed expected dollars/calls |
 
