@@ -18,6 +18,10 @@ export type LiveDayTotalRow = {
   date: Date;
   toolName: string;
   developerId: string;
+  /** True for (date) org rollups — not (date, developer_id) slices. */
+  isDayTotal: boolean;
+  /** True for developer-grain grouping sets. */
+  isDeveloperGrain: boolean;
   requests: number;
   inputTokens: bigint;
   outputTokens: bigint;
@@ -28,6 +32,29 @@ export type LiveDayTotalRow = {
   activeDeveloperIds: unknown;
   sourceObservedThrough: Date | null;
 };
+
+type LiveDayReadRow = Omit<LiveDayTotalRow, "isDayTotal" | "isDeveloperGrain">;
+
+/**
+ * Keep only org rollup grains from live GROUPING SETS output.
+ * Filtering on developerId === "" also admits the (date, developer_id='')
+ * bucket, which double-counts connection-level rows with null developer_id.
+ */
+export function orgLiveRowsForRead(rows: LiveDayTotalRow[]): LiveDayReadRow[] {
+  const out: LiveDayReadRow[] = [];
+  for (const row of rows) {
+    if (row.isDayTotal && !row.isDeveloperGrain) {
+      const { isDayTotal: _day, isDeveloperGrain: _dev, ...rest } = row;
+      out.push({ ...rest, toolName: "", developerId: "" });
+      continue;
+    }
+    if (!row.isDayTotal && !row.isDeveloperGrain && row.toolName !== "") {
+      const { isDayTotal: _day, isDeveloperGrain: _dev, ...rest } = row;
+      out.push(rest);
+    }
+  }
+  return out;
+}
 
 function utcDayMs(date: Date): number {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
@@ -166,37 +193,56 @@ export async function liveOrgDayTotalsForDates(
     ), selected AS (
       SELECT * FROM canonical
       WHERE selected_activity OR selected_cost OR effective_metric_kind = 'productivity'
+    ), aggregates AS (
+      SELECT
+        date,
+        CASE WHEN GROUPING(COALESCE(tool_name, '')) = 1 THEN '' ELSE COALESCE(tool_name, '') END AS tool_name_value,
+        CASE WHEN GROUPING(COALESCE(developer_id, '')) = 1 THEN '' ELSE COALESCE(developer_id, '') END AS developer_id_value,
+        GROUPING(COALESCE(tool_name, '')) AS is_day_total,
+        CASE WHEN GROUPING(COALESCE(developer_id, '')) = 0 THEN 1 ELSE 0 END AS is_developer_grain,
+        COALESCE(SUM(CASE WHEN selected_activity THEN requests ELSE 0 END), 0)::int AS requests,
+        COALESCE(SUM(CASE WHEN selected_activity THEN input_tokens ELSE 0 END), 0)::bigint AS "inputTokens",
+        COALESCE(SUM(CASE WHEN selected_activity THEN output_tokens ELSE 0 END), 0)::bigint AS "outputTokens",
+        COALESCE(SUM(CASE WHEN selected_cost AND effective_cost_kind = 'verified_usage' THEN cost_micros ELSE 0 END), 0)::bigint AS "verifiedUsageCostMicros",
+        COALESCE(SUM(CASE WHEN selected_cost AND effective_cost_kind = 'estimated_api' THEN cost_micros ELSE 0 END), 0)::bigint AS "estimatedApiCostMicros",
+        COALESCE(SUM(CASE WHEN selected_cost AND effective_cost_kind = 'actual_spend' THEN cost_micros ELSE 0 END), 0)::bigint AS "actualSpendCostMicros",
+        COUNT(DISTINCT developer_id) FILTER (
+          WHERE selected_activity
+            AND (requests > 0 OR input_tokens > 0 OR output_tokens > 0 OR cost_micros > 0 OR sessions > 0 OR active_seconds > 0)
+        )::int AS "activeDevelopers",
+        COALESCE(
+          jsonb_agg(DISTINCT developer_id) FILTER (
+            WHERE selected_activity
+              AND developer_id IS NOT NULL
+              AND (requests > 0 OR input_tokens > 0 OR output_tokens > 0 OR cost_micros > 0 OR sessions > 0 OR active_seconds > 0)
+          ),
+          '[]'::jsonb
+        ) AS "activeDeveloperIds",
+        MAX(observed_at) AS "sourceObservedThrough"
+      FROM selected
+      GROUP BY GROUPING SETS (
+        (date),
+        (date, COALESCE(tool_name, '')),
+        (date, COALESCE(developer_id, '')),
+        (date, COALESCE(tool_name, ''), COALESCE(developer_id, ''))
+      )
     )
     SELECT
       date,
-      CASE WHEN GROUPING(COALESCE(tool_name, '')) = 1 THEN '' ELSE COALESCE(tool_name, '') END AS "toolName",
-      CASE WHEN GROUPING(COALESCE(developer_id, '')) = 1 THEN '' ELSE COALESCE(developer_id, '') END AS "developerId",
-      COALESCE(SUM(CASE WHEN selected_activity THEN requests ELSE 0 END), 0)::int AS requests,
-      COALESCE(SUM(CASE WHEN selected_activity THEN input_tokens ELSE 0 END), 0)::bigint AS "inputTokens",
-      COALESCE(SUM(CASE WHEN selected_activity THEN output_tokens ELSE 0 END), 0)::bigint AS "outputTokens",
-      COALESCE(SUM(CASE WHEN selected_cost AND effective_cost_kind = 'verified_usage' THEN cost_micros ELSE 0 END), 0)::bigint AS "verifiedUsageCostMicros",
-      COALESCE(SUM(CASE WHEN selected_cost AND effective_cost_kind = 'estimated_api' THEN cost_micros ELSE 0 END), 0)::bigint AS "estimatedApiCostMicros",
-      COALESCE(SUM(CASE WHEN selected_cost AND effective_cost_kind = 'actual_spend' THEN cost_micros ELSE 0 END), 0)::bigint AS "actualSpendCostMicros",
-      COUNT(DISTINCT developer_id) FILTER (
-        WHERE selected_activity
-          AND (requests > 0 OR input_tokens > 0 OR output_tokens > 0 OR cost_micros > 0 OR sessions > 0 OR active_seconds > 0)
-      )::int AS "activeDevelopers",
-      COALESCE(
-        jsonb_agg(DISTINCT developer_id) FILTER (
-          WHERE selected_activity
-            AND developer_id IS NOT NULL
-            AND (requests > 0 OR input_tokens > 0 OR output_tokens > 0 OR cost_micros > 0 OR sessions > 0 OR active_seconds > 0)
-        ),
-        '[]'::jsonb
-      ) AS "activeDeveloperIds",
-      MAX(observed_at) AS "sourceObservedThrough"
-    FROM selected
-    GROUP BY GROUPING SETS (
-      (date),
-      (date, COALESCE(tool_name, '')),
-      (date, COALESCE(developer_id, '')),
-      (date, COALESCE(tool_name, ''), COALESCE(developer_id, ''))
-    )
+      tool_name_value AS "toolName",
+      developer_id_value AS "developerId",
+      is_day_total::int AS "isDayTotal",
+      is_developer_grain::int AS "isDeveloperGrain",
+      requests,
+      "inputTokens",
+      "outputTokens",
+      "verifiedUsageCostMicros",
+      "estimatedApiCostMicros",
+      "actualSpendCostMicros",
+      "activeDevelopers",
+      "activeDeveloperIds",
+      "sourceObservedThrough"
+    FROM aggregates
   `;
 }
 

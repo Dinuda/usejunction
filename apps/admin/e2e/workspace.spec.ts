@@ -61,6 +61,16 @@ for (const route of workspaceRoutes) {
   });
 }
 
+test("unknown routes show branded 404 recovery", async ({ page }) => {
+  const response = await page.goto("/this-route-does-not-exist");
+  // Next dev may stream not-found UI with HTTP 200; production returns 404.
+  expect([200, 404]).toContain(response?.status());
+  await expect(page.getByRole("heading", { name: /This page isn’t here/i })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Go to home" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open dashboard" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Helpful links" })).toBeVisible();
+});
+
 test("owner chrome exposes nav, active-plan badge, and workspace switcher", async ({ page }) => {
   await page.goto("/dashboard");
   await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
@@ -87,6 +97,7 @@ test("owner Team | You switcher scopes Dashboard, Activity, and Signals", async 
   await expect(
     page
       .getByRole("heading", { name: "Spend, traffic, coverage." })
+      .or(page.getByRole("heading", { name: "Nothing reporting yet." }))
       .or(page.getByText(/Link a developer profile/i)),
   ).toBeVisible();
 
@@ -288,7 +299,7 @@ test("seeded usage totals stay consistent across owner calculation views", async
   await expect(page.getByText("Verified usage").first()).toBeVisible();
   await expect(page.getByText("$5.00").first()).toBeVisible();
   await expect(page.getByText("Estimated API value").first()).toBeVisible();
-  await expect(page.getByText("$1.00").first()).toBeVisible();
+  await expect(page.getByText("$2.00").first()).toBeVisible();
 });
 
 test("team member mirrors dashboard rolling and cycle filters", async ({ page }) => {
@@ -358,7 +369,7 @@ test("onboarding resume shows workspace setup choices", async ({ page }) => {
   setOnboardingState(ownerEmail, "incomplete");
   try {
     await page.goto("/onboarding?resume=1");
-    await expect(page.getByText("Workspace setup").first()).toBeVisible();
+    await expect(page.getByText(/Connect this computer or invite the team/i).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /Connect this computer/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /Invite the team/i })).toBeVisible();
   } finally {

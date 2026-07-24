@@ -28,13 +28,10 @@ for (const route of publicRoutes) {
   });
 }
 
-test("unknown routes show branded 404 recovery", async ({ page }) => {
-  const response = await page.goto("/this-route-does-not-exist");
-  expect(response?.status()).toBe(404);
-  await expect(page.getByRole("heading", { name: /This page isn’t here/i })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Go to home" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open dashboard" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Helpful links" })).toBeVisible();
+test("unknown routes redirect unauthenticated visitors to sign in", async ({ page }) => {
+  await page.goto("/this-route-does-not-exist");
+  await expect(page).toHaveURL(/\/login/);
+  await expect(page.getByRole("heading", { name: /Sign in to UseJunction/i })).toBeVisible();
 });
 
 test("landing page shows brand and primary CTA", async ({ page }) => {

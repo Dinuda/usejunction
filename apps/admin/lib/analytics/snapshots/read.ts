@@ -12,6 +12,7 @@ import {
   eachIsoDayInclusive,
   liveOrgDayTotalsForDates,
   loadDirtyDaysInWindow,
+  orgLiveRowsForRead,
   splitLiveReadWindow,
   type LiveDayTotalRow,
 } from "./overlay";
@@ -300,7 +301,7 @@ export async function readOrgUsageFromSnapshots(
     if (liveDirty.length) {
       liveDirtyOverlay = true;
       const live = await liveOrgDayTotalsForDates(orgId, liveDirty);
-      const liveOrg = live.filter((row) => row.developerId === "");
+      const liveOrg = orgLiveRowsForRead(live);
       historyRows = [...cleanRows, ...liveOrg];
     }
   }
@@ -309,7 +310,7 @@ export async function readOrgUsageFromSnapshots(
   if (liveFrom && liveTo) {
     const liveDays = eachIsoDayInclusive(liveFrom, liveTo);
     const live = await liveOrgDayTotalsForDates(orgId, liveDays);
-    liveRows = live.filter((row) => row.developerId === "");
+    liveRows = orgLiveRowsForRead(live);
   }
 
   return foldSnapshotRows([...historyRows, ...liveRows], {

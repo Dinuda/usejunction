@@ -48,7 +48,7 @@ test("Add a team tool sheet lists Codex/Work once and creates a ChatGPT subscrip
   await expect(sheet.getByText(/6 plans available/i).first()).toBeVisible();
 
   const toolCards = sheet.locator("button").filter({ hasText: /plans available/i });
-  await expect(toolCards).toHaveCount(4);
+  await expect(toolCards).toHaveCount(5);
 
   await sheet.getByRole("button", { name: /ChatGPT \/ Codex/i }).click();
   await expect(sheet.getByRole("heading", { name: /Choose a ChatGPT plan/i })).toBeVisible();

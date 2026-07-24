@@ -45,7 +45,7 @@ test("developer chrome hides owner-only navigation", async ({ page }) => {
   await expect(page.getByRole("tablist", { name: "Audience" })).toHaveCount(0);
 });
 
-test("developer gets a safe forbidden state on owner-only calculation routes", async ({ page }) => {
+test("developer is redirected from owner-only calculation routes", async ({ page }) => {
   for (const route of [
     "/team",
     "/team/e2e-developer",
@@ -55,10 +55,7 @@ test("developer gets a safe forbidden state on owner-only calculation routes", a
     "/signals/settings",
   ]) {
     await page.goto(route);
-    await expect(
-      page.getByRole("alert").filter({ hasText: "You do not have access to this resource." }),
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+    await expect(page).toHaveURL(/\/dashboard/);
   }
 });
 
