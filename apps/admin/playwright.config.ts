@@ -10,7 +10,13 @@ loadEnvConfig(path.join(__dirname, "../.."));
 const authDir = path.join(__dirname, "e2e", ".auth");
 
 /** Keep the Playwright-managed dev server on the same DB/auth env as seed + tests (CI has no .env file). */
-const webServerEnv = {
+function definedEnv(entries: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(entries).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+}
+
+const webServerEnv = definedEnv({
   DATABASE_URL: process.env.DATABASE_URL,
   NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET ?? "ci-test-secret",
   AUTH_SECRET: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? "ci-test-secret",
@@ -18,7 +24,7 @@ const webServerEnv = {
   E2E_OWNER_EMAIL: process.env.E2E_OWNER_EMAIL,
   E2E_OWNER_PASSWORD: process.env.E2E_OWNER_PASSWORD,
   E2E_DEVELOPER_EMAIL: process.env.E2E_DEVELOPER_EMAIL,
-};
+});
 
 export default defineConfig({
   testDir: "./e2e",

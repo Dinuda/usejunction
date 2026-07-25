@@ -760,18 +760,14 @@ export async function ensureOrgUsageDaySnapshots(
       const corruptDays = await findCorruptOrgDaySnapshots(orgId, fromDay, toDay, metricVersion);
       if (!corruptDays.length) return;
 
-      alertSnapshotFailsafe(
-        "analytics/snapshots_missing",
+      console.warn("[analytics/snapshots_missing] healing org-day snapshots", {
         orgId,
-        new Error("org-day snapshots empty/undercounted while usage_daily has data; healing"),
-        {
-          from: isoDay(fromDay),
-          to: isoDay(toDay),
-          days: corruptDays.length,
-          hadCoverage,
-          stubbed,
-        },
-      );
+        from: isoDay(fromDay),
+        to: isoDay(toDay),
+        days: corruptDays.length,
+        hadCoverage,
+        stubbed,
+      });
 
       const marked = await markOrgUsageDaysDirty(orgId, corruptDays, metricVersion);
       pendingDirty += marked.length;

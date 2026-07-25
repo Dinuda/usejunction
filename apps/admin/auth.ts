@@ -45,6 +45,11 @@ export const {
         });
         return;
       }
+      if (type === "CredentialsSignin") {
+        // Expected when login forms submit wrong credentials (including e2e bad-password tests).
+        console.warn("[auth][credentials-rejected] Invalid email or password");
+        return;
+      }
       console.error("[auth][error]", error);
       notifyServerIssue({
         severity: "error",
