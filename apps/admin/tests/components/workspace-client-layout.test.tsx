@@ -247,7 +247,17 @@ describe("WorkspaceClientLayout", () => {
     );
 
     await waitFor(() => {
-      expect(mocks.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["app"] });
+      expect(mocks.invalidateQueries).toHaveBeenCalledWith(
+        { predicate: expect.any(Function) },
+        { cancelRefetch: false },
+      );
     });
+
+    const { predicate } = mocks.invalidateQueries.mock.calls[0]![0] as {
+      predicate: (query: { queryKey: readonly unknown[] }) => boolean;
+    };
+    expect(predicate({ queryKey: ["app", "workspace-context"] })).toBe(false);
+    expect(predicate({ queryKey: ["app", "dashboard", ""] })).toBe(true);
+    expect(predicate({ queryKey: ["other"] })).toBe(false);
   });
 });

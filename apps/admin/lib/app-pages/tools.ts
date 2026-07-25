@@ -1,10 +1,11 @@
 import type { AppPrincipal } from "@/lib/api/app-auth";
 import { jsonSafe } from "@/lib/api/app-response";
+import { getOrgActivitySettings } from "@/lib/activity/service";
 import { parseCycleView, reportWindowForCycleView } from "@/lib/dashboard/cycle-view";
 import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
-import { getDashboardTools } from "@/lib/queries/dashboard/tools";
 import { getLocalSyncPanelContext } from "@/lib/queries/me/local-sync-context";
 import { getMeOverview } from "@/lib/queries/me/overview";
+import { getDashboardTools } from "@/lib/queries/dashboard/tools";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 
 export type ToolsSearch = {
@@ -16,11 +17,17 @@ export type ToolsSearch = {
 
 export async function loadToolsPage(principal: AppPrincipal, search: ToolsSearch = {}) {
   if (principal.role === "user") {
-    const [personal, syncContext] = await Promise.all([
+    const [personal, syncContext, settings] = await Promise.all([
       getMeOverview(principal.orgId, principal.userId, principal.role, { includeOrgPlanSync: false }),
       getLocalSyncPanelContext(principal.orgId, principal.userId),
+      getOrgActivitySettings(principal.orgId),
     ]);
-    return jsonSafe({ kind: "personal" as const, personal, syncContext });
+    return jsonSafe({
+      kind: "personal" as const,
+      personal,
+      syncContext,
+      canBrowseTools: settings.teamToolsBrowseEnabled,
+    });
   }
 
   const raw = {

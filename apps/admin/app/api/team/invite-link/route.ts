@@ -13,6 +13,7 @@ import {
 } from "@/lib/rbac/permissions";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
 import { logServerError } from "@/lib/errors/public";
+import { assertCanInviteUsers } from "@/lib/saas-billing/status";
 
 type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 
@@ -188,6 +189,11 @@ export async function PUT(req: NextRequest) {
   const inviteRole = resolveInviteRole(auth.role, parsed.data.role);
   if (inviteRole instanceof NextResponse) return inviteRole;
 
+  const inviteGate = await assertCanInviteUsers(auth.orgId);
+  if (!inviteGate.allowed) {
+    return NextResponse.json({ error: inviteGate.message }, { status: 403 });
+  }
+
   const { link } = await ensureLink(auth.orgId, auth.userId, false);
   const emails = [...new Set(parsed.data.emails.map(normalizeEmail))];
   const existingEmails = new Set(link.allowlist.map((row) => row.email));
@@ -327,6 +333,11 @@ export async function PATCH(req: NextRequest) {
   ];
   if (!emails.length) {
     return NextResponse.json({ error: "email required" }, { status: 400 });
+  }
+
+  const inviteGate = await assertCanInviteUsers(auth.orgId);
+  if (!inviteGate.allowed) {
+    return NextResponse.json({ error: inviteGate.message }, { status: 403 });
   }
 
   const { link } = await ensureLink(auth.orgId, auth.userId, false);

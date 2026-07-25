@@ -1,12 +1,11 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { AppQueryHydration } from "@/components/app-query-hydration";
 import ToolDetailClientScreen from "@/components/tools/tool-detail-client-screen";
 import { principalFromWorkspace } from "@/lib/app-pages/principal";
 import { toolDetailKey } from "@/lib/app-pages/query-keys";
 import { flattenSearchParams, searchParamsToQueryString } from "@/lib/app-pages/search-params";
 import { makeServerQueryClient } from "@/lib/app-pages/server-query-client";
-import { loadToolDetailPage } from "@/lib/app-pages/tool-detail";
-import { rolesFor } from "@/lib/rbac/permissions";
+import { loadToolDetailPage, resolveToolDetailAccess } from "@/lib/app-pages/tool-detail";
 
 export default async function ToolProviderPage({
   params,
@@ -19,7 +18,10 @@ export default async function ToolProviderPage({
   const raw = await searchParams;
   const flat = flattenSearchParams(raw);
   const queryString = searchParamsToQueryString(raw);
-  const principal = await principalFromWorkspace(rolesFor("org_overview"));
+  const principal = await principalFromWorkspace();
+  const access = await resolveToolDetailAccess(principal);
+  if (!access.ok) redirect("/dashboard");
+
   const queryClient = makeServerQueryClient();
   await queryClient.prefetchQuery({
     queryKey: toolDetailKey(rawToolKey, queryString),
@@ -30,7 +32,7 @@ export default async function ToolProviderPage({
         from: flat.from,
         to: flat.to,
       });
-      if (!data) notFound();
+      if (!data || "error" in data) notFound();
       return data;
     },
   });

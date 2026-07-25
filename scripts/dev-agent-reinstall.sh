@@ -345,5 +345,10 @@ if ! verify_daemon "$binary" "$VERSION"; then
   exit 1
 fi
 
+echo "Repairing legacy tool configs if needed…"
+if ! "$binary" doctor --format json >/dev/null 2>&1; then
+  echo "Warning: legacy config repair reported an issue (see usejunction doctor)." >&2
+fi
+
 echo "Installed UseJunction agent v${VERSION}."
 "$binary" status || true

@@ -6,6 +6,7 @@ import { parseCycleView, reportWindowForCycleView } from "@/lib/dashboard/cycle-
 import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
 import { activeDevicesForOrg } from "@/lib/devices/decommission";
 import { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
+import { getOrgDeviceSyncStatus } from "@/lib/queries/team/device-syncs";
 import { getDeveloperRoster } from "@/lib/read-models/developers";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 
@@ -43,7 +44,7 @@ export async function loadTeamPage(principal: AppPrincipal, search: TeamSearch =
     })
     .catch(() => [] as Array<{ id: string; email: string; role: string; expiresAt: Date; createdAt: Date }>);
 
-  const [hasDevice, roster, planUsage, pendingInvitesRaw] = await Promise.all([
+  const [hasDevice, roster, planUsage, pendingInvitesRaw, syncs] = await Promise.all([
     hasDevicePromise,
     getDeveloperRoster(principal.orgId, { reportWindow }),
     getPlanUsage(
@@ -52,6 +53,7 @@ export async function loadTeamPage(principal: AppPrincipal, search: TeamSearch =
       { subscriptions },
     ),
     pendingInvitesPromise,
+    getOrgDeviceSyncStatus(principal.orgId, now),
   ]);
 
   const rosterEmails = new Set(roster.developers.map((developer) => developer.email.toLowerCase()));
@@ -65,5 +67,6 @@ export async function loadTeamPage(principal: AppPrincipal, search: TeamSearch =
     subscriptions,
     planUsage: planUsage.data.developers,
     pendingInvites,
+    syncs,
   });
 }

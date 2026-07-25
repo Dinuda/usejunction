@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BarChart3, ChevronDown, ChevronUp, SquarePen, Users } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { BarChart3, ChevronDown, ChevronUp, Loader2, SquarePen, Users } from "lucide-react";
+import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
@@ -17,8 +19,23 @@ import {
   RosterPlanUsage,
   type RosterPlanUsagePlan,
 } from "@/components/developers/roster-plan-usage";
+import { ROLE_LABELS, roleDisplayLabel, roleUpdateSuccessMessage } from "@/components/developers/member-role-select";
 import { SubscriptionChoices } from "@/components/developers/member-plans-panel";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { formatCompactNumber } from "@/lib/format";
+import { userFacingError } from "@/lib/errors/user-facing";
+import {
+  ASSIGNABLE_ROLES,
+  canManageSettings,
+  type OrganizationRole,
+} from "@/lib/rbac/permissions";
 import type { PlanUsageDeveloperRow } from "@/lib/insights/contracts/plan-usage.v1";
 import { countActiveDevices } from "@/lib/devices/presence";
 import { useInvalidateAppData } from "@/lib/api/client";
@@ -54,6 +71,14 @@ type Developer = {
 
 const utcToday = () => new Date().toISOString().slice(0, 10);
 
+type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
+
+function asAssignableRole(role: string): AssignableRole {
+  return (ASSIGNABLE_ROLES as readonly string[]).includes(role)
+    ? (role as AssignableRole)
+    : "user";
+}
+
 function planUsageMap(rows: PlanUsageDeveloperRow[]) {
   return new Map(rows.map((developer) => [developer.developerId, developer]));
 }
@@ -72,6 +97,8 @@ export function DeveloperToolInventory({
   periodSuffix?: string;
 }) {
   const router = useRouter();
+  const { data: session } = useSession();
+  const canAssignRoles = canManageSettings(session?.user?.role as OrganizationRole | null | undefined);
   const invalidateAppData = useInvalidateAppData();
   const [developers, setDevelopers] = useState<Developer[]>(initialDevelopers);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>(initialSubscriptions);
@@ -150,6 +177,33 @@ export function DeveloperToolInventory({
       router.refresh();
     }
     setSaving(null);
+  }
+
+  async function changeRole(developerId: string, role: AssignableRole) {
+    const memberName = developers.find((developer) => developer.id === developerId)?.name;
+    setSaving(`role:${developerId}`);
+    setError(null);
+    const response = await fetch(`/api/developers/${developerId}/role`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(userFacingError(body.error, "Could not update role."));
+      setSaving(null);
+      return;
+    }
+    const nextRole = body.role ?? role;
+    setDevelopers((current) =>
+      current.map((developer) =>
+        developer.id === developerId ? { ...developer, role: nextRole } : developer,
+      ),
+    );
+    setSaving(null);
+    toast.success(roleUpdateSuccessMessage(nextRole, memberName));
+    await invalidateAppData();
+    router.refresh();
   }
 
   return (
@@ -288,13 +342,16 @@ export function DeveloperToolInventory({
                     primaryRatio: plan.primaryRatio,
                     verdict: plan.verdict,
                   })) ?? [];
+                const savingRole = saving === `role:${developer.id}`;
+                const currentRole = asAssignableRole(developer.role);
+                const roleLocked = developer.role === "owner";
 
                 return (
                   <li
                     key={developer.id}
                     className="group transition-colors hover:bg-muted/40 has-[:focus-visible]:bg-muted/40"
                   >
-                    <div className="flex items-start gap-3 px-5 py-5">
+                    <div className="flex flex-wrap items-start gap-3 px-5 py-5">
                       {canBulkAssign ? (
                         <input
                           type="checkbox"
@@ -334,6 +391,31 @@ export function DeveloperToolInventory({
                           See Usage
                         </span>
                       </Link>
+                      {canAssignRoles && !roleLocked ? (
+                        <Select
+                          value={currentRole}
+                          onValueChange={(next) => void changeRole(developer.id, next as AssignableRole)}
+                          disabled={Boolean(saving)}
+                        >
+                          <SelectTrigger
+                            className="h-8 w-[148px] shrink-0 self-start rounded-none"
+                            aria-label={`Role for ${developer.name}`}
+                          >
+                            {savingRole ? <Loader2 className="size-3.5 animate-spin" /> : <SelectValue />}
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ASSIGNABLE_ROLES.map((item) => (
+                              <SelectItem key={item} value={item}>
+                                {ROLE_LABELS[item]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Badge variant="outline" className="shrink-0 self-start font-normal">
+                          {roleDisplayLabel(developer.role)}
+                        </Badge>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"

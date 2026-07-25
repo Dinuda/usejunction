@@ -1,11 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSession } from "next-auth/react";
-import { Check, Clipboard, Link2, Loader2, Mail, RefreshCw, Send, X } from "lucide-react";
+import { Check, ChevronDown, Clipboard, Link2, Loader2, Mail, RefreshCw, Send, X } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { ROLE_LABELS } from "@/components/developers/member-role-select";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -48,9 +53,12 @@ function isInviteLinkStale(link: { expiresAt?: string | Date | null; enabled?: b
 
 export function InviteTeamForm({
   onInvited,
+  renderHeader,
   variant = "default",
 }: {
   onInvited?: (result: InviteResult) => void;
+  /** Renders dialog/card header with copy-link control (dashboard invite dialog). */
+  renderHeader?: (copyLink: ReactNode) => ReactNode;
   /** Dashboard setup card — same invite features, tighter layout matching connect machine. */
   variant?: "default" | "dashboard";
 }) {
@@ -69,7 +77,6 @@ export function InviteTeamForm({
   const [sendEmail, setSendEmail] = useState(true);
   const [adding, setAdding] = useState(false);
   const [resending, setResending] = useState<string | null>(null);
-  const [successNote, setSuccessNote] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
   const draftCount = useMemo(
@@ -197,7 +204,7 @@ export function InviteTeamForm({
       return;
     }
     applyLinkPayload(data);
-    setSuccessNote("Invite link rotated. Share the new link.");
+    toast.success("Invite link rotated. Share the new link.");
   }
 
   async function addPeople(event: React.FormEvent) {
@@ -209,7 +216,6 @@ export function InviteTeamForm({
       return;
     }
     setAdding(true);
-    setSuccessNote(null);
     const response = await fetch("/api/team/invite-link", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -241,9 +247,10 @@ export function InviteTeamForm({
           ? " Email delivery failed — share the link manually."
           : ""
       : " They can use the invite link whenever you share it.";
-    setSuccessNote(`${base}${mailNote}`);
     if (failedMail) {
       toast.error(`${failedMail} invitation email${failedMail === 1 ? "" : "s"} failed to send.`);
+    } else {
+      toast.success(`${base}${mailNote}`);
     }
     setEmails([]);
     setValue("");
@@ -277,35 +284,72 @@ export function InviteTeamForm({
     }
     const result = (data.emailResults ?? [])[0] as { status?: string } | undefined;
     if (result?.status === "sent") {
-      setSuccessNote(`Instructions emailed to ${email}.`);
+      toast.success(`Instructions emailed to ${email}.`);
     } else {
       toast.error(`Could not email ${email}.`);
     }
   }
 
-  const roleSelect = canAssignRoles ? (
-    <div className="flex items-center gap-2">
-      <Label htmlFor={dashboard ? "dashboard-invite-role" : "invite-role"} className="text-xs text-muted-foreground">
-        Role
-      </Label>
-      <Select value={role} onValueChange={(next) => setRole(next as AssignableRole)}>
-        <SelectTrigger
-          id={dashboard ? "dashboard-invite-role" : "invite-role"}
-          className="h-8 w-[140px] rounded-none"
-          aria-label="Invite role"
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {ASSIGNABLE_ROLES.map((item) => (
-            <SelectItem key={item} value={item}>
-              {ROLE_LABELS[item]}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  ) : null;
+  const copyLinkButton = (
+    <button
+      type="button"
+      className="inline-flex shrink-0 items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline disabled:opacity-50"
+      disabled={loadingLink || copyingLink}
+      onClick={() => void copyInviteLink()}
+    >
+      {loadingLink || copyingLink ? (
+        <Loader2 className="size-3.5 animate-spin" />
+      ) : copied === "link" ? (
+        <Check className="size-3.5" />
+      ) : (
+        <Link2 className="size-3.5" />
+      )}
+      {copied === "link" ? "Copied" : "Copy invite link"}
+    </button>
+  );
+
+  const roleSelect = (layout: "inline" | "link") =>
+    canAssignRoles ? (
+      layout === "link" ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              id="dashboard-invite-role"
+              className="inline-flex shrink-0 items-center gap-1 text-sm text-primary underline-offset-4 hover:underline"
+              aria-label="Invite role"
+            >
+              {ROLE_LABELS[role]}
+              <ChevronDown className="size-3.5 opacity-70" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {ASSIGNABLE_ROLES.map((item) => (
+              <DropdownMenuItem key={item} onSelect={() => setRole(item)}>
+                {ROLE_LABELS[item]}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <Select value={role} onValueChange={(next) => setRole(next as AssignableRole)}>
+          <SelectTrigger
+            id="invite-role"
+            className="h-8 w-[140px] rounded-none"
+            aria-label="Invite role"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ASSIGNABLE_ROLES.map((item) => (
+              <SelectItem key={item} value={item}>
+                {ROLE_LABELS[item]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )
+    ) : null;
 
   const notifyForm = (
     <form onSubmit={addPeople} className="space-y-3" aria-busy={adding}>
@@ -349,7 +393,12 @@ export function InviteTeamForm({
               />
               Email instructions (link + install steps)
             </label>
-            {roleSelect}
+            <div className="flex items-center gap-2">
+              <Label htmlFor="invite-role" className="text-xs text-muted-foreground">
+                Role
+              </Label>
+              {roleSelect("inline")}
+            </div>
           </div>
           <Button type="submit" size="sm" disabled={!canAdd}>
             {adding ? <Loader2 className="animate-spin" /> : sendEmail ? <Mail /> : null}
@@ -408,7 +457,9 @@ export function InviteTeamForm({
     ) : null;
 
   if (dashboard) {
-    return (
+    const dashboardRoleSelect = roleSelect("link");
+
+    const formBody = (
       <div className="flex min-h-0 flex-1 flex-col gap-5">
         <section className="space-y-2">
           <Label htmlFor="dashboard-invite-emails" className="text-sm font-medium">
@@ -452,30 +503,10 @@ export function InviteTeamForm({
           {allowlistRows}
         </section>
 
-        {successNote ? (
-          <Alert>
-            <AlertDescription>{successNote}</AlertDescription>
-          </Alert>
-        ) : null}
-
         <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-2">
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline disabled:opacity-50"
-              disabled={loadingLink || copyingLink}
-              onClick={() => void copyInviteLink()}
-            >
-              {loadingLink || copyingLink ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : copied === "link" ? (
-                <Check className="size-3.5" />
-              ) : (
-                <Link2 className="size-3.5" />
-              )}
-              {copied === "link" ? "Copied" : "Copy invite link"}
-            </button>
-            {roleSelect}
+            {!renderHeader ? copyLinkButton : null}
+            {dashboardRoleSelect}
           </div>
 
           <Button
@@ -491,6 +522,17 @@ export function InviteTeamForm({
         </div>
       </div>
     );
+
+    if (renderHeader) {
+      return (
+        <>
+          {renderHeader(copyLinkButton)}
+          {formBody}
+        </>
+      );
+    }
+
+    return formBody;
   }
 
   return (
@@ -551,11 +593,6 @@ export function InviteTeamForm({
         </div>
         {allowlistRows}
         {notifyForm}
-        {successNote ? (
-          <Alert>
-            <AlertDescription>{successNote}</AlertDescription>
-          </Alert>
-        ) : null}
       </section>
     </div>
   );

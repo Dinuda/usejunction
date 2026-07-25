@@ -5,8 +5,6 @@ import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
 import { ACTIVE_ORG_COOKIE } from "@/lib/require-organization";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
-import { requiresDeviceOnboarding } from "@/lib/rbac/permissions";
-import { hasPersonalDeviceReady } from "@/lib/onboarding-status";
 
 export type { OrganizationRole };
 
@@ -86,10 +84,6 @@ export async function requireWorkspaceContext(): Promise<WorkspaceContext & { or
 export async function requireCompletedOnboarding(): Promise<WorkspaceContext & { orgId: string }> {
   const ctx = await requireWorkspaceContext();
   if (!ctx.onboardingCompletedAt) redirect("/onboarding");
-  if (requiresDeviceOnboarding(ctx.role)) {
-    const ready = await hasPersonalDeviceReady(ctx.userId, ctx.orgId);
-    if (!ready) redirect("/onboarding");
-  }
   return ctx;
 }
 

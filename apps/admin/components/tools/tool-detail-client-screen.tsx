@@ -17,6 +17,7 @@ import { toolDetailKey } from "@/lib/app-pages/query-keys";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
 type ToolPayload = {
+  kind?: "organization" | "personal";
   rawToolKey: string;
   toolKey: string;
   cycleView: CycleView;
@@ -51,7 +52,8 @@ export default function ToolDetailClientScreen() {
 
   if (query.isPending) return <AppPageSkeleton />;
   if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
-  const { toolKey, cycleView, rollingPeriod, detail: serialized, syncContext } = query.data;
+  const { kind, toolKey, cycleView, rollingPeriod, detail: serialized, syncContext } = query.data;
+  const scope = kind === "personal" ? "self" : "org";
 
   return (
     <>
@@ -68,6 +70,7 @@ export default function ToolDetailClientScreen() {
       ) : null}
       <ToolProviderDetail
         data={serialized}
+        scope={scope}
         cycleView={cycleView}
         period={rollingPeriod}
         periodLabel={cycleViewPeriodLabel(cycleView, rollingPeriod)}

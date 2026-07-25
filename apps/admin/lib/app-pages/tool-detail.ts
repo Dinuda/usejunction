@@ -1,11 +1,14 @@
 import type { AppPrincipal } from "@/lib/api/app-auth";
 import { jsonSafe } from "@/lib/api/app-response";
+import { getOrgActivitySettings } from "@/lib/activity/service";
 import { parseCycleView, reportWindowForCycleView } from "@/lib/dashboard/cycle-view";
 import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
 import { getToolDetail } from "@/lib/queries/dashboard/tool-detail";
 import { getLocalSyncPanelContext } from "@/lib/queries/me/local-sync-context";
+import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { canonicalToolKey, findCatalogTool, subscriptionToolKeys } from "@/lib/tools/catalog";
+import { canSeeOrgOverview, isSelfScopedRole } from "@/lib/rbac/permissions";
 
 export type ToolDetailSearch = {
   view?: string | null;
@@ -14,11 +17,39 @@ export type ToolDetailSearch = {
   to?: string | null;
 };
 
+export type ToolDetailAccess =
+  | { ok: true; scope: "organization" }
+  | { ok: true; scope: "personal"; developerId: string }
+  | { ok: false; reason: "forbidden" | "not_linked" };
+
+export async function resolveToolDetailAccess(principal: AppPrincipal): Promise<ToolDetailAccess> {
+  if (canSeeOrgOverview(principal.role)) {
+    return { ok: true, scope: "organization" };
+  }
+  if (!isSelfScopedRole(principal.role)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const settings = await getOrgActivitySettings(principal.orgId);
+  if (!settings.teamToolsBrowseEnabled) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const developerId = await resolveLinkedDeveloperId(principal.orgId, principal.userId);
+  if (!developerId) {
+    return { ok: false, reason: "not_linked" };
+  }
+  return { ok: true, scope: "personal", developerId };
+}
+
 export async function loadToolDetailPage(
   principal: AppPrincipal,
   rawToolKey: string,
   search: ToolDetailSearch = {},
 ) {
+  const access = await resolveToolDetailAccess(principal);
+  if (!access.ok) {
+    return { error: access.reason } as const;
+  }
+
   const toolKey = canonicalToolKey(rawToolKey);
   if (!findCatalogTool(toolKey)) return null;
   const cycleView = parseCycleView(search.view ?? undefined);
@@ -32,6 +63,7 @@ export async function loadToolDetailPage(
   const toolPlans = subscriptions.filter(
     (plan) => plan.toolKey != null && (templateKeys as readonly string[]).includes(plan.toolKey),
   );
+  // Personal scope still uses org plan cycles when present so windows match admin billing cycles.
   const reportWindow = reportWindowForCycleView(
     cycleView,
     rollingPeriod,
@@ -39,9 +71,19 @@ export async function loadToolDetailPage(
     new Date(),
   );
   const [detail, syncContext] = await Promise.all([
-    getToolDetail(principal.orgId, toolKey, reportWindow),
+    getToolDetail(principal.orgId, toolKey, reportWindow, {
+      developerId: access.scope === "personal" ? access.developerId : undefined,
+    }),
     getLocalSyncPanelContext(principal.orgId, principal.userId),
   ]);
   if (!detail) return null;
-  return jsonSafe({ rawToolKey, toolKey, cycleView, rollingPeriod, detail, syncContext });
+  return jsonSafe({
+    kind: access.scope,
+    rawToolKey,
+    toolKey,
+    cycleView,
+    rollingPeriod,
+    detail,
+    syncContext,
+  });
 }

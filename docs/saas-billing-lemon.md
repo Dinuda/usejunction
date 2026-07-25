@@ -26,7 +26,7 @@ Marketing copy uses `TEAM_PRICE_PER_DEV_USD` ($8 / active developer / month) fro
 source of truth for the amount charged and must use **quantity-based**, not
 usage-based, billing.
 
-## Checkout and automatic quantity
+## Checkout and automatic quantity 
 
 Clicking **Upgrade to Team** creates checkout immediately without an intermediate
 dialog. `POST /api/billing/checkout` recounts the roster and passes that count in

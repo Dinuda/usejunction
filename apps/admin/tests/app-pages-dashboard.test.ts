@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   listSubscriptions: vi.fn(),
-  getOrgActivitySettings: vi.fn(),
   getMeOverview: vi.fn(),
   getLocalSyncContext: vi.fn(),
   resolveLinkedDeveloperId: vi.fn(),
@@ -12,10 +11,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/tools/subscriptions", () => ({
   listSubscriptions: mocks.listSubscriptions,
-}));
-
-vi.mock("@/lib/activity/service", () => ({
-  getOrgActivitySettings: mocks.getOrgActivitySettings,
 }));
 
 vi.mock("@/lib/queries/me/overview", () => ({
@@ -43,10 +38,6 @@ vi.mock("@/lib/errors/public", () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.listSubscriptions.mockResolvedValue([]);
-  mocks.getOrgActivitySettings.mockResolvedValue({
-    teamPeriodControlsEnabled: false,
-    teamDeviceActivityEnabled: true,
-  });
   mocks.getMeOverview.mockResolvedValue({
     developer: { id: "dev-1", name: "Ada Lovelace", devices: [{ id: "d1" }] },
     usage30d: { requests: 10 },
@@ -102,7 +93,7 @@ describe("loadDashboardPage personal period window", () => {
     expect(spanDays).toBe(14);
   });
 
-  it("forces default 30-day window for developers when period controls are disabled", async () => {
+  it("allows developers to use cycle and rolling period controls", async () => {
     const { loadDashboardPage } = await import("@/lib/app-pages/dashboard");
     const data = await loadDashboardPage(
       {
@@ -111,39 +102,26 @@ describe("loadDashboardPage personal period window", () => {
         orgId: "org-1",
         role: "user",
       },
-      { view: "last_30_days", days: "7" },
+      { view: "current_cycles", days: "7" },
     );
 
     expect(data).toMatchObject({
       kind: "personal",
-      allowPeriodControls: false,
-      cycleView: "last_30_days",
-      periodLabel: "last 30 days",
+      allowPeriodControls: true,
+      cycleView: "current_cycles",
     });
-    expect(mocks.getOrgActivitySettings).toHaveBeenCalledWith("org-1");
     expect(mocks.getMeOverview).toHaveBeenCalledWith(
       "org-1",
       "user-2",
       "user",
       expect.objectContaining({
         reportWindow: expect.any(Object),
-        cycleView: "last_30_days",
+        cycleView: "current_cycles",
       }),
     );
-    const reportWindow = mocks.getMeOverview.mock.calls[0][3].reportWindow as {
-      from: Date;
-      to: Date;
-    };
-    const dayMs = 24 * 60 * 60 * 1000;
-    const spanDays = Math.round((reportWindow.to.getTime() - reportWindow.from.getTime()) / dayMs) + 1;
-    expect(spanDays).toBe(30);
   });
 
-  it("allows developers to use custom days when teamPeriodControlsEnabled", async () => {
-    mocks.getOrgActivitySettings.mockResolvedValue({
-      teamPeriodControlsEnabled: true,
-      teamDeviceActivityEnabled: true,
-    });
+  it("allows developers to use custom rolling days", async () => {
     const { loadDashboardPage } = await import("@/lib/app-pages/dashboard");
     const data = await loadDashboardPage(
       {

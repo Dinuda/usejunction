@@ -4,7 +4,6 @@ import path from "path";
 import { Resend } from "resend";
 import { prisma } from "@usejunction/db";
 import {
-  TEAM_INVITE_HERO_CID,
   TEAM_INVITE_LOGO_CID,
   buildTeamInviteEmailDocument,
 } from "@/lib/email/team-invite-html";
@@ -98,22 +97,13 @@ export async function sendAuthEmail({
 
 async function loadTeamInviteInlineAssets() {
   const publicDir = path.join(process.cwd(), "public");
-  const [logo, hero] = await Promise.all([
-    readFile(path.join(publicDir, "usejunction.png")),
-    readFile(path.join(publicDir, "images", "team-invite.png")),
-  ]);
+  const logo = await readFile(path.join(publicDir, "usejunction.png"));
   return [
     {
       filename: "usejunction.png",
       content: logo,
       contentType: "image/png",
       contentId: TEAM_INVITE_LOGO_CID,
-    },
-    {
-      filename: "team-invite.png",
-      content: hero,
-      contentType: "image/png",
-      contentId: TEAM_INVITE_HERO_CID,
     },
   ];
 }

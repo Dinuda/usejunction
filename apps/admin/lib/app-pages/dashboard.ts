@@ -1,7 +1,6 @@
 import type { AppPrincipal } from "@/lib/api/app-auth";
 import { jsonSafe } from "@/lib/api/app-response";
 import { parseAudienceScope } from "@/lib/audience-scope";
-import { getOrgActivitySettings } from "@/lib/activity/service";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 import {
   cycleViewPeriodLabel,
@@ -9,11 +8,7 @@ import {
   reportWindowForCycleView,
   type CycleView,
 } from "@/lib/dashboard/cycle-view";
-import {
-  DEFAULT_ROLLING_PERIOD,
-  parseRollingPeriodFromSearch,
-  type RollingPeriod,
-} from "@/lib/dashboard/period-prefs";
+import { parseRollingPeriodFromSearch, type RollingPeriod } from "@/lib/dashboard/period-prefs";
 import { getMeOverview } from "@/lib/queries/me/overview";
 import { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
 import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
@@ -41,19 +36,13 @@ export async function loadDashboardPage(principal: AppPrincipal, search: Dashboa
   const canSwitchAudience = canManageSettings(principal.role);
   const scope = canSwitchAudience ? parseAudienceScope(search.scope ?? null) : "team";
 
-  const [settings, subscriptions] = await Promise.all([
-    isDeveloper ? getOrgActivitySettings(principal.orgId) : Promise.resolve(null),
-    listSubscriptions(principal.orgId),
-  ]);
-  const allowPeriodControls = !isDeveloper || Boolean(settings?.teamPeriodControlsEnabled);
-  const cycleView = allowPeriodControls ? parseCycleView(search.view ?? undefined) : "last_30_days";
-  const rollingPeriod: RollingPeriod = allowPeriodControls
-    ? parseRollingPeriodFromSearch({
-        days: search.days ?? undefined,
-        from: search.from ?? undefined,
-        to: search.to ?? undefined,
-      })
-    : DEFAULT_ROLLING_PERIOD;
+  const subscriptions = await listSubscriptions(principal.orgId);
+  const cycleView = parseCycleView(search.view ?? undefined);
+  const rollingPeriod = parseRollingPeriodFromSearch({
+    days: search.days ?? undefined,
+    from: search.from ?? undefined,
+    to: search.to ?? undefined,
+  });
   const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, new Date());
   const periodLabel = cycleViewPeriodLabel(cycleView, rollingPeriod);
 
@@ -66,7 +55,7 @@ export async function loadDashboardPage(principal: AppPrincipal, search: Dashboa
       kind: "personal" as const,
       scope: "you" as const,
       canSwitchAudience: false,
-      allowPeriodControls,
+      allowPeriodControls: true,
       cycleView,
       rollingPeriod,
       periodLabel,
@@ -90,7 +79,7 @@ export async function loadDashboardPage(principal: AppPrincipal, search: Dashboa
       scope: "you" as const,
       canSwitchAudience: true,
       youUnlinked: !linkedId,
-      allowPeriodControls,
+      allowPeriodControls: true,
       cycleView,
       rollingPeriod,
       periodLabel,

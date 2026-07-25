@@ -361,6 +361,34 @@ dev_build_version() {
   printf '0.0.0-dev.%s.%s\n' "$short_sha" "$(date +%s)"
 }
 
+build_agent_from_source() {
+  local agent_src stamp_version
+  agent_src="$(find_agent_src)" || return 1
+  if ! command -v go >/dev/null 2>&1; then
+    return 1
+  fi
+  stamp_version="$(dev_build_version)"
+  echo "Building agent from source (${agent_src}) as v${stamp_version}..."
+  if [[ "$OS" == "darwin" ]]; then
+    local tmp_binary
+    tmp_binary="$(mktemp)"
+    (cd "$agent_src" && go build -ldflags "-X github.com/usejunction/agent/internal/config.Version=${stamp_version}" -o "$tmp_binary" .)
+    VERSION="$stamp_version"
+    install_macos_app_bundle "$tmp_binary"
+    rm -f "$tmp_binary"
+    link_macos_cli
+    write_dev_source_pin "${USEJUNCTION_ROOT:-}"
+    return 0
+  fi
+  local tmp_binary
+  tmp_binary="$(mktemp "${INSTALL_DIR}/.usejunction-build.XXXXXX")"
+  (cd "$agent_src" && go build -ldflags "-X github.com/usejunction/agent/internal/config.Version=${stamp_version}" -o "$tmp_binary" .)
+  VERSION="$stamp_version"
+  atomic_install_binary "$tmp_binary" "$BINARY"
+  write_dev_source_pin "${USEJUNCTION_ROOT:-}"
+  return 0
+}
+
 install_agent() {
   local agent_src=""
   local prefer_source=false
@@ -383,26 +411,12 @@ install_agent() {
     prefer_source=true
   fi
 
-  if [[ "$prefer_source" == true ]] && agent_src="$(find_agent_src)" && command -v go >/dev/null 2>&1; then
-    stamp_version="$(dev_build_version)"
-    echo "Building agent from source (${agent_src}) as v${stamp_version}..."
-    if [[ "$OS" == "darwin" ]]; then
-      local tmp_binary
-      tmp_binary="$(mktemp)"
-      (cd "$agent_src" && go build -ldflags "-X github.com/usejunction/agent/internal/config.Version=${stamp_version}" -o "$tmp_binary" .)
-      VERSION="$stamp_version"
-      install_macos_app_bundle "$tmp_binary"
-      rm -f "$tmp_binary"
-      link_macos_cli
-      write_dev_source_pin "${USEJUNCTION_ROOT:-}"
-      return 0
-    fi
-    local tmp_binary
-    tmp_binary="$(mktemp "${INSTALL_DIR}/.usejunction-build.XXXXXX")"
-    (cd "$agent_src" && go build -ldflags "-X github.com/usejunction/agent/internal/config.Version=${stamp_version}" -o "$tmp_binary" .)
-    VERSION="$stamp_version"
-    atomic_install_binary "$tmp_binary" "$BINARY"
-    write_dev_source_pin "${USEJUNCTION_ROOT:-}"
+  if [[ "$prefer_source" == true ]] && build_agent_from_source; then
+    return 0
+  fi
+
+  # Pinned dev checkout always rebuilds — never enroll/onboard on a stale binary.
+  if [[ -f "$DEV_SOURCE_FILE" ]] && build_agent_from_source; then
     return 0
   fi
 

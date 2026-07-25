@@ -132,7 +132,7 @@ test("actual ingest: multi-tool batch with repo lands in both tables", { skip: !
 
     const opencodeLocal = daily.find((row) => row.toolName === "opencode" && row.metricKind === "productivity");
     assert.ok(opencodeLocal);
-    assert.equal(opencodeLocal.addedLines, 42);
+    assert.equal(Number(opencodeLocal.addedLines), 42);
 
     // Idempotent re-ingest
     const again = await ingestLocalUsageBatch({

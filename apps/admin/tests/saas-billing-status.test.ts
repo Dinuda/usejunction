@@ -69,3 +69,67 @@ test("does not consume another user slot for an existing active member", async (
   );
   assert.equal(mocks.developerCount.mock.calls.length, 0);
 });
+
+test("assertCanInviteUsers rejects at Community cap", async () => {
+  mocks.developerCount.mockResolvedValue(5);
+  const { assertCanInviteUsers } = await import("@/lib/saas-billing/status");
+
+  assert.deepEqual(await assertCanInviteUsers("org_1"), {
+    allowed: false,
+    message: "User limit reached (5). Upgrade to Team to add more users.",
+  });
+});
+
+test("assertCanInviteUsers allows when under Community cap", async () => {
+  mocks.developerCount.mockResolvedValue(3);
+  const { assertCanInviteUsers } = await import("@/lib/saas-billing/status");
+
+  assert.deepEqual(await assertCanInviteUsers("org_1"), { allowed: true });
+});
+
+test("assertCanInviteUsers allows Team plan above Community cap", async () => {
+  mocks.organizationFindUnique.mockResolvedValue({
+    plan: "team",
+    subscriptionStatus: "active",
+    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60_000),
+  });
+  mocks.developerCount.mockResolvedValue(8);
+  const { assertCanInviteUsers } = await import("@/lib/saas-billing/status");
+
+  assert.deepEqual(await assertCanInviteUsers("org_1"), { allowed: true });
+  assert.equal(mocks.developerCount.mock.calls.length, 0);
+});
+
+test("computeOrgBillingStatus flips from Community limit to Team unlimited", async () => {
+  const { computeOrgBillingStatus } = await import("@/lib/saas-billing/status");
+
+  const communityFacts = {
+    plan: "community",
+    subscriptionStatus: null,
+    currentPeriodEnd: null,
+    lemonSqueezyCustomerId: null,
+    lemonSqueezySubscriptionId: null,
+    lemonSqueezyQuantity: null,
+    usersUsed: 5,
+  };
+
+  const community = computeOrgBillingStatus(communityFacts, "owner");
+  assert.equal(community.planLabel, "Community");
+  assert.equal(community.isAtUserLimit, true);
+  assert.equal(community.usersLimit, 5);
+
+  const team = computeOrgBillingStatus(
+    {
+      ...communityFacts,
+      plan: "team",
+      subscriptionStatus: "active",
+      lemonSqueezyCustomerId: "cust_1",
+      lemonSqueezySubscriptionId: "sub_1",
+      lemonSqueezyQuantity: 5,
+    },
+    "owner",
+  );
+  assert.equal(team.planLabel, "Team");
+  assert.equal(team.isAtUserLimit, false);
+  assert.equal(team.usersLimit, null);
+});

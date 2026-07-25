@@ -48,6 +48,8 @@ import { useAppQuery } from "@/lib/api/client";
 import { dashboardKey } from "@/lib/app-pages/query-keys";
 import { AppPageError } from "@/components/app-data-state";
 import { DashboardCrunchingState } from "@/components/dashboard/dashboard-crunching-state";
+import { SubscriptionUpgradedBanner } from "@/components/saas-billing/subscription-upgraded-banner";
+import { workspaceContextKey } from "@/lib/app-pages/query-keys";
 
 const AiCodingPanel = dynamic(() => import("@/components/dashboard/ai-coding-panel").then((mod) => mod.AiCodingPanel), { ssr: false });
 const CoverageChart = dynamic(() => import("@/components/dashboard/coverage-chart").then((mod) => mod.CoverageChart), { ssr: false });
@@ -806,6 +808,13 @@ type DashboardPayload =
 export default function DashboardPage() {
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
+  const billingQuery = useAppQuery<{ billing: { effectivePlan: string } | null }>(
+    workspaceContextKey,
+    "/api/app/workspace-context",
+  );
+  const billing = billingQuery.data?.billing;
+  const isTeamPlan =
+    billing?.effectivePlan === "team" || billing?.effectivePlan === "enterprise";
   const query = useAppQuery<DashboardPayload>(
     dashboardKey(queryString),
     `/api/app/dashboard${queryString ? `?${queryString}` : ""}`,
@@ -866,6 +875,7 @@ export default function DashboardPage() {
 
   return (
     <>
+      <SubscriptionUpgradedBanner isTeam={isTeamPlan} />
       <ConnectMachineBanner show={needsPersonalConnect} />
       <PageHeader
         title={empty ? "Nothing reporting yet." : "Spend, traffic, coverage."}

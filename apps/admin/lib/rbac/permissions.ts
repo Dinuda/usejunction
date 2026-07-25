@@ -34,7 +34,7 @@ export function canChooseOnboardingPath(role: OrganizationRole | null | undefine
   return canSeeOrgOverview(role);
 }
 
-/** Individual developers must connect a machine before leaving onboarding. */
+/** Members are nudged to connect on onboarding; dashboard still offers connect later. */
 export function requiresDeviceOnboarding(role: OrganizationRole | null | undefined): boolean {
   return role === "user";
 }

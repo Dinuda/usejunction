@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/usejunction/agent/internal/config"
@@ -27,7 +28,7 @@ var onboardCmd = &cobra.Command{
 	Short: "Animated first-run enroll, tool scan, and success panel",
 	Long: `Runs the branded first-run experience:
   1. Enroll this device
-  2. Configure Claude OTEL and send an initial report
+  2. Enable Claude Code OpenTelemetry metrics export
   3. Scan for AI coding tools
   4. Show a status card
 
@@ -116,16 +117,19 @@ func runOnboard() error {
 	enrollStep.Done(fmt.Sprintf("device %s", res.cfg.DeviceID))
 	ui.QuietLine("Config saved to " + config.ConfigPath())
 
-	setupStep := ui.StepStart("Configuring local tools")
+	setupStep := ui.StepStart("Enabling Claude Code metrics")
 	if err := configure.RunSetup(res.cfg, configure.SetupOptions{EnableOtel: true}); err != nil {
 		setupStep.Fail(err.Error())
 		ui.WarnLine(fmt.Sprintf("setup warning: %v", err))
 	} else {
-		setupStep.Done("Claude OTEL ready")
+		setupStep.Done("OpenTelemetry usage export → UseJunction")
+		ui.QuietLine("Writes ~/.usejunction/claude-env.sh so Claude Code can send usage metrics")
 	}
 
 	reportStep := ui.StepStart("Uploading initial usage")
-	stats, err := runInitialReport(true)
+	stats, err := runInitialReportWithProgress(true, func(step, message string) {
+		reportStep.Update(humanizeCollectProgress(step, message))
+	})
 	if err != nil {
 		reportStep.Fail(err.Error())
 		ui.WarnLine(fmt.Sprintf("initial report warning: %v", err))
@@ -157,6 +161,31 @@ func detectTools() []types.ToolStatus {
 		tools = append(tools, *s)
 	}
 	return tools
+}
+
+// humanizeCollectProgress maps collect progress callbacks to short onboard labels.
+func humanizeCollectProgress(step, message string) string {
+	if strings.TrimSpace(message) != "" {
+		return strings.TrimSpace(message)
+	}
+	switch step {
+	case "heartbeat":
+		return "Registering local agent"
+	case "scan":
+		return "Scanning local tools"
+	case "upload-tools":
+		return "Preparing inventory"
+	case "upload-models":
+		return "Uploading local models"
+	case "upload-usage":
+		return "Syncing usage"
+	case "work-extract":
+		return "Extracting work sessions"
+	case "complete":
+		return "Finishing sync"
+	default:
+		return step
+	}
 }
 
 func init() {

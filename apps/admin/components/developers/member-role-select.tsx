@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   Select,
   SelectContent,
@@ -14,19 +15,29 @@ import { userFacingError } from "@/lib/errors/user-facing";
 import { useInvalidateAppData } from "@/lib/api/client";
 
 const ROLE_LABELS: Record<(typeof ASSIGNABLE_ROLES)[number], string> = {
-  admin: "Admin",
+  admin: "Owner",
   manager: "Manager",
-  user: "User",
+  user: "Developer",
 };
 
 export { ROLE_LABELS };
 
+export function roleUpdateSuccessMessage(
+  role: OrganizationRole | string,
+  memberName?: string | null,
+): string {
+  const label = roleDisplayLabel(role);
+  return memberName ? `${memberName} is now ${label}.` : `Role updated to ${label}.`;
+}
+
 export function MemberRoleSelect({
   developerId,
   role,
+  memberName,
 }: {
   developerId: string;
   role: string;
+  memberName?: string | null;
 }) {
   const router = useRouter();
   const invalidateAppData = useInvalidateAppData();
@@ -55,6 +66,7 @@ export function MemberRoleSelect({
     }
     setValue(next as (typeof ASSIGNABLE_ROLES)[number]);
     setSaving(false);
+    toast.success(roleUpdateSuccessMessage(next, memberName));
     await invalidateAppData();
     router.refresh();
   }
@@ -62,7 +74,7 @@ export function MemberRoleSelect({
   if (locked) {
     return (
       <p className="text-sm text-muted-foreground">
-        Role · <span className="font-medium text-foreground">Owner</span>
+        Role · <span className="font-medium text-foreground">{roleDisplayLabel(role)}</span>
       </p>
     );
   }
@@ -90,9 +102,9 @@ export function MemberRoleSelect({
 }
 
 export function roleDisplayLabel(role: OrganizationRole | string): string {
-  if (role === "owner") return "Owner";
-  if (role === "admin") return "Admin";
+  if (role === "owner") return "Workspace owner";
+  if (role === "admin") return "Owner";
   if (role === "manager") return "Manager";
-  if (role === "user") return "User";
+  if (role === "user") return "Developer";
   return role;
 }

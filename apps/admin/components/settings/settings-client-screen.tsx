@@ -48,7 +48,7 @@ export default function SettingsClientScreen() {
     <div className="mx-auto w-full max-w-6xl">
       <PageHeader
         title="Settings."
-        description="Email reports, workspace identity, billing, and what Activity shows to your team."
+        description="Email reports, workspace identity, billing, and what your team can open."
         className="mb-8"
       />
 

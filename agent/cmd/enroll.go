@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -126,6 +127,12 @@ type reportStats struct {
 // runInitialReport runs the initial collect/report. When quiet, suppresses
 // stdout so onboard can wrap it in a progress step.
 func runInitialReport(quiet bool) (*reportStats, error) {
+	return runInitialReportWithProgress(quiet, nil)
+}
+
+// runInitialReportWithProgress runs the initial collect/report and forwards
+// collect phase updates to progress when provided.
+func runInitialReportWithProgress(quiet bool, progress collectProgress) (*reportStats, error) {
 	cfg, err := requireConfig()
 	if err != nil {
 		return nil, err
@@ -135,7 +142,12 @@ func runInitialReport(quiet bool) (*reportStats, error) {
 	} else if changed {
 		_ = config.Save(cfg)
 	}
-	tools, accounts, quotas, usage, err := collectAndReport(client.New(cfg), true)
+	tools, accounts, quotas, usage, _, err := collectAndReportWithProgress(
+		context.Background(),
+		client.New(cfg),
+		true,
+		progress,
+	)
 	if err != nil {
 		return nil, err
 	}

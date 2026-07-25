@@ -36,8 +36,8 @@ export async function PATCH(req: NextRequest) {
     targetType: "activity_settings",
     targetId: auth.orgId,
     metadata: {
-      teamPeriodControlsEnabled: settings.teamPeriodControlsEnabled,
       teamDeviceActivityEnabled: settings.teamDeviceActivityEnabled,
+      teamToolsBrowseEnabled: settings.teamToolsBrowseEnabled,
     },
   });
 

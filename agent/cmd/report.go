@@ -122,7 +122,7 @@ var daemonCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := configure.RepairLegacyCodexGatewayConfig(); err != nil && verbose {
+		if err := configure.RepairLegacyCodexGatewayConfig(); err != nil {
 			fmt.Printf("[daemon] codex config repair warning: %v\n", err)
 		}
 		if changed, err := cfg.EnsureLocalSyncCredentials(); err != nil {

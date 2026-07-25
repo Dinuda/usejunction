@@ -115,6 +115,7 @@ type Step struct {
 	done   chan struct{}
 	mu     sync.Mutex
 	active bool
+	detail string
 }
 
 // StepStart begins a progress step. Call Done or Fail when finished.
@@ -131,6 +132,36 @@ func StepStart(label string) *Step {
 	return s
 }
 
+// Update sets live detail shown beside the spinner (e.g. current sub-phase).
+func (s *Step) Update(detail string) {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return
+	}
+	s.mu.Lock()
+	if detail == s.detail {
+		s.mu.Unlock()
+		return
+	}
+	s.detail = detail
+	s.mu.Unlock()
+	if !Enabled() {
+		fmt.Fprintf(out, "      · %s\n", detail)
+	}
+}
+
+func (s *Step) renderLine() string {
+	s.mu.Lock()
+	detail := s.detail
+	label := s.label
+	s.mu.Unlock()
+	line := styleBody().Render(label)
+	if detail != "" {
+		line += styleMuted().Render("  · " + detail)
+	}
+	return line
+}
+
 func (s *Step) spin() {
 	defer close(s.done)
 	frames := spinner.MiniDot.Frames
@@ -140,12 +171,11 @@ func (s *Step) spin() {
 	}
 	i := 0
 	spinStyle := styleTeal()
-	labelStyle := styleBody()
 	ticker := time.NewTicker(fps)
 	defer ticker.Stop()
 	for {
 		frame := spinStyle.Render(strings.TrimSpace(frames[i%len(frames)]))
-		fmt.Fprintf(out, "\r  %s  %s", frame, labelStyle.Render(s.label))
+		fmt.Fprintf(out, "\r  %s  %s", frame, s.renderLine())
 		i++
 		select {
 		case <-s.stop:
@@ -322,38 +352,22 @@ func DoctorTable(detected []types.ToolStatus) {
 	fmt.Fprintf(out, "\n  %s\n", styleTeal().Render(fmt.Sprintf("%d tool(s) detected.", len(detected))))
 }
 
-// SuccessBox prints the post-install success panel.
+// SuccessBox prints the post-install closing lines (no bordered panel).
 func SuccessBox(adminURL, cliPath string) {
+	fmt.Fprintln(out)
 	if !Enabled() {
-		fmt.Fprintln(out)
-		fmt.Fprintf(out, "UseJunction installed. Admin panel: %s\n", adminURL)
-		fmt.Fprintf(out, "CLI: %s\n", cliPath)
-		fmt.Fprintf(out, "Next: open a new terminal, or run: export PATH=\"%s:$PATH\"\n", dirOf(cliPath))
-		fmt.Fprintln(out, "Then: usejunction status")
-		fmt.Fprintln(out, "Rollback an update: usejunction update --rollback")
+		fmt.Fprintf(out, "UseJunction installed.\n")
+		fmt.Fprintf(out, "Admin:  %s\n", adminURL)
+		fmt.Fprintf(out, "CLI:    %s\n", cliPath)
+		fmt.Fprintf(out, "Next:   open a new terminal (or export PATH=\"%s:$PATH\"), then: usejunction status\n", dirOf(cliPath))
 		return
 	}
 
-	title := styleYellow().Render("◆") + " " + styleTeal().Render("UseJunction installed")
-	body := strings.Join([]string{
-		title,
-		"",
-		styleMuted().Render("Admin") + "   " + styleBody().Render(adminURL),
-		styleMuted().Render("CLI") + "     " + styleBody().Render(cliPath),
-		"",
-		styleBody().Render("Next: open a new terminal, or:"),
-		styleMuted().Render("  export PATH=\"" + dirOf(cliPath) + ":$PATH\""),
-		styleBody().Render("Then: usejunction status"),
-	}, "\n")
-
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(colorTeal)).
-		Padding(0, 2).
-		Margin(1, 0, 0, 2).
-		Render(body)
-	fmt.Fprintln(out, box)
-	fmt.Fprintf(out, "  %s\n\n", styleMuted().Render("Rollback an update: usejunction update --rollback"))
+	fmt.Fprintf(out, "  %s  %s\n", styleYellow().Render("◆"), styleTeal().Render("You're set"))
+	fmt.Fprintf(out, "  %s  %s\n", styleMuted().Render(padRight("Admin", 7)), styleBody().Render(adminURL))
+	fmt.Fprintf(out, "  %s  %s\n", styleMuted().Render(padRight("CLI", 7)), styleMuted().Render(cliPath))
+	fmt.Fprintf(out, "  %s  %s\n\n", styleMuted().Render(padRight("Next", 7)),
+		styleBody().Render("open a new terminal, then: usejunction status"))
 }
 
 func padRight(s string, n int) string {

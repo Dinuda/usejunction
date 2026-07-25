@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/usejunction/agent/internal/config"
@@ -90,6 +91,7 @@ func codexConfigPath() string {
 		if err != nil {
 			return ""
 		}
+		home = filepath.Join(home, ".codex")
 	}
 	return filepath.Join(home, "config.toml")
 }
@@ -103,9 +105,78 @@ func isLegacyGatewayCodexConfig(body string) bool {
 		strings.Contains(body, "[usejunction]")
 }
 
-// RepairLegacyCodexGatewayConfig restores ~/.codex/config.toml when a legacy
-// gateway agent overwrote it. Observability-only agents must never point Codex
-// at a Junction gateway.
+func findCodexRestoreSource(configPath string) (string, error) {
+	entries := loadManifest()
+	var latest manifestEntry
+	for _, e := range entries {
+		if e.Tool == "codex" && e.OriginalPath == configPath {
+			latest = e
+		}
+	}
+	if latest.BackupFile != "" {
+		src := filepath.Join(config.BackupDir(), latest.BackupFile)
+		if fileExists(src) {
+			return src, nil
+		}
+		return "", fmt.Errorf("legacy gateway config detected but backup %s is missing", src)
+	}
+
+	sidecar, err := findCodexSidecarBackup(configPath)
+	if err != nil {
+		return "", err
+	}
+	if sidecar != "" {
+		return sidecar, nil
+	}
+	return "", nil
+}
+
+func findCodexSidecarBackup(configPath string) (string, error) {
+	dir := filepath.Dir(configPath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", nil
+	}
+
+	type candidate struct {
+		path string
+		mod  int64
+	}
+	var candidates []candidate
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, "config.toml.") {
+			continue
+		}
+		full := filepath.Join(dir, name)
+		data, err := os.ReadFile(full)
+		if err != nil {
+			continue
+		}
+		if isLegacyGatewayCodexConfig(string(data)) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		candidates = append(candidates, candidate{path: full, mod: info.ModTime().UnixNano()})
+	}
+	if len(candidates) == 0 {
+		return "", nil
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].mod > candidates[j].mod
+	})
+	return candidates[0].path, nil
+}
+
+// RepairLegacyCodexGatewayConfig removes legacy gateway routing from
+// ~/.codex/config.toml. It restores from ~/.usejunction/backups/ or a local
+// sidecar backup when available; otherwise it deletes the poisoned file.
 func RepairLegacyCodexGatewayConfig() error {
 	configPath := codexConfigPath()
 	if configPath == "" {
@@ -119,22 +190,18 @@ func RepairLegacyCodexGatewayConfig() error {
 		return nil
 	}
 
-	entries := loadManifest()
-	var latest manifestEntry
-	for _, e := range entries {
-		if e.Tool == "codex" && e.OriginalPath == configPath {
-			latest = e
+	src, err := findCodexRestoreSource(configPath)
+	if err != nil {
+		return err
+	}
+	if src != "" {
+		if err := copyFile(src, configPath); err != nil {
+			return fmt.Errorf("restore codex config from backup: %w", err)
 		}
+		return nil
 	}
-	if latest.BackupFile == "" {
-		return fmt.Errorf("legacy gateway config detected at %s but no backup found in %s", configPath, config.BackupDir())
-	}
-	src := filepath.Join(config.BackupDir(), latest.BackupFile)
-	if !fileExists(src) {
-		return fmt.Errorf("legacy gateway config detected but backup %s is missing", src)
-	}
-	if err := copyFile(src, configPath); err != nil {
-		return fmt.Errorf("restore codex config from backup: %w", err)
+	if err := os.Remove(configPath); err != nil {
+		return fmt.Errorf("remove legacy gateway config: %w", err)
 	}
 	return nil
 }

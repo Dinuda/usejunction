@@ -5,8 +5,6 @@ import { jsonSafe } from "@/lib/api/app-response";
 import { getDashboardReadiness } from "@/lib/analytics/snapshots/readiness";
 import { ACTIVE_ORG_COOKIE } from "@/lib/require-organization";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
-import { requiresDeviceOnboarding } from "@/lib/rbac/permissions";
-import { hasPersonalDeviceReady } from "@/lib/onboarding-status";
 import { computeOrgBillingStatus } from "@/lib/saas-billing/status";
 import { buildSyncWatermark } from "@/lib/workspace-sync-watermark";
 
@@ -83,10 +81,7 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
     : null;
   const current = legacy ?? selected ?? memberships[0] ?? null;
   const role = (current?.role as OrganizationRole | undefined) ?? null;
-  let onboardingCompleted = Boolean(current?.onboardingCompletedAt);
-  if (current && onboardingCompleted && requiresDeviceOnboarding(role)) {
-    onboardingCompleted = await hasPersonalDeviceReady(userId, current.orgId);
-  }
+  const onboardingCompleted = Boolean(current?.onboardingCompletedAt);
   const billing = current
     ? computeOrgBillingStatus(
         {

@@ -72,7 +72,7 @@ export function MemberClientLayout({ children }: { children: React.ReactNode }) 
       >
         {canManageSettings(role) ? (
           <div className="flex items-center gap-4">
-            <MemberRoleSelect developerId={developer.id} role={developer.role} />
+            <MemberRoleSelect developerId={developer.id} role={developer.role} memberName={developer.name} />
             <MemberRemoveButton developerId={developer.id} memberName={developer.name} locked={developer.role === "owner"} />
           </div>
         ) : <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Role: {developer.role}</p>}

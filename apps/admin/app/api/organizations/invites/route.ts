@@ -6,6 +6,7 @@ import { normalizeEmail } from "@/lib/developer-identity";
 import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
 import { generateOpaqueToken, hashOpaqueToken } from "@/lib/security";
 import { logServerError } from "@/lib/errors/public";
+import { assertCanInviteUsers } from "@/lib/saas-billing/status";
 
 const schema = z.object({
   email: z.string().email().optional(),
@@ -30,6 +31,12 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "valid email and role required" }, { status: 400 });
+
+  const inviteGate = await assertCanInviteUsers(auth.orgId);
+  if (!inviteGate.allowed) {
+    return NextResponse.json({ error: inviteGate.message }, { status: 403 });
+  }
+
   const emails = [...new Set([...(parsed.data.emails ?? []), ...(parsed.data.email ? [parsed.data.email] : [])].map(normalizeEmail))];
   const results = [];
   for (const email of emails) {

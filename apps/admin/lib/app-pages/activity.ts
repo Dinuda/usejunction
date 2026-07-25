@@ -3,7 +3,7 @@ import { jsonSafe } from "@/lib/api/app-response";
 import { parseAudienceScope } from "@/lib/audience-scope";
 import { getOrgActivitySettings } from "@/lib/activity/service";
 import { cycleViewPeriodLabel, parseCycleView, reportWindowForCycleView } from "@/lib/dashboard/cycle-view";
-import { DEFAULT_ROLLING_PERIOD, parseRollingPeriodFromSearch, type RollingPeriod } from "@/lib/dashboard/period-prefs";
+import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
 import { getDeviceActivityFeed } from "@/lib/queries/activity/device-activity";
 import { getDashboardUsage } from "@/lib/queries/dashboard/usage";
 import { getMeOverview } from "@/lib/queries/me/overview";
@@ -28,15 +28,12 @@ export async function loadActivityPage(principal: AppPrincipal, search: Activity
     getOrgActivitySettings(principal.orgId),
     listSubscriptions(principal.orgId),
   ]);
-  const allowPeriodControls = !isDeveloper || settings.teamPeriodControlsEnabled;
-  const cycleView = allowPeriodControls ? parseCycleView(search.view ?? undefined) : "last_30_days";
-  const rollingPeriod: RollingPeriod = allowPeriodControls
-    ? parseRollingPeriodFromSearch({
-        days: search.days ?? undefined,
-        from: search.from ?? undefined,
-        to: search.to ?? undefined,
-      })
-    : DEFAULT_ROLLING_PERIOD;
+  const cycleView = parseCycleView(search.view ?? undefined);
+  const rollingPeriod = parseRollingPeriodFromSearch({
+    days: search.days ?? undefined,
+    from: search.from ?? undefined,
+    to: search.to ?? undefined,
+  });
   const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, new Date());
   const periodLabel = cycleViewPeriodLabel(cycleView, rollingPeriod);
 
@@ -53,7 +50,7 @@ export async function loadActivityPage(principal: AppPrincipal, search: Activity
       scope: "you" as const,
       canSwitchAudience: false,
       settings,
-      allowPeriodControls,
+      allowPeriodControls: true,
       cycleView,
       rollingPeriod,
       periodLabel,
@@ -72,7 +69,7 @@ export async function loadActivityPage(principal: AppPrincipal, search: Activity
         canSwitchAudience: true,
         youUnlinked: true,
         settings,
-        allowPeriodControls,
+        allowPeriodControls: true,
         cycleView,
         rollingPeriod,
         periodLabel,
@@ -93,7 +90,7 @@ export async function loadActivityPage(principal: AppPrincipal, search: Activity
       scope: "you" as const,
       canSwitchAudience: true,
       settings,
-      allowPeriodControls,
+      allowPeriodControls: true,
       cycleView,
       rollingPeriod,
       periodLabel,
@@ -111,7 +108,7 @@ export async function loadActivityPage(principal: AppPrincipal, search: Activity
     kind: "organization" as const,
     scope: "team" as const,
     canSwitchAudience,
-    allowPeriodControls,
+    allowPeriodControls: true,
     cycleView,
     rollingPeriod,
     periodLabel,

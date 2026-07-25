@@ -17,9 +17,13 @@ test("developer calculation views use personal usage totals", async ({ page }) =
   await expect(page.getByText("10").first()).toBeVisible();
 
   await page.goto("/tools");
+  await expect(page.getByRole("heading", { level: 1, name: "Your tools, usage, spend." })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Your tools." })).toBeVisible();
-  await expect(page.locator("main").getByText("cursor", { exact: true })).toBeVisible();
-  await expect(page.locator("main").getByText("opencode", { exact: true })).toBeVisible();
+  await expect(page.getByText("Active tools")).toBeVisible();
+  await expect(page.getByText("Total tokens")).toBeVisible();
+  await expect(page.getByText("Most active tool")).toBeVisible();
+  await expect(page.locator("main").getByText("Cursor", { exact: true })).toBeVisible();
+  await expect(page.locator("main").getByText("OpenCode", { exact: true })).toBeVisible();
 });
 
 test("developer chrome hides owner-only navigation", async ({ page }) => {
@@ -51,7 +55,6 @@ test("developer is redirected from owner-only calculation routes", async ({ page
   for (const route of [
     "/team",
     "/team/e2e-developer",
-    "/tools/cursor",
     "/signals",
     "/signals/activity?days=30",
     "/signals/settings",
@@ -59,6 +62,15 @@ test("developer is redirected from owner-only calculation routes", async ({ page
     await page.goto(route);
     await expect(page).toHaveURL(/\/dashboard/);
   }
+});
+
+test("developer can open tool detail by default", async ({ page }) => {
+  await page.goto("/tools");
+  await expect(page.getByRole("heading", { name: "Your tools." })).toBeVisible();
+
+  await page.goto("/tools/cursor");
+  await expect(page).not.toHaveURL(/\/dashboard/);
+  await expect(page.getByRole("heading", { name: /cursor/i }).first()).toBeVisible();
 });
 
 test("developer onboarding resume opens connect flow", async ({ page }) => {

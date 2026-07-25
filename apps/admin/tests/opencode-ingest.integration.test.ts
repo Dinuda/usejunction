@@ -103,8 +103,8 @@ test("opencode usage ingest stores actual spend and productivity rows", { skip: 
     const productivity = rows.find((row) => row.model === "opencode");
     assert.ok(productivity);
     assert.equal(productivity.metricKind, "productivity");
-    assert.equal(productivity.addedLines, 120);
-    assert.equal(productivity.deletedLines, 30);
+    assert.equal(Number(productivity.addedLines), 120);
+    assert.equal(Number(productivity.deletedLines), 30);
   } finally {
     await prisma.organization.delete({ where: { id: org.id } });
   }

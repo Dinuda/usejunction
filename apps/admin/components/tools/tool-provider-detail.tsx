@@ -89,6 +89,7 @@ function quotaStatus(percent: number | null) {
 
 export function ToolProviderDetail({
   data,
+  scope = "org",
   cycleView = "current_cycles",
   period = DEFAULT_ROLLING_PERIOD,
   periodLabel = "current billing cycles",
@@ -96,6 +97,7 @@ export function ToolProviderDetail({
   periodBasePath,
 }: {
   data: DetailProps;
+  scope?: "org" | "self";
   cycleView?: CycleView;
   period?: RollingPeriod;
   periodLabel?: string;
@@ -110,6 +112,7 @@ export function ToolProviderDetail({
   const [deleteTarget, setDeleteTarget] = useState<PlanRow | null>(null);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const basePath = periodBasePath ?? `/tools/${data.toolKey}`;
+  const isSelf = scope === "self";
 
   async function refresh() {
     await invalidateAppData();
@@ -221,7 +224,7 @@ export function ToolProviderDetail({
         <BreadcrumbList>
           <BreadcrumbItem>
             <BreadcrumbLink asChild>
-              <Link href="/tools">Tools</Link>
+              <Link href="/tools">{isSelf ? "My tools" : "Tools"}</Link>
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
@@ -237,7 +240,9 @@ export function ToolProviderDetail({
           <div>
             <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.15rem]">{data.name}</h1>
             <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-              Plans your team runs, who uses them, and live quota pressure.
+              {isSelf
+                ? "Your quotas, usage, and models for this tool."
+                : "Plans your team runs, who uses them, and live quota pressure."}
             </p>
           </div>
         </div>
@@ -249,20 +254,38 @@ export function ToolProviderDetail({
           hero
           className="pl-5"
           value={data.kpis.devices}
-          sub="With this tool installed"
+          sub={isSelf ? "Where this tool is installed for you" : "With this tool installed"}
         />
-        <SignalsKpi
-          label="People"
-          className="sm:border-l sm:border-border sm:pl-8"
-          value={data.kpis.people}
-          sub="Detected or assigned"
-        />
-        <SignalsKpi
-          label="Seats free"
-          className="xl:border-l xl:border-border xl:pl-8"
-          value={data.kpis.seatsFree}
-          sub={`${data.kpis.seatsAssigned}/${data.kpis.seatsPurchased} assigned`}
-        />
+        {isSelf ? (
+          <SignalsKpi
+            label="Requests"
+            className="sm:border-l sm:border-border sm:pl-8"
+            value={data.kpis.requests.toLocaleString()}
+            sub={`In ${periodLabel}`}
+          />
+        ) : (
+          <SignalsKpi
+            label="People"
+            className="sm:border-l sm:border-border sm:pl-8"
+            value={data.kpis.people}
+            sub="Detected or assigned"
+          />
+        )}
+        {isSelf ? (
+          <SignalsKpi
+            label="Tokens"
+            className="xl:border-l xl:border-border xl:pl-8"
+            value={data.kpis.tokens.toLocaleString()}
+            sub={`In ${periodLabel}`}
+          />
+        ) : (
+          <SignalsKpi
+            label="Seats free"
+            className="xl:border-l xl:border-border xl:pl-8"
+            value={data.kpis.seatsFree}
+            sub={`${data.kpis.seatsAssigned}/${data.kpis.seatsPurchased} assigned`}
+          />
+        )}
         <SignalsKpi
           label={`Usage cost (${periodSuffix})`}
           accent
@@ -281,12 +304,16 @@ export function ToolProviderDetail({
       <section className="mt-12">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-lg font-semibold tracking-tight">Live quotas.</h2>
+            <h2 className="text-lg font-semibold tracking-tight">
+              {isSelf ? "Your live quotas." : "Live quotas."}
+            </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Current allowance pressure reported by connected machines.
+              {isSelf
+                ? "Current allowance pressure reported by your connected machines."
+                : "Current allowance pressure reported by connected machines."}
             </p>
           </div>
-          {quotaGroups.length ? (
+          {quotaGroups.length && !isSelf ? (
             <Badge variant="outline" className="w-fit bg-card text-muted-foreground">
               {peopleReporting} {peopleReporting === 1 ? "person" : "people"} reporting
             </Badge>
@@ -331,7 +358,7 @@ export function ToolProviderDetail({
                         </Badge>
                       ) : null}
                     </div>
-                    {person?.planMismatch && person?.mappedCatalogPlanKey ? (
+                    {person?.planMismatch && person?.mappedCatalogPlanKey && !isSelf ? (
                       <div className="mt-3 space-y-2">
                         <p className="text-xs leading-5 text-muted-foreground">
                           Reported plan maps to {person.mappedCatalogPlanKey}; the company assignment is{" "}
@@ -435,8 +462,10 @@ export function ToolProviderDetail({
       <section className="mt-12">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
           <div>
-            <h2 className="text-lg font-semibold tracking-tight">Models.</h2>
-            <p className="mt-1 text-xs text-muted-foreground">Model usage by person · {periodLabel}</p>
+            <h2 className="text-lg font-semibold tracking-tight">{isSelf ? "Your models." : "Models."}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {isSelf ? `Model usage · ${periodLabel}` : `Model usage by person · ${periodLabel}`}
+            </p>
           </div>
           {data.modelsByDeveloper.length ? (
             <p className="text-xs text-muted-foreground">
@@ -452,7 +481,9 @@ export function ToolProviderDetail({
                 <MobileDataCard key={`${m.developerId}-${m.model}`}>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{m.model}</p>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">{m.developerName}</p>
+                    {!isSelf ? (
+                      <p className="mt-1 truncate text-xs text-muted-foreground">{m.developerName}</p>
+                    ) : null}
                   </div>
                   <dl className="mt-4 grid grid-cols-3 gap-3">
                     <MobileDataField label="Requests" value={m.requests.toLocaleString()} />
@@ -466,7 +497,7 @@ export function ToolProviderDetail({
             <Table className="w-full text-sm">
               <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow className="border-b hover:bg-transparent">
-                  <TableHead className="h-9 px-3 font-medium">Person</TableHead>
+                  {!isSelf ? <TableHead className="h-9 px-3 font-medium">Person</TableHead> : null}
                   <TableHead className="h-9 px-3 font-medium">Model</TableHead>
                   <TableHead className="h-9 px-3 text-right font-medium">Requests</TableHead>
                   <TableHead className="h-9 px-3 text-right font-medium">Tokens</TableHead>
@@ -479,7 +510,9 @@ export function ToolProviderDetail({
                     key={`${m.developerId}-${m.model}`}
                     className="border-b last:border-0 hover:bg-muted/40"
                   >
-                    <TableCell className="px-3 py-2 text-muted-foreground">{m.developerName}</TableCell>
+                    {!isSelf ? (
+                      <TableCell className="px-3 py-2 text-muted-foreground">{m.developerName}</TableCell>
+                    ) : null}
                     <TableCell className="px-3 py-2 font-medium">{m.model}</TableCell>
                     <TableCell className="px-3 py-2 text-right tabular-nums">
                       {m.requests.toLocaleString()}
@@ -501,6 +534,7 @@ export function ToolProviderDetail({
         )}
       </section>
 
+      {!isSelf ? (
       <section className="mt-12">
         <div className="mb-6 flex items-end justify-between gap-4">
           <div>
@@ -583,7 +617,9 @@ export function ToolProviderDetail({
           </Empty>
         )}
       </section>
+      ) : null}
 
+      {!isSelf ? (
       <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <DialogContent className="max-w-md gap-5">
           <DialogHeader>
@@ -604,13 +640,16 @@ export function ToolProviderDetail({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      ) : null}
 
+      {!isSelf ? (
       <AddSubscriptionSheet
         open={addOpen}
         onOpenChange={setAddOpen}
         initialToolKey={data.toolKey}
         onCreated={refresh}
       />
+      ) : null}
     </>
   );
 }

@@ -46,7 +46,10 @@ beforeEach(() => {
     dailyPersonalEnabled: true,
     dailyOrgEnabled: false,
   });
-  mocks.getOrgActivitySettings.mockResolvedValue({ teamDeviceActivityEnabled: true });
+  mocks.getOrgActivitySettings.mockResolvedValue({
+    teamDeviceActivityEnabled: true,
+    teamToolsBrowseEnabled: false,
+  });
   mocks.getOrgSignalsPolicy.mockResolvedValue({ enabled: true });
   mocks.getOrgBillingStatus.mockResolvedValue({ plan: "team" });
   mocks.developerFindMany.mockResolvedValue([]);

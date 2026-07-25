@@ -73,8 +73,9 @@ func TestPlainFallbacks(t *testing.T) {
 		"UseJunction",
 		"Enrolling device",
 		"• cursor [ready]",
-		"UseJunction installed. Admin panel: http://localhost:3001",
-		"CLI: /tmp/.usejunction/bin/usejunction",
+		"UseJunction installed.",
+		"Admin:  http://localhost:3001",
+		"CLI:    /tmp/.usejunction/bin/usejunction",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("plain output missing %q\n%s", want, got)
@@ -82,5 +83,39 @@ func TestPlainFallbacks(t *testing.T) {
 	}
 	if strings.Contains(got, "\x1b[") {
 		t.Fatalf("plain output contained ANSI escapes:\n%s", got)
+	}
+}
+
+func TestStepUpdatePlainMode(t *testing.T) {
+	origNoColor := forceNoColor
+	origOut := out
+	t.Cleanup(func() {
+		forceNoColor = origNoColor
+		out = origOut
+	})
+
+	var buf bytes.Buffer
+	SetNoColor(true)
+	SetWriter(&buf)
+
+	step := StepStart("Uploading initial usage")
+	step.Update("Scanning cursor")
+	step.Update("Scanning cursor") // duplicate should not repeat
+	step.Update("Syncing usage (934 rows)")
+	step.Done("6 tools · 934 usage rows")
+
+	got := buf.String()
+	for _, want := range []string{
+		"Uploading initial usage...",
+		"· Scanning cursor",
+		"· Syncing usage (934 rows)",
+		"Uploading initial usage: 6 tools · 934 usage rows",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("plain progress missing %q\n%s", want, got)
+		}
+	}
+	if strings.Count(got, "Scanning cursor") != 1 {
+		t.Fatalf("duplicate progress lines should be suppressed:\n%s", got)
 	}
 }

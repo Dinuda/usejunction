@@ -141,6 +141,76 @@ env_key = "USEJUNCTION_VIRTUAL_KEY"
 	}
 }
 
+func TestRepairLegacyCodexGatewayConfigRestoresSidecarBackup(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+
+	codexDir := filepath.Join(home, ".codex")
+	if err := os.MkdirAll(codexDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(codexDir, "config.toml")
+	gatewayConfig := `# Managed by UseJunction agent — restore with: usejunction unconfigure
+model_provider = "openai"
+
+[model_providers.openai]
+name = "UseJunction Gateway"
+base_url = "/v1"
+env_key = "USEJUNCTION_VIRTUAL_KEY"
+`
+	original := "model = \"gpt-test\"\npersonality = \"pragmatic\"\n"
+	if err := os.WriteFile(configPath, []byte(gatewayConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(codexDir, "config.toml.junction-damaged-test"), []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RepairLegacyCodexGatewayConfig(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != original {
+		t.Fatalf("expected restored config:\n%s\ngot:\n%s", original, got)
+	}
+}
+
+func TestRepairLegacyCodexGatewayConfigDeletesWhenNoBackup(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+
+	codexDir := filepath.Join(home, ".codex")
+	if err := os.MkdirAll(codexDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(codexDir, "config.toml")
+	gatewayConfig := `# Managed by UseJunction agent — restore with: usejunction unconfigure
+model_provider = "openai"
+
+[model_providers.openai]
+name = "UseJunction Gateway"
+base_url = "/v1"
+env_key = "USEJUNCTION_VIRTUAL_KEY"
+`
+	if err := os.WriteFile(configPath, []byte(gatewayConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RepairLegacyCodexGatewayConfig(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Fatalf("expected legacy config to be removed, stat err=%v", err)
+	}
+}
+
 func TestRunSetupNeverTouchesCodexConfigToml(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -185,5 +255,18 @@ func TestRunSetupNeverTouchesCodexConfigToml(t *testing.T) {
 	}
 	if strings.Contains(string(envBody), "ANTHROPIC_BASE_URL") || strings.Contains(string(envBody), "localhost:4000") {
 		t.Fatalf("setup must not route tools through a gateway: %s", envBody)
+	}
+}
+
+func TestCodexConfigPathDefaultsToDotCodex(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CODEX_HOME", "")
+
+	got := codexConfigPath()
+	want := filepath.Join(home, ".codex", "config.toml")
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
 	}
 }

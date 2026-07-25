@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
 
 const POLL_INTERVAL_MS = 2500;
 const POLL_DURATION_MS = 60_000;
+/** If tools/usage never land after enroll, return to the connect command. */
+const TOOLS_WAIT_TIMEOUT_MS = 120_000;
 
 type Device = {
   id: string;
@@ -44,7 +46,11 @@ type Props = {
   pollAfterCopy?: boolean;
   /** Hide the inline waiting row (e.g. when parent renders status elsewhere). */
   hideInlineStatus?: boolean;
-  onPollingStateChange?: (state: { isPolling: boolean; waitingForTools: boolean }) => void;
+  onPollingStateChange?: (state: {
+    isPolling: boolean;
+    waitingForTools: boolean;
+    waitTimedOut: boolean;
+  }) => void;
   onConnected?: (device: Device) => void;
 };
 
@@ -85,16 +91,21 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
   const [isPolling, setIsPolling] = useState(false);
   const [pollSession, setPollSession] = useState(0);
   const [importProgress, setImportProgress] = useState<string | null>(null);
+  /** After a tools-wait timeout, show connect again until the user retries. */
+  const [waitTimedOut, setWaitTimedOut] = useState(false);
   /** Only flip after onConnected — keeps loading UI until the parent can take over. */
   const [fullyConnected, setFullyConnected] = useState(false);
   const notifiedRef = useRef<string | null>(null);
   const refreshInFlightRef = useRef<Promise<EnrollmentCredentials | null> | null>(null);
+  const waitingStartedAtRef = useRef<number | null>(null);
 
   const markConnected = useCallback(
     (candidate: Device) => {
       setWaitingForTools(false);
       setIsPolling(false);
       setImportProgress(null);
+      setWaitTimedOut(false);
+      waitingStartedAtRef.current = null;
       setFullyConnected(true);
       if (notifiedRef.current !== candidate.id) {
         notifiedRef.current = candidate.id;
@@ -103,6 +114,20 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
     },
     [onConnected],
   );
+
+  const resetToConnect = useCallback(() => {
+    setWaitingForTools(false);
+    setIsPolling(false);
+    setImportProgress(null);
+    setWaitTimedOut(true);
+    waitingStartedAtRef.current = null;
+    setDevice(null);
+  }, []);
+
+  const resumeWaiting = useCallback(() => {
+    setWaitTimedOut(false);
+    waitingStartedAtRef.current = null;
+  }, []);
 
   const refreshStatus = useCallback(async () => {
     const response = await fetch("/api/onboarding?include=developer", { cache: "no-store" });
@@ -115,6 +140,8 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
   }, []);
 
   const checkEnrollment = useCallback(async () => {
+    if (waitTimedOut) return;
+
     const status = await refreshStatus();
     const devices = status?.devices ?? [];
     const fresh = devices.find((item) => !knownIds.has(item.id)) ?? null;
@@ -125,6 +152,7 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
     }
 
     if (candidate && !isReadyDevice(candidate)) {
+      if (!waitingStartedAtRef.current) waitingStartedAtRef.current = Date.now();
       setWaitingForTools(true);
       setDevice(candidate);
       return;
@@ -132,6 +160,7 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
 
     if (candidate && isReadyDevice(candidate) && !hasUsageReady(candidate)) {
       // Tools found — keep polling until first usage ingest lands.
+      if (!waitingStartedAtRef.current) waitingStartedAtRef.current = Date.now();
       setWaitingForTools(true);
       setDevice(candidate);
       setImportProgress("Waiting for first usage upload…");
@@ -149,6 +178,7 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
           };
           const sync = ctx.data?.sync;
           if (sync && (sync.dashboardReady === false || (sync.dirtyDayCount ?? 0) > 0)) {
+            if (!waitingStartedAtRef.current) waitingStartedAtRef.current = Date.now();
             setWaitingForTools(true);
             setImportProgress(
               sync.dirtyDayCount && sync.dirtyDayCount > 0
@@ -169,7 +199,7 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
       setDevice(candidate);
       markConnected(candidate);
     }
-  }, [device?.id, knownIds, markConnected, refreshStatus]);
+  }, [device?.id, knownIds, markConnected, refreshStatus, waitTimedOut]);
 
   const generateToken = useCallback(async (rotate = false): Promise<EnrollmentCredentials | null> => {
     setError(null);
@@ -252,14 +282,16 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
 
   useEffect(() => {
     if (pollAfterCopy) return;
+    if (waitTimedOut) return;
     if (isReadyDevice(device) && hasUsageReady(device)) return;
 
     const interval = window.setInterval(() => void checkEnrollment(), POLL_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  }, [checkEnrollment, device, pollAfterCopy]);
+  }, [checkEnrollment, device, pollAfterCopy, waitTimedOut]);
 
   useEffect(() => {
     if (!pollAfterCopy || pollSession === 0) return;
+    if (waitTimedOut) return;
     if (isReadyDevice(device) && hasUsageReady(device)) return;
 
     setIsPolling(true);
@@ -279,23 +311,41 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
       window.clearInterval(interval);
       window.clearTimeout(timeout);
     };
-  }, [checkEnrollment, device, markConnected, pollAfterCopy, pollSession]);
+  }, [checkEnrollment, device, markConnected, pollAfterCopy, pollSession, waitTimedOut]);
+
+  /** Failsafe: after 2 minutes still waiting on tools/sync, return to connect command. */
+  useEffect(() => {
+    if (!waitingForTools || fullyConnected || waitTimedOut) return;
+
+    const startedAt = waitingStartedAtRef.current ?? Date.now();
+    waitingStartedAtRef.current = startedAt;
+    const remaining = Math.max(0, TOOLS_WAIT_TIMEOUT_MS - (Date.now() - startedAt));
+
+    const timeout = window.setTimeout(() => {
+      resetToConnect();
+      void generateToken(true);
+    }, remaining);
+
+    return () => window.clearTimeout(timeout);
+  }, [fullyConnected, generateToken, resetToConnect, waitTimedOut, waitingForTools]);
 
   const handleCopied = useCallback(() => {
+    resumeWaiting();
     if (!pollAfterCopy) return;
     setPollSession((current) => current + 1);
-  }, [pollAfterCopy]);
+  }, [pollAfterCopy, resumeWaiting]);
 
   const checkConnection = useCallback(() => {
+    resumeWaiting();
     if (!pollAfterCopy || isReadyDevice(device)) return;
     setPollSession((current) => current + 1);
-  }, [device, pollAfterCopy]);
+  }, [device, pollAfterCopy, resumeWaiting]);
 
   useImperativeHandle(ref, () => ({ checkConnection }), [checkConnection]);
 
   useEffect(() => {
-    onPollingStateChange?.({ isPolling, waitingForTools });
-  }, [isPolling, onPollingStateChange, waitingForTools]);
+    onPollingStateChange?.({ isPolling, waitingForTools, waitTimedOut });
+  }, [isPolling, onPollingStateChange, waitTimedOut, waitingForTools]);
 
   const commands = useMemo(() => {
     if (!token || !controlPlaneUrl) return null;
@@ -334,10 +384,10 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
   }
 
   const expired = isEnrollmentTokenStale(expiresAt);
-  const showWaiting = pollAfterCopy ? isPolling : true;
-  const showStatusRow = !hideInlineStatus && (showWaiting || expired);
+  const showWaiting = pollAfterCopy ? isPolling : !waitTimedOut;
+  const showStatusRow = !hideInlineStatus && (showWaiting || expired || waitTimedOut);
   // Keep the waiting banner while prep is in flight — Connected panel only after onConnected.
-  const enrolledAwaitingTools = waitingForTools && Boolean(device) && !fullyConnected;
+  const enrolledAwaitingTools = waitingForTools && Boolean(device) && !fullyConnected && !waitTimedOut;
 
   return (
     <div className={cn(compact ? "space-y-0" : "space-y-4")}>
@@ -377,7 +427,11 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
           )}
           {showStatusRow ? (
             <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-              {showWaiting ? (
+              {waitTimedOut ? (
+                <p className="text-sm text-muted-foreground">
+                  Still not synced after 2 minutes. Run the command again to retry.
+                </p>
+              ) : showWaiting ? (
                 <div className="flex w-full items-center justify-between gap-3 text-sm text-muted-foreground">
                   <div className="flex items-center gap-2">
                     <Loader2 className="size-4 animate-spin text-primary" />

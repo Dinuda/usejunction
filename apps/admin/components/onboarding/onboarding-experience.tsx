@@ -13,7 +13,6 @@ import { canonicalToolKey } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
 import {
   canChooseOnboardingPath,
-  requiresDeviceOnboarding,
   type OrganizationRole,
 } from "@/lib/rbac/permissions";
 
@@ -128,6 +127,7 @@ export function OnboardingExperience() {
   const [invitePending, setInvitePending] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [path, setPath] = useState<Path | null>(null);
+  const [connectInProgress, setConnectInProgress] = useState(false);
 
   const refresh = useCallback(async (mode: "bootstrap" | "poll" = "poll") => {
     const response =
@@ -160,11 +160,7 @@ export function OnboardingExperience() {
     const next = response.ok ? ((await response.json()) as OnboardingStatus) : null;
     if (next) {
       const role = next.role as OrganizationRole | null;
-      const deviceReady = hasReadyDevice(next);
-      // Developers without a connected machine always stay in onboarding.
-      const canLeave =
-        Boolean(next.onboardingCompletedAt) &&
-        (deviceReady || !requiresDeviceOnboarding(role));
+      const canLeave = Boolean(next.onboardingCompletedAt);
       if (canLeave) {
         window.location.href = "/dashboard";
         return;
@@ -233,7 +229,6 @@ export function OnboardingExperience() {
 
   const role = status.role as OrganizationRole | null;
   const canChoose = canChooseOnboardingPath(role);
-  const mustConnect = requiresDeviceOnboarding(role);
   const workspaceName = status.organization?.name ?? "your workspace";
   const device = status.developer?.devices.find(
     (item) => (item.toolInstallations?.length ?? 0) > 0,
@@ -287,30 +282,31 @@ export function OnboardingExperience() {
         <div className="space-y-5">
           <DeviceConnectCard
             compact
+            onPollingStateChange={({ isPolling, waitingForTools }) => {
+              setConnectInProgress(isPolling || waitingForTools);
+            }}
             onConnected={() => {
               void refresh("poll");
             }}
           />
-          <div className="space-y-1 pt-2 text-center text-sm text-muted-foreground">
+          <div className="space-y-2 pt-2 text-center">
             {canChoose ? (
               <button
                 type="button"
                 onClick={() => setPath("choose")}
-                className="inline-flex items-center gap-1.5 hover:text-foreground"
+                className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
               >
                 <ArrowLeft className="size-3.5" />
                 Back to options
               </button>
             ) : null}
-            {!mustConnect ? (
+            {!connectInProgress ? (
               <div>
                 <TextLink onClick={() => void finish("skip")} disabled={finishing}>
-                  Skip for now
+                  {finishing ? "Skipping…" : "Skip this step"}
                 </TextLink>
               </div>
-            ) : (
-              <p className="text-xs">Connect a computer to open your workspace.</p>
-            )}
+            ) : null}
           </div>
         </div>
       </AuthShell>

@@ -155,3 +155,31 @@ export async function assertCanAddUser(
 
   return { allowed: true };
 }
+
+export async function assertCanInviteUsers(
+  orgId: string,
+): Promise<{ allowed: true } | { allowed: false; message: string }> {
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: {
+      plan: true,
+      subscriptionStatus: true,
+      currentPeriodEnd: true,
+    },
+  });
+
+  if (!org) return { allowed: false, message: "organization not found" };
+
+  const limit = getUserLimit(resolveEffectivePlan(org));
+  if (limit === null) return { allowed: true };
+
+  const usersUsed = await prisma.developer.count({ where: { orgId, removedAt: null } });
+  if (usersUsed >= limit) {
+    return {
+      allowed: false,
+      message: `User limit reached (${limit}). Upgrade to Team to add more users.`,
+    };
+  }
+
+  return { allowed: true };
+}

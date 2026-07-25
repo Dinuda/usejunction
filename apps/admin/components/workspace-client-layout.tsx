@@ -115,7 +115,15 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
     if (lastWatermark.current === syncState.watermark) return;
     lastWatermark.current = syncState.watermark;
     // Agent ingest advanced — drop stale Team/Tools/Activity empties.
-    void queryClient.invalidateQueries({ queryKey: ["app"] });
+    // Skip workspace-context (already fresh) and do not cancel in-flight
+    // fetches — cancelRefetch aborts produce AbortError overlays in Next/Turbopack.
+    void queryClient.invalidateQueries(
+      {
+        predicate: (query) =>
+          query.queryKey[0] === "app" && query.queryKey[1] !== "workspace-context",
+      },
+      { cancelRefetch: false },
+    );
   }, [contextQuery.data?.sync, queryClient]);
 
   const context = contextQuery.data;

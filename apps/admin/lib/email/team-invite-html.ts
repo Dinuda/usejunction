@@ -1,18 +1,13 @@
 import { getPublicAppUrl } from "@/lib/public-url";
-import { siteConfig } from "@/lib/public/config";
 
-/** CID ids for Resend inline attachments — must match sendTeamInviteEmail. */
+/** CID id for Resend inline attachment — must match sendTeamInviteEmail. */
 export const TEAM_INVITE_LOGO_CID = "uj-logo";
-export const TEAM_INVITE_HERO_CID = "uj-team-invite-hero";
 
 /** Brand tokens mirrored from globals.css — email-safe solid colors only. */
 const brand = {
   teal: "#08758a",
   charcoal: "#111210",
   muted: "#6b6a64",
-  border: "#e8e8e3",
-  wash: "#f6f6f3",
-  page: "#f0efeb",
   white: "#ffffff",
   link: "#08758a",
 } as const;
@@ -49,7 +44,7 @@ export function buildTeamInviteEmailDocument(input: {
   /** Absolute app origin, e.g. https://app.usejunction.com */
   appOrigin?: string;
   /**
-   * When true, logo/hero use cid: URLs for Resend inline attachments
+   * When true, logo uses a cid: URL for Resend inline attachment
    * (required for localhost / private origins that email clients cannot fetch).
    */
   inlineAssets?: boolean;
@@ -59,9 +54,6 @@ export function buildTeamInviteEmailDocument(input: {
   const logoUrl = input.inlineAssets
     ? `cid:${TEAM_INVITE_LOGO_CID}`
     : `${origin}/usejunction.png`;
-  const heroUrl = input.inlineAssets
-    ? `cid:${TEAM_INVITE_HERO_CID}`
-    : `${origin}/images/team-invite.png`;
   const org = formatWorkspaceDisplayName(input.organizationName.trim() || "your team");
   const email = input.recipientEmail.trim();
   const inviteUrl = input.inviteUrl;
@@ -75,14 +67,10 @@ export function buildTeamInviteEmailDocument(input: {
     : `You've been invited to join ${org} on UseJunction.`;
 
   const text = [
-    `Join your team on UseJunction`,
-    "",
     inviteSentence,
     "",
     `Open this invite link and continue with ${email}:`,
     inviteUrl,
-    "",
-    `What is UseJunction? ${siteConfig.tagline}.`,
     "",
     "If you weren't expecting this, you can ignore this email.",
   ].join("\n");
@@ -96,6 +84,8 @@ export function buildTeamInviteEmailDocument(input: {
               <strong>${escapeHtml(org)}</strong> on UseJunction.`
     : `You've been invited to join <strong>${escapeHtml(org)}</strong> on UseJunction.`;
 
+  // Keep this transactional: personal invite copy + one CTA. No hero, product pitch,
+  // or marketing footer — those push Gmail into the Promotions tab.
   const html = `<!doctype html>
 <html>
 <head>
@@ -104,105 +94,55 @@ export function buildTeamInviteEmailDocument(input: {
   <meta name="color-scheme" content="light" />
   <title>${escapeHtml(subject)}</title>
 </head>
-<body style="margin:0;padding:0;background:${brand.page};font-family:Inter,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${brand.page};padding:40px 16px;">
+<body style="margin:0;padding:0;background:${brand.white};font-family:Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${brand.white};padding:32px 16px;">
     <tr><td align="center">
-      <table role="presentation" width="560" cellspacing="0" cellpadding="0" style="max-width:560px;width:100%;">
+      <table role="presentation" width="520" cellspacing="0" cellpadding="0" style="max-width:520px;width:100%;">
 
-        <!-- Logo -->
         <tr>
-          <td style="padding:0 8px 28px;">
+          <td align="center" style="padding:0 0 24px;">
             <a href="${escapeHtml(homeUrl)}" style="text-decoration:none;">
-              <img src="${escapeHtml(logoUrl)}" width="132" height="32" alt="UseJunction" style="display:block;border:0;width:132px;height:32px;" />
+              <img src="${escapeHtml(logoUrl)}" width="120" height="29" alt="UseJunction" style="display:block;border:0;width:120px;height:29px;margin:0 auto;" />
             </a>
           </td>
         </tr>
 
-        <!-- Headline + intro -->
         <tr>
-          <td style="padding:0 8px 28px;">
-            <div style="font-size:28px;font-weight:700;color:${brand.charcoal};letter-spacing:-0.03em;line-height:1.2;">
-              Join your team on UseJunction
-            </div>
-            <p style="margin:18px 0 0;font-size:15px;line-height:1.7;color:${brand.charcoal};">
+          <td align="center" style="padding:0 0 20px;">
+            <p style="margin:0;font-size:16px;line-height:1.6;color:${brand.charcoal};text-align:center;">
               ${inviteHtml}
             </p>
-            <p style="margin:12px 0 0;font-size:15px;line-height:1.7;color:${brand.muted};">
+            <p style="margin:12px 0 0;font-size:15px;line-height:1.6;color:${brand.muted};text-align:center;">
               Continue with
               <a href="mailto:${escapeHtml(email)}" style="color:${brand.link};text-decoration:underline;">${escapeHtml(email)}</a>.
             </p>
           </td>
         </tr>
 
-        <!-- Invite card -->
         <tr>
-          <td style="padding:0 0 28px;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${brand.white};border:1px solid ${brand.border};border-radius:16px;overflow:hidden;">
-              <tr>
-                <td style="padding:0;line-height:0;font-size:0;background:${brand.wash};">
-                  <img
-                    src="${escapeHtml(heroUrl)}"
-                    width="560"
-                    alt="Teammates collaborating on UseJunction"
-                    style="display:block;border:0;width:100%;max-width:560px;height:auto;"
-                  />
-                </td>
-              </tr>
-              <tr>
-                <td align="center" style="padding:28px 28px 8px;">
-                  <div style="font-size:18px;font-weight:700;color:${brand.charcoal};letter-spacing:-0.02em;line-height:1.3;">
-                    ${escapeHtml(org)}
-                  </div>
-                  <div style="margin-top:6px;font-size:13px;color:${brand.muted};line-height:1.4;">
-                    UseJunction workspace
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td align="center" style="padding:20px 28px 32px;">
-                  <a
-                    href="${escapeHtml(inviteUrl)}"
-                    style="display:inline-block;background:${brand.teal};color:#ffffff;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;letter-spacing:-0.01em;line-height:1;"
-                  >
-                    Join Now
-                  </a>
-                </td>
-              </tr>
-            </table>
+          <td align="center" style="padding:0 0 24px;">
+            <a
+              href="${escapeHtml(inviteUrl)}"
+              style="display:inline-block;background:${brand.teal};color:#ffffff;padding:12px 20px;text-decoration:none;border-radius:0;font-weight:700;font-size:14px;line-height:1;"
+            >
+              Accept invite
+            </a>
           </td>
         </tr>
 
-        <!-- Quiet fallback -->
         <tr>
-          <td style="padding:0 8px 32px;">
-            <p style="margin:0;font-size:12px;line-height:1.6;color:${brand.muted};">
-              Having trouble with the button?
-              <a href="${escapeHtml(inviteUrl)}" style="color:${brand.link};text-decoration:underline;">Copy this invite link</a>
+          <td align="center" style="padding:0 0 24px;">
+            <p style="margin:0;font-size:12px;line-height:1.6;color:${brand.muted};text-align:center;">
+              Or paste this link into your browser:<br />
+              <a href="${escapeHtml(inviteUrl)}" style="color:${brand.link};text-decoration:underline;word-break:break-all;">${escapeHtml(inviteUrl)}</a>
             </p>
           </td>
         </tr>
 
-        <!-- What is UseJunction -->
         <tr>
-          <td style="padding:0 8px 28px;">
-            <div style="font-size:16px;font-weight:700;color:${brand.charcoal};letter-spacing:-0.02em;">
-              What is UseJunction?
-            </div>
-            <p style="margin:10px 0 0;font-size:14px;line-height:1.7;color:${brand.muted};">
-              ${escapeHtml(siteConfig.tagline)}. See which AI coding tools your team uses, plan utilization, and device health—before you try to control it.
-              <a href="${escapeHtml(homeUrl)}" style="color:${brand.link};text-decoration:underline;">Learn more about UseJunction</a>
-            </p>
-          </td>
-        </tr>
-
-        <!-- Footer -->
-        <tr>
-          <td style="padding:8px 8px 0;border-top:1px solid ${brand.border};">
-            <p style="margin:20px 0 0;font-size:12px;line-height:1.6;color:${brand.muted};">
+          <td align="center">
+            <p style="margin:0;font-size:12px;line-height:1.6;color:${brand.muted};text-align:center;">
               If you weren't expecting this, you can ignore this email.
-            </p>
-            <p style="margin:8px 0 0;font-size:12px;line-height:1.6;color:${brand.muted};">
-              <a href="${escapeHtml(homeUrl)}" style="color:${brand.muted};text-decoration:underline;">Made by UseJunction</a>
             </p>
           </td>
         </tr>
@@ -213,5 +153,5 @@ export function buildTeamInviteEmailDocument(input: {
 </body>
 </html>`;
 
-  return { subject, text, html, logoUrl, heroUrl, homeUrl };
+  return { subject, text, html, logoUrl, homeUrl };
 }

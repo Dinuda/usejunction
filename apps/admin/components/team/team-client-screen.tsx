@@ -7,6 +7,7 @@ import { HubTabList } from "@/components/hub-nav";
 import { PageHeader } from "@/components/page-header";
 import { InvitePeopleDialog } from "@/components/team/team-connect-panel";
 import { TeamInvitedPanel, type PendingInvite } from "@/components/team/team-invited-panel";
+import { TeamSyncsPanel } from "@/components/team/team-syncs-panel";
 import { serializeBigInts } from "@/lib/billing/validation";
 import {
   cycleViewShortSuffix,
@@ -14,17 +15,19 @@ import {
 } from "@/lib/dashboard/cycle-view";
 import type { RollingPeriod } from "@/lib/dashboard/period-prefs";
 import type { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
+import type { OrgDeviceSyncStatus } from "@/lib/queries/team/device-syncs";
 import type { getDeveloperRoster } from "@/lib/read-models/developers";
 import type { listSubscriptions } from "@/lib/tools/subscriptions";
 import { useAppQuery } from "@/lib/api/client";
 import { teamKey } from "@/lib/app-pages/query-keys";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
-type TeamView = "active" | "invited";
+type TeamView = "active" | "invited" | "syncs";
 
 const teamViews: { id: TeamView; label: string }[] = [
   { id: "active", label: "Active" },
   { id: "invited", label: "Invited" },
+  { id: "syncs", label: "Syncs" },
 ];
 
 type TeamPayload = {
@@ -35,6 +38,7 @@ type TeamPayload = {
   subscriptions: Awaited<ReturnType<typeof listSubscriptions>>;
   planUsage: Awaited<ReturnType<typeof getPlanUsage>>["data"]["developers"];
   pendingInvites: PendingInvite[];
+  syncs: OrgDeviceSyncStatus;
 };
 
 export default function TeamClientScreen() {
@@ -47,7 +51,14 @@ export default function TeamClientScreen() {
   );
   if (query.isPending) return <AppPageSkeleton />;
   if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
-  const { cycleView, rollingPeriod, empty, subscriptions, pendingInvites = [] } = query.data;
+  const {
+    cycleView,
+    rollingPeriod,
+    empty,
+    subscriptions,
+    pendingInvites = [],
+    syncs = { devices: [], totals: { total: 0, online: 0, stale: 0, neverSynced: 0 } },
+  } = query.data;
   const periodSuffix = cycleViewShortSuffix(cycleView, rollingPeriod);
   const initial = serializeBigInts({
     developers: query.data.developers,
@@ -99,8 +110,10 @@ export default function TeamClientScreen() {
           initialPlanUsage={initial.planUsage}
           periodSuffix={periodSuffix}
         />
-      ) : (
+      ) : view === "invited" ? (
         <TeamInvitedPanel initialInvites={pendingInvites} />
+      ) : (
+        <TeamSyncsPanel syncs={syncs} />
       )}
     </>
   );

@@ -60,6 +60,7 @@ export function DashboardSetupPanel({ canInvite = true }: { canInvite?: boolean 
   const invalidateAppData = useInvalidateAppData();
   const [machineConnected, setMachineConnected] = useState(false);
   const [enrollStatus, setEnrollStatus] = useState<string | null>(null);
+  const [enrollTimedOut, setEnrollTimedOut] = useState(false);
   const connectCardRef = useRef<DeviceConnectCardHandle>(null);
 
   return (
@@ -68,7 +69,9 @@ export function DashboardSetupPanel({ canInvite = true }: { canInvite?: boolean 
         <div className="flex min-h-0 flex-1 flex-col gap-7">
           {enrollStatus ? (
             <div className="flex w-fit max-w-full items-center gap-2 border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" aria-hidden />
+              {!enrollTimedOut ? (
+                <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" aria-hidden />
+              ) : null}
               <span>{enrollStatus}</span>
             </div>
           ) : null}
@@ -82,8 +85,13 @@ export function DashboardSetupPanel({ canInvite = true }: { canInvite?: boolean 
               compact
               pollAfterCopy
               hideInlineStatus
-              onPollingStateChange={({ isPolling, waitingForTools }) => {
-                if (!isPolling) {
+              onPollingStateChange={({ isPolling, waitingForTools, waitTimedOut }) => {
+                setEnrollTimedOut(waitTimedOut);
+                if (waitTimedOut) {
+                  setEnrollStatus("Still not synced after 2 minutes. Run the command again to retry.");
+                  return;
+                }
+                if (!isPolling && !waitingForTools) {
                   setEnrollStatus(null);
                   return;
                 }
@@ -96,6 +104,7 @@ export function DashboardSetupPanel({ canInvite = true }: { canInvite?: boolean 
               onConnected={() => {
                 setMachineConnected(true);
                 setEnrollStatus(null);
+                setEnrollTimedOut(false);
                 void invalidateAppData();
                 router.refresh();
               }}

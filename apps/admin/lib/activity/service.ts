@@ -6,8 +6,8 @@ export async function getOrgActivitySettings(orgId: string): Promise<OrgActivity
   const settings = await prisma.activitySettings.findUnique({ where: { orgId } });
   if (!settings) return defaultActivitySettings();
   return {
-    teamPeriodControlsEnabled: settings.teamPeriodControlsEnabled,
     teamDeviceActivityEnabled: settings.teamDeviceActivityEnabled,
+    teamToolsBrowseEnabled: settings.teamToolsBrowseEnabled,
     updatedAt: settings.updatedAt.toISOString(),
   };
 }
@@ -15,17 +15,17 @@ export async function getOrgActivitySettings(orgId: string): Promise<OrgActivity
 export async function upsertOrgActivitySettings(
   orgId: string,
   input: {
-    teamPeriodControlsEnabled?: boolean;
     teamDeviceActivityEnabled?: boolean;
+    teamToolsBrowseEnabled?: boolean;
     updatedByUserId?: string | null;
   },
 ): Promise<OrgActivitySettings> {
   const existing = await prisma.activitySettings.findUnique({ where: { orgId } });
   const data = {
-    teamPeriodControlsEnabled:
-      input.teamPeriodControlsEnabled ?? existing?.teamPeriodControlsEnabled ?? false,
     teamDeviceActivityEnabled:
-      input.teamDeviceActivityEnabled ?? existing?.teamDeviceActivityEnabled ?? false,
+      input.teamDeviceActivityEnabled ?? existing?.teamDeviceActivityEnabled ?? true,
+    teamToolsBrowseEnabled:
+      input.teamToolsBrowseEnabled ?? existing?.teamToolsBrowseEnabled ?? true,
     updatedByUserId: input.updatedByUserId ?? existing?.updatedByUserId ?? null,
   };
 
@@ -34,8 +34,8 @@ export async function upsertOrgActivitySettings(
     : await prisma.activitySettings.create({ data: { orgId, ...data } });
 
   return {
-    teamPeriodControlsEnabled: settings.teamPeriodControlsEnabled,
     teamDeviceActivityEnabled: settings.teamDeviceActivityEnabled,
+    teamToolsBrowseEnabled: settings.teamToolsBrowseEnabled,
     updatedAt: settings.updatedAt.toISOString(),
   };
 }

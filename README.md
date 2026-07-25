@@ -151,6 +151,13 @@ cd agent && go build -o usejunction .
 After the agent is enrolled once, rebuild and reinstall into `~/.usejunction` whenever `agent/` changes:
 
 ```bash
+# admin + agent watcher (rebuilds agent on start and on agent/ changes)
+pnpm dev
+# or: ./scripts/dev-start.sh
+
+# admin only (no agent rebuild/watch)
+pnpm dev:admin
+
 # one-shot rebuild + swap + daemon restart
 pnpm agent:reinstall
 # or: ./scripts/dev-agent-reinstall.sh

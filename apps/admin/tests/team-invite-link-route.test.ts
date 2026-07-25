@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   organizationInviteUpdate: vi.fn(),
   organizationInviteDeleteMany: vi.fn(),
   developerFindUnique: vi.fn(),
+  developerCount: vi.fn(),
   userFindUnique: vi.fn(),
   organizationFindUnique: vi.fn(),
   sendTeamInviteEmail: vi.fn(),
@@ -48,7 +49,10 @@ vi.mock("@usejunction/db", () => ({
       update: mocks.organizationInviteUpdate,
       deleteMany: mocks.organizationInviteDeleteMany,
     },
-    developer: { findUnique: mocks.developerFindUnique },
+    developer: {
+      findUnique: mocks.developerFindUnique,
+      count: mocks.developerCount,
+    },
     user: { findUnique: mocks.userFindUnique },
     organization: { findUnique: mocks.organizationFindUnique },
   },
@@ -108,7 +112,13 @@ beforeEach(() => {
   });
   mocks.audit.mockResolvedValue(undefined);
   mocks.teamInviteLinkFindUnique.mockResolvedValue(link);
-  mocks.organizationFindUnique.mockResolvedValue({ name: "Acme" });
+  mocks.organizationFindUnique.mockResolvedValue({
+    name: "Acme",
+    plan: "community",
+    subscriptionStatus: null,
+    currentPeriodEnd: null,
+  });
+  mocks.developerCount.mockResolvedValue(1);
   mocks.userFindUnique.mockResolvedValue({ name: "Owner", email: "owner@example.com" });
   mocks.developerFindUnique.mockResolvedValue(null);
   mocks.organizationInviteFindFirst.mockResolvedValue(null);
@@ -292,6 +302,60 @@ test("PATCH resend does not remint token for active invites", async () => {
   assert.deepEqual(body.emailResults, [{ email: "alice@acme.com", status: "sent" }]);
   assert.equal(mocks.organizationInviteUpdate.mock.calls.length, 0);
   assert.equal(mocks.sendTeamInviteEmail.mock.calls.length, 1);
+});
+
+test("PUT rejects invites when Community user limit is reached", async () => {
+  mocks.developerCount.mockResolvedValue(5);
+  const { PUT } = await import("../app/api/team/invite-link/route");
+  const response = await PUT(
+    putRequest({ emails: ["alice@acme.com"], sendEmail: false }),
+  );
+
+  assert.equal(response.status, 403);
+  const body = await response.json();
+  assert.equal(body.error, "User limit reached (5). Upgrade to Team to add more users.");
+  assert.equal(mocks.organizationInviteCreate.mock.calls.length, 0);
+});
+
+test("PUT allows invites on Team plan even above Community cap", async () => {
+  mocks.organizationFindUnique.mockResolvedValue({
+    name: "Acme",
+    plan: "team",
+    subscriptionStatus: "active",
+    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60_000),
+  });
+  mocks.developerCount.mockResolvedValue(6);
+  const { PUT } = await import("../app/api/team/invite-link/route");
+  const response = await PUT(
+    putRequest({ emails: ["alice@acme.com"], sendEmail: false }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(mocks.organizationInviteCreate.mock.calls.length, 1);
+});
+
+test("PATCH resend rejects when Community user limit is reached", async () => {
+  mocks.developerCount.mockResolvedValue(5);
+  mocks.organizationInviteFindMany.mockResolvedValue([
+    {
+      id: "invite_active",
+      email: "alice@acme.com",
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60_000),
+    },
+  ]);
+  const { PATCH } = await import("../app/api/team/invite-link/route");
+  const response = await PATCH(
+    new NextRequest("https://usejunction.dev/api/team/invite-link", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "alice@acme.com" }),
+    }),
+  );
+
+  assert.equal(response.status, 403);
+  const body = await response.json();
+  assert.equal(body.error, "User limit reached (5). Upgrade to Team to add more users.");
+  assert.equal(mocks.sendTeamInviteEmail.mock.calls.length, 0);
 });
 
 test("DELETE removes allowlist entry and revokes pending OrganizationInvite", async () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildTeamInviteEmailDocument } from "@/lib/email/team-invite-html";
 
 describe("buildTeamInviteEmailDocument", () => {
-  it("renders a clean invite with branding, inviter, and CTA", () => {
+  it("renders a transactional invite with inviter and CTA", () => {
     const doc = buildTeamInviteEmailDocument({
       organizationName: "Dinuda Yaggahavita workspace",
       inviteUrl: "https://app.usejunction.dev/i/abc123",
@@ -13,21 +13,24 @@ describe("buildTeamInviteEmailDocument", () => {
 
     expect(doc.subject).toBe("Join Dinuda Yaggahavita's workspace on UseJunction");
     expect(doc.logoUrl).toBe("https://app.usejunction.dev/usejunction.png");
-    expect(doc.heroUrl).toBe("https://app.usejunction.dev/images/team-invite.png");
-    expect(doc.html).toContain("Join Now");
+    expect(doc.html).toContain("Accept invite");
     expect(doc.html).toContain("Dinuda Yaggahavita's workspace");
     expect(doc.html).toContain("Dinuda Yaggahavita");
     expect(doc.html).toContain("dinuda@example.com");
     expect(doc.html).toContain("teammate@example.com");
-    expect(doc.html).toContain("UseJunction workspace");
-    expect(doc.html).toContain("Copy this invite link");
-    expect(doc.html).toContain("What is UseJunction?");
     expect(doc.html).toContain('href="https://app.usejunction.dev/i/abc123"');
+    expect(doc.html).not.toContain("What is UseJunction?");
+    expect(doc.html).not.toContain("Learn more");
+    expect(doc.html).not.toContain("Made by UseJunction");
+    expect(doc.html).not.toContain("team-invite.png");
+    expect(doc.html).not.toContain("Join Now");
     expect(doc.html).not.toContain("background-color:#f4f7a8");
     expect(doc.html).not.toContain("localhost");
-    expect(doc.html).not.toContain("app.usejunction.dev/i/abc123</a>");
     expect(doc.text).toContain("https://app.usejunction.dev/i/abc123");
-    expect(doc.text).toContain("Dinuda Yaggahavita (dinuda@example.com) has invited you to join Dinuda Yaggahavita's workspace");
+    expect(doc.text).toContain(
+      "Dinuda Yaggahavita (dinuda@example.com) has invited you to join Dinuda Yaggahavita's workspace",
+    );
+    expect(doc.text).not.toContain("What is UseJunction?");
   });
 
   it("falls back when inviter is missing", () => {
@@ -64,9 +67,8 @@ describe("buildTeamInviteEmailDocument", () => {
     });
 
     expect(doc.logoUrl).toBe("cid:uj-logo");
-    expect(doc.heroUrl).toBe("cid:uj-team-invite-hero");
-    expect(doc.html).toContain('src="cid:uj-team-invite-hero"');
     expect(doc.html).toContain('src="cid:uj-logo"');
+    expect(doc.html).not.toContain("cid:uj-team-invite-hero");
   });
 
   it("formats trailing workspace as possessive", () => {

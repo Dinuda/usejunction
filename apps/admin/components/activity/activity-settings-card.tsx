@@ -59,7 +59,9 @@ export function ActivitySettingsCard({ initialSettings }: { initialSettings: Org
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  function save(patch: Partial<Pick<OrgActivitySettings, "teamPeriodControlsEnabled" | "teamDeviceActivityEnabled">>) {
+  function save(
+    patch: Partial<Pick<OrgActivitySettings, "teamDeviceActivityEnabled" | "teamToolsBrowseEnabled">>,
+  ) {
     setError(null);
     startTransition(async () => {
       const response = await fetch("/api/activity/settings", {
@@ -72,7 +74,7 @@ export function ActivitySettingsCard({ initialSettings }: { initialSettings: Org
         settings?: OrgActivitySettings;
       };
       if (!response.ok || !body.settings) {
-        setError(userFacingError(body.error, "Could not update Activity settings"));
+        setError(userFacingError(body.error, "Could not update team visibility settings"));
         return;
       }
       setSettings(body.settings);
@@ -82,10 +84,10 @@ export function ActivitySettingsCard({ initialSettings }: { initialSettings: Org
   return (
     <Panel as="section" className="sm:p-6">
       <div className="mb-2">
-        <h2 className="text-lg font-semibold tracking-tight">Activity visibility</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Team visibility</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Choose what developers see on My activity. Admins always get period filters, device
-          activity exchanges, and usage breakdowns.
+          Choose what developers can open on My activity and My tools. Admins always keep full
+          access.
         </p>
       </div>
 
@@ -97,18 +99,18 @@ export function ActivitySettingsCard({ initialSettings }: { initialSettings: Org
 
       <div className="mt-6 space-y-8">
         <ToggleRow
-          title="Period and cycle filters"
-          description="Lets teammates switch current/previous billing cycles and rolling ranges on My activity."
-          enabled={settings.teamPeriodControlsEnabled}
-          pending={pending}
-          onToggle={(teamPeriodControlsEnabled) => save({ teamPeriodControlsEnabled })}
-        />
-        <ToggleRow
           title="Device activity feed"
           description="Lets teammates see machine exchanges, returned data, and observed activity for their device."
           enabled={settings.teamDeviceActivityEnabled}
           pending={pending}
           onToggle={(teamDeviceActivityEnabled) => save({ teamDeviceActivityEnabled })}
+        />
+        <ToggleRow
+          title="Tool detail pages"
+          description="Lets teammates open each tool from My tools and see their own quotas, usage, and models — not org seats or spend."
+          enabled={settings.teamToolsBrowseEnabled}
+          pending={pending}
+          onToggle={(teamToolsBrowseEnabled) => save({ teamToolsBrowseEnabled })}
         />
       </div>
     </Panel>

@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   listSubscriptions: vi.fn(),
   getDeveloperRoster: vi.fn(),
   getPlanUsage: vi.fn(),
+  getOrgDeviceSyncStatus: vi.fn(),
   deviceFindFirst: vi.fn(),
   organizationInviteFindMany: vi.fn(),
 }));
@@ -27,11 +28,19 @@ vi.mock("@/lib/insights/queries/get-plan-usage", () => ({
   getPlanUsage: mocks.getPlanUsage,
 }));
 
+vi.mock("@/lib/queries/team/device-syncs", () => ({
+  getOrgDeviceSyncStatus: mocks.getOrgDeviceSyncStatus,
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.listSubscriptions.mockResolvedValue([]);
   mocks.getDeveloperRoster.mockResolvedValue({ developers: [] });
   mocks.getPlanUsage.mockResolvedValue({ data: { developers: [] } });
+  mocks.getOrgDeviceSyncStatus.mockResolvedValue({
+    devices: [],
+    totals: { total: 0, online: 0, stale: 0, neverSynced: 0 },
+  });
   mocks.deviceFindFirst.mockResolvedValue({ id: "device-1" });
   mocks.organizationInviteFindMany.mockResolvedValue([]);
 });
@@ -60,7 +69,9 @@ describe("loadTeamPage", () => {
       subscriptions: [],
       planUsage: [],
       pendingInvites: [],
+      syncs: { devices: [], totals: { total: 0, online: 0, stale: 0, neverSynced: 0 } },
     });
+    expect(mocks.getOrgDeviceSyncStatus).toHaveBeenCalledWith("org-1", expect.any(Date));
     expect(data.cycleView).toBe("current_cycles");
   });
 

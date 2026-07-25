@@ -88,6 +88,7 @@ export async function getToolDetail(
   orgId: string,
   toolKey: string,
   reportWindow: MetricWindow = resolveReportWindow({ range: 30 }),
+  options: { developerId?: string } = {},
 ): Promise<ToolDetailData | null> {
   const tool = findCatalogTool(toolKey);
   if (!tool) return null;
@@ -95,18 +96,21 @@ export async function getToolDetail(
   const names = toolNamesFor(tool.key);
   const inventoryNames = names;
   const templateKeys = [...subscriptionToolKeys(tool.key)];
+  const developerId = options.developerId?.trim() || null;
+  const developerFilter = developerId ? { userId: developerId } : {};
+  const assignmentDeveloperFilter = developerId ? { developerId } : {};
 
   const [installations, accounts, quotas, usageRows, subscriptions, assignments, modelRows] =
     await Promise.all([
       prisma.toolInstallation.findMany({
-        where: { orgId, detected: true, toolName: { in: inventoryNames } },
+        where: { orgId, detected: true, toolName: { in: inventoryNames }, ...developerFilter },
         include: {
           user: { select: { id: true, name: true, email: true } },
           device: { select: { hostname: true } },
         },
       }),
       prisma.toolAccount.findMany({
-        where: { orgId, toolName: { in: inventoryNames } },
+        where: { orgId, toolName: { in: inventoryNames }, ...developerFilter },
         include: {
           user: { select: { id: true, name: true, email: true } },
           device: { select: { hostname: true } },
@@ -114,7 +118,11 @@ export async function getToolDetail(
         orderBy: { updatedAt: "desc" },
       }),
       prisma.quotaSnapshot.findMany({
-        where: { orgId, toolName: { in: inventoryNames } },
+        where: {
+          orgId,
+          toolName: { in: inventoryNames },
+          ...(developerId ? { device: { userId: developerId } } : {}),
+        },
         include: {
           device: {
             select: {
@@ -130,7 +138,10 @@ export async function getToolDetail(
         window: reportWindow,
         measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
         dimensions: ["source", "costKind"],
-        filters: { toolNames: names },
+        filters: {
+          toolNames: names,
+          ...(developerId ? { developerIds: [developerId] } : {}),
+        },
       }),
       listSubscriptions(orgId),
       prisma.developerPlanAssignment.findMany({
@@ -138,6 +149,7 @@ export async function getToolDetail(
           orgId,
           active: true,
           seatStatus: "active",
+          ...assignmentDeveloperFilter,
           OR: [
             { toolName: { in: inventoryNames } },
             { template: { toolKey: { in: templateKeys } } },
@@ -155,31 +167,36 @@ export async function getToolDetail(
         window: reportWindow,
         measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
         dimensions: ["developer", "model"],
-        filters: { toolNames: names },
+        filters: {
+          toolNames: names,
+          ...(developerId ? { developerIds: [developerId] } : {}),
+        },
       }),
     ]);
 
-  const plans = subscriptions
-    .filter(
-      (subscription) =>
-        subscription.toolKey != null && (templateKeys as readonly string[]).includes(subscription.toolKey),
-    )
-    .map((subscription) => ({
-      id: subscription.id,
-      toolKey: tool.key,
-      catalogPlanKey: subscription.catalogPlanKey,
-      name: subscription.name,
-      tier: subscription.tier,
-      billingCadence: subscription.billingCadence,
-      seatCapacity: subscription.seatCapacity,
-      cycleSeatMicros: subscription.cycleSeatMicros,
-      estimatedCycleMicros: subscription.estimatedCycleMicros,
-      assignedSeats: subscription.assignedSeats,
-      availableSeats: subscription.availableSeats,
-      customPrice: subscription.customPrice,
-      priceSource: subscription.priceSource,
-      active: subscription.active,
-    }));
+  const plans = developerId
+    ? []
+    : subscriptions
+        .filter(
+          (subscription) =>
+            subscription.toolKey != null && (templateKeys as readonly string[]).includes(subscription.toolKey),
+        )
+        .map((subscription) => ({
+          id: subscription.id,
+          toolKey: tool.key,
+          catalogPlanKey: subscription.catalogPlanKey,
+          name: subscription.name,
+          tier: subscription.tier,
+          billingCadence: subscription.billingCadence,
+          seatCapacity: subscription.seatCapacity,
+          cycleSeatMicros: subscription.cycleSeatMicros,
+          estimatedCycleMicros: subscription.estimatedCycleMicros,
+          assignedSeats: subscription.assignedSeats,
+          availableSeats: subscription.availableSeats,
+          customPrice: subscription.customPrice,
+          priceSource: subscription.priceSource,
+          active: subscription.active,
+        }));
 
   const requests = usageRows.data.rows.reduce((sum, row) => sum + metricNumber(row, "requests"), 0);
   const usageCost = summarizeCanonicalCosts(
