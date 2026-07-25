@@ -9,7 +9,7 @@ import (
 	"github.com/usejunction/agent/internal/client"
 	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/configure"
-	"github.com/usejunction/agent/internal/scan"
+	"github.com/usejunction/agent/internal/types"
 )
 
 var (
@@ -76,11 +76,6 @@ func doEnroll(opts enrollOptions) (*enrollResult, error) {
 	if _, err := cfg.EnsureLocalSyncCredentials(); err != nil {
 		return nil, fmt.Errorf("local sync credentials: %w", err)
 	}
-	// Drop prior-enrollment upload fingerprints so history is re-uploaded
-	// into this device instead of being skipped against an empty DB.
-	if err := scan.ClearUsageUploadStore(); err != nil {
-		return nil, fmt.Errorf("clear usage upload cache: %w", err)
-	}
 	if err := config.Save(cfg); err != nil {
 		return nil, fmt.Errorf("saving config: %w", err)
 	}
@@ -122,6 +117,7 @@ type reportStats struct {
 	Accounts int
 	Quotas   int
 	Usage    int
+	ToolList []types.ToolStatus
 }
 
 // runInitialReport runs the initial collect/report. When quiet, suppresses
@@ -142,16 +138,16 @@ func runInitialReportWithProgress(quiet bool, progress collectProgress) (*report
 	} else if changed {
 		_ = config.Save(cfg)
 	}
-	tools, accounts, quotas, usage, _, err := collectAndReportWithProgress(
+	tools, accounts, quotas, usage, toolList, _, err := collectAndReportWithTools(
 		context.Background(),
 		client.New(cfg),
 		true,
 		progress,
 	)
+	stats := &reportStats{Tools: tools, Accounts: accounts, Quotas: quotas, Usage: usage, ToolList: toolList}
 	if err != nil {
-		return nil, err
+		return stats, err
 	}
-	stats := &reportStats{Tools: tools, Accounts: accounts, Quotas: quotas, Usage: usage}
 	if quiet {
 		return stats, nil
 	}

@@ -7,6 +7,11 @@ const DEFAULT_SECRET_VALUES = new Set([
   "uj_enroll_demo_token_change_me",
 ]);
 
+export function isLoopbackHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+}
+
 export function isLoopbackHttpUrl(raw: string): boolean {
   let parsed: URL;
   try {
@@ -15,7 +20,7 @@ export function isLoopbackHttpUrl(raw: string): boolean {
     return false;
   }
   if (parsed.protocol !== "http:") return false;
-  return parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "::1";
+  return isLoopbackHostname(parsed.hostname);
 }
 
 export function validateHttpsUnlessLoopback(name: string, raw: string | undefined): string | null {

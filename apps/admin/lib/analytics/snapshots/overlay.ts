@@ -1,18 +1,9 @@
 /**
- * Dirty-aware overlay: for recent dirty days, compute live totals from usage_daily
- * using the same classification / cost-priority rules as snapshot materialize.
+ * Dirty-day helpers for rematerialize queues. Dashboard reads no longer run
+ * live CTEs for a recent horizon — sealed org_usage_day_snapshots are authoritative.
  */
 import { Prisma, prisma } from "@usejunction/db";
 import { ORG_DAY_SNAPSHOT_VERSION } from "./materialize";
-
-/** Max dirty days to recompute live on the read path (most recent first). */
-export const OVERLAY_LIVE_DIRTY_DAY_CAP = 14;
-
-/**
- * Recent windows within this horizon read entirely from usage_daily so the
- * dashboard never serves sealed-zero snapshots on first sync.
- */
-export const LIVE_READ_HORIZON_DAYS = 35;
 
 export type LiveDayTotalRow = {
   date: Date;
@@ -37,8 +28,7 @@ type LiveDayReadRow = Omit<LiveDayTotalRow, "isDayTotal" | "isDeveloperGrain">;
 
 /**
  * Keep only org rollup grains from live GROUPING SETS output.
- * Filtering on developerId === "" also admits the (date, developer_id='')
- * bucket, which double-counts connection-level rows with null developer_id.
+ * Kept for materialize/debug helpers — not used by dashboard reads.
  */
 export function orgLiveRowsForRead(rows: LiveDayTotalRow[]): LiveDayReadRow[] {
   const out: LiveDayReadRow[] = [];
@@ -56,66 +46,19 @@ export function orgLiveRowsForRead(rows: LiveDayTotalRow[]): LiveDayReadRow[] {
   return out;
 }
 
-function utcDayMs(date: Date): number {
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-}
-
-/** True when the whole window sits inside the live-read horizon (near "today"). */
-export function windowUsesLiveReads(from: Date, to: Date, now: Date = new Date()): boolean {
-  const toMs = utcDayMs(to);
-  const fromMs = utcDayMs(from);
-  if (toMs < fromMs) return false;
-  const horizonStart = utcDayMs(now) - LIVE_READ_HORIZON_DAYS * 86_400_000;
-  return fromMs >= horizonStart;
-}
-
-/** Split a window into an optional history (snapshot) range and a live range. */
-export function splitLiveReadWindow(
-  from: Date,
-  to: Date,
-  now: Date = new Date(),
-): { historyFrom: Date | null; historyTo: Date | null; liveFrom: Date | null; liveTo: Date | null } {
-  const fromMs = utcDayMs(from);
-  const toMs = utcDayMs(to);
-  const horizonStart = utcDayMs(now) - LIVE_READ_HORIZON_DAYS * 86_400_000;
-  if (toMs < fromMs) {
-    return { historyFrom: null, historyTo: null, liveFrom: null, liveTo: null };
-  }
-  if (toMs < horizonStart) {
-    return {
-      historyFrom: new Date(fromMs),
-      historyTo: new Date(toMs),
-      liveFrom: null,
-      liveTo: null,
-    };
-  }
-  if (fromMs >= horizonStart) {
-    return {
-      historyFrom: null,
-      historyTo: null,
-      liveFrom: new Date(fromMs),
-      liveTo: new Date(toMs),
-    };
-  }
-  return {
-    historyFrom: new Date(fromMs),
-    historyTo: new Date(horizonStart - 86_400_000),
-    liveFrom: new Date(horizonStart),
-    liveTo: new Date(toMs),
-  };
-}
-
 export function eachIsoDayInclusive(from: Date, to: Date): string[] {
   const days: string[] = [];
-  for (let ms = utcDayMs(from); ms <= utcDayMs(to); ms += 86_400_000) {
+  const fromMs = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
+  const toMs = Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate());
+  for (let ms = fromMs; ms <= toMs; ms += 86_400_000) {
     days.push(new Date(ms).toISOString().slice(0, 10));
   }
   return days;
 }
 
 /**
- * Live org-day aggregates for an explicit set of dates (dirty overlay).
- * Partitions cost by (date, provider, tool_name, model) — same as materialize.
+ * Live org-day aggregates for an explicit set of dates.
+ * Used by rematerialize/debug paths — not by dashboard KPI reads.
  */
 export async function liveOrgDayTotalsForDates(
   orgId: string,

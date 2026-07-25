@@ -191,22 +191,23 @@ func ScanAntigravityLocal(forceFull bool) ([]types.DailyUsage, error) {
 			localOnly = append(localOnly, row)
 		}
 	}
-	snap.Aggregates = ReplaceSourceAggregates(snap.Aggregates, "antigravity", antigravityUsageSource, usageOnly)
-	snap.Aggregates = ReplaceSourceAggregates(snap.Aggregates, "antigravity", antigravityLocalSource, localOnly)
-	if snap.Sources == nil {
-		snap.Sources = map[string]SourceWatermark{}
-	}
-	for key := range snap.Sources {
-		if strings.HasPrefix(key, "antigravity-db:") || strings.HasPrefix(key, "antigravity-transcript:") {
-			if _, ok := current[key]; !ok {
-				delete(snap.Sources, key)
+	_ = CommitScanSnapshotUpdate(func(snap *ScanSnapshot) {
+		snap.Aggregates = ReplaceSourceAggregates(snap.Aggregates, "antigravity", antigravityUsageSource, usageOnly)
+		snap.Aggregates = ReplaceSourceAggregates(snap.Aggregates, "antigravity", antigravityLocalSource, localOnly)
+		if snap.Sources == nil {
+			snap.Sources = map[string]SourceWatermark{}
+		}
+		for key := range snap.Sources {
+			if strings.HasPrefix(key, "antigravity-db:") || strings.HasPrefix(key, "antigravity-transcript:") {
+				if _, ok := current[key]; !ok {
+					delete(snap.Sources, key)
+				}
 			}
 		}
-	}
-	for key, wm := range current {
-		snap.Sources[key] = wm
-	}
-	_ = SaveScanSnapshot(snap)
+		for key, wm := range current {
+			snap.Sources[key] = wm
+		}
+	})
 	return result, nil
 }
 

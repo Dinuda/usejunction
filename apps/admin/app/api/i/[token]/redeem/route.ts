@@ -9,7 +9,7 @@ import { hashOpaqueToken } from "@/lib/security";
 import { acceptWorkspaceInvite } from "@/lib/workspace-join";
 import { issueEnrollmentToken } from "@/lib/enrollment-token";
 
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const session = await auth();
   if (!session?.user?.id || !session.user.email) {
     return NextResponse.json({ error: "authentication required" }, { status: 401 });
@@ -97,7 +97,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
     targetId: developer.id,
   });
 
-  const base = getPublicAppUrl();
+  const base = getPublicAppUrl(req);
   const installCommand = buildInstallCommand(issued.token, base);
   const installCommands = buildPlatformInstallCommands(issued.token, base);
 

@@ -2,9 +2,9 @@
  * Mark dirty snapshot days and enqueue durable materialization.
  * Query results are always live SQL — no analytics_query_cache rows to delete.
  *
- * Inline rematerialize is opt-in for non-sync writers (legacy local-usage,
- * small dirty sets). The usage sync pipeline must pass `rematerialize: false`
- * on chunks — commit owns settle via settleSyncProjections / materializeOrgNow.
+ * Inline rematerialize is opt-in for non-sync writers (small dirty sets).
+ * The usage sync pipeline must pass `rematerialize: false` on chunks — commit
+ * owns settle via settleSyncProjections / materializeOrgNow.
  */
 import { prisma } from "@usejunction/db";
 import {

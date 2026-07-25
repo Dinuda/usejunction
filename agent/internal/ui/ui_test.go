@@ -2,9 +2,11 @@ package ui
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestEnabledMatrix(t *testing.T) {
@@ -117,5 +119,41 @@ func TestStepUpdatePlainMode(t *testing.T) {
 	}
 	if strings.Count(got, "Scanning cursor") != 1 {
 		t.Fatalf("duplicate progress lines should be suppressed:\n%s", got)
+	}
+}
+
+func TestStepDoneDoesNotDeadlockWithSpinner(t *testing.T) {
+	origOut := out
+	t.Cleanup(func() { out = origOut })
+
+	var buf bytes.Buffer
+	SetWriter(&buf)
+
+	s := &Step{
+		label:  "Uploading initial usage",
+		stop:   make(chan struct{}),
+		done:   make(chan struct{}),
+		active: true,
+	}
+	go s.spin()
+
+	finished := make(chan struct{})
+	go func() {
+		for i := 0; i < 100; i++ {
+			s.Update(fmt.Sprintf("progress %d", i))
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	go func() {
+		time.Sleep(5 * time.Millisecond)
+		s.Done("6 tools · 926 usage rows")
+		close(finished)
+	}()
+
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Done() deadlocked with spinner goroutine")
 	}
 }

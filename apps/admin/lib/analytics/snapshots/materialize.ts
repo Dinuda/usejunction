@@ -3,7 +3,7 @@ import { Prisma, prisma } from "@usejunction/db";
 import { logServerError } from "@/lib/errors/public";
 import { CALCULATION_VERSION, PRICING_VERSION } from "@/lib/metrics/source-priority";
 
-export const ORG_DAY_SNAPSHOT_VERSION = `org-day-snap-v1:${CALCULATION_VERSION}:${PRICING_VERSION}`;
+export const ORG_DAY_SNAPSHOT_VERSION = `org-day-snap-v2:${CALCULATION_VERSION}:${PRICING_VERSION}`;
 export const ORG_DAY_WATERMARK_KIND = "org_usage_day";
 
 /** Prevent parallel ensure/materialize races for the same org (current+previous windows). */
@@ -106,11 +106,22 @@ type RangeAggregateRow = {
   date: Date;
   toolName: string;
   developerId: string;
+  modelName: string;
   isDayTotal: number;
   isDeveloperGrain: number;
+  isModelGrain: number;
   requests: number;
+  sessions: number;
   inputTokens: bigint;
   outputTokens: bigint;
+  cacheReadTokens: bigint;
+  cacheWriteTokens: bigint;
+  reasoningTokens: bigint;
+  suggestedLines: number;
+  acceptedLines: number;
+  addedLines: number;
+  deletedLines: number;
+  commits: number;
   verifiedUsageCostMicros: bigint;
   estimatedApiCostMicros: bigint;
   actualSpendCostMicros: bigint;
@@ -266,11 +277,52 @@ async function materializeOrgUsageRangeUnlocked(
         date,
         CASE WHEN GROUPING(COALESCE(tool_name, '')) = 1 THEN '' ELSE COALESCE(tool_name, '') END AS tool_name_value,
         CASE WHEN GROUPING(COALESCE(developer_id, '')) = 1 THEN '' ELSE COALESCE(developer_id, '') END AS developer_id_value,
+        CASE WHEN GROUPING(COALESCE(model, '')) = 1 THEN '' ELSE COALESCE(model, '') END AS model_name_value,
         GROUPING(COALESCE(tool_name, '')) AS is_day_total,
         CASE WHEN GROUPING(COALESCE(developer_id, '')) = 0 THEN 1 ELSE 0 END AS is_developer_grain,
+        CASE WHEN GROUPING(COALESCE(model, '')) = 0 THEN 1 ELSE 0 END AS is_model_grain,
         COALESCE(SUM(CASE WHEN selected_activity THEN requests ELSE 0 END), 0)::int AS requests,
+        COALESCE(SUM(
+          CASE
+            WHEN selected_activity OR effective_metric_kind = 'productivity' THEN sessions
+            ELSE 0
+          END
+        ), 0)::int AS sessions,
         COALESCE(SUM(CASE WHEN selected_activity THEN input_tokens ELSE 0 END), 0)::bigint AS "inputTokens",
         COALESCE(SUM(CASE WHEN selected_activity THEN output_tokens ELSE 0 END), 0)::bigint AS "outputTokens",
+        COALESCE(SUM(
+          CASE
+            WHEN selected_activity OR effective_metric_kind = 'productivity' THEN cache_read_tokens
+            ELSE 0
+          END
+        ), 0)::bigint AS "cacheReadTokens",
+        COALESCE(SUM(
+          CASE
+            WHEN selected_activity OR effective_metric_kind = 'productivity' THEN cache_write_tokens
+            ELSE 0
+          END
+        ), 0)::bigint AS "cacheWriteTokens",
+        COALESCE(SUM(
+          CASE
+            WHEN selected_activity OR effective_metric_kind = 'productivity' THEN reasoning_tokens
+            ELSE 0
+          END
+        ), 0)::bigint AS "reasoningTokens",
+        COALESCE(SUM(
+          CASE WHEN effective_metric_kind = 'productivity' THEN suggested_lines ELSE 0 END
+        ), 0)::int AS "suggestedLines",
+        COALESCE(SUM(
+          CASE WHEN effective_metric_kind = 'productivity' THEN accepted_lines ELSE 0 END
+        ), 0)::int AS "acceptedLines",
+        COALESCE(SUM(
+          CASE WHEN effective_metric_kind = 'productivity' THEN added_lines ELSE 0 END
+        ), 0)::int AS "addedLines",
+        COALESCE(SUM(
+          CASE WHEN effective_metric_kind = 'productivity' THEN deleted_lines ELSE 0 END
+        ), 0)::int AS "deletedLines",
+        COALESCE(SUM(
+          CASE WHEN effective_metric_kind = 'productivity' THEN commits ELSE 0 END
+        ), 0)::int AS commits,
         COALESCE(SUM(CASE WHEN selected_cost AND effective_cost_kind = 'verified_usage' THEN cost_micros ELSE 0 END), 0)::bigint AS "verifiedUsageCostMicros",
         COALESCE(SUM(CASE WHEN selected_cost AND effective_cost_kind = 'estimated_api' THEN cost_micros ELSE 0 END), 0)::bigint AS "estimatedApiCostMicros",
         COALESCE(SUM(CASE WHEN selected_cost AND effective_cost_kind = 'actual_spend' THEN cost_micros ELSE 0 END), 0)::bigint AS "actualSpendCostMicros",
@@ -292,18 +344,31 @@ async function materializeOrgUsageRangeUnlocked(
         (date),
         (date, COALESCE(tool_name, '')),
         (date, COALESCE(developer_id, '')),
-        (date, COALESCE(developer_id, ''), COALESCE(tool_name, ''))
+        (date, COALESCE(developer_id, ''), COALESCE(tool_name, '')),
+        (date, COALESCE(tool_name, ''), COALESCE(model, '')),
+        (date, COALESCE(developer_id, ''), COALESCE(tool_name, ''), COALESCE(model, ''))
       )
     )
     SELECT
       date,
       tool_name_value AS "toolName",
       developer_id_value AS "developerId",
+      model_name_value AS "modelName",
       is_day_total AS "isDayTotal",
       is_developer_grain AS "isDeveloperGrain",
+      is_model_grain AS "isModelGrain",
       requests,
+      sessions,
       "inputTokens",
       "outputTokens",
+      "cacheReadTokens",
+      "cacheWriteTokens",
+      "reasoningTokens",
+      "suggestedLines",
+      "acceptedLines",
+      "addedLines",
+      "deletedLines",
+      commits,
       "verifiedUsageCostMicros",
       "estimatedApiCostMicros",
       "actualSpendCostMicros",
@@ -318,10 +383,20 @@ async function materializeOrgUsageRangeUnlocked(
     date: Date;
     toolName: string;
     developerId: string;
+    modelName: string;
     metricVersion: string;
     requests: number;
+    sessions: number;
     inputTokens: bigint;
     outputTokens: bigint;
+    cacheReadTokens: bigint;
+    cacheWriteTokens: bigint;
+    reasoningTokens: bigint;
+    suggestedLines: number;
+    acceptedLines: number;
+    addedLines: number;
+    deletedLines: number;
+    commits: number;
     verifiedUsageCostMicros: bigint;
     estimatedApiCostMicros: bigint;
     actualSpendCostMicros: bigint;
@@ -331,39 +406,62 @@ async function materializeOrgUsageRangeUnlocked(
     sourceObservedThrough: Date | null;
   }> = [];
 
+  function hasSignal(row: RangeAggregateRow): boolean {
+    return (
+      Number(row.requests) !== 0 ||
+      Number(row.sessions) !== 0 ||
+      BigInt(row.verifiedUsageCostMicros) !== BigInt(0) ||
+      BigInt(row.estimatedApiCostMicros) !== BigInt(0) ||
+      BigInt(row.actualSpendCostMicros) !== BigInt(0) ||
+      BigInt(row.inputTokens) !== BigInt(0) ||
+      BigInt(row.outputTokens) !== BigInt(0) ||
+      Number(row.suggestedLines) !== 0 ||
+      Number(row.acceptedLines) !== 0 ||
+      Number(row.addedLines) !== 0 ||
+      Number(row.deletedLines) !== 0 ||
+      Number(row.commits) !== 0
+    );
+  }
+
   const daysWithOrgTotal = new Set<string>();
   for (const row of rows) {
     const day = utcDay(row.date);
     const dayKey = isoDay(day);
     const isDayTotal = Number(row.isDayTotal) === 1;
     const isDeveloperGrain = Number(row.isDeveloperGrain) === 1;
+    const isModelGrain = Number(row.isModelGrain) === 1;
     const toolName = isDayTotal ? "" : (row.toolName ?? "");
     const developerId = row.developerId ?? "";
-    if (!isDayTotal && toolName === "") continue;
+    const modelName = isModelGrain ? (row.modelName ?? "") : "";
+    // Model grains require a tool name; day-total rows keep model empty.
+    if (isModelGrain && toolName === "") continue;
+    if (!isDayTotal && toolName === "" && !isDeveloperGrain) continue;
     // Null/empty developer_id costs stay on org rollups only — skip colliding developer grains.
     if (isDeveloperGrain && developerId === "") continue;
-    // Skip empty developer+tool grains with no signal (keeps write volume down).
-    if (
-      isDeveloperGrain &&
-      Number(row.requests) === 0 &&
-      BigInt(row.verifiedUsageCostMicros) === BigInt(0) &&
-      BigInt(row.estimatedApiCostMicros) === BigInt(0) &&
-      BigInt(row.actualSpendCostMicros) === BigInt(0) &&
-      BigInt(row.inputTokens) === BigInt(0) &&
-      BigInt(row.outputTokens) === BigInt(0)
-    ) {
+    // Skip empty developer/tool/model grains with no signal (keeps write volume down).
+    if ((isDeveloperGrain || isModelGrain) && !hasSignal(row)) {
       continue;
     }
-    if (!isDeveloperGrain && isDayTotal) daysWithOrgTotal.add(dayKey);
+    if (!isDeveloperGrain && isDayTotal && !isModelGrain) daysWithOrgTotal.add(dayKey);
     writeRows.push({
       orgId,
       date: day,
       toolName,
       developerId: isDeveloperGrain ? developerId : "",
+      modelName,
       metricVersion,
       requests: Number(row.requests),
+      sessions: Number(row.sessions),
       inputTokens: BigInt(row.inputTokens),
       outputTokens: BigInt(row.outputTokens),
+      cacheReadTokens: BigInt(row.cacheReadTokens),
+      cacheWriteTokens: BigInt(row.cacheWriteTokens),
+      reasoningTokens: BigInt(row.reasoningTokens),
+      suggestedLines: Number(row.suggestedLines),
+      acceptedLines: Number(row.acceptedLines),
+      addedLines: Number(row.addedLines),
+      deletedLines: Number(row.deletedLines),
+      commits: Number(row.commits),
       verifiedUsageCostMicros: BigInt(row.verifiedUsageCostMicros),
       estimatedApiCostMicros: BigInt(row.estimatedApiCostMicros),
       actualSpendCostMicros: BigInt(row.actualSpendCostMicros),
@@ -382,10 +480,20 @@ async function materializeOrgUsageRangeUnlocked(
       date: day,
       toolName: "",
       developerId: "",
+      modelName: "",
       metricVersion,
       requests: 0,
+      sessions: 0,
       inputTokens: BigInt(0),
       outputTokens: BigInt(0),
+      cacheReadTokens: BigInt(0),
+      cacheWriteTokens: BigInt(0),
+      reasoningTokens: BigInt(0),
+      suggestedLines: 0,
+      acceptedLines: 0,
+      addedLines: 0,
+      deletedLines: 0,
+      commits: 0,
       verifiedUsageCostMicros: BigInt(0),
       estimatedApiCostMicros: BigInt(0),
       actualSpendCostMicros: BigInt(0),
@@ -399,7 +507,7 @@ async function materializeOrgUsageRangeUnlocked(
   // Dedupe by unique key in case GROUPING SETS emit overlapping empty grains.
   const deduped = new Map<string, (typeof writeRows)[number]>();
   for (const row of writeRows) {
-    const key = `${isoDay(row.date)}|${row.toolName}|${row.developerId}`;
+    const key = `${isoDay(row.date)}|${row.toolName}|${row.developerId}|${row.modelName}`;
     deduped.set(key, row);
   }
   const finalRows = [...deduped.values()];

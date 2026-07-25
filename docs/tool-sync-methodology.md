@@ -86,11 +86,11 @@ The agent also observes tools **outside** the billing catalog (Continue, Cline, 
 ### Lifecycle
 
 1. **Detect** — `Provider.Detect()` checks install/auth presence.
-2. **Collect** — `collect.go` runs every provider in `providers.All()` (45 s timeout each).
+2. **Collect** — `collect.go` fans out `providers.All()` in parallel (bounded pool, 45 s timeout each).
 3. **Scan** — `Provider.ScanLocalUsage()` reads local storage (60-day lookback).
 4. **Sidecars** — tools, accounts, and quotas inventories are content-hashed; unchanged hashes skip DB writes.
 5. **Upload** — `syncengine/upload.go` opens a UUS v1 session: `start → chunk* → commit`.
-6. **Settle** — server runs `settleSyncProjections()` to materialize org day snapshots.
+6. **Settle** — server runs `settleSyncProjections()` to materialize org day snapshots. See [Dashboard Snapshots](dashboard-snapshots.md) for read vs refresh semantics.
 
 ### Scheduling
 
@@ -106,9 +106,7 @@ The agent also observes tools **outside** the billing catalog (Continue, Cline, 
 
 Usage partitions use grain: `date × tool × model × source × repository`.
 
-The server stores `DeviceUsageFingerprint` per partition. On session start, only partitions whose content hash changed since the last sync are requested. Absolute daily totals are replaced — never incremented.
-
-Legacy fallback: if sync session endpoints fail, the agent falls back to fingerprint-based `POST /api/ingest/local-usage`.
+The server stores `DeviceUsageFingerprint` per partition. On session start, only partitions whose content hash changed since the last sync are requested. Absolute daily totals are replaced — never incremented. Sync-engine (`/api/ingest/sync/usage/{start,chunk,commit}`) is the only usage ingest path.
 
 ### Detected plan sync
 
@@ -397,6 +395,7 @@ To enable automatic provider pulls, schedule `POST /api/cron/provider-sync` exte
 - [Usage Schema v1](usage-schema-v1.md) — wire format and partition grain
 - [Usage Accounting Contract](usage-accounting.md) — requests, tokens, cost kinds, sources
 - [Central Analytics Engine](central-analytics-engine.md) — `UsageDaily` → dashboards
+- [Dashboard Snapshots](dashboard-snapshots.md) — when KPIs read snapshots vs live data, refresh triggers, quota vs usage
 - [Controlled Agent Releases](agent-releases.md) — daemon, localsync, heartbeat
 - [Production deployment](production-deployment.md) — cron routes, `fullUsageRescanDay`
 - [Signals Collection](signals-collection.md) — work extraction (separate from usage sync)

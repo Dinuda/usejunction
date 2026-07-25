@@ -103,22 +103,23 @@ func ScanCodex(codexHome string, forceFull bool) ([]types.DailyUsage, error) {
 	result = PruneAggregatesLookback(result, time.Now().UTC())
 
 	_ = saveCache(cacheFile, result)
-	snap.Aggregates = ReplaceToolNamesAggregates(snap.Aggregates, []string{codexToolName, codexWorkToolName}, result)
-	if snap.Sources == nil {
-		snap.Sources = map[string]SourceWatermark{}
-	}
-	for key, wm := range current {
-		snap.Sources[key] = wm
-	}
-	// Drop stale jsonl watermarks under codex roots.
-	for key, wm := range snap.Sources {
-		if strings.HasPrefix(key, "jsonl:") && strings.Contains(wm.Path, "codex") {
-			if _, ok := current[key]; !ok {
-				delete(snap.Sources, key)
+	_ = CommitScanSnapshotUpdate(func(snap *ScanSnapshot) {
+		snap.Aggregates = ReplaceToolNamesAggregates(snap.Aggregates, []string{codexToolName, codexWorkToolName}, result)
+		if snap.Sources == nil {
+			snap.Sources = map[string]SourceWatermark{}
+		}
+		for key, wm := range current {
+			snap.Sources[key] = wm
+		}
+		// Drop stale jsonl watermarks under codex roots.
+		for key, wm := range snap.Sources {
+			if strings.HasPrefix(key, "jsonl:") && strings.Contains(wm.Path, "codex") {
+				if _, ok := current[key]; !ok {
+					delete(snap.Sources, key)
+				}
 			}
 		}
-	}
-	_ = SaveScanSnapshot(snap)
+	})
 	return result, nil
 }
 

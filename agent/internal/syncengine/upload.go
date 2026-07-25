@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/usejunction/agent/internal/client"
@@ -28,10 +29,27 @@ type InventorySidecars struct {
 	Quotas   []client.QuotaReport
 }
 
+// UploadOptions tunes one sync-engine pass.
+type UploadOptions struct {
+	// MaxChunks overrides MaxChunks (batches per pass). Zero uses the default.
+	MaxChunks int
+	// Progress reports cumulative uploaded rows vs the drain budget for this pass.
+	Progress func(done, total int)
+}
+
 // UploadUsageSession builds a lookback manifest, asks the server for the delta,
 // uploads only requested partitions, then commits. Resumable via a later start.
 // inventory sidecars (tools/accounts/quotas) are applied on start when provided.
-func UploadUsageSession(ctx context.Context, api *client.APIClient, rows []types.DailyUsage, inventory *InventorySidecars) (uploaded int, remaining int, warnings []string, err error) {
+func UploadUsageSession(ctx context.Context, api *client.APIClient, rows []types.DailyUsage, inventory *InventorySidecars, opts ...UploadOptions) (uploaded int, remaining int, warnings []string, err error) {
+	var opt UploadOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	maxChunks := opt.MaxChunks
+	if maxChunks <= 0 {
+		maxChunks = MaxChunks
+	}
+
 	now := time.Now().UTC()
 	rows = scan.FilterUsageLookback(rows, now)
 	hasInventory := inventory != nil && (inventory.Tools != nil || inventory.Accounts != nil || inventory.Quotas != nil)
@@ -58,29 +76,29 @@ func UploadUsageSession(ctx context.Context, api *client.APIClient, rows []types
 		})
 	}
 
-	opts := &client.StartUsageSyncOptions{}
+	startOpts := &client.StartUsageSyncOptions{}
 	if inventory != nil {
 		if inventory.Tools != nil {
-			opts.Tools = &client.ToolsSyncSidecar{
+			startOpts.Tools = &client.ToolsSyncSidecar{
 				ContentHash: ToolsContentHash(inventory.Tools),
 				Items:       inventory.Tools,
 			}
 		}
 		if inventory.Accounts != nil {
-			opts.Accounts = &client.AccountsSyncSidecar{
+			startOpts.Accounts = &client.AccountsSyncSidecar{
 				ContentHash: AccountsContentHash(inventory.Accounts),
 				Items:       inventory.Accounts,
 			}
 		}
 		if inventory.Quotas != nil {
-			opts.Quotas = &client.QuotasSyncSidecar{
+			startOpts.Quotas = &client.QuotasSyncSidecar{
 				ContentHash: QuotasContentHash(inventory.Quotas),
 				Items:       inventory.Quotas,
 			}
 		}
 	}
 
-	start, err := api.StartUsageSync(ctx, parts, opts)
+	start, err := api.StartUsageSync(ctx, parts, startOpts)
 	if err != nil {
 		return 0, len(rows), nil, err
 	}
@@ -115,9 +133,14 @@ func UploadUsageSession(ctx context.Context, api *client.APIClient, rows []types
 		return 0, 0, warnings, err
 	}
 
-	batch, rest := scan.TakeUsageUploadBatch(pending, ChunkSize, MaxChunks)
+	scan.SortUsageNewestFirst(pending)
+	batch, rest := scan.TakeUsageUploadBatch(pending, ChunkSize, maxChunks)
 	chunks := scan.SplitUsageUploadBatches(batch, ChunkSize)
 	remaining = len(rest)
+	drainTotal := len(batch)
+	if opt.Progress != nil {
+		opt.Progress(0, drainTotal)
+	}
 
 	type chunkResult struct {
 		upserted int
@@ -126,6 +149,7 @@ func UploadUsageSession(ctx context.Context, api *client.APIClient, rows []types
 	results := make([]chunkResult, len(chunks))
 	sem := make(chan struct{}, Concurrency)
 	var wg sync.WaitGroup
+	var doneRows atomic.Int64
 	for i, chunk := range chunks {
 		wg.Add(1)
 		go func(idx int, rows []types.DailyUsage) {
@@ -139,6 +163,12 @@ func UploadUsageSession(ctx context.Context, api *client.APIClient, rows []types
 			chunkID := randomChunkID()
 			upserted, err := api.UploadUsageSyncChunk(ctx, start.SyncRunID, chunkID, aggs)
 			results[idx] = chunkResult{upserted: upserted, err: err}
+			if err == nil {
+				n := doneRows.Add(int64(len(rows)))
+				if opt.Progress != nil {
+					opt.Progress(int(n), drainTotal)
+				}
+			}
 		}(i, chunk)
 	}
 	wg.Wait()

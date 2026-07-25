@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
       logServerError("enroll/active-release-attach", error);
     });
 
-    const appUrl = getPublicAppUrl();
+    const appUrl = getPublicAppUrl(req);
     const telemetryEndpoint = await prisma.telemetryEndpoint.findUnique({
       where: { orgId },
       select: { enabled: true },

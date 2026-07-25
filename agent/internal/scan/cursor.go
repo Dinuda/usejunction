@@ -77,21 +77,22 @@ func ScanCursorLocal(forceFull bool) ([]types.DailyUsage, error) {
 	}
 	result = PruneAggregatesLookback(result, time.Now().UTC())
 	_ = saveCache(cacheFile, result)
-	snap.Aggregates = ReplaceSourceAggregates(snap.Aggregates, "cursor", cursorLocalSource, result)
-	if snap.Sources == nil {
-		snap.Sources = map[string]SourceWatermark{}
-	}
-	for key := range snap.Sources {
-		if strings.HasPrefix(key, "sqlite:") {
-			if _, ok := current[key]; !ok {
-				delete(snap.Sources, key)
+	_ = CommitScanSnapshotUpdate(func(snap *ScanSnapshot) {
+		snap.Aggregates = ReplaceSourceAggregates(snap.Aggregates, "cursor", cursorLocalSource, result)
+		if snap.Sources == nil {
+			snap.Sources = map[string]SourceWatermark{}
+		}
+		for key := range snap.Sources {
+			if strings.HasPrefix(key, "sqlite:") {
+				if _, ok := current[key]; !ok {
+					delete(snap.Sources, key)
+				}
 			}
 		}
-	}
-	for key, wm := range current {
-		snap.Sources[key] = wm
-	}
-	_ = SaveScanSnapshot(snap)
+		for key, wm := range current {
+			snap.Sources[key] = wm
+		}
+	})
 	return result, nil
 }
 

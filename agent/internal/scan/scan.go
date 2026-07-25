@@ -126,28 +126,29 @@ func scanJSONLDirs(tool string, roots []string, parser lineParser, forceFull boo
 	result = PruneAggregatesLookback(result, time.Now().UTC())
 
 	_ = saveCache(cacheFile, result)
-	snap.Aggregates = ReplaceToolNamesAggregates(snap.Aggregates, []string{tool}, result)
-	if snap.Sources == nil {
-		snap.Sources = map[string]SourceWatermark{}
-	}
-	prefix := "jsonl:"
-	for key, wm := range snap.Sources {
-		if !strings.HasPrefix(key, prefix) {
-			continue
+	_ = CommitScanSnapshotUpdate(func(snap *ScanSnapshot) {
+		snap.Aggregates = ReplaceToolNamesAggregates(snap.Aggregates, []string{tool}, result)
+		if snap.Sources == nil {
+			snap.Sources = map[string]SourceWatermark{}
 		}
-		for _, root := range roots {
-			if strings.HasPrefix(wm.Path, root+string(os.PathSeparator)) || wm.Path == root {
-				if _, ok := current[key]; !ok {
-					delete(snap.Sources, key)
+		prefix := "jsonl:"
+		for key, wm := range snap.Sources {
+			if !strings.HasPrefix(key, prefix) {
+				continue
+			}
+			for _, root := range roots {
+				if strings.HasPrefix(wm.Path, root+string(os.PathSeparator)) || wm.Path == root {
+					if _, ok := current[key]; !ok {
+						delete(snap.Sources, key)
+					}
+					break
 				}
-				break
 			}
 		}
-	}
-	for key, wm := range current {
-		snap.Sources[key] = wm
-	}
-	_ = SaveScanSnapshot(snap)
+		for key, wm := range current {
+			snap.Sources[key] = wm
+		}
+	})
 	return result, nil
 }
 

@@ -282,8 +282,8 @@ export function OnboardingExperience() {
         <div className="space-y-5">
           <DeviceConnectCard
             compact
-            onPollingStateChange={({ isPolling, waitingForTools }) => {
-              setConnectInProgress(isPolling || waitingForTools);
+            onPollingStateChange={({ isPolling, waitingForTools, deviceEnrolled }) => {
+              setConnectInProgress(isPolling || (waitingForTools && !deviceEnrolled));
             }}
             onConnected={() => {
               void refresh("poll");

@@ -32,16 +32,19 @@ function defaultInviteExpiry(now: Date) {
   return new Date(now.getTime() + TEAM_INVITE_TTL_DAYS * 24 * 60 * 60_000);
 }
 
-function serializeLink(link: {
-  id: string;
-  enabled: boolean;
-  expiresAt: Date | null;
-  rotatedAt: Date;
-  createdAt: Date;
-  tokenReveal: string;
-  allowlist: { email: string; createdAt: Date }[];
-}) {
-  const base = getPublicAppUrl();
+function serializeLink(
+  link: {
+    id: string;
+    enabled: boolean;
+    expiresAt: Date | null;
+    rotatedAt: Date;
+    createdAt: Date;
+    tokenReveal: string;
+    allowlist: { email: string; createdAt: Date }[];
+  },
+  request?: NextRequest,
+) {
+  const base = getPublicAppUrl(request);
   return {
     link: {
       id: link.id,
@@ -157,7 +160,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ link: null, allowlist: [], url: null, token: null });
   }
 
-  return NextResponse.json(serializeLink(existing));
+  return NextResponse.json(serializeLink(existing, req));
 }
 
 export async function POST(req: NextRequest) {
@@ -168,7 +171,7 @@ export async function POST(req: NextRequest) {
   const rotate = Boolean(body?.rotate);
   const { link, created } = await ensureLink(auth.orgId, auth.userId, rotate);
 
-  return NextResponse.json(serializeLink(link), { status: created ? 201 : 200 });
+  return NextResponse.json(serializeLink(link, req), { status: created ? 201 : 200 });
 }
 
 const allowlistSchema = z.object({
@@ -197,7 +200,7 @@ export async function PUT(req: NextRequest) {
   const { link } = await ensureLink(auth.orgId, auth.userId, false);
   const emails = [...new Set(parsed.data.emails.map(normalizeEmail))];
   const existingEmails = new Set(link.allowlist.map((row) => row.email));
-  const inviteUrl = serializeLink({ ...link, allowlist: link.allowlist }).url;
+  const inviteUrl = serializeLink({ ...link, allowlist: link.allowlist }, req).url;
   const organizationName = await orgName(auth.orgId);
   const inviter = await prisma.user.findUnique({
     where: { id: auth.userId },
@@ -357,7 +360,7 @@ export async function PATCH(req: NextRequest) {
   }
   const inviteExpiresAt =
     link.expiresAt && link.expiresAt > new Date() ? link.expiresAt : defaultInviteExpiry(new Date());
-  const inviteUrl = buildTeamInviteLinkUrl(link.tokenReveal, getPublicAppUrl());
+  const inviteUrl = buildTeamInviteLinkUrl(link.tokenReveal, getPublicAppUrl(req));
   const organizationName = await orgName(auth.orgId);
   const inviter = await prisma.user.findUnique({
     where: { id: auth.userId },

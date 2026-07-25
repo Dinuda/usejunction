@@ -7,14 +7,7 @@ import {
   snapshotIsoDay,
   snapshotUtcDay,
 } from "./materialize";
-import {
-  OVERLAY_LIVE_DIRTY_DAY_CAP,
-  eachIsoDayInclusive,
-  liveOrgDayTotalsForDates,
-  loadDirtyDaysInWindow,
-  orgLiveRowsForRead,
-  splitLiveReadWindow,
-} from "./overlay";
+import { loadDirtyDaysInWindow } from "./overlay";
 
 export type SnapshotDayTotals = {
   date: string;
@@ -240,10 +233,8 @@ function foldSnapshotRows(
 }
 
 /**
- * Sum ready org-day snapshots for a window (`developerId = ""` rollups only).
- * Recent-horizon days always come from live usage_daily so first-sync KPIs are
- * correct even when sealed snapshots are stale or zero. Older days use sealed
- * snapshots with a dirty-day overlay.
+ * Sum sealed org-day snapshots for a window (`developerId = ""` rollups only).
+ * Dirty days are reported as importing/partial — never recomputed via live CTEs.
  */
 export async function readOrgUsageFromSnapshots(
   orgId: string,
@@ -252,76 +243,37 @@ export async function readOrgUsageFromSnapshots(
 ): Promise<SnapshotReadResult> {
   const from = snapshotUtcDay(window.from);
   const to = snapshotUtcDay(window.to);
-  const { historyFrom, historyTo, liveFrom, liveTo } = splitLiveReadWindow(from, to);
 
-  if (options.ensure !== false && historyFrom && historyTo) {
-    await ensureOrgUsageDaySnapshots(orgId, historyFrom, historyTo);
+  if (options.ensure !== false) {
+    await ensureOrgUsageDaySnapshots(orgId, from, to);
   }
 
-  type MergedRow = {
-    date: Date;
-    toolName: string;
-    requests: number;
-    inputTokens: bigint;
-    outputTokens: bigint;
-    verifiedUsageCostMicros: bigint;
-    estimatedApiCostMicros: bigint;
-    actualSpendCostMicros: bigint;
-    activeDevelopers: number;
-    activeDeveloperIds: unknown;
-    sourceObservedThrough: Date | null;
-  };
-
-  let historyRows: MergedRow[] = [];
-  let deferredDirty: string[] = [];
-  let liveDirtyOverlay = false;
-
-  if (historyFrom && historyTo) {
-    const dirtyDays = await loadDirtyDaysInWindow(orgId, historyFrom, historyTo);
-    const liveDirty = dirtyDays.slice(0, OVERLAY_LIVE_DIRTY_DAY_CAP);
-    deferredDirty = dirtyDays.slice(OVERLAY_LIVE_DIRTY_DAY_CAP);
-    const dirtySet = new Set(dirtyDays);
-
-    const rows = await prisma.orgUsageDaySnapshot.findMany({
+  const [rows, dirtyDays] = await Promise.all([
+    prisma.orgUsageDaySnapshot.findMany({
       where: {
         orgId,
         developerId: "",
         metricVersion: ORG_DAY_SNAPSHOT_VERSION,
-        date: { gte: historyFrom, lte: historyTo },
+        date: { gte: from, lte: to },
         ...(options.toolNames?.length
           ? { OR: [{ toolName: "" }, { toolName: { in: options.toolNames } }] }
           : {}),
       },
       orderBy: [{ date: "asc" }, { toolName: "asc" }],
-    });
+    }),
+    loadDirtyDaysInWindow(orgId, from, to),
+  ]);
 
-    const cleanRows = rows.filter((row) => !dirtySet.has(snapshotIsoDay(row.date)));
-    historyRows = cleanRows;
-    if (liveDirty.length) {
-      liveDirtyOverlay = true;
-      const live = await liveOrgDayTotalsForDates(orgId, liveDirty);
-      const liveOrg = orgLiveRowsForRead(live);
-      historyRows = [...cleanRows, ...liveOrg];
-    }
-  }
-
-  let liveRows: MergedRow[] = [];
-  if (liveFrom && liveTo) {
-    const liveDays = eachIsoDayInclusive(liveFrom, liveTo);
-    const live = await liveOrgDayTotalsForDates(orgId, liveDays);
-    liveRows = orgLiveRowsForRead(live);
-  }
-
-  return foldSnapshotRows([...historyRows, ...liveRows], {
+  return foldSnapshotRows(rows, {
     ...options,
-    partialData: deferredDirty.length > 0 || liveDirtyOverlay,
-    importingDays: deferredDirty.length,
+    partialData: dirtyDays.length > 0,
+    importingDays: dirtyDays.length,
   });
 }
 
 /**
  * Sum sealed developer-day snapshots for You / member dashboards.
- * Same live-horizon + dirty-aware overlay as org rollups.
+ * Dirty days mark partial/importing only — no live CTE overlay.
  */
 export async function readDeveloperUsageFromSnapshots(
   orgId: string,
@@ -331,88 +283,31 @@ export async function readDeveloperUsageFromSnapshots(
 ): Promise<SnapshotReadResult> {
   const from = snapshotUtcDay(window.from);
   const to = snapshotUtcDay(window.to);
-  const { historyFrom, historyTo, liveFrom, liveTo } = splitLiveReadWindow(from, to);
 
-  if (options.ensure !== false && historyFrom && historyTo) {
-    await ensureOrgUsageDaySnapshots(orgId, historyFrom, historyTo);
-    await ensureDeveloperUsageDaySnapshots(orgId, developerId, historyFrom, historyTo);
+  if (options.ensure !== false) {
+    await ensureOrgUsageDaySnapshots(orgId, from, to);
+    await ensureDeveloperUsageDaySnapshots(orgId, developerId, from, to);
   }
 
-  type MergedRow = {
-    date: Date;
-    toolName: string;
-    requests: number;
-    inputTokens: bigint;
-    outputTokens: bigint;
-    verifiedUsageCostMicros: bigint;
-    estimatedApiCostMicros: bigint;
-    actualSpendCostMicros: bigint;
-    activeDevelopers: number;
-    activeDeveloperIds: unknown;
-    sourceObservedThrough: Date | null;
-  };
-
-  let historyRows: MergedRow[] = [];
-  let deferredDirty: string[] = [];
-  let liveDirtyOverlay = false;
-
-  if (historyFrom && historyTo) {
-    const dirtyDays = await loadDirtyDaysInWindow(orgId, historyFrom, historyTo);
-    const liveDirty = dirtyDays.slice(0, OVERLAY_LIVE_DIRTY_DAY_CAP);
-    deferredDirty = dirtyDays.slice(OVERLAY_LIVE_DIRTY_DAY_CAP);
-    const dirtySet = new Set(dirtyDays);
-
-    const rows = await prisma.orgUsageDaySnapshot.findMany({
+  const [rows, dirtyDays] = await Promise.all([
+    prisma.orgUsageDaySnapshot.findMany({
       where: {
         orgId,
         developerId,
         metricVersion: ORG_DAY_SNAPSHOT_VERSION,
-        date: { gte: historyFrom, lte: historyTo },
+        date: { gte: from, lte: to },
         ...(options.toolNames?.length
           ? { OR: [{ toolName: "" }, { toolName: { in: options.toolNames } }] }
           : {}),
       },
       orderBy: [{ date: "asc" }, { toolName: "asc" }],
-    });
+    }),
+    loadDirtyDaysInWindow(orgId, from, to),
+  ]);
 
-    const cleanRows = rows.filter((row) => !dirtySet.has(snapshotIsoDay(row.date)));
-    historyRows = cleanRows;
-    if (liveDirty.length) {
-      liveDirtyOverlay = true;
-      const live = await liveOrgDayTotalsForDates(orgId, liveDirty, { developerId });
-      const liveDev = live.filter((row) => row.developerId === developerId || row.developerId === "");
-      const byKey = new Map<string, (typeof live)[number]>();
-      for (const row of liveDev) {
-        const key = `${snapshotIsoDay(row.date)}|${row.toolName}|${row.developerId}`;
-        if (
-          row.developerId === developerId ||
-          !byKey.has(`${snapshotIsoDay(row.date)}|${row.toolName}|${developerId}`)
-        ) {
-          byKey.set(key, row);
-        }
-      }
-      const preferred = [...byKey.values()].filter((row) => row.developerId === developerId);
-      historyRows = [
-        ...cleanRows,
-        ...(preferred.length ? preferred : liveDev.filter((r) => r.toolName === "" && r.developerId === "")),
-      ];
-    }
-  }
-
-  let liveRows: MergedRow[] = [];
-  if (liveFrom && liveTo) {
-    const liveDays = eachIsoDayInclusive(liveFrom, liveTo);
-    const live = await liveOrgDayTotalsForDates(orgId, liveDays, { developerId });
-    const liveDev = live.filter((row) => row.developerId === developerId);
-    liveRows =
-      liveDev.length > 0
-        ? liveDev
-        : live.filter((row) => row.toolName === "" && row.developerId === "");
-  }
-
-  return foldSnapshotRows([...historyRows, ...liveRows], {
+  return foldSnapshotRows(rows, {
     ...options,
-    partialData: deferredDirty.length > 0 || liveDirtyOverlay,
-    importingDays: deferredDirty.length,
+    partialData: dirtyDays.length > 0,
+    importingDays: dirtyDays.length,
   });
 }

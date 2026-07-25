@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"github.com/usejunction/agent/internal/config"
@@ -130,16 +132,28 @@ func runOnboard() error {
 	stats, err := runInitialReportWithProgress(true, func(step, message string) {
 		reportStep.Update(humanizeCollectProgress(step, message))
 	})
+	tools := []types.ToolStatus{}
+	if stats != nil {
+		tools = stats.ToolList
+	}
 	if err != nil {
-		reportStep.Fail(err.Error())
-		ui.WarnLine(fmt.Sprintf("initial report warning: %v", err))
-	} else {
+		if errors.Is(err, errUsageQueuePending) && stats != nil {
+			reportStep.Done(fmt.Sprintf("%d tools · %d accounts · %d quotas · %d usage rows (more queued)",
+				stats.Tools, stats.Accounts, stats.Quotas, stats.Usage))
+			ui.WarnLine(fmt.Sprintf("initial report warning: %v", err))
+		} else {
+			reportStep.Fail(err.Error())
+			ui.WarnLine(fmt.Sprintf("initial report warning: %v", err))
+		}
+	} else if stats != nil {
 		reportStep.Done(fmt.Sprintf("%d tools · %d accounts · %d quotas · %d usage rows",
 			stats.Tools, stats.Accounts, stats.Quotas, stats.Usage))
 	}
 
 	scanStep := ui.StepStart("Scanning AI coding tools")
-	tools := detectTools()
+	if len(tools) == 0 {
+		tools = detectTools()
+	}
 	scanStep.Done(fmt.Sprintf("%d found", len(tools)))
 	fmt.Println()
 	for _, t := range tools {
@@ -152,15 +166,25 @@ func runOnboard() error {
 
 func detectTools() []types.ToolStatus {
 	ctx := context.Background()
-	var tools []types.ToolStatus
-	for _, p := range providers.All() {
-		s, err := p.Detect(ctx)
-		if err != nil || s == nil || !s.Detected {
-			continue
-		}
-		tools = append(tools, *s)
+	providersList := providers.All()
+	results := make([]types.ToolStatus, 0, len(providersList))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, p := range providersList {
+		wg.Add(1)
+		go func(prov providers.Provider) {
+			defer wg.Done()
+			s, err := prov.Detect(ctx)
+			if err != nil || s == nil || !s.Detected {
+				return
+			}
+			mu.Lock()
+			results = append(results, *s)
+			mu.Unlock()
+		}(p)
 	}
-	return tools
+	wg.Wait()
+	return results
 }
 
 // humanizeCollectProgress maps collect progress callbacks to short onboard labels.

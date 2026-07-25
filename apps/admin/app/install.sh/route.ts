@@ -1,16 +1,12 @@
 import { readFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
+import { isLoopbackHostname } from "@/lib/security/env-guard";
 
 type InstallScript = {
   body: string;
   root: string;
 };
-
-function isLoopbackHost(hostname: string): boolean {
-  const host = hostname.toLowerCase();
-  return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
-}
 
 function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, `'\"'\"'`)}'`;
@@ -45,7 +41,7 @@ export async function GET(request: Request) {
   // the customer-facing installer builds from this checkout instead of falling
   // back to an ancient GitHub agent-v0.1.0 release. Production hosts are untouched.
   const hostname = new URL(request.url).hostname;
-  if (isLoopbackHost(hostname) && found.root) {
+  if (isLoopbackHostname(hostname) && found.root) {
     body = [
       "# Injected by local control plane — build agent from this checkout.",
       `export USEJUNCTION_ROOT=${shellSingleQuote(found.root)}`,

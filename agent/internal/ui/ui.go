@@ -197,11 +197,14 @@ func (s *Step) Fail(detail string) {
 
 func (s *Step) finish(ok bool, detail string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.stop != nil && s.active {
+	waitDone := s.stop != nil && s.active
+	if waitDone {
 		close(s.stop)
-		<-s.done
 		s.active = false
+	}
+	s.mu.Unlock()
+	if waitDone {
+		<-s.done
 		// Clear the spinner line.
 		fmt.Fprintf(out, "\r\033[2K")
 	}

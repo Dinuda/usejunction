@@ -3,14 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"sync"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/usejunction/agent/internal/client"
 	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/providers"
-	"github.com/usejunction/agent/internal/scan"
+	"github.com/usejunction/agent/internal/syncengine"
 	"github.com/usejunction/agent/internal/types"
 )
 
@@ -95,8 +93,8 @@ prints an estimated cost.
 
 Only numeric usage metadata is read — prompt text is never accessed.
 Scan results are cached under ~/.usejunction/cache/cost-usage/ unless
---refresh is set. When enrolled, uploads use the same delta filter as the
-daemon (today UTC always, unchanged historical rows skipped).`,
+--refresh is set. When enrolled, uploads via the sync-engine session
+(start → chunk → commit).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		var all []types.DailyUsage
@@ -112,13 +110,9 @@ daemon (today UTC always, unchanged historical rows skipped).`,
 			all = append(all, usage...)
 		}
 
-		if cfg, err := config.Load(); err == nil && len(all) > 0 {
+		if cfg, err := config.Load(); err == nil && cfg.DeviceToken != "" && len(all) > 0 {
 			api := client.New(cfg)
-			aggs := make([]client.UsageAggregate, 0, len(all))
-			for _, u := range all {
-				aggs = append(aggs, usageToAggregate(u))
-			}
-			_, _, _ = reportLocalUsageDelta(api, cfg, aggs, nil)
+			_, _, _, _ = syncengine.UploadUsageSession(ctx, api, all, nil)
 		}
 
 		if format == "json" {
@@ -147,85 +141,6 @@ daemon (today UTC always, unchanged historical rows skipped).`,
 		fmt.Printf("\nTotal estimated cost: $%.4f\n", total)
 		return nil
 	},
-}
-
-// reportLocalUsageDelta drains a bounded slice of the pending usage queue.
-// History older than scan.UsageLookbackDays is dropped. Batches within the
-// sync budget are uploaded concurrently (UsageUploadConcurrency). Each
-// successful batch is fingerprinted for this enrollment only so later syncs
-// continue the queue without re-uploading accepted rows. Failed POSTs
-// (413/4xx/5xx/timeout) never fingerprint. Leftover rows after the budget are
-// not an error.
-func reportLocalUsageDelta(api *client.APIClient, cfg *config.Config, rows []client.UsageAggregate, beforeUpload func(drain, pending, scanned int)) (uploaded int, remaining int, err error) {
-	if len(rows) == 0 {
-		return 0, 0, nil
-	}
-	orgID, deviceID := "", ""
-	if cfg != nil {
-		orgID, deviceID = cfg.OrgID, cfg.DeviceID
-	}
-	usageRows := make([]types.DailyUsage, 0, len(rows))
-	for _, row := range rows {
-		usageRows = append(usageRows, aggregateToUsage(row))
-	}
-	pending := scan.FilterUsageUploadDelta(usageRows, time.Now().UTC(), orgID, deviceID)
-	if len(pending) == 0 {
-		return 0, 0, nil
-	}
-	drain, leftover := scan.TakeUsageUploadBatch(pending, scan.UsageUploadBatchSize, scan.UsageUploadMaxBatchesPerSync)
-	if beforeUpload != nil {
-		beforeUpload(len(drain), len(pending), len(rows))
-	}
-
-	batches := scan.SplitUsageUploadBatches(drain, scan.UsageUploadBatchSize)
-	type batchResult struct {
-		rows []types.DailyUsage
-		err  error
-	}
-	results := make(chan batchResult, len(batches))
-	sem := make(chan struct{}, scan.UsageUploadConcurrency)
-	var wg sync.WaitGroup
-	for _, batch := range batches {
-		batch := batch
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			reports := make([]client.UsageAggregate, 0, len(batch))
-			for _, row := range batch {
-				reports = append(reports, usageToAggregate(row))
-			}
-			if err := api.ReportLocalUsage(reports); err != nil {
-				results <- batchResult{err: err}
-				return
-			}
-			results <- batchResult{rows: batch}
-		}()
-	}
-	wg.Wait()
-	close(results)
-
-	accepted := make([]types.DailyUsage, 0, len(drain))
-	var firstErr error
-	for result := range results {
-		if result.err != nil {
-			if firstErr == nil {
-				firstErr = result.err
-			}
-			continue
-		}
-		accepted = append(accepted, result.rows...)
-	}
-	if len(accepted) > 0 {
-		if rememberErr := scan.RememberUsageUpload(accepted, orgID, deviceID); rememberErr != nil && firstErr == nil {
-			firstErr = rememberErr
-		}
-	}
-	uploaded = len(accepted)
-	remaining = len(leftover) + (len(drain) - uploaded)
-	return uploaded, remaining, firstErr
 }
 
 func truncate(s string, n int) string {

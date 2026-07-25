@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     {
       token: issued.token,
       expiresAt: issued.expiresAt.toISOString(),
-      controlPlaneUrl: getPublicAppUrl(),
+      controlPlaneUrl: getPublicAppUrl(req),
     },
     { status: 201 },
   );

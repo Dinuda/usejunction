@@ -11,7 +11,7 @@ ingestion -> UsageDaily -> central SQL query engine -> read-model composers -> s
                          POST /api/insights/query
 ```
 
-`UsageDaily` is the canonical materialized fact table. The engine aggregates inside PostgreSQL and returns normalized query results. Dashboard org rollups also use `org_usage_day_snapshots` with a dirty-day overlay; daily reports keep their own sealed snapshots.
+`UsageDaily` is the canonical materialized fact table. The engine aggregates inside PostgreSQL and returns normalized query results. Dashboard org rollups read sealed `org_usage_day_snapshots` (dirty days surface as `partialData`, not live CTE overlays); drill-down pages still query `usage_daily` live. Daily reports keep their own sealed snapshots. See [Dashboard Snapshots](dashboard-snapshots.md).
 
 ## Source Of Truth
 
@@ -120,9 +120,9 @@ All SQL is compiled from these allowlists and parameterized values. Do not accep
 
 Query results are always computed live in PostgreSQL. There is no `analytics_query_cache` table.
 
-Dashboard org rollups read sealed `org_usage_day_snapshots`, with dirty days overlaid from live `usage_daily` until rematerialization. Daily reports keep sealed `daily_report_usage_snapshots`.
+Dashboard org rollups read sealed `org_usage_day_snapshots`. Dirty days are flagged (`partialData`, `dashboardReady: false`) until rematerialization — headline KPIs do not overlay live `usage_daily` while dirty. Daily reports keep sealed `daily_report_usage_snapshots`.
 
-Writes that affect `UsageDaily` mark dirty snapshot days and enqueue rematerialization. They do not invalidate a query-result cache.
+Writes that affect `UsageDaily` mark dirty snapshot days and enqueue rematerialization (sync commit settles inline; cron drains backlog). They do not invalidate a query-result cache.
 
 Do not introduce a query-result cache for:
 

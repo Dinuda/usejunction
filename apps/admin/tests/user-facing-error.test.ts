@@ -9,7 +9,7 @@ describe("userFacingError", () => {
   it("hides raw HTTP dumps", () => {
     expect(
       userFacingError(
-        `usage: POST /api/ingest/local-usage returned 413: {"error":"maximum 1000 aggregates per request"}`,
+        `usage: POST /api/ingest/sync/usage/chunk returned 413: {"error":"maximum 1000 aggregates per request"}`,
         "Local sync failed.",
       ),
     ).toBe("Local sync failed.");

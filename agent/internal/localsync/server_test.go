@@ -163,7 +163,7 @@ func TestFailedSyncKeepsErrorGeneric(t *testing.T) {
 	done := make(chan struct{})
 	s := New(&config.Config{LocalSyncToken: "uj_local_secret"}, func(ctx context.Context, refresh bool, progress ProgressFunc) (int, int, int, int, []string, error) {
 		<-done
-		return 0, 0, 0, 0, nil, fmt.Errorf(`usage: POST /api/ingest/local-usage returned 413: {"error":"maximum 1000 aggregates per request"}`)
+		return 0, 0, 0, 0, nil, fmt.Errorf(`usage: POST /api/ingest/sync/usage/chunk returned 413: {"error":"maximum 1000 aggregates per request"}`)
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/sync?refresh=1", nil)

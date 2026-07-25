@@ -478,23 +478,6 @@ func (c *APIClient) ReportQuotas(quotas []QuotaReport) error {
 	return c.post("/api/devices/quota", map[string]any{"quotas": quotas})
 }
 
-// localUsageBatchSize aligns with scan.UsageUploadBatchSize so each
-// ReportLocalUsage call is typically one POST.
-const localUsageBatchSize = 50
-
-// localUsageMaxPayloadBytes keeps each POST under the control-plane
-// 1 MiB body limit with headroom for JSON framing.
-const localUsageMaxPayloadBytes = 900 * 1024
-
-func (c *APIClient) ReportLocalUsage(aggregates []UsageAggregate) error {
-	for _, batch := range chunkUsageAggregates(aggregates, localUsageBatchSize, localUsageMaxPayloadBytes) {
-		if err := c.reportLocalUsageBatch(batch); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 type SyncManifestPartition struct {
 	PartitionKey string            `json:"partitionKey"`
 	Date         string            `json:"date"`
@@ -612,95 +595,12 @@ func (c *APIClient) CommitUsageSync(ctx context.Context, syncRunID string, expec
 	return &out, nil
 }
 
-// reportLocalUsageBatch POSTs one aggregate slice. On HTTP 413 with more than
-// one row it bisects and retries so oversized multi-row batches still land.
-func (c *APIClient) reportLocalUsageBatch(batch []UsageAggregate) error {
-	if len(batch) == 0 {
-		return nil
-	}
-	var out struct {
-		Upserted int `json:"upserted"`
-	}
-	err := c.postJSON("/api/ingest/local-usage", map[string]any{"aggregates": batch}, &out)
-	if err != nil {
-		if isPayloadTooLarge(err) && len(batch) > 1 {
-			mid := len(batch) / 2
-			if err := c.reportLocalUsageBatch(batch[:mid]); err != nil {
-				return err
-			}
-			return c.reportLocalUsageBatch(batch[mid:])
-		}
-		return err
-	}
-	// HTTP 200 with upserted=0 means nothing landed (all rows dropped).
-	// Treat as failure so the caller does not fingerprint those rows.
-	if out.Upserted <= 0 {
-		return fmt.Errorf("POST /api/ingest/local-usage upserted 0 of %d aggregates", len(batch))
-	}
-	return nil
-}
-
 func isPayloadTooLarge(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := err.Error()
 	return strings.Contains(msg, "returned 413") || strings.Contains(msg, "request body too large")
-}
-
-// chunkUsageAggregates packs rows until either maxRows or maxBytes would be
-// exceeded for {"aggregates":[...]}. A single oversized row is sent alone.
-func chunkUsageAggregates(aggregates []UsageAggregate, maxRows, maxBytes int) [][]UsageAggregate {
-	if len(aggregates) == 0 {
-		return nil
-	}
-	if maxRows <= 0 {
-		maxRows = localUsageBatchSize
-	}
-	if maxBytes <= 0 {
-		maxBytes = localUsageMaxPayloadBytes
-	}
-
-	out := make([][]UsageAggregate, 0)
-	batch := make([]UsageAggregate, 0, maxRows)
-	batchBytes := len(`{"aggregates":[]}`)
-
-	flush := func() {
-		if len(batch) == 0 {
-			return
-		}
-		cp := make([]UsageAggregate, len(batch))
-		copy(cp, batch)
-		out = append(out, cp)
-		batch = batch[:0]
-		batchBytes = len(`{"aggregates":[]}`)
-	}
-
-	for _, row := range aggregates {
-		rowJSON, err := json.Marshal(row)
-		if err != nil {
-			// Fall back to count-only packing if a row cannot be measured.
-			if len(batch) >= maxRows {
-				flush()
-			}
-			batch = append(batch, row)
-			continue
-		}
-		rowBytes := len(rowJSON)
-		// Comma separators between array elements.
-		extra := rowBytes
-		if len(batch) > 0 {
-			extra++
-		}
-		if len(batch) > 0 && (len(batch) >= maxRows || batchBytes+extra > maxBytes) {
-			flush()
-			extra = rowBytes
-		}
-		batch = append(batch, row)
-		batchBytes += extra
-	}
-	flush()
-	return out
 }
 
 func (c *APIClient) SignalsPolicy() (*SignalsPolicy, error) {

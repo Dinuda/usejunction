@@ -768,19 +768,30 @@ model UsageDaily {
   @@map("usage_daily")
 }
 
-/// Source-priority-resolved org/tool/developer daily rollup for dashboard reads.
+/// Source-priority-resolved org/tool/developer/model daily rollup for dashboard reads.
 /// `developerId = ""` is the org rollup; non-empty is that developer's sealed slice.
 /// `toolName = ""` is the day total for that developer (or org); other rows are per-tool.
+/// `modelName = ""` is the tool/day rollup; non-empty is per-model within a tool.
 model OrgUsageDaySnapshot {
   id                        String   @id @default(cuid())
   orgId                     String   @map("org_id")
   date                      DateTime @db.Date
   toolName                  String   @default("") @map("tool_name")
   developerId               String   @default("") @map("developer_id")
+  modelName                 String   @default("") @map("model_name")
   metricVersion             String   @map("metric_version")
   requests                  Int      @default(0)
+  sessions                  Int      @default(0)
   inputTokens               BigInt   @default(0) @map("input_tokens")
   outputTokens              BigInt   @default(0) @map("output_tokens")
+  cacheReadTokens           BigInt   @default(0) @map("cache_read_tokens")
+  cacheWriteTokens          BigInt   @default(0) @map("cache_write_tokens")
+  reasoningTokens           BigInt   @default(0) @map("reasoning_tokens")
+  suggestedLines            Int      @default(0) @map("suggested_lines")
+  acceptedLines             Int      @default(0) @map("accepted_lines")
+  addedLines                Int      @default(0) @map("added_lines")
+  deletedLines              Int      @default(0) @map("deleted_lines")
+  commits                   Int      @default(0)
   verifiedUsageCostMicros   BigInt   @default(0) @map("verified_usage_cost_micros")
   estimatedApiCostMicros    BigInt   @default(0) @map("estimated_api_cost_micros")
   actualSpendCostMicros     BigInt   @default(0) @map("actual_spend_cost_micros")
@@ -791,7 +802,7 @@ model OrgUsageDaySnapshot {
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@unique([orgId, date, toolName, developerId, metricVersion])
+  @@unique([orgId, date, toolName, developerId, modelName, metricVersion])
   @@index([orgId, date, metricVersion])
   @@index([orgId, developerId, date, metricVersion])
   @@map("org_usage_day_snapshots")

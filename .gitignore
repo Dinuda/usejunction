@@ -20,3 +20,4 @@ packages/db/prisma/migrations/**/migration_lock.toml
 .vercel
 .env*.local
 apps/admin/.env.prod
+apps/admin/.env.production

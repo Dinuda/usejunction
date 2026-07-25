@@ -102,10 +102,20 @@ echo "==> Enrolling a developer-bound device and reporting repository usage..."
 enrollment_token=$(curl -s -b "$COOKIE_JAR" -X POST "$ADMIN_URL/api/me/enrollment-token" | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 enrollment=$(curl -s -X POST "$ADMIN_URL/api/enroll" -H "Content-Type: application/json" -d "{\"token\":\"$enrollment_token\",\"hostname\":\"e2e-device\",\"os\":\"linux\",\"architecture\":\"amd64\",\"agentVersion\":\"e2e\"}")
 device_token=$(echo "$enrollment" | python3 -c "import sys,json; print(json.load(sys.stdin)['deviceToken'])")
-curl -sf -X POST "$ADMIN_URL/api/ingest/local-usage" \
+curl -sf -X POST "$ADMIN_URL/api/ingest/sync/usage/start" \
   -H "Authorization: Bearer $device_token" \
   -H "Content-Type: application/json" \
-  -d '{"aggregates":[{"date":"2026-07-10","toolName":"claude","model":"claude-e2e","inputTokens":20,"outputTokens":10,"repository":{"host":"github.com","owner":"acme","name":"e2e"}}]}' >/dev/null
+  -d '{"partitions":[{"partitionKey":"2026-07-10|claude|claude-e2e|local_scan|github.com/acme/e2e","date":"2026-07-10","tool":"claude","model":"claude-e2e","source":"local_scan","repository":{"host":"github.com","owner":"acme","name":"e2e"},"contentHash":"e2e-hash-1","rowCount":1}]}' \
+  >/tmp/uj-e2e-sync-start.json
+sync_run_id=$(python3 -c "import json; print(json.load(open('/tmp/uj-e2e-sync-start.json'))['syncRunId'])")
+curl -sf -X POST "$ADMIN_URL/api/ingest/sync/usage/chunk" \
+  -H "Authorization: Bearer $device_token" \
+  -H "Content-Type: application/json" \
+  -d "{\"syncRunId\":\"$sync_run_id\",\"chunkId\":\"e2e1\",\"aggregates\":[{\"date\":\"2026-07-10\",\"toolName\":\"claude\",\"model\":\"claude-e2e\",\"inputTokens\":20,\"outputTokens\":10,\"source\":\"local_scan\",\"repository\":{\"host\":\"github.com\",\"owner\":\"acme\",\"name\":\"e2e\"}}]}" >/dev/null
+curl -sf -X POST "$ADMIN_URL/api/ingest/sync/usage/commit" \
+  -H "Authorization: Bearer $device_token" \
+  -H "Content-Type: application/json" \
+  -d "{\"syncRunId\":\"$sync_run_id\",\"expectedChunks\":1}" >/dev/null
 analytics_query='{"schemaVersion":"1","window":{"from":"2026-07-01","to":"2026-07-31"},"measures":["inputTokens"],"dimensions":["repository"]}'
 repo_metric=$(curl -sf -b "$COOKIE_JAR" -X POST "$ADMIN_URL/api/insights/query" -H "Content-Type: application/json" -d "$analytics_query" | python3 -c "import sys,json; data=json.load(sys.stdin); print(next((r['dimensions']['repository'] for r in data['data']['rows'] if r['dimensions'].get('repository') and int(r['measures']['inputTokens']) >= 20),''))")
 [[ -n "$repo_metric" ]] || { echo "ERROR: repository metric was not returned" >&2; exit 1; }

@@ -652,7 +652,7 @@ Some user-facing features require a minimum agent version. Work extraction is th
 - Other orgs keep their staggered rollout schedule
 - Updated agents use the later of workspace enablement and device enrollment as their collection boundary. Existing local history is not imported; post-boundary observations may upload on a later heartbeat, then advance `workExtractionLastAt` incrementally
 - Work extraction does **not** require classic app/domain collection (`enabled`) to be on
-- Background collect also delta-uploads local usage: always include **today (UTC)**, skip unchanged historical aggregates using fingerprints in `~/.usejunction/cache/cost-usage/usage-upload.json`
+- Background collect also delta-uploads local usage via the sync-engine session (server `DeviceUsageFingerprint` partitions); first sync raises the per-pass batch budget so ~1k partitions drain quickly.
 
 Ops still must promote the forward-only work extraction release (`agent-v0.3.1` or later) before devices can download a compatible binary. Enabling the setting cannot invent artifacts.
 

@@ -88,8 +88,8 @@ func BackupDir() string {
 	return filepath.Join(ConfigDir(), "backups")
 }
 
-// CacheDir returns ~/.usejunction/cache/cost-usage — scan caches and
-// usage-upload.json fingerprints for incremental local-usage uploads.
+// CacheDir returns ~/.usejunction/cache/cost-usage — local scan caches and
+// the shared scan-snapshot.json used for incremental tool scans.
 func CacheDir() string {
 	return filepath.Join(ConfigDir(), "cache", "cost-usage")
 }

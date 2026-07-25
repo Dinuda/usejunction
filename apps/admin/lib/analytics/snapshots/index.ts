@@ -21,12 +21,8 @@ export type { SnapshotDayTotals, SnapshotToolDay, SnapshotToolTotals } from "./r
 export { getDashboardReadiness, countOrgDirtyDays } from "./readiness";
 export type { DashboardReadiness } from "./readiness";
 export {
-  OVERLAY_LIVE_DIRTY_DAY_CAP,
-  LIVE_READ_HORIZON_DAYS,
   liveOrgDayTotalsForDates,
   loadDirtyDaysInWindow,
-  splitLiveReadWindow,
-  windowUsesLiveReads,
   eachIsoDayInclusive,
   orgLiveRowsForRead,
 } from "./overlay";

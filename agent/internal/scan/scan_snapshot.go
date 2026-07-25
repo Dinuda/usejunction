@@ -6,11 +6,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/types"
 )
+
+// scanSnapshotMu serializes load-modify-save of the shared scan-snapshot.json
+// so parallel provider collects cannot clobber each other's watermarks.
+var scanSnapshotMu sync.Mutex
 
 const scanSnapshotVersion = 1
 
@@ -37,6 +42,12 @@ func scanSnapshotPath() string {
 }
 
 func LoadScanSnapshot() (ScanSnapshot, error) {
+	scanSnapshotMu.Lock()
+	defer scanSnapshotMu.Unlock()
+	return loadScanSnapshotUnlocked()
+}
+
+func loadScanSnapshotUnlocked() (ScanSnapshot, error) {
 	data, err := os.ReadFile(scanSnapshotPath())
 	if err != nil {
 		return ScanSnapshot{Sources: map[string]SourceWatermark{}}, err
@@ -55,6 +66,12 @@ func LoadScanSnapshot() (ScanSnapshot, error) {
 }
 
 func SaveScanSnapshot(snap ScanSnapshot) error {
+	scanSnapshotMu.Lock()
+	defer scanSnapshotMu.Unlock()
+	return saveScanSnapshotUnlocked(snap)
+}
+
+func saveScanSnapshotUnlocked(snap ScanSnapshot) error {
 	snap.Version = scanSnapshotVersion
 	snap.SavedAt = time.Now().UTC().Format(time.RFC3339)
 	if snap.Sources == nil {
@@ -68,6 +85,29 @@ func SaveScanSnapshot(snap ScanSnapshot) error {
 		return err
 	}
 	return os.WriteFile(scanSnapshotPath(), b, 0600)
+}
+
+// CommitScanSnapshotUpdate reloads the on-disk snapshot under the global lock,
+// applies a mutation, and writes it back. Use this after a tool scan so parallel
+// providers cannot clobber each other's aggregates/watermarks.
+func CommitScanSnapshotUpdate(apply func(snap *ScanSnapshot)) error {
+	scanSnapshotMu.Lock()
+	defer scanSnapshotMu.Unlock()
+	snap, _ := loadScanSnapshotUnlocked()
+	apply(&snap)
+	return saveScanSnapshotUnlocked(snap)
+}
+
+// WithScanSnapshot runs fn under the scan-snapshot lock with a loaded snapshot.
+// Prefer CommitScanSnapshotUpdate for load-modify-save after scanning.
+func WithScanSnapshot(fn func(snap *ScanSnapshot) error) error {
+	scanSnapshotMu.Lock()
+	defer scanSnapshotMu.Unlock()
+	snap, _ := loadScanSnapshotUnlocked()
+	if err := fn(&snap); err != nil {
+		return err
+	}
+	return saveScanSnapshotUnlocked(snap)
 }
 
 func FileWatermark(path string) (SourceWatermark, error) {

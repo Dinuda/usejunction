@@ -1,6 +1,5 @@
 import { prisma } from "@usejunction/db";
 import { CALCULATION_VERSION, PRICING_VERSION } from "@/lib/metrics/source-priority";
-import { LIVE_READ_HORIZON_DAYS } from "./overlay";
 
 /** Keep in sync with ORG_DAY_SNAPSHOT_VERSION in materialize.ts (avoid circular imports). */
 const DEFAULT_METRIC_VERSION = `org-day-snap-v1:${CALCULATION_VERSION}:${PRICING_VERSION}`;
@@ -16,13 +15,13 @@ function isoDay(date: Date): string {
 
 export type DashboardReadiness = {
   /**
-   * True when the visible (live-horizon) window does not depend on sealed
-   * snapshots that conflict with usage. Dirty history backlog does not block.
+   * True when the requested window has no dirty days and no stub conflicts.
+   * Dashboard KPIs read sealed snapshots only — dirty blocks readiness.
    */
   dashboardReady: boolean;
   /**
-   * Full rematerialize backlog (live horizon + history). Used for sync progress
-   * UI — do not treat "Last synced" as complete while this is > 0.
+   * Full rematerialize backlog. Used for sync progress UI — do not treat
+   * "Last synced" as complete while this is > 0.
    */
   dirtyDayCount: number;
   stubConflictDayCount: number;
@@ -33,7 +32,6 @@ export type DashboardReadiness = {
 
 /**
  * Empty org-total stubs (zero metrics, no observed-through) that still have usage_daily.
- * Only checked outside the live-read horizon — recent days are served live.
  */
 async function countStubConflicts(
   orgId: string,
@@ -83,8 +81,7 @@ async function countStubConflicts(
 /**
  * Freshness contract for the visible dashboard window:
  * - Upload ready = device.lastUsageSyncAt (elsewhere)
- * - Dashboard ready = live-horizon KPIs do not depend on conflicting sealed stubs;
- *   history dirty backlog is reported separately and does not block readiness.
+ * - Dashboard ready = sealed coverage for the window (no dirty, no stub conflicts)
  */
 export async function getDashboardReadiness(
   orgId: string,
@@ -93,31 +90,27 @@ export async function getDashboardReadiness(
   const metricVersion = options.metricVersion ?? DEFAULT_METRIC_VERSION;
   const toDay = utcDay(options.to ?? new Date());
   const fromDay = utcDay(options.from ?? new Date(toDay.getTime() - 89 * 86_400_000));
-  const liveHorizonStart = utcDay(new Date(toDay.getTime() - LIVE_READ_HORIZON_DAYS * 86_400_000));
-  // History range ends the day before live horizon (exclusive of live window).
-  const historyTo =
-    liveHorizonStart.getTime() > fromDay.getTime()
-      ? utcDay(new Date(liveHorizonStart.getTime() - 86_400_000))
-      : null;
-  const historyFrom = historyTo && historyTo.getTime() >= fromDay.getTime() ? fromDay : null;
 
-  const [stubConflictDayCount, pendingDirty] = await Promise.all([
-    historyFrom && historyTo
-      ? countStubConflicts(orgId, historyFrom, historyTo, metricVersion)
-      : Promise.resolve(0),
+  const [stubConflictDayCount, pendingDirty, windowDirty] = await Promise.all([
+    countStubConflicts(orgId, fromDay, toDay, metricVersion),
     prisma.analyticsDirtyDay.findMany({
       where: { orgId, metricVersion },
       orderBy: [{ createdAt: "asc" }, { date: "asc" }],
       select: { date: true, createdAt: true },
     }),
+    prisma.analyticsDirtyDay.count({
+      where: {
+        orgId,
+        metricVersion,
+        date: { gte: fromDay, lte: toDay },
+      },
+    }),
   ]);
 
-  // Progress counts the full backlog. Readiness for live KPIs only fails when
-  // history stubs conflict — recent days are served from usage_daily.
   const oldest = pendingDirty[0];
   const lagMs = oldest ? Math.max(0, Date.now() - oldest.createdAt.getTime()) : null;
   return {
-    dashboardReady: stubConflictDayCount === 0,
+    dashboardReady: stubConflictDayCount === 0 && windowDirty === 0,
     dirtyDayCount: pendingDirty.length,
     stubConflictDayCount,
     snapshotLagSeconds: lagMs == null ? null : Math.floor(lagMs / 1000),

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/usejunction/agent/internal/client"
@@ -18,7 +19,11 @@ import (
 	"github.com/usejunction/agent/internal/workextract"
 )
 
-const providerCollectTimeout = 45 * time.Second
+const (
+	providerCollectTimeout = 45 * time.Second
+	// providerCollectConcurrency caps how many providers scan at once.
+	providerCollectConcurrency = 6
+)
 
 type collectProgress = func(step, message string)
 
@@ -77,7 +82,7 @@ func claudeConfigDirForProbe() string {
 // When refresh is false, providers use incremental scan snapshots unless the
 // control plane sealed a newer fullUsageRescanDay.
 func collectAndReport(api *client.APIClient, refresh bool) (tools int, accounts int, quotas int, usage int, err error) {
-	tools, accounts, quotas, usage, _, err = collectAndReportWithProgress(context.Background(), api, refresh, func(string, string) {})
+	tools, accounts, quotas, usage, _, _, err = collectAndReportWithTools(context.Background(), api, refresh, func(string, string) {})
 	return tools, accounts, quotas, usage, err
 }
 
@@ -87,6 +92,16 @@ func collectAndReportWithProgress(
 	refresh bool,
 	progress collectProgress,
 ) (tools int, accounts int, quotas int, usage int, warnings []string, err error) {
+	tools, accounts, quotas, usage, _, warnings, err = collectAndReportWithTools(ctx, api, refresh, progress)
+	return tools, accounts, quotas, usage, warnings, err
+}
+
+func collectAndReportWithTools(
+	ctx context.Context,
+	api *client.APIClient,
+	refresh bool,
+	progress collectProgress,
+) (tools int, accounts int, quotas int, usage int, toolList []types.ToolStatus, warnings []string, err error) {
 	if progress == nil {
 		progress = func(string, string) {}
 	}
@@ -94,7 +109,7 @@ func collectAndReportWithProgress(
 	progress("heartbeat", "Registering local agent")
 	hb, err := heartbeat(api)
 	if err != nil {
-		return 0, 0, 0, 0, warnings, fmt.Errorf("heartbeat: %w", err)
+		return 0, 0, 0, 0, nil, warnings, fmt.Errorf("heartbeat: %w", err)
 	}
 
 	forceFull := refresh
@@ -117,19 +132,45 @@ func collectAndReportWithProgress(
 	var usageReports []client.UsageAggregate
 	var quotaReports []client.QuotaReport
 
-	for _, p := range providers.All() {
-		progress("scan", fmt.Sprintf("Scanning %s", p.ID()))
-		result, timedOut := collectProviderWithTimeout(ctx, p, forceFull)
-		if timedOut {
-			warnings = append(warnings, fmt.Sprintf("%s scan timed out", p.ID()))
-			progress("scan", fmt.Sprintf("Skipped slow %s scan", p.ID()))
+	allProviders := providers.All()
+	progress("scan", fmt.Sprintf("Scanning %d tools in parallel", len(allProviders)))
+
+	type providerOutcome struct {
+		id       string
+		result   providerCollectResult
+		timedOut bool
+	}
+	outcomes := make([]providerOutcome, len(allProviders))
+	sem := make(chan struct{}, providerCollectConcurrency)
+	var wg sync.WaitGroup
+	for i, p := range allProviders {
+		wg.Add(1)
+		go func(idx int, prov providers.Provider) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if ctx.Err() != nil {
+				outcomes[idx] = providerOutcome{id: prov.ID(), timedOut: true}
+				return
+			}
+			progress("scan", fmt.Sprintf("Scanning %s", prov.ID()))
+			result, timedOut := collectProviderWithTimeout(ctx, prov, forceFull)
+			outcomes[idx] = providerOutcome{id: prov.ID(), result: result, timedOut: timedOut}
+		}(i, p)
+	}
+	wg.Wait()
+
+	for _, out := range outcomes {
+		if out.timedOut {
+			warnings = append(warnings, fmt.Sprintf("%s scan timed out", out.id))
+			progress("scan", fmt.Sprintf("Skipped slow %s scan", out.id))
 			continue
 		}
-		toolReports = append(toolReports, result.toolReports...)
-		accountReports = append(accountReports, result.accountReports...)
-		modelReports = append(modelReports, result.modelReports...)
-		usageReports = append(usageReports, result.usageReports...)
-		quotaReports = append(quotaReports, result.quotaReports...)
+		toolReports = append(toolReports, out.result.toolReports...)
+		accountReports = append(accountReports, out.result.accountReports...)
+		modelReports = append(modelReports, out.result.modelReports...)
+		usageReports = append(usageReports, out.result.usageReports...)
+		quotaReports = append(quotaReports, out.result.quotaReports...)
 	}
 
 	progress("upload-tools", fmt.Sprintf("Preparing %d tool / %d account / %d quota reports for sync", len(toolReports), len(accountReports), len(quotaReports)))
@@ -140,6 +181,8 @@ func collectAndReportWithProgress(
 		}
 	}
 	usageIncomplete := false
+	var uploadErr error
+	uploaded := 0
 	// Tools/accounts/quotas ride as sidecars on usage sync start. If there is no
 	// usage to upload, still open a sync session so inventory can land.
 	if len(usageReports) > 0 || len(toolReports) > 0 || len(accountReports) > 0 || len(quotaReports) > 0 {
@@ -152,10 +195,11 @@ func collectAndReportWithProgress(
 		// Each iteration re-starts; fingerprints from prior chunks shrink the delta.
 		// Inventory sidecars are sent on the first pass; server no-ops on hash match.
 		const maxUsageSyncIterations = 32
-		uploaded := 0
 		remaining := 0
-		var uploadErr error
-		usedLegacy := false
+		maxChunks := scan.UsageUploadMaxBatchesPerSync
+		if forceFull {
+			maxChunks = scan.UsageUploadMaxBatchesPerSyncFirst
+		}
 		for iter := 0; iter < maxUsageSyncIterations; iter++ {
 			if err := ctx.Err(); err != nil {
 				uploadErr = err
@@ -181,43 +225,18 @@ func collectAndReportWithProgress(
 					Quotas:   quotasForPass,
 				}
 			}
-			n, rem, syncWarnings, err := syncengine.UploadUsageSession(ctx, api, daily, inventory)
+			n, rem, syncWarnings, err := syncengine.UploadUsageSession(ctx, api, daily, inventory, syncengine.UploadOptions{
+				MaxChunks: maxChunks,
+				Progress: func(done, total int) {
+					progress("upload-usage", fmt.Sprintf("Uploaded %d of %d usage rows this pass", done, total))
+				},
+			})
 			warnings = append(warnings, syncWarnings...)
 			uploaded += n
 			remaining = rem
 			uploadErr = err
 			if uploadErr != nil {
-				// Fall back to legacy fingerprint drain if sync endpoints are unavailable.
-				progress("upload-usage", "Falling back to legacy usage upload")
-				if iter == 0 {
-					if len(accountReports) > 0 {
-						if accErr := api.ReportAccounts(accountReports); accErr != nil {
-							warnings = append(warnings, fmt.Sprintf("accounts legacy upload: %v", accErr))
-						}
-					}
-					if len(quotaReports) > 0 {
-						if qErr := api.ReportQuotas(quotaReports); qErr != nil {
-							warnings = append(warnings, fmt.Sprintf("quotas legacy upload: %v", qErr))
-						}
-					}
-				}
-				var legacyErr error
-				if len(usageReports) > 0 {
-					uploaded, remaining, legacyErr = reportLocalUsageDelta(api, cfg, usageReports, func(drain, pending, scanned int) {
-						progress("upload-usage", fmt.Sprintf("Uploading %d of %d queued usage rows (scanned %d, last %d days)", drain, pending, scanned, scan.UsageLookbackDays))
-					})
-				} else {
-					uploaded, remaining = 0, 0
-				}
-				usedLegacy = true
-				if legacyErr != nil && uploaded == 0 && len(usageReports) > 0 {
-					return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, fmt.Errorf("usage: %w", legacyErr)
-				}
-				if legacyErr != nil {
-					uploadErr = legacyErr
-				} else {
-					uploadErr = nil
-				}
+				progress("upload-usage", fmt.Sprintf("Usage sync failed: %v", uploadErr))
 				break
 			}
 			if remaining == 0 {
@@ -225,20 +244,22 @@ func collectAndReportWithProgress(
 			}
 			progress("upload-usage", fmt.Sprintf("Uploaded %d usage rows so far; continuing (%d remaining)", uploaded, remaining))
 		}
-		if !usedLegacy && remaining > 0 && uploadErr == nil {
+		if remaining > 0 && uploadErr == nil {
 			warnings = append(warnings, fmt.Sprintf("%d usage rows still queued after %d sync passes", remaining, maxUsageSyncIterations))
 		}
 		switch {
-		case uploaded == 0 && remaining == 0:
+		case uploaded == 0 && remaining == 0 && uploadErr == nil:
 			progress("upload-usage", "No usage changes since last upload")
 		case remaining > 0:
 			progress("upload-usage", fmt.Sprintf("Uploaded %d usage rows; %d older rows queued for next sync", uploaded, remaining))
 			warnings = append(warnings, fmt.Sprintf("%d usage rows still queued for upload", remaining))
+		case uploadErr != nil:
+			progress("upload-usage", fmt.Sprintf("Uploaded %d usage rows before error", uploaded))
 		default:
 			progress("upload-usage", fmt.Sprintf("Uploaded %d usage rows", uploaded))
 		}
 		if uploadErr != nil {
-			warnings = append(warnings, "usage upload interrupted; will retry remaining rows")
+			warnings = append(warnings, fmt.Sprintf("usage upload interrupted: %v", uploadErr))
 			if verbose {
 				fmt.Printf("[report] usage upload: %v\n", uploadErr)
 			}
@@ -260,13 +281,27 @@ func collectAndReportWithProgress(
 		}
 	}
 
-	if usageIncomplete {
-		progress("complete", "Sync complete with usage still queued")
-		return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, errUsageQueuePending
+	toolList = make([]types.ToolStatus, 0, len(toolReports))
+	for _, tr := range toolReports {
+		toolList = append(toolList, types.ToolStatus{
+			ToolName:   tr.ToolName,
+			Detected:   tr.Detected,
+			Configured: tr.Configured,
+			ConfigPath: tr.ConfigPath,
+			Version:    tr.Version,
+		})
 	}
 
+	if uploadErr != nil && uploaded == 0 {
+		progress("complete", "Sync failed")
+		return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), toolList, warnings, fmt.Errorf("usage: %w", uploadErr)
+	}
+	if usageIncomplete {
+		progress("complete", "Sync complete with usage still queued")
+		return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), toolList, warnings, errUsageQueuePending
+	}
 	progress("complete", "Sync complete")
-	return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), warnings, nil
+	return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), toolList, warnings, nil
 }
 
 func maybeReportWorkSessions(api *client.APIClient, progress collectProgress) error {

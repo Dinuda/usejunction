@@ -49,7 +49,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     rotate: false,
   });
 
-  const base = getPublicAppUrl();
+  const base = getPublicAppUrl(req);
   const installCommand = buildInstallCommand(issued.token, base);
   if (req.nextUrl.searchParams.get("platform") === "windows") {
     const windowsCommand = buildWindowsInstallCommand(issued.token, base);
