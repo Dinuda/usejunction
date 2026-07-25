@@ -50,11 +50,15 @@ test("mobile dashboard uses the compact header, period picker, and KPI grid", as
 
   const audience = page.getByRole("tablist", { name: "Audience" });
   await expect(audience).toBeVisible();
-  await audience.getByRole("tab", { name: "You" }).click();
-  await expect(page).toHaveURL(/scope=you/);
+  await Promise.all([
+    page.waitForURL(/scope=you/),
+    audience.getByRole("tab", { name: "You" }).click(),
+  ]);
   await expectNoPageOverflow(page);
-  await audience.getByRole("tab", { name: "Team" }).click();
-  await expect(page).not.toHaveURL(/scope=you/);
+  await Promise.all([
+    page.waitForURL((url) => !url.searchParams.has("scope") || url.searchParams.get("scope") !== "you"),
+    audience.getByRole("tab", { name: "Team" }).click(),
+  ]);
   await expectNoPageOverflow(page);
 
   const periodPicker = page.getByRole("button", { name: "Choose reporting period" });

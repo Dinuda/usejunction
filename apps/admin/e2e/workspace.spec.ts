@@ -91,8 +91,10 @@ test("owner Team | You switcher scopes Dashboard, Activity, and Signals", async 
   await expect(audience.getByRole("tab", { name: "Team" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "Spend, traffic, coverage." })).toBeVisible();
 
-  await audience.getByRole("tab", { name: "You" }).click();
-  await expect(page).toHaveURL(/scope=you/);
+  await Promise.all([
+    page.waitForURL(/scope=you/),
+    audience.getByRole("tab", { name: "You" }).click(),
+  ]);
   await expect(
     page
       .getByRole("heading", { name: "Spend, traffic, coverage." })
@@ -100,23 +102,29 @@ test("owner Team | You switcher scopes Dashboard, Activity, and Signals", async 
       .or(page.getByText(/Link a developer profile/i)),
   ).toBeVisible();
 
-  await audience.getByRole("tab", { name: "Team" }).click();
-  await expect(page).not.toHaveURL(/scope=you/);
+  await Promise.all([
+    page.waitForURL((url) => !url.searchParams.has("scope") || url.searchParams.get("scope") !== "you"),
+    audience.getByRole("tab", { name: "Team" }).click(),
+  ]);
   await expect(page.getByRole("heading", { name: "Spend, traffic, coverage." })).toBeVisible();
 
   await page.goto("/activity");
   const activityAudience = page.getByRole("tablist", { name: "Audience" });
   await expect(activityAudience.getByRole("tab", { name: "Team" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { level: 1, name: "Activity." })).toBeVisible();
-  await activityAudience.getByRole("tab", { name: "You" }).click();
-  await expect(page).toHaveURL(/\/activity\?.*scope=you/);
+  await Promise.all([
+    page.waitForURL(/\/activity\?.*scope=you/),
+    activityAudience.getByRole("tab", { name: "You" }).click(),
+  ]);
   await expect(page.getByRole("heading", { name: "Your activity." })).toBeVisible();
 
   await page.goto("/signals");
   const signalsAudience = page.getByRole("tablist", { name: "Audience" });
   await expect(signalsAudience).toBeVisible();
-  await signalsAudience.getByRole("tab", { name: "You" }).click();
-  await expect(page).toHaveURL(/\/signals\?.*scope=you/);
+  await Promise.all([
+    page.waitForURL(/\/signals\?.*scope=you/),
+    signalsAudience.getByRole("tab", { name: "You" }).click(),
+  ]);
   await expect(page.getByText(/Your coding-tool work sessions|Link a developer profile/i)).toBeVisible();
 
   await page.getByRole("navigation", { name: "Signals sections" }).getByRole("link", { name: "Activity" }).click();
@@ -141,8 +149,10 @@ test("owner Activity Team|You share layout and Reports section", async ({ page }
   await expect(page.getByRole("heading", { name: "By model." })).toBeVisible();
 
   const audience = page.getByRole("tablist", { name: "Audience" });
-  await audience.getByRole("tab", { name: "You" }).click();
-  await expect(page).toHaveURL(/scope=you/);
+  await Promise.all([
+    page.waitForURL(/scope=you/),
+    audience.getByRole("tab", { name: "You" }).click(),
+  ]);
   await expect(page.getByRole("heading", { name: "Your activity." })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Reports." })).toBeVisible();
   await expect(page.getByRole("heading", { name: "By tool." })).toBeVisible();

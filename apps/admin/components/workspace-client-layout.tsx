@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { SessionProvider, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { WorkspaceShell } from "@/components/workspace-shell";
@@ -160,9 +160,5 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
 }
 
 export function WorkspaceClientLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <SessionProvider refetchInterval={0} refetchOnWindowFocus>
-      <WorkspaceClientLayoutInner>{children}</WorkspaceClientLayoutInner>
-    </SessionProvider>
-  );
+  return <WorkspaceClientLayoutInner>{children}</WorkspaceClientLayoutInner>;
 }
