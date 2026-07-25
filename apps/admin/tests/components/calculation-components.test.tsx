@@ -57,7 +57,7 @@ function usageRow(index: number): ModelUsageRow {
     cacheWriteTokens: 5,
     reasoningTokens: 0,
     cost: 0.1,
-    requests: 1,
+    requests: index + 1,
     suggestedLines: 0,
     acceptedLines: 0,
     source: "gateway_observed",
@@ -84,11 +84,12 @@ describe("calculation-bearing components", () => {
     expect(screen.queryByText("Productivity attribution")).not.toBeInTheDocument();
     expect(screen.queryByText("productivity-row")).not.toBeInTheDocument();
     expect(screen.getByText("Showing 1–25 of 26")).toBeInTheDocument();
-    expect(screen.queryByText("model-25")).not.toBeInTheDocument();
+    expect(screen.getAllByText("model-25").length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText("model-0")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getAllByRole("button", { name: "Next" })[0]!);
     expect(screen.getByText("Showing 26–26 of 26")).toBeInTheDocument();
-    expect(screen.getAllByText("model-25").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("model-0").length).toBeGreaterThanOrEqual(1);
 
     const search = screen.getAllByPlaceholderText("Search models…")[0]!;
     await userEvent.type(search, "model-25");

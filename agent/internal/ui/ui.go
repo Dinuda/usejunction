@@ -30,6 +30,8 @@ const (
 var (
 	forceNoColor bool
 	out          io.Writer = os.Stdout
+	// writeMu serializes animated writes so concurrent steps cannot garble the TTY.
+	writeMu sync.Mutex
 )
 
 // SetNoColor disables color and animation (wired from --no-color).
@@ -175,7 +177,9 @@ func (s *Step) spin() {
 	defer ticker.Stop()
 	for {
 		frame := spinStyle.Render(strings.TrimSpace(frames[i%len(frames)]))
-		fmt.Fprintf(out, "\r  %s  %s", frame, s.renderLine())
+		writeMu.Lock()
+		fmt.Fprintf(out, "\r\033[2K  %s  %s", frame, s.renderLine())
+		writeMu.Unlock()
 		i++
 		select {
 		case <-s.stop:
@@ -205,8 +209,9 @@ func (s *Step) finish(ok bool, detail string) {
 	s.mu.Unlock()
 	if waitDone {
 		<-s.done
-		// Clear the spinner line.
+		writeMu.Lock()
 		fmt.Fprintf(out, "\r\033[2K")
+		writeMu.Unlock()
 	}
 	if !Enabled() {
 		if detail != "" {
@@ -222,7 +227,256 @@ func (s *Step) finish(ok bool, detail string) {
 	if detail != "" {
 		line += styleMuted().Render("  "+detail)
 	}
+	writeMu.Lock()
 	fmt.Fprintln(out, line)
+	writeMu.Unlock()
+}
+
+// ToolScanStatus is the live state of one tool row in a ScanPanel.
+type ToolScanStatus int
+
+const (
+	ToolPending ToolScanStatus = iota
+	ToolScanning
+	ToolDone
+	ToolSkipped
+)
+
+// ScanPanel is a live multi-line progress block: parent label + one row per tool.
+type ScanPanel struct {
+	label     string
+	toolOrder []string
+	status    map[string]ToolScanStatus
+	detail    string
+	stop      chan struct{}
+	done      chan struct{}
+	mu        sync.Mutex
+	active    bool
+	lines     int
+}
+
+// ScanPanelStart begins a multi-line scan panel. toolIDs are shown as pending rows.
+func ScanPanelStart(label string, toolIDs []string) *ScanPanel {
+	status := make(map[string]ToolScanStatus, len(toolIDs))
+	order := make([]string, 0, len(toolIDs))
+	seen := make(map[string]struct{}, len(toolIDs))
+	for _, id := range toolIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		order = append(order, id)
+		status[id] = ToolPending
+	}
+	p := &ScanPanel{
+		label:     label,
+		toolOrder: order,
+		status:    status,
+	}
+	if !Enabled() {
+		fmt.Fprintf(out, "%s...\n", label)
+		for _, id := range order {
+			fmt.Fprintf(out, "      ○ %s\n", id)
+		}
+		return p
+	}
+	p.stop = make(chan struct{})
+	p.done = make(chan struct{})
+	p.active = true
+	go p.spin()
+	return p
+}
+
+// ToolStart marks a tool as actively scanning.
+func (p *ScanPanel) ToolStart(id string) {
+	p.setTool(id, ToolScanning)
+}
+
+// ToolFinish marks a tool as finished (or skipped on timeout).
+func (p *ScanPanel) ToolFinish(id string, skipped bool) {
+	if skipped {
+		p.setTool(id, ToolSkipped)
+		return
+	}
+	p.setTool(id, ToolDone)
+}
+
+func (p *ScanPanel) setTool(id string, st ToolScanStatus) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return
+	}
+	p.mu.Lock()
+	if _, ok := p.status[id]; !ok {
+		p.toolOrder = append(p.toolOrder, id)
+	}
+	prev := p.status[id]
+	p.status[id] = st
+	p.mu.Unlock()
+	if !Enabled() {
+		if st == prev {
+			return
+		}
+		switch st {
+		case ToolScanning:
+			fmt.Fprintf(out, "      ⠋ %s\n", id)
+		case ToolDone:
+			fmt.Fprintf(out, "      ✓ %s\n", id)
+		case ToolSkipped:
+			fmt.Fprintf(out, "      – %s (skipped)\n", id)
+		}
+	}
+}
+
+// Update sets a secondary detail line (upload / sync phase after tools).
+func (p *ScanPanel) Update(detail string) {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return
+	}
+	p.mu.Lock()
+	if detail == p.detail {
+		p.mu.Unlock()
+		return
+	}
+	p.detail = detail
+	p.mu.Unlock()
+	if !Enabled() {
+		fmt.Fprintf(out, "      · %s\n", detail)
+	}
+}
+
+func (p *ScanPanel) spin() {
+	defer close(p.done)
+	frames := spinner.MiniDot.Frames
+	fps := spinner.MiniDot.FPS
+	if fps <= 0 {
+		fps = time.Second / 12
+	}
+	i := 0
+	spinStyle := styleTeal()
+	ticker := time.NewTicker(fps)
+	defer ticker.Stop()
+	for {
+		frame := spinStyle.Render(strings.TrimSpace(frames[i%len(frames)]))
+		p.redraw(frame)
+		i++
+		select {
+		case <-p.stop:
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (p *ScanPanel) redraw(frame string) {
+	lines := p.renderLines(frame)
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	if p.lines > 0 {
+		fmt.Fprintf(out, "\033[%dA", p.lines)
+	}
+	for _, line := range lines {
+		fmt.Fprintf(out, "\r\033[2K%s\n", line)
+	}
+	p.lines = len(lines)
+}
+
+func (p *ScanPanel) renderLines(frame string) []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	lines := make([]string, 0, 2+len(p.toolOrder))
+	lines = append(lines, fmt.Sprintf("  %s  %s", frame, styleBody().Render(p.label)))
+
+	pendingMark := styleMuted().Render("○")
+	doneMark := styleOk().Render("✓")
+	skipMark := styleMuted().Render("–")
+
+	for _, id := range p.toolOrder {
+		var mark string
+		var name string
+		switch p.status[id] {
+		case ToolScanning:
+			mark = frame
+			name = styleBody().Render(id)
+		case ToolDone:
+			mark = doneMark
+			name = styleBody().Render(id)
+		case ToolSkipped:
+			mark = skipMark
+			name = styleMuted().Render(id + " skipped")
+		default:
+			mark = pendingMark
+			name = styleMuted().Render(id)
+		}
+		lines = append(lines, fmt.Sprintf("      %s  %s", mark, name))
+	}
+	if p.detail != "" {
+		lines = append(lines, fmt.Sprintf("      %s", styleMuted().Render("· "+p.detail)))
+	}
+	return lines
+}
+
+// Done finishes the panel successfully and collapses to a single summary line.
+func (p *ScanPanel) Done(detail string) {
+	p.finish(true, detail)
+}
+
+// Fail finishes the panel with an error style.
+func (p *ScanPanel) Fail(detail string) {
+	p.finish(false, detail)
+}
+
+func (p *ScanPanel) finish(ok bool, detail string) {
+	p.mu.Lock()
+	waitDone := p.stop != nil && p.active
+	if waitDone {
+		close(p.stop)
+		p.active = false
+	}
+	p.mu.Unlock()
+	if waitDone {
+		<-p.done
+		writeMu.Lock()
+		lines := p.lines
+		if lines > 0 {
+			fmt.Fprintf(out, "\033[%dA", lines)
+			for i := 0; i < lines; i++ {
+				fmt.Fprintf(out, "\r\033[2K")
+				if i+1 < lines {
+					fmt.Fprint(out, "\n")
+				}
+			}
+			if lines > 1 {
+				fmt.Fprintf(out, "\033[%dA", lines-1)
+			}
+			fmt.Fprintf(out, "\r\033[2K")
+		}
+		p.lines = 0
+		writeMu.Unlock()
+	}
+	if !Enabled() {
+		if detail != "" {
+			fmt.Fprintf(out, "%s: %s\n", p.label, detail)
+		}
+		return
+	}
+	mark := styleOk().Render("✓")
+	if !ok {
+		mark = styleFail().Render("✗")
+	}
+	line := fmt.Sprintf("  %s  %s", mark, styleBody().Render(p.label))
+	if detail != "" {
+		line += styleMuted().Render("  "+detail)
+	}
+	writeMu.Lock()
+	fmt.Fprintln(out, line)
+	writeMu.Unlock()
 }
 
 // QuietLine prints a muted secondary line under a step.

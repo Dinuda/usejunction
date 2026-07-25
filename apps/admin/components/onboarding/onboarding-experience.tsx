@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import Image from "next/image";
 import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
@@ -159,6 +160,7 @@ function hasReadyDevice(status: OnboardingStatus | null) {
 }
 
 export function OnboardingExperience() {
+  const { data: session, status: sessionStatus } = useSession();
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [invitePending, setInvitePending] = useState(false);
@@ -198,6 +200,9 @@ export function OnboardingExperience() {
     }
 
     const next = response.ok ? ((await response.json()) as OnboardingStatus) : null;
+    if ((!response.ok || !next?.configured) && mode === "poll") {
+      return refresh("bootstrap");
+    }
     if (next) {
       const role = next.role as OrganizationRole | null;
       const canLeave = Boolean(next.onboardingCompletedAt);
@@ -224,8 +229,10 @@ export function OnboardingExperience() {
   }, []);
 
   useEffect(() => {
-    void refresh("bootstrap");
-  }, [refresh]);
+    if (sessionStatus === "loading") return;
+    const needsProvision = !session?.user?.orgId;
+    void refresh(needsProvision ? "bootstrap" : "poll");
+  }, [refresh, session?.user?.orgId, sessionStatus]);
 
   async function finish(action: "complete" | "skip" = "complete") {
     setFinishing(true);
@@ -258,7 +265,7 @@ export function OnboardingExperience() {
     );
   }
 
-  if (loading || !status || !path) {
+  if (sessionStatus === "loading" || loading || !status || !path) {
     return (
       <AuthShell
         size="md"

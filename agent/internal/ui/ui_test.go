@@ -122,6 +122,49 @@ func TestStepUpdatePlainMode(t *testing.T) {
 	}
 }
 
+func TestScanPanelPlainMode(t *testing.T) {
+	origNoColor := forceNoColor
+	origOut := out
+	t.Cleanup(func() {
+		forceNoColor = origNoColor
+		out = origOut
+	})
+
+	var buf bytes.Buffer
+	SetNoColor(true)
+	SetWriter(&buf)
+
+	panel := ScanPanelStart("Uploading initial usage", []string{"cursor", "claude", "codex"})
+	panel.ToolStart("cursor")
+	panel.ToolFinish("cursor", false)
+	panel.ToolStart("claude")
+	panel.ToolFinish("claude", true)
+	panel.Update("Syncing usage (12 rows)")
+	panel.Update("Syncing usage (12 rows)")
+	panel.Done("3 tools · 12 usage rows")
+
+	got := buf.String()
+	for _, want := range []string{
+		"Uploading initial usage...",
+		"○ cursor",
+		"○ claude",
+		"○ codex",
+		"⠋ cursor",
+		"✓ cursor",
+		"⠋ claude",
+		"– claude (skipped)",
+		"· Syncing usage (12 rows)",
+		"Uploading initial usage: 3 tools · 12 usage rows",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("plain scan panel missing %q\n%s", want, got)
+		}
+	}
+	if strings.Count(got, "· Syncing usage (12 rows)") != 1 {
+		t.Fatalf("duplicate detail lines should be suppressed:\n%s", got)
+	}
+}
+
 func TestStepDoneDoesNotDeadlockWithSpinner(t *testing.T) {
 	origOut := out
 	t.Cleanup(func() { out = origOut })
@@ -155,5 +198,43 @@ func TestStepDoneDoesNotDeadlockWithSpinner(t *testing.T) {
 	case <-finished:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Done() deadlocked with spinner goroutine")
+	}
+}
+
+func TestScanPanelDoneDoesNotDeadlock(t *testing.T) {
+	origOut := out
+	t.Cleanup(func() { out = origOut })
+
+	var buf bytes.Buffer
+	SetWriter(&buf)
+
+	p := &ScanPanel{
+		label:     "Uploading initial usage",
+		toolOrder: []string{"cursor", "claude"},
+		status: map[string]ToolScanStatus{
+			"cursor": ToolPending,
+			"claude": ToolPending,
+		},
+		stop:   make(chan struct{}),
+		done:   make(chan struct{}),
+		active: true,
+	}
+	go p.spin()
+
+	finished := make(chan struct{})
+	go func() {
+		p.ToolStart("cursor")
+		p.ToolFinish("cursor", false)
+		p.ToolStart("claude")
+		p.Update("Syncing usage")
+		time.Sleep(5 * time.Millisecond)
+		p.Done("2 tools")
+		close(finished)
+	}()
+
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ScanPanel.Done() deadlocked with spinner goroutine")
 	}
 }

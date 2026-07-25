@@ -363,6 +363,15 @@ async function buildMeOverview(
     return output;
   });
 
+  modelUsageRows.sort(
+    (a, b) =>
+      b.requests - a.requests ||
+      b.cost - a.cost ||
+      b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens) ||
+      a.toolName.localeCompare(b.toolName) ||
+      a.model.localeCompare(b.model),
+  );
+
   const aiCoding30d: AiCodingMetrics = {
     suggestedLines: snapshotUsage.kpis.suggestedLines,
     acceptedLines: snapshotUsage.kpis.acceptedLines,

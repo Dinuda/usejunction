@@ -52,16 +52,29 @@ function ModelTable({ title, description, rows }: { title: string; description: 
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
 
+  const sortedRows = useMemo(
+    () =>
+      [...rows].sort(
+        (a, b) =>
+          b.requests - a.requests ||
+          b.cost - a.cost ||
+          b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens) ||
+          a.toolName.localeCompare(b.toolName) ||
+          a.model.localeCompare(b.model),
+      ),
+    [rows],
+  );
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
+    if (!q) return sortedRows;
+    return sortedRows.filter(
       (row) =>
         row.model.toLowerCase().includes(q) ||
         row.toolName.toLowerCase().includes(q) ||
         row.source.toLowerCase().includes(q),
     );
-  }, [query, rows]);
+  }, [query, sortedRows]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);

@@ -149,13 +149,20 @@ func collectAndReportWithTools(
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
+			id := prov.ID()
 			if ctx.Err() != nil {
-				outcomes[idx] = providerOutcome{id: prov.ID(), timedOut: true}
+				outcomes[idx] = providerOutcome{id: id, timedOut: true}
+				progress("scan-tool-skip", id)
 				return
 			}
-			progress("scan", fmt.Sprintf("Scanning %s", prov.ID()))
+			progress("scan-tool-start", id)
 			result, timedOut := collectProviderWithTimeout(ctx, prov, forceFull)
-			outcomes[idx] = providerOutcome{id: prov.ID(), result: result, timedOut: timedOut}
+			outcomes[idx] = providerOutcome{id: id, result: result, timedOut: timedOut}
+			if timedOut {
+				progress("scan-tool-skip", id)
+				return
+			}
+			progress("scan-tool-done", id)
 		}(i, p)
 	}
 	wg.Wait()
@@ -163,7 +170,6 @@ func collectAndReportWithTools(
 	for _, out := range outcomes {
 		if out.timedOut {
 			warnings = append(warnings, fmt.Sprintf("%s scan timed out", out.id))
-			progress("scan", fmt.Sprintf("Skipped slow %s scan", out.id))
 			continue
 		}
 		toolReports = append(toolReports, out.result.toolReports...)

@@ -120,25 +120,7 @@ func runOnboard() error {
 	ui.QuietLine("Config saved to " + config.ConfigPath())
 
 	setupStep := ui.StepStart("Enabling Claude Code metrics")
-	reportStep := ui.StepStart("Uploading initial usage")
-
-	var setupErr error
-	var stats *reportStats
-	var reportErr error
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		setupErr = configure.RunSetup(res.cfg, configure.SetupOptions{EnableOtel: true})
-	}()
-	go func() {
-		defer wg.Done()
-		stats, reportErr = runInitialReportWithProgress(true, func(step, message string) {
-			reportStep.Update(humanizeCollectProgress(step, message))
-		})
-	}()
-	wg.Wait()
-
+	setupErr := configure.RunSetup(res.cfg, configure.SetupOptions{EnableOtel: true})
 	if setupErr != nil {
 		setupStep.Fail(setupErr.Error())
 		ui.WarnLine(fmt.Sprintf("setup warning: %v", setupErr))
@@ -147,22 +129,41 @@ func runOnboard() error {
 		ui.QuietLine("Writes ~/.usejunction/claude-env.sh so Claude Code can send usage metrics")
 	}
 
+	toolIDs := providerToolIDs()
+	reportPanel := ui.ScanPanelStart("Uploading initial usage", toolIDs)
+	stats, reportErr := runInitialReportWithProgress(true, func(step, message string) {
+		switch step {
+		case "scan-tool-start":
+			reportPanel.ToolStart(message)
+		case "scan-tool-done":
+			reportPanel.ToolFinish(message, false)
+		case "scan-tool-skip":
+			reportPanel.ToolFinish(message, true)
+		default:
+			if label := humanizeCollectProgress(step, message); label != "" {
+				reportPanel.Update(label)
+			}
+		}
+	})
+
 	tools := []types.ToolStatus{}
 	if stats != nil {
 		tools = stats.ToolList
 	}
 	if reportErr != nil {
 		if errors.Is(reportErr, errUsageQueuePending) && stats != nil {
-			reportStep.Done(fmt.Sprintf("%d tools · %d accounts · %d quotas · %d usage rows (more queued)",
+			reportPanel.Done(fmt.Sprintf("%d tools · %d accounts · %d quotas · %d usage rows (more queued)",
 				stats.Tools, stats.Accounts, stats.Quotas, stats.Usage))
 			ui.WarnLine(fmt.Sprintf("initial report warning: %v", reportErr))
 		} else {
-			reportStep.Fail(reportErr.Error())
+			reportPanel.Fail(reportErr.Error())
 			ui.WarnLine(fmt.Sprintf("initial report warning: %v", reportErr))
 		}
 	} else if stats != nil {
-		reportStep.Done(fmt.Sprintf("%d tools · %d accounts · %d quotas · %d usage rows",
+		reportPanel.Done(fmt.Sprintf("%d tools · %d accounts · %d quotas · %d usage rows",
 			stats.Tools, stats.Accounts, stats.Quotas, stats.Usage))
+	} else {
+		reportPanel.Done("")
 	}
 
 	scanStep := ui.StepStart("Scanning AI coding tools")
@@ -177,6 +178,15 @@ func runOnboard() error {
 
 	ui.StatusSummary(res.cfg.DeviceID, res.cfg.OrgID, config.Version, len(tools))
 	return nil
+}
+
+func providerToolIDs() []string {
+	all := providers.All()
+	ids := make([]string, 0, len(all))
+	for _, p := range all {
+		ids = append(ids, p.ID())
+	}
+	return ids
 }
 
 func detectTools() []types.ToolStatus {
@@ -204,14 +214,19 @@ func detectTools() []types.ToolStatus {
 
 // humanizeCollectProgress maps collect progress callbacks to short onboard labels.
 func humanizeCollectProgress(step, message string) string {
+	switch step {
+	case "scan-tool-start", "scan-tool-done", "scan-tool-skip":
+		return ""
+	case "scan":
+		// Tool rows in ScanPanel already cover per-tool scan progress.
+		return ""
+	}
 	if strings.TrimSpace(message) != "" {
 		return strings.TrimSpace(message)
 	}
 	switch step {
 	case "heartbeat":
 		return "Registering local agent"
-	case "scan":
-		return "Scanning local tools"
 	case "upload-tools":
 		return "Preparing inventory"
 	case "upload-models":

@@ -39,43 +39,80 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  let result;
-  try {
-    result = await ensureOwnerWorkspace(
-      {
-        id: session.user.id,
-        email: session.user.email,
-        name: session.user.name,
+  let result:
+    | { orgId: string; role: string; created: boolean }
+    | undefined;
+  if (session.user.orgId) {
+    const membership = await prisma.organizationMembership.findUnique({
+      where: {
+        userId_orgId: { userId: session.user.id, orgId: session.user.orgId },
       },
-      { rejectPendingInvite: true },
-    );
-  } catch (error) {
-    if (isAuthUserNotFoundError(error)) {
-      return NextResponse.json({ error: "session_expired" }, { status: 401 });
+      select: { orgId: true, role: true },
+    });
+    if (membership) {
+      result = { orgId: membership.orgId, role: membership.role, created: false };
     }
-    if (isPendingInviteError(error)) {
-      return NextResponse.json(
-        { error: "invite_pending", configured: false },
-        { status: 409 },
+  }
+  const fastPathMs = performance.now();
+
+  if (!result) {
+    try {
+      result = await ensureOwnerWorkspace(
+        {
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.name,
+        },
+        { rejectPendingInvite: true },
       );
+    } catch (error) {
+      if (isAuthUserNotFoundError(error)) {
+        return NextResponse.json({ error: "session_expired" }, { status: 401 });
+      }
+      if (isPendingInviteError(error)) {
+        return NextResponse.json(
+          { error: "invite_pending", configured: false },
+          { status: 409 },
+        );
+      }
+      throw error;
     }
-    throw error;
   }
   const resolveMs = performance.now();
 
+  const needsSessionSync = session.user.orgId !== result.orgId;
+  const statusPromise = buildOnboardingStatusForOrg(session.user.id, result.orgId, {
+    includeDeveloper: true,
+    mode: "poll",
+  });
+
   let sessionSynced = false;
-  if (session.user.orgId !== result.orgId) {
-    const synced = await syncSessionWorkspace(session.user.id, result.orgId);
+  let status;
+  let syncMs = 0;
+  let statusMs = 0;
+  if (needsSessionSync) {
+    const syncStart = performance.now();
+    const statusStart = performance.now();
+    const [synced, resolvedStatus] = await Promise.all([
+      syncSessionWorkspace(session.user.id, result.orgId).then((value) => {
+        syncMs = performance.now() - syncStart;
+        return value;
+      }),
+      statusPromise.then((value) => {
+        statusMs = performance.now() - statusStart;
+        return value;
+      }),
+    ]);
     if (!synced.ok) {
       return NextResponse.json({ error: synced.error }, { status: synced.status });
     }
     sessionSynced = true;
+    status = resolvedStatus;
+  } else {
+    const statusStart = performance.now();
+    status = await statusPromise;
+    statusMs = performance.now() - statusStart;
   }
-
-  const status = await buildOnboardingStatusForOrg(session.user.id, result.orgId, {
-    includeDeveloper: true,
-    mode: "full",
-  });
   const dataMs = performance.now();
 
   const response = NextResponse.json(status, {
@@ -83,8 +120,10 @@ export async function POST(request: NextRequest) {
     headers: onboardingHeaders(
       timingHeader({
         session: sessionMs - started,
-        resolve: resolveMs - sessionMs,
-        data: dataMs - resolveMs,
+        fastPath: fastPathMs - sessionMs,
+        workspace: resolveMs - fastPathMs,
+        sync: syncMs,
+        status: statusMs,
         total: dataMs - started,
       }),
     ),

@@ -92,6 +92,7 @@ function postRequest(headers: Record<string, string> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.resetModules();
+  mocks.membershipFindUnique.mockResolvedValue(null);
   mocks.auth.mockResolvedValue({
     user: {
       id: "user-1",
@@ -136,7 +137,7 @@ describe("POST /api/onboarding", () => {
     expect(mocks.syncSessionWorkspace).toHaveBeenCalledWith("user-1", "org-1");
     expect(mocks.buildOnboardingStatusForOrg).toHaveBeenCalledWith("user-1", "org-1", {
       includeDeveloper: true,
-      mode: "full",
+      mode: "poll",
     });
     expect(payload).toMatchObject({
       configured: true,
@@ -144,6 +145,7 @@ describe("POST /api/onboarding", () => {
       developer: expect.any(Object),
     });
     expect(response.headers.get("server-timing")).toContain("session");
+    expect(response.headers.get("server-timing")).toContain("workspace");
     expect(response.headers.get("server-timing")).toContain("total");
     expect(response.headers.get("cache-control")).toContain("no-store");
   });
@@ -158,16 +160,16 @@ describe("POST /api/onboarding", () => {
         role: "owner",
       },
     });
-    mocks.ensureOwnerWorkspace.mockResolvedValue({
+    mocks.membershipFindUnique.mockResolvedValue({
       orgId: "org-1",
       role: "owner",
-      created: false,
     });
 
     const { POST } = await import("@/app/api/onboarding/route");
     const response = await POST(postRequest());
 
     expect(response.status).toBe(200);
+    expect(mocks.ensureOwnerWorkspace).not.toHaveBeenCalled();
     expect(mocks.syncSessionWorkspace).not.toHaveBeenCalled();
     expect(mocks.buildOnboardingStatusForOrg).toHaveBeenCalled();
   });
