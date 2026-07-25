@@ -50,6 +50,15 @@ Agents emit raw facts. The control plane owns:
 
 Implemented in `apps/admin/lib/usage/classify.ts`.
 
+`inferMetricKind` rules:
+
+- Respect explicit `metric_kind` when set to `usage` or `productivity`
+- `cursor_local` and `opencode_local` → `productivity`
+- Line/commit-only rows with zero input/output tokens → `productivity`
+- Otherwise → `usage`
+
+Productivity rows do not inflate model-call KPIs. Ingest may preserve `requests` on productivity rows whose model id starts with `tool:` or `flow:` for inventory display; analytics still treats them as productivity.
+
 ## Wire compatibility
 
 Ingest accepts both UUS-named fields and legacy camelCase (`toolName`, `inputTokens`, `estimatedCost`, …) used by the current agent. Sync-session chunks prefer UUS v1.

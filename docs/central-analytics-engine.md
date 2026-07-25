@@ -22,6 +22,12 @@ The accounting semantics live in two places:
 
 The central engine normalizes legacy source aliases, chooses activity and cost sources independently, keeps productivity separate from observed model-call KPIs, preserves repository splits for the winning source class, and keeps verified usage, estimated API cost, invoice cost, and subscription spend distinct.
 
+Accounting highlights enforced in `apps/admin/lib/analytics/query/sql.ts`:
+
+- Free, $0, and device-observed tools still count toward `requests` when `metric_kind = usage`
+- `metric_kind = productivity` and legacy `cursor_local` / `opencode_local` rows never win `selected_activity`
+- Synthetic `estimated` source is excluded from observed activity but its cost can still win `selected_cost`
+
 ## Query Contract
 
 Authenticated clients use `POST /api/insights/query`. The endpoint accepts `UsageQueryV1`:

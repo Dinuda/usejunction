@@ -80,6 +80,7 @@ type RawRow = {
   outputTokens: bigint;
   costMicros: bigint;
   costKind: string | null;
+  metricKind: string | null;
 };
 
 function money(micros: bigint | number) {
@@ -99,13 +100,29 @@ function inWindow(date: Date, from: Date, to: Date) {
   return t >= from.getTime() && t <= to.getTime();
 }
 
+/** Match analytics SQL: productivity lines/commits are not model-call KPIs. Free/detected usage still counts. */
+function isProductivityRow(row: RawRow) {
+  const source = normalizeSource(row.source);
+  return (
+    row.metricKind === "productivity" ||
+    source === "cursor_local" ||
+    row.source === "cursor_local" ||
+    row.source === "opencode_local"
+  );
+}
+
 /** Independently recompute org-wide usage using the same source-priority rules. */
 function independentOrgUsage(rows: RawRow[], from: Date, to: Date) {
   const scoped = rows.filter((r) => inWindow(r.date, from, to));
 
-  const activityGroups = new Map<string, RawRow>();
+  // Match analytics SQL: activity wins by (date, developer, provider, product, tool, model).
+  // Free/detected device_observed usage counts; productivity rows never count as model activity.
+  const activityBest = new Map<string, number>();
   for (const row of scoped) {
-    if (!isObservedSource(normalizeSource(row.source))) continue;
+    if (isProductivityRow(row)) continue;
+    const source = normalizeSource(row.source);
+    if (!isObservedSource(source)) continue;
+    if (row.requests <= 0 && row.inputTokens <= BigInt(0) && row.outputTokens <= BigInt(0)) continue;
     const key = [
       isoDay(row.date),
       row.developerId ?? "",
@@ -114,10 +131,29 @@ function independentOrgUsage(rows: RawRow[], from: Date, to: Date) {
       row.toolName,
       row.model ?? "",
     ].join("|");
-    const prev = activityGroups.get(key);
-    if (!prev || activityPriority(normalizeSource(row.source)) < activityPriority(normalizeSource(prev.source))) {
-      activityGroups.set(key, row);
-    }
+    const priority = activityPriority(source);
+    const prev = activityBest.get(key);
+    if (prev === undefined || priority < prev) activityBest.set(key, priority);
+  }
+
+  let requests = 0;
+  let tokens = BigInt(0);
+  for (const row of scoped) {
+    if (isProductivityRow(row)) continue;
+    const source = normalizeSource(row.source);
+    if (!isObservedSource(source)) continue;
+    if (row.requests <= 0 && row.inputTokens <= BigInt(0) && row.outputTokens <= BigInt(0)) continue;
+    const key = [
+      isoDay(row.date),
+      row.developerId ?? "",
+      row.provider,
+      row.product,
+      row.toolName,
+      row.model ?? "",
+    ].join("|");
+    if (activityBest.get(key) !== activityPriority(source)) continue;
+    requests += row.requests;
+    tokens += row.inputTokens + row.outputTokens;
   }
 
   const costGroups = new Map<string, RawRow>();
@@ -128,13 +164,6 @@ function independentOrgUsage(rows: RawRow[], from: Date, to: Date) {
     if (!prev || costPriority(normalizeSource(row.source)) < costPriority(normalizeSource(prev.source))) {
       costGroups.set(key, row);
     }
-  }
-
-  let requests = 0;
-  let tokens = BigInt(0);
-  for (const row of activityGroups.values()) {
-    requests += row.requests;
-    tokens += row.inputTokens + row.outputTokens;
   }
 
   let verified = BigInt(0);
@@ -273,6 +302,7 @@ export async function runCalculationVerification(
       outputTokens: true,
       costMicros: true,
       costKind: true,
+      metricKind: true,
     },
   })) as RawRow[];
 

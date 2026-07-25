@@ -64,9 +64,9 @@ test("mobile dashboard uses the compact header, period picker, and KPI grid", as
   await expect(page.getByRole("menuitem", { name: "Previous cycles" })).toBeVisible();
   await page.keyboard.press("Escape");
 
-  const commitment = page.getByText("Subscription commitment").locator("..");
-  const usage = page.getByText("Estimated usage").locator("..");
-  const spendPerDay = page.getByText("Est. spend/day").locator("..");
+  const commitment = page.locator("p").filter({ hasText: /^Subscription commitment$/ }).first().locator("..");
+  const usage = page.locator("p").filter({ hasText: /^Estimated usage$/ }).first().locator("..");
+  const spendPerDay = page.locator("p").filter({ hasText: /^Est\. spend\/day$/ }).first().locator("..");
   const [commitmentBox, usageBox, spendPerDayBox] = await Promise.all([
     commitment.boundingBox(),
     usage.boundingBox(),

@@ -433,7 +433,8 @@ test("usage sync start applies accounts+quotas and creates billing templates", {
     });
     assert.equal(templatesAgain.length, templates.length);
 
-    // Tools-only / null plan must not invent seats.
+    // Auth present + null vendor plan still creates a free/default detected seat
+    // so admins can see free tools in Current cycles (Codex → free).
     const nullPlanOrg = await prisma.organization.create({
       data: { name: `Null Plan Org ${suffix}`, slug: `null-plan-${suffix}` },
     });
@@ -476,7 +477,9 @@ test("usage sync start applies accounts+quotas and creates billing templates", {
       const invented = await prisma.billingPlanTemplate.findMany({
         where: { orgId: nullPlanOrg.id, priceSource: "detected" },
       });
-      assert.equal(invented.length, 0);
+      assert.equal(invented.length, 1);
+      assert.equal(invented[0]?.catalogPlanKey, "free");
+      assert.equal(invented[0]?.toolKey, "chatgpt-codex");
     } finally {
       await prisma.organization.delete({ where: { id: nullPlanOrg.id } });
     }

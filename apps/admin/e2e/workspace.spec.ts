@@ -165,8 +165,11 @@ test("dashboard exposes seeded calculation output and all period controls", asyn
   await expect(page.getByText("$27.00").first()).toBeVisible();
   await expect(page.getByText("$25.00 verified · $2.00 estimated")).toBeVisible();
   await expect(page.getByText("Price per 1M tokens").first()).toBeVisible();
-  await expect(page.getByText("$4.95").first()).toBeVisible();
+  await expect(page.getByText("$4.84").first()).toBeVisible();
   await expect(page.getByText("Est. spend/day").first()).toBeVisible();
+  // Free/detected tools (OpenCode, ChatGPT Free) appear in Current cycles.
+  await expect(page.getByRole("link", { name: /OpenCode/i }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: /ChatGPT.*Free/i }).first()).toBeVisible();
   await expect(page.getByText("1.5M")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Current cycles." })).toBeVisible();
   await page.getByRole("link", { name: "Previous cycles" }).click();
@@ -232,7 +235,7 @@ test("Signals settings shows work-first retention controls", async ({ page }) =>
   await expect(page.locator("#signals-retention")).toContainText("90 days");
 });
 
-test("Settings shows workspace, billing, Signals, and activity visibility controls", async ({ page }) => {
+test("Settings shows workspace, billing, Signals, and team visibility controls", async ({ page }) => {
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings.", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Workspace", level: 2 })).toBeVisible();
@@ -249,13 +252,13 @@ test("Settings shows workspace, billing, Signals, and activity visibility contro
   await expect(billing.getByText("developer@example.com", { exact: true })).toBeVisible();
   await expect(billing.getByRole("button", { name: "Manage billing" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Signals", level: 2 })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Activity visibility", level: 2 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Team visibility", level: 2 })).toBeVisible();
   await expect(page.getByLabel("Workspace name")).toBeVisible();
   await expect(page.getByRole("button", { name: /Turn on|Turn off/ }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /Allow for team|Restrict to admins/ }).first()).toBeVisible();
 });
 
-test("settings mutations rename workspace and toggle activity visibility", async ({ page }) => {
+test("settings mutations rename workspace and toggle team visibility", async ({ page }) => {
   await page.goto("/settings");
   const nameInput = page.getByLabel("Workspace name");
   await nameInput.fill("Calculation E2E Renamed");
@@ -324,7 +327,7 @@ test("team roster lists seeded members and opens invite dialog", async ({ page }
   await expect(page.getByRole("heading", { name: "Team", exact: true, level: 1 })).toBeVisible();
   await expect(page.getByText("E2E Developer").first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Edit E2E Developer" })).toBeVisible();
-  await expect(page.getByText("1 machine · 38 requests · current")).toBeVisible();
+  await expect(page.getByText("1 machine · 66 requests · current")).toBeVisible();
   await expect(page.getByRole("meter", { name: /Average plan use/i })).toBeVisible();
   await page.getByRole("button", { name: "Invite teammates" }).click();
   await expect(page.getByRole("heading", { name: "Invite teammates." })).toBeVisible();
@@ -368,9 +371,10 @@ test("onboarding resume shows workspace setup choices", async ({ page }) => {
   setOnboardingState(ownerEmail, "incomplete");
   try {
     await page.goto("/onboarding?resume=1");
-    await expect(page.getByText(/Connect this computer or invite the team/i).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Welcome to Calculation E2E/i })).toBeVisible();
+    await expect(page.getByText(/How do you want to get started/i)).toBeVisible();
     await expect(page.getByRole("button", { name: /Connect this computer/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Invite the team/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /I’m here to manage my team|I'm here to manage my team/i })).toBeVisible();
   } finally {
     setOnboardingState(ownerEmail, "complete");
   }

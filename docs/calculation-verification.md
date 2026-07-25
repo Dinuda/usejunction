@@ -53,13 +53,16 @@ Seed highlights (Cursor-centric story used by Playwright too):
 |---|---|---|---|
 | cursor `vendor_verified` | 2026-07-10 | 10 calls, 1.5M tokens | verified **$5** |
 | cursor `estimated` | 2026-07-11 | requests **excluded** | estimated **$1** |
-| openai / anthropic / gateway | Jul 12–16 | org-wide extras | verified $12+$8, estimated $1 |
+| openai / anthropic / gateway | Jul 12–16 | org-wide extras | verified + estimated |
+| opencode `device_observed` usage | 2026-07-14 | **28** calls (free/detected — still counts) | actual_spend |
+| opencode productivity | 2026-07-14 | lines only — requests **excluded** from modelCalls | — |
 
 Fixed expectations (current cycles, Cursor tool line):
 
 - Subscription commitment: **$40** (2 seats × $20)
 - Cursor verified **$5**, estimated **$1**, model calls **10**
-- Org-wide KPIs also include OpenAI/Anthropic/gateway when the window covers those days
+- Org-wide modelCalls: **78** (10+25+12+3+28; excludes synthetic estimated and productivity)
+- Developer current-cycle requests: **66** (10+25+3+28; excludes synthetic estimated and productivity)
 
 ### Track B — Local machine data (real org)
 
@@ -113,7 +116,8 @@ The verifier mirrors `apps/admin/lib/analytics/query/sql.ts` (see also [usage-ac
 ### Activity (model calls / tokens)
 
 - Partition: `(date, developer_id, provider, product, tool_name, model)`
-- Exclude `metric_kind = productivity` and `cursor_local` / productivity-classified rows
+- **Include free / detected tool usage** (`device_observed`, OpenCode, etc.) — $0 spend does not remove model calls from KPIs
+- Exclude `metric_kind = productivity` and `cursor_local` / `opencode_local` / productivity-classified rows (lines/commits are not model calls)
 - Exclude synthetic `estimated` source from observed activity
 - Among remaining rows, keep those at the **best activity priority**; **sum** all ties
 - Tokens for UI totals: **input + output** (cache/reasoning separate)
@@ -215,7 +219,7 @@ Numbers below are **snapshots from verification runs**, not forever-frozen contr
 
 | View | Commitment | Org verified | Org estimated | Notes |
 |---|---|---|---|---|
-| current_cycles | $40.00 | $25.00 | $2.00 | Cursor $5+$1 + OpenAI $12 + Anthropic $8 + gateway $1 |
+| current_cycles | $40.00 | $25.00 | $2.00 | Org modelCalls **78** (10+25+12+3+28; excludes estimated + productivity) |
 | previous_cycles | $40.00 | $0 | $0 | No June usage in seed |
 | last_30_days | $39.31 | $25.00 | $2.00 | Jun+Jul overlap proration on commitment |
 | `/tools/cursor` (July windows) | — | usage cost **$6.00** | — | 10 calls, 1.5M tokens |
@@ -237,6 +241,7 @@ Current-cycle commitment on that run: **$80** (Cursor Pro+ $60 + Codex Plus $20)
 | Symptom | Likely cause |
 |---|---|
 | Verified/estimated mismatch, calls OK | Cost priority / `cost_kind` classification drift |
+| Calls off by small constant (e.g. 3) | Productivity row `requests` counted in independent recompute — exclude `metric_kind = productivity` and `cursor_local` / `opencode_local` |
 | Calls ~2× expected | Productivity / `local_scan` rows counted as activity |
 | Tokens mismatch, calls OK | Input/output vs cache inclusion |
 | Commitment wrong on rolling views | Missing multi-cycle overlap slices |

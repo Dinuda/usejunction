@@ -450,8 +450,8 @@ describe("local-usage-batch ingest", () => {
         where: { orgId, model: "opencode", metricKind: "productivity" },
         select: { addedLines: true, deletedLines: true, requests: true },
       });
-      expect(productivity?.addedLines).toBe(120);
-      expect(productivity?.deletedLines).toBe(30);
+      expect(Number(productivity?.addedLines)).toBe(120);
+      expect(Number(productivity?.deletedLines)).toBe(30);
       expect(productivity?.requests).toBe(0);
     } finally {
       await prisma.usageDaily.deleteMany({ where: { orgId } });

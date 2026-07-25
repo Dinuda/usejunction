@@ -110,7 +110,12 @@ function check(
 
 function isProductivityRow(row: RawRow) {
   const source = normalizeSource(row.source);
-  return row.metricKind === "productivity" || source === "cursor_local" || row.source === "cursor_local";
+  return (
+    row.metricKind === "productivity" ||
+    source === "cursor_local" ||
+    row.source === "cursor_local" ||
+    row.source === "opencode_local"
+  );
 }
 
 function independentOrgUsage(rows: RawRow[], from: Date, to: Date) {

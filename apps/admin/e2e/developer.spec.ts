@@ -22,8 +22,8 @@ test("developer calculation views use personal usage totals", async ({ page }) =
   await expect(page.getByText("Active tools")).toBeVisible();
   await expect(page.getByText("Total tokens")).toBeVisible();
   await expect(page.getByText("Most active tool")).toBeVisible();
-  await expect(page.locator("main").getByText("Cursor", { exact: true })).toBeVisible();
-  await expect(page.locator("main").getByText("OpenCode", { exact: true })).toBeVisible();
+  await expect(page.locator("main").getByRole("heading", { name: "Cursor", exact: true })).toBeVisible();
+  await expect(page.locator("main").getByRole("heading", { name: "OpenCode", exact: true })).toBeVisible();
 });
 
 test("developer chrome hides owner-only navigation", async ({ page }) => {

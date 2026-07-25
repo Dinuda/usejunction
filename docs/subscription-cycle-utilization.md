@@ -66,6 +66,16 @@ The combined view shows:
 
 This avoids the misleading assumption that all subscriptions share the same calendar month.
 
+### Detected and free tools in cycle views
+
+Current/previous cycle views are not limited to manually entered subscriptions:
+
+- Coding tools with report-window model calls but no billing template yet are synthesized as **usage-backed cycle sources** (`mergeUsageBackedCycleSources`). These use catalog plan pricing when available and a calendar-month anchor so the row has a normal renewal window.
+- Real subscriptions always win over synthesized rows for the same catalog tool key.
+- Per-tool cycle `modelCalls` are floored by report-window traffic. This keeps Current cycles aligned with Tools when a seat’s billing anchor starts after recent usage (common for newly detected Ultra/Pro+ seats).
+
+Usage KPIs at the top of the dashboard (verified, estimated, tokens) always use the full report window and are not gated on whether a subscription exists.
+
 ## API And Data Contract
 
 The main read models now expose cycle fields instead of month fields.

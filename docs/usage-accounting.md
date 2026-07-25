@@ -8,11 +8,13 @@ For verifying page KPIs against this contract, see [Calculation verification sui
 ## Requests
 
 - `requests` means **model calls** or **vendor usage events** (one billed or logged API interaction).
+- **Free, $0, and auto-detected tools still count.** Device-observed usage from OpenCode, Copilot free, local models, and similar tools must appear in `requests` / model-call KPIs so admins can see what their users are running even when spend is zero.
 - Never increment requests from:
   - Cursor `ai_code_hashes` row counts
   - AI suggested/accepted lines
   - Git commits
   - Token totals alone
+  - `metric_kind = productivity` rows (lines / commits / AI %) — those stay visible as productivity, not as model calls
 
 ## Token buckets
 
@@ -45,6 +47,14 @@ Never label a mixed verified+estimated total as "Spend".
 - **usage** — tokens, model calls, verified/estimated cost
 - **productivity** — lines, commits, AI % (no requests/tokens/cost in KPI totals)
 
+Classification is server-authoritative (`apps/admin/lib/usage/classify.ts`):
+
+- Explicit `metric_kind = productivity` on the wire
+- Legacy productivity sources: `cursor_local`, `opencode_local`
+- Line/commit-only rows with zero input/output tokens
+- Productivity rows never win `selected_activity` in analytics SQL, even when `requests > 0` on the stored row
+- Ingest may preserve `requests` on productivity rows whose model id starts with `tool:` or `flow:` (Codex/Work tool-call inventory); those counts are for row display only and do not inflate model-call KPIs
+
 ## Sources (canonical)
 
 | Source | Meaning | Priority (activity) | Priority (cost) |
@@ -56,7 +66,16 @@ Never label a mixed verified+estimated total as "Spend".
 | `gateway_observed` | Junction gateway | 3 | 1 |
 | `estimated` | Rate-card fallback | 4 | 2 |
 
-Legacy aliases normalized at ingest: `local_scan` → `device_observed`, `cursor_usage_events` → `vendor_verified`.
+Legacy aliases normalized at ingest:
+
+| Alias | Canonical |
+|-------|-----------|
+| `local_scan`, `cursor_local`, `cursor_plan_percent` | `device_observed` |
+| `antigravity_local`, `antigravity_usage` | `device_observed` |
+| `opencode_local`, `opencode_usage` | `device_observed` |
+| `cursor_usage_events` | `vendor_verified` |
+
+`cursor_local` and `opencode_local` keep their raw source for productivity classification even though activity priority treats them as device-observed.
 
 ## Models
 

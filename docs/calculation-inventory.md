@@ -41,11 +41,11 @@ Source: `apps/admin/lib/metrics/date-range.ts`, `apps/admin/lib/analytics/contra
 
 Source: `apps/admin/lib/analytics/query/sql.ts`, `apps/admin/lib/metrics/source-priority.ts`.
 
-- Source aliases: `local_scan`/`cursor_local` → device-observed; `cursor_usage_events` → vendor-verified; `cursor_plan_percent` → device-observed.
+- Source aliases: `local_scan`/`cursor_local`/`cursor_plan_percent`/`antigravity_local`/`antigravity_usage`/`opencode_local`/`opencode_usage` → device-observed; `cursor_usage_events` → vendor-verified. `cursor_local` and `opencode_local` still classify as productivity.
 - Activity source priority is vendor verified, OTEL observed, device observed, gateway observed, estimated.
 - Cost source priority is vendor verified/invoice imported, gateway observed, estimated/device observed, OTEL observed.
 - Activity and cost are selected independently; one source can win activity while another wins cost for the same day/tool/model key.
-- Productivity rows are separate from usage activity. `cursor_local` and explicit `metric_kind=productivity` are productivity; they do not count as model activity.
+- Productivity rows are separate from usage activity. `cursor_local`, `opencode_local`, and explicit `metric_kind=productivity` are productivity; they do not count as model activity. Free / detected **usage** rows (including $0 tools) still count toward requests and modelCalls.
 - Synthetic `estimated` rows do not count as observed activity, but their selected cost is included in the canonical “estimated API value” accumulation. This keeps verified, estimated, and total cost displays consistent without inflating observed model-call counts.
 - Available query filters are developer ids, repository ids, tool names, providers, products, models, normalized sources, metric kinds, and cost kinds. Filter arrays are deduped and sorted before execution.
 - Measures include requests, sessions, all token types, active seconds, productivity line/commit fields, cost micros, and active developers. Most UI token totals use input + output only; cache and reasoning are displayed separately.
@@ -72,13 +72,14 @@ Filters/views:
 - `view=last_30_days`: despite the name, the selected rolling/custom period is used; overlapping cycles are sliced to the report window.
 - Rolling period presets are parsed from `days`; custom periods use `from`/`to`; invalid/inverted custom periods fall back according to `period-prefs`.
 - Only coding-tool subscriptions are included in cycle spend (`filterCycleCodingSubscriptions`); all detected tools still appear in the tools/coverage areas.
+- Current/previous cycle views also synthesize **usage-backed cycle sources** for catalog coding tools with report-window traffic but no `billing_plan_template` yet (free/detected/$0 plans). Real subscriptions win when present (`mergeUsageBackedCycleSources`).
 
 Calculations:
 
 - KPI “Subscription commitment”: sum of subscription cycle seat micros × purchased seat count. Current/previous cycle views use the full cycle cost. Last-30/custom uses `overlapDays / cycle.totalDays` and rounds prorated micros.
 - KPI “Verified usage”: report-window org total of usage rows classified `costKind=verified_usage`, converted to dollars (same scope as chart/tools; not gated on subscriptions).
 - KPI “Estimated API value”: report-window org total of selected `costKind=estimated_api` rows, including source `estimated`, converted to dollars (same scope as chart/tools).
-- KPI “Model calls”: report-window org total of canonical requests (same scope as the model-calls chart and tools list). Cycle rows still show cycle-allocated calls.
+- KPI “Model calls”: report-window org total of canonical requests (same scope as the model-calls chart and tools list). Cycle rows show cycle-allocated calls, but each rolled tool row is **floored** by that tool’s report-window request total so newly detected seats whose billing anchor starts after recent traffic still match Tools.
 - Subscription-cycle slices use the intersection of cycle and report window. Cycle windows are half-open internally; the displayed end is the last inclusive day.
 - For current/previous cycles, usage for identical tool/window groups is allocated across slices by `max(1, seatCount) / max(1, totalSeats)`.
 - For last-30/custom, usage is grouped by tool and allocated day by day across active slices using the same seat-weighted share. This prevents overlapping plans from double-counting the same usage.
