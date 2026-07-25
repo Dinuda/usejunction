@@ -211,6 +211,9 @@ async function main() {
     ],
   });
 
+  const usageFrom = new Date("2026-07-01T00:00:00.000Z");
+  const usageTo = new Date("2026-07-16T00:00:00.000Z");
+
   await prisma.usageDaily.createMany({
     data: [
       {
@@ -242,6 +245,14 @@ async function main() {
       },
     ],
   });
+
+  // Page loaders read sealed org-day snapshots only — materialize after direct usage_daily inserts.
+  const { materializeOrgUsageRange } = await import("../lib/analytics/snapshots");
+  const snapshotRows = await materializeOrgUsageRange(org.id, usageFrom, usageTo);
+  if (snapshotRows <= 0) {
+    throw new Error(`e2e seed expected org usage snapshots; materialize wrote ${snapshotRows} rows`);
+  }
+
   await prisma.localWorkSession.create({
     data: {
       id: "e2e-opencode-work-session",

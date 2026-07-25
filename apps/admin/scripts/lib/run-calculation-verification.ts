@@ -306,6 +306,19 @@ export async function runCalculationVerification(
     },
   })) as RawRow[];
 
+  // Page loaders read snapshots only — seal usage_daily into snapshots before comparing KPIs.
+  if (rawRows.length > 0) {
+    const { materializeOrgUsageRange, snapshotUtcDay } = await import("@/lib/analytics/snapshots");
+    let minTime = rawRows[0]!.date.getTime();
+    let maxTime = rawRows[0]!.date.getTime();
+    for (const row of rawRows) {
+      minTime = Math.min(minTime, row.date.getTime());
+      maxTime = Math.max(maxTime, row.date.getTime());
+    }
+    const snapshotTo = snapshotUtcDay(new Date(Math.max(maxTime, now.getTime())));
+    await materializeOrgUsageRange(org.id, snapshotUtcDay(new Date(minTime)), snapshotTo);
+  }
+
   const plans = await listSubscriptions(org.id);
   const context = {
     orgId: org.id,
