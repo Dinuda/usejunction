@@ -38,17 +38,20 @@ func New(cfg *config.Config) *APIClient {
 		baseURL: cfg.ControlPlaneURL,
 		token:   cfg.DeviceToken,
 		http: &http.Client{
-			Timeout:   90 * time.Second,
+			// Keep slightly above Vercel ingest maxDuration (60s) so the client
+			// fails soon after a FUNCTION_INVOCATION_TIMEOUT instead of waiting
+			// an extra ~30s on a dead connection.
+			Timeout:   65 * time.Second,
 			Transport: transport,
 		},
 	}
 }
 
 func (c *APIClient) post(path string, body any) error {
-	return c.postJSON(path, body, nil)
+	return c.postJSON(context.Background(), path, body, nil)
 }
 
-func (c *APIClient) postJSON(path string, body any, out any) error {
+func (c *APIClient) postJSON(ctx context.Context, path string, body any, out any) error {
 	if err := controlurl.Validate(c.baseURL); err != nil {
 		return err
 	}
@@ -56,7 +59,7 @@ func (c *APIClient) postJSON(path string, body any, out any) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+path, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(data))
 	if err != nil {
 		return err
 	}
@@ -448,7 +451,7 @@ type WorkSession struct {
 
 func (c *APIClient) Heartbeat(p HeartbeatPayload) (*HeartbeatResponse, error) {
 	var out HeartbeatResponse
-	if err := c.postJSON("/api/devices/heartbeat", p, &out); err != nil {
+	if err := c.postJSON(context.Background(), "/api/devices/heartbeat", p, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -460,7 +463,7 @@ func (c *APIClient) ReportAgentUpdate(event AgentUpdateEvent) error {
 
 func (c *APIClient) CheckAgentUpdate() (*AgentUpdateDirective, error) {
 	var out AgentUpdateCheckResponse
-	if err := c.postJSON("/api/devices/agent-update/check", map[string]any{}, &out); err != nil {
+	if err := c.postJSON(context.Background(), "/api/devices/agent-update/check", map[string]any{}, &out); err != nil {
 		return nil, err
 	}
 	return out.Update, nil
@@ -524,7 +527,6 @@ type StartUsageSyncOptions struct {
 }
 
 func (c *APIClient) StartUsageSync(ctx context.Context, partitions []SyncManifestPartition, opts *StartUsageSyncOptions) (*StartUsageSyncResponse, error) {
-	_ = ctx
 	body := map[string]any{"partitions": partitions}
 	if opts != nil {
 		if opts.Tools != nil {
@@ -538,7 +540,7 @@ func (c *APIClient) StartUsageSync(ctx context.Context, partitions []SyncManifes
 		}
 	}
 	var out StartUsageSyncResponse
-	if err := c.postJSON("/api/ingest/sync/usage/start", body, &out); err != nil {
+	if err := c.postJSON(ctx, "/api/ingest/sync/usage/start", body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -552,9 +554,8 @@ type UploadUsageSyncChunkResponse struct {
 }
 
 func (c *APIClient) UploadUsageSyncChunk(ctx context.Context, syncRunID, chunkID string, aggregates []UsageAggregate) (int, error) {
-	_ = ctx
 	var out UploadUsageSyncChunkResponse
-	err := c.postJSON("/api/ingest/sync/usage/chunk", map[string]any{
+	err := c.postJSON(ctx, "/api/ingest/sync/usage/chunk", map[string]any{
 		"syncRunId":  syncRunID,
 		"chunkId":    chunkID,
 		"aggregates": aggregates,
@@ -584,9 +585,8 @@ type CommitUsageSyncResponse struct {
 }
 
 func (c *APIClient) CommitUsageSync(ctx context.Context, syncRunID string, expectedChunks int) (*CommitUsageSyncResponse, error) {
-	_ = ctx
 	var out CommitUsageSyncResponse
-	if err := c.postJSON("/api/ingest/sync/usage/commit", map[string]any{
+	if err := c.postJSON(ctx, "/api/ingest/sync/usage/commit", map[string]any{
 		"syncRunId":      syncRunID,
 		"expectedChunks": expectedChunks,
 	}, &out); err != nil {

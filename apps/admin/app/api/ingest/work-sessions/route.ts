@@ -19,6 +19,8 @@ import {
 import { enforceSignalsRetention, getEffectiveSignalsPolicy } from "@/lib/signals/service";
 import { logServerError } from "@/lib/errors/public";
 
+export const maxDuration = 60;
+
 function asDate(value: string | null | undefined): Date | null {
   if (!value) return null;
   const date = new Date(value);

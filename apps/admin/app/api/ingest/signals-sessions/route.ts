@@ -15,6 +15,8 @@ import {
 import { enforceSignalsRetention, getEffectiveSignalsPolicy } from "@/lib/signals/service";
 import { logServerError } from "@/lib/errors/public";
 
+export const maxDuration = 60;
+
 function asDate(value: string): Date | null {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;

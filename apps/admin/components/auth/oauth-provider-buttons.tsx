@@ -1,6 +1,7 @@
 "use client";
 
-import { signIn } from "next-auth/react";
+import { useState } from "react";
+import { startOAuthSignIn } from "@/lib/auth/oauth-sign-in";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -90,7 +91,15 @@ export function OAuthProviderButtons({
   emailDividerLabel = "or continue with email",
 }: OAuthProviderButtonsProps) {
   const providers = getEnabledOAuthProviders();
+  const [pendingProvider, setPendingProvider] = useState<OAuthProviderId | null>(null);
   if (providers.length === 0) return null;
+
+  async function handleSignIn(providerId: OAuthProviderId) {
+    if (pendingProvider) return;
+    setPendingProvider(providerId);
+    const started = await startOAuthSignIn(providerId, callbackUrl);
+    if (!started) setPendingProvider(null);
+  }
 
   return (
     <div className={cn("space-y-4", className)}>
@@ -101,10 +110,14 @@ export function OAuthProviderButtons({
             type="button"
             variant="outline"
             className="w-full justify-center gap-2.5"
-            onClick={() => void signIn(provider.id, { callbackUrl })}
+            disabled={pendingProvider !== null}
+            aria-busy={pendingProvider === provider.id}
+            onClick={() => void handleSignIn(provider.id)}
           >
             <ProviderLogo id={provider.id} />
-            Continue with {provider.label}
+            {pendingProvider === provider.id
+              ? `Continuing with ${provider.label}…`
+              : `Continue with ${provider.label}`}
           </Button>
         ))}
       </div>

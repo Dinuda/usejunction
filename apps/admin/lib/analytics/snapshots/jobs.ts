@@ -156,9 +156,11 @@ export async function drainMaterializationJobs(options: {
     if (!job) break;
 
     try {
+      const remainingMs = Math.max(1_000, deadline - Date.now());
       const result = await rematerializeOrgSnapshots(job.org_id, {
         metricVersion: ORG_DAY_SNAPSHOT_VERSION,
         includeToday: true,
+        maxDurationMs: remainingMs,
       });
       dirtyCleared += result.dirtyDays;
       await prisma.analyticsWatermark.update({

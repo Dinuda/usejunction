@@ -136,7 +136,7 @@ Quota sync and usage upload are **decoupled** inside the same UUS session.
 `UploadUsageSession` (`agent/internal/syncengine/upload.go`):
 
 1. **Start** — manifest + inventory sidecars (tools, accounts, **quotas**)
-2. **Chunks** — usage partitions (50 rows/batch, up to 4 concurrent POSTs)
+2. **Chunks** — usage partitions (200 rows/batch, up to 4 concurrent POSTs)
 3. **Commit** — finalize session
 
 Quotas ride on **start only** (`agent/cmd/collect.go` — "Tools/accounts/quotas ride as sidecars on usage sync start").
@@ -219,8 +219,8 @@ From `agent/internal/scan/usage_upload.go`:
 
 | Constant | Value |
 |----------|-------|
-| `UsageUploadBatchSize` | 50 rows/chunk |
-| `UsageUploadMaxBatchesPerSync` | 8 (steady) / 32 (first or force-full) |
+| `UsageUploadBatchSize` | 200 rows/chunk |
+| `UsageUploadMaxBatchesPerSync` | 8 (steady) / 10 (first or force-full) |
 | `UsageUploadConcurrency` | 4 parallel chunk POSTs |
 
 Collect loops up to 32 sync iterations to drain remaining rows. With 100 members on independent 30-minute clocks, expect ~3–4 commits/minute org-wide in the steady state (staggered), each triggering one settle attempt serialized per org.

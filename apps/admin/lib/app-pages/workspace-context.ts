@@ -110,43 +110,49 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
   };
 
   if (current) {
-    const [deviceAgg, toolCount, readiness] = await Promise.all([
-      prisma.device.aggregate({
-        where: { orgId: current.orgId, decommissionedAt: null },
-        _count: { id: true },
-        _max: {
-          lastSeenAt: true,
-          lastUsageSyncAt: true,
-          lastAccountSyncAt: true,
-        },
-      }),
-      prisma.toolInstallation.count({
-        where: { orgId: current.orgId, detected: true },
-      }),
-      getWorkspaceSyncReadiness(current.orgId),
-    ]);
-    const lastSeenAt = latestIso(deviceAgg._max.lastSeenAt);
-    const lastUsageSyncAt = latestIso(deviceAgg._max.lastUsageSyncAt);
-    const lastAccountSyncAt = latestIso(deviceAgg._max.lastAccountSyncAt);
-    sync = {
-      deviceCount: deviceAgg._count.id,
-      toolCount,
-      lastSeenAt,
-      lastUsageSyncAt,
-      lastAccountSyncAt,
-      watermark: buildSyncWatermark({
+    const deviceCount = await prisma.device.count({
+      where: { orgId: current.orgId, decommissionedAt: null },
+    });
+
+    if (deviceCount > 0) {
+      const [deviceAgg, toolCount, readiness] = await Promise.all([
+        prisma.device.aggregate({
+          where: { orgId: current.orgId, decommissionedAt: null },
+          _count: { id: true },
+          _max: {
+            lastSeenAt: true,
+            lastUsageSyncAt: true,
+            lastAccountSyncAt: true,
+          },
+        }),
+        prisma.toolInstallation.count({
+          where: { orgId: current.orgId, detected: true },
+        }),
+        getWorkspaceSyncReadiness(current.orgId),
+      ]);
+      const lastSeenAt = latestIso(deviceAgg._max.lastSeenAt);
+      const lastUsageSyncAt = latestIso(deviceAgg._max.lastUsageSyncAt);
+      const lastAccountSyncAt = latestIso(deviceAgg._max.lastAccountSyncAt);
+      sync = {
         deviceCount: deviceAgg._count.id,
         toolCount,
         lastSeenAt,
         lastUsageSyncAt,
         lastAccountSyncAt,
-        dirtyDayCount: readiness.dirtyDayCount,
+        watermark: buildSyncWatermark({
+          deviceCount: deviceAgg._count.id,
+          toolCount,
+          lastSeenAt,
+          lastUsageSyncAt,
+          lastAccountSyncAt,
+          dirtyDayCount: readiness.dirtyDayCount,
+          dashboardReady: readiness.dashboardReady,
+        }),
         dashboardReady: readiness.dashboardReady,
-      }),
-      dashboardReady: readiness.dashboardReady,
-      dirtyDayCount: readiness.dirtyDayCount,
-      snapshotLagSeconds: readiness.snapshotLagSeconds,
-    };
+        dirtyDayCount: readiness.dirtyDayCount,
+        snapshotLagSeconds: readiness.snapshotLagSeconds,
+      };
+    }
   }
 
   return jsonSafe({

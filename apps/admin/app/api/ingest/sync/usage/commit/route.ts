@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { findDeviceByBearerToken, requireIngestAuth } from "@/lib/auth";
 import { limitedJson } from "@/lib/security/http";
 import { logServerError } from "@/lib/errors/public";
-import { commitUsageSync } from "@/lib/sync/usage-sync";
+import { commitUsageSync, runDeferredUsageCommitWork } from "@/lib/sync/usage-sync";
 import { prisma } from "@usejunction/db";
 import { timingHeader } from "@/lib/api/app-response";
 
@@ -42,15 +42,30 @@ export async function POST(req: NextRequest) {
     const contextDevice = await prisma.device.findFirst({ where: { id: deviceId, orgId, userId } });
     if (!contextDevice) return NextResponse.json({ error: "invalid device context" }, { status: 403 });
 
-    const result = await commitUsageSync({
-      orgId,
-      deviceId,
-      syncRunId,
-      expectedChunks: typeof body.expectedChunks === "number" ? body.expectedChunks : undefined,
-    });
+    const result = await commitUsageSync(
+      {
+        orgId,
+        deviceId,
+        syncRunId,
+        expectedChunks: typeof body.expectedChunks === "number" ? body.expectedChunks : undefined,
+      },
+      { deferHeavyWork: true },
+    );
+    const { deferredWork, ...payload } = result;
+    if (deferredWork) {
+      after(async () => {
+        try {
+          await runDeferredUsageCommitWork(deferredWork);
+        } catch (error) {
+          logServerError("sync/usage/commit-deferred", error, { orgId, deviceId, syncRunId });
+        }
+      });
+    }
+
     const totalMs = performance.now() - totalStart;
     const serverTiming = timingHeader({
       materialize: result.timings.materializeMs,
+      reconcile: result.timings.reconcileMs,
       total: totalMs,
     });
     console.info("[sync/usage/commit-timing]", {
@@ -58,10 +73,12 @@ export async function POST(req: NextRequest) {
       deviceId,
       syncRunId,
       materializeMs: result.timings.materializeMs,
+      reconcileMs: result.timings.reconcileMs,
+      deferred: Boolean(deferredWork),
       dirtyRemaining: result.dirtyRemaining,
       totalMs,
     });
-    return NextResponse.json({ ok: true, ...result }, { headers: { "server-timing": serverTiming } });
+    return NextResponse.json({ ok: true, ...payload }, { headers: { "server-timing": serverTiming } });
   } catch (error) {
     logServerError("sync/usage/commit", error);
     return NextResponse.json({ error: "sync commit failed" }, { status: 500 });

@@ -7,6 +7,7 @@ import {
   type AuthUserInput,
   type ResolvedAuthUser,
 } from "@/lib/ensure-auth-user";
+import { logServerError } from "@/lib/errors/public";
 import { hasPendingWorkspaceInvite } from "@/lib/onboarding-status";
 
 function slugify(value: string) {
@@ -60,6 +61,38 @@ export class PendingInviteError extends Error {
 
 export function isPendingInviteError(error: unknown): error is PendingInviteError {
   return error instanceof PendingInviteError;
+}
+
+export type ProvisionOnCreateResult =
+  | { provisioned: true }
+  | { provisioned: false; reason: "missing_identity" | "invite_pending" | "error" };
+
+/**
+ * Best-effort personal workspace for OAuth createUser.
+ * Invitees are skipped; other failures are logged and do not fail Auth.js signup.
+ */
+export async function provisionWorkspaceOnCreateUser(user: {
+  id?: string | null;
+  email?: string | null;
+  name?: string | null;
+}): Promise<ProvisionOnCreateResult> {
+  if (!user.id || !user.email) {
+    return { provisioned: false, reason: "missing_identity" };
+  }
+
+  try {
+    await ensureOwnerWorkspace(
+      { id: user.id, email: user.email, name: user.name },
+      { rejectPendingInvite: true },
+    );
+    return { provisioned: true };
+  } catch (error) {
+    if (isPendingInviteError(error)) {
+      return { provisioned: false, reason: "invite_pending" };
+    }
+    logServerError("auth/createUser/workspace", error);
+    return { provisioned: false, reason: "error" };
+  }
 }
 
 /** Create a personal workspace for an already-resolved auth user (no extra user lookup). */

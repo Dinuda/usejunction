@@ -17,6 +17,7 @@ import {
   notifyUserLoggedIn,
   notifyUserSignedUp,
 } from "@/lib/notifications/slack";
+import { provisionWorkspaceOnCreateUser } from "@/lib/ensure-workspace";
 import authConfig from "./auth.config";
 
 const MAX_PASSWORD_BYTES = 256;
@@ -50,11 +51,30 @@ export const {
         console.warn("[auth][credentials-rejected] Invalid email or password");
         return;
       }
-      console.error("[auth][error]", error);
+      const cause =
+        error && typeof error === "object" && "cause" in error
+          ? (error as { cause?: unknown }).cause
+          : undefined;
+      const causeErr =
+        cause && typeof cause === "object" && cause !== null && "err" in cause
+          ? (cause as { err?: unknown }).err
+          : cause;
+      const causeMessage =
+        causeErr instanceof Error
+          ? `${causeErr.name}: ${causeErr.message}`
+          : causeErr
+            ? String(causeErr)
+            : "";
+      console.error(
+        "[auth][error]",
+        error,
+        causeMessage ? `\n[auth][cause] ${causeMessage}` : "",
+        cause && typeof cause === "object" ? cause : "",
+      );
       notifyServerIssue({
         severity: "error",
         scope: `auth/${type}`,
-        error: `${type}${message}`,
+        error: `${type}${message}${causeMessage ? ` | ${causeMessage.slice(0, 400)}` : ""}`,
       });
     },
     warn(code) {
@@ -123,6 +143,12 @@ export const {
         email: user.email,
         name: user.name,
         method: "oauth",
+      });
+      // Provision before the JWT callback so applyWorkspaceJwtClaims can stamp orgId.
+      await provisionWorkspaceOnCreateUser({
+        id: user.id,
+        email: user.email,
+        name: user.name,
       });
     },
     async signIn({ user, account }) {

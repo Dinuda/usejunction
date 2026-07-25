@@ -169,7 +169,6 @@ export function OnboardingExperience() {
   const [connectInProgress, setConnectInProgress] = useState(false);
   const [prefetchedCredentials, setPrefetchedCredentials] =
     useState<DeviceConnectEnrollmentCredentials | null>(null);
-  const [tokenPrefetchDone, setTokenPrefetchDone] = useState(false);
 
   const refresh = useCallback(async (mode: "bootstrap" | "poll" = "poll") => {
     const response =
@@ -216,13 +215,9 @@ export function OnboardingExperience() {
         return canChooseOnboardingPath(role) ? "choose" : "connect";
       });
       if (!hasReadyDevice(next)) {
-        void fetchEnrollmentCredentials()
-          .then((credentials) => {
-            if (credentials) setPrefetchedCredentials(credentials);
-          })
-          .finally(() => setTokenPrefetchDone(true));
-      } else {
-        setTokenPrefetchDone(true);
+        void fetchEnrollmentCredentials().then((credentials) => {
+          if (credentials) setPrefetchedCredentials(credentials);
+        });
       }
     }
     setLoading(false);
@@ -327,7 +322,6 @@ export function OnboardingExperience() {
 
   if (path === "connect" || !canChoose) {
     const connectDevices = mapDevicesFromStatus(status);
-    const needsToken = connectDevices.length === 0;
 
     return (
       <AuthShell
@@ -339,24 +333,18 @@ export function OnboardingExperience() {
         statement="One command. Real data."
       >
         <div className="space-y-5">
-          {needsToken && !tokenPrefetchDone ? (
-            <div className="space-y-3" aria-busy="true">
-              <Skeleton className="h-24" />
-            </div>
-          ) : (
-            <DeviceConnectCard
-              compact
-              skipInitialStatusFetch
-              initialDevices={connectDevices}
-              initialCredentials={prefetchedCredentials}
-              onPollingStateChange={({ isPolling, waitingForTools, deviceEnrolled }) => {
-                setConnectInProgress(isPolling || (waitingForTools && !deviceEnrolled));
-              }}
-              onConnected={() => {
-                void refresh("poll");
-              }}
-            />
-          )}
+          <DeviceConnectCard
+            compact
+            skipInitialStatusFetch
+            initialDevices={connectDevices}
+            initialCredentials={prefetchedCredentials}
+            onPollingStateChange={({ isPolling, waitingForTools, deviceEnrolled }) => {
+              setConnectInProgress(isPolling || (waitingForTools && !deviceEnrolled));
+            }}
+            onConnected={() => {
+              void refresh("poll");
+            }}
+          />
           <div className="space-y-2 pt-2 text-center">
             {canChoose ? (
               <button

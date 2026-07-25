@@ -148,6 +148,7 @@ export async function materializeOrgUsageRange(
   from: Date | string,
   to: Date | string,
   metricVersion: string = ORG_DAY_SNAPSHOT_VERSION,
+  options: { deadlineMs?: number } = {},
 ): Promise<number> {
   const fromDay = utcDay(from);
   const toDay = utcDay(to);
@@ -155,7 +156,7 @@ export async function materializeOrgUsageRange(
 
   let total = 0;
   await withOrgDbLock(orgId, async () => {
-    total = await materializeOrgUsageRangeChunks(orgId, fromDay, toDay, metricVersion);
+    total = await materializeOrgUsageRangeChunks(orgId, fromDay, toDay, metricVersion, options.deadlineMs);
   });
   return total;
 }
@@ -165,6 +166,7 @@ async function materializeOrgUsageRangeChunks(
   fromDay: Date,
   toDay: Date,
   metricVersion: string,
+  deadlineMs?: number,
 ): Promise<number> {
   let total = 0;
   for (
@@ -172,6 +174,7 @@ async function materializeOrgUsageRangeChunks(
     cursor <= toDay.getTime();
     cursor += MATERIALIZE_CHUNK_DAYS * 86_400_000
   ) {
+    if (typeof deadlineMs === "number" && Date.now() >= deadlineMs) break;
     const chunkFrom = new Date(cursor);
     const chunkTo = new Date(
       Math.min(cursor + (MATERIALIZE_CHUNK_DAYS - 1) * 86_400_000, toDay.getTime()),
@@ -561,7 +564,12 @@ export async function materializeOrgUsageDay(
 /** Rematerialize dirty days for an org as contiguous ranges (not per-day CTEs). */
 export async function materializeDirtyOrgUsageDays(
   orgId: string,
-  options: { limit?: number; metricVersion?: string; onlyWithin?: { from: Date; to: Date } } = {},
+  options: {
+    limit?: number;
+    metricVersion?: string;
+    onlyWithin?: { from: Date; to: Date };
+    deadlineMs?: number;
+  } = {},
 ): Promise<{ days: number; rows: number }> {
   const metricVersion = options.metricVersion ?? ORG_DAY_SNAPSHOT_VERSION;
   const dirty = await prisma.analyticsDirtyDay.findMany({
@@ -591,10 +599,15 @@ export async function materializeDirtyOrgUsageDays(
   }
 
   let rows = 0;
+  let days = 0;
   for (const range of ranges) {
-    rows += await materializeOrgUsageRange(orgId, range.from, range.to, metricVersion);
+    if (typeof options.deadlineMs === "number" && Date.now() >= options.deadlineMs) break;
+    rows += await materializeOrgUsageRange(orgId, range.from, range.to, metricVersion, {
+      deadlineMs: options.deadlineMs,
+    });
+    days += Math.floor((range.to.getTime() - range.from.getTime()) / 86_400_000) + 1;
   }
-  return { days: dirty.length, rows };
+  return { days, rows };
 }
 
 /**
@@ -626,6 +639,7 @@ export async function rematerializeOrgSnapshots(
     const result = await materializeDirtyOrgUsageDays(orgId, {
       metricVersion,
       limit: 90,
+      ...(deadline !== null ? { deadlineMs: deadline } : {}),
     });
     dirtyDays += result.days;
     rows += result.rows;

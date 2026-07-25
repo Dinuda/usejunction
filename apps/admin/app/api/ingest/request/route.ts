@@ -5,6 +5,8 @@ import { invalidateAnalyticsCache } from "@/lib/analytics/query";
 import { estimateCost } from "@/lib/metrics/estimate-cost";
 import { logServerError } from "@/lib/errors/public";
 
+export const maxDuration = 60;
+
 function canonicalProvider(value: unknown, model: unknown) {
   const raw = String(value ?? "").toLowerCase();
   const modelName = String(model ?? "").toLowerCase();

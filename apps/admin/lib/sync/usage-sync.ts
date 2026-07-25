@@ -8,7 +8,7 @@ import { normalizeUusWireRecord, uusContentFingerprint, uusPartitionKey } from "
 import { ingestLocalUsageBatch, type LocalUsageInputRow } from "@/lib/ingest/local-usage-batch";
 import { invalidateAnalyticsCache } from "@/lib/analytics/query/invalidation";
 import { markOrgUsageDaysDirty, ORG_DAY_SNAPSHOT_VERSION } from "@/lib/analytics/snapshots";
-import { materializeOrgNow } from "@/lib/analytics/snapshots/jobs";
+import { enqueueMaterializationJob, materializeOrgNow } from "@/lib/analytics/snapshots/jobs";
 import { logServerError } from "@/lib/errors/public";
 import {
   applyDeviceToolInventory,
@@ -30,7 +30,7 @@ import {
 import { repairDetectedPlanCycles, syncDetectedPlansForDevice } from "@/lib/tools/sync-detected";
 import { bulkUpsertDeviceUsageFingerprints } from "@/lib/sync/device-usage-fingerprints";
 
-/** Soft time budget for commit-path seal so daemon sync returns before Hobby 60s cap. */
+/** Soft time budget for settle so daemon sync returns before serverless 60s cap. */
 export const SYNC_SETTLE_BUDGET_MS = 12_000;
 
 /**
@@ -74,6 +74,145 @@ function utcDate(value: string): Date {
   return new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
 }
 
+export type DeferredUsageStartWork = {
+  planSync?: {
+    orgId: string;
+    userId: string;
+    deviceId: string;
+    accountsReported: Array<{
+      toolName: string;
+      plan: string | null;
+      email: string | null;
+      authPresent?: boolean;
+    }>;
+  };
+  emptyDeltaSettle?: {
+    orgId: string;
+    deviceId: string;
+    manifestPartitions: ManifestPartition[];
+    windowFrom: Date | null;
+    windowTo: Date | null;
+  };
+};
+
+async function runInventoryPlanSync(params: {
+  orgId: string;
+  userId: string;
+  deviceId: string;
+  accountsReported: Array<{
+    toolName: string;
+    plan: string | null;
+    email: string | null;
+    authPresent?: boolean;
+  }>;
+}): Promise<void> {
+  try {
+    let accounts = params.accountsReported;
+    if (!accounts.length) {
+      const rows = await prisma.toolAccount.findMany({
+        where: { deviceId: params.deviceId },
+        select: { toolName: true, plan: true, email: true, authPresent: true },
+      });
+      accounts = rows.map((row) => ({
+        toolName: row.toolName,
+        plan: row.plan,
+        email: row.email,
+        authPresent: row.authPresent,
+      }));
+    }
+    if (accounts.length) {
+      await syncDetectedPlansForDevice({
+        orgId: params.orgId,
+        developerId: params.userId,
+        accounts,
+      });
+    }
+    await repairDetectedPlanCycles(params.orgId);
+  } catch (error) {
+    logServerError("sync/usage/start-plan-sync", error, {
+      orgId: params.orgId,
+      deviceId: params.deviceId,
+    });
+  }
+}
+
+async function runEmptyDeltaSettle(params: {
+  orgId: string;
+  deviceId: string;
+  manifestPartitions: ManifestPartition[];
+  windowFrom: Date | null;
+  windowTo: Date | null;
+}): Promise<void> {
+  await reconcileDeviceDayPartitions({
+    orgId: params.orgId,
+    deviceId: params.deviceId,
+    manifestPartitions: params.manifestPartitions,
+    windowFrom: params.windowFrom,
+    windowTo: params.windowTo,
+  });
+  await settleSyncProjections(params.orgId);
+}
+
+/** Plan sync + empty-delta settle deferred from the ingest route via next/server after(). */
+export async function runDeferredUsageStartWork(work: DeferredUsageStartWork): Promise<void> {
+  if (work.planSync) await runInventoryPlanSync(work.planSync);
+  if (work.emptyDeltaSettle) await runEmptyDeltaSettle(work.emptyDeltaSettle);
+}
+
+export type DeferredUsageCommitWork = {
+  orgId: string;
+  deviceId: string;
+  syncRunId: string;
+  reconcile?: {
+    manifestPartitions: ManifestPartition[];
+    windowFrom: Date | null;
+    windowTo: Date | null;
+  };
+  settle: boolean;
+};
+
+/** Reconcile + settle deferred from the commit ingest route via next/server after(). */
+export async function runDeferredUsageCommitWork(work: DeferredUsageCommitWork): Promise<void> {
+  const reconcileStart = performance.now();
+  let reconcileMs = 0;
+  if (work.reconcile) {
+    await reconcileDeviceDayPartitions({
+      orgId: work.orgId,
+      deviceId: work.deviceId,
+      manifestPartitions: work.reconcile.manifestPartitions,
+      windowFrom: work.reconcile.windowFrom,
+      windowTo: work.reconcile.windowTo,
+    });
+    reconcileMs = performance.now() - reconcileStart;
+  }
+  let materializeMs = 0;
+  let dirtyRemaining = 0;
+  if (work.settle) {
+    try {
+      const settled = await settleSyncProjections(work.orgId);
+      materializeMs = settled.materializeMs;
+      dirtyRemaining = settled.dirtyRemaining;
+    } catch (error) {
+      logServerError("sync/usage/commit-deferred-settle", error, {
+        orgId: work.orgId,
+        deviceId: work.deviceId,
+        syncRunId: work.syncRunId,
+      });
+      dirtyRemaining = await prisma.analyticsDirtyDay.count({
+        where: { orgId: work.orgId, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
+      });
+    }
+  }
+  console.info("[sync/usage/commit-deferred]", {
+    orgId: work.orgId,
+    deviceId: work.deviceId,
+    syncRunId: work.syncRunId,
+    reconcileMs,
+    materializeMs,
+    dirtyRemaining,
+  });
+}
+
 export async function startUsageSync(params: {
   orgId: string;
   userId: string;
@@ -82,7 +221,7 @@ export async function startUsageSync(params: {
   tools?: { contentHash?: string; items?: ToolInventoryItem[] } | null;
   accounts?: { contentHash?: string; items?: AccountInventoryItem[] } | null;
   quotas?: { contentHash?: string; items?: QuotaInventoryItem[] } | null;
-}): Promise<{
+}, options: { deferHeavyWork?: boolean } = {}): Promise<{
   syncRunId: string;
   deltaPartitions: string[];
   expectedRows: number;
@@ -93,6 +232,8 @@ export async function startUsageSync(params: {
   accountsWarning?: string;
   quotasApplied: SidecarAppliedStatus;
   quotasWarning?: string;
+  deferredWork?: DeferredUsageStartWork;
+  timings: { inventoryMs: number; fingerprintMs: number };
 }> {
   let toolsApplied: ToolsAppliedStatus = "skipped";
   let toolsWarning: string | undefined;
@@ -107,6 +248,7 @@ export async function startUsageSync(params: {
     authPresent?: boolean;
   }> = [];
   let inventoryChanged = false;
+  const inventoryStart = performance.now();
 
   if (params.tools && Array.isArray(params.tools.items)) {
     const items = params.tools.items;
@@ -216,46 +358,22 @@ export async function startUsageSync(params: {
     }
   }
 
-  // Materialize billing templates/seats once accounts and/or quotas changed.
-  if (inventoryChanged && (accountsApplied === "updated" || quotasApplied === "updated" || accountsReported.length > 0)) {
-    try {
-      let accounts = accountsReported;
-      if (!accounts.length) {
-        const rows = await prisma.toolAccount.findMany({
-          where: { deviceId: params.deviceId },
-          select: { toolName: true, plan: true, email: true, authPresent: true },
-        });
-        accounts = rows.map((row) => ({
-          toolName: row.toolName,
-          plan: row.plan,
-          email: row.email,
-          authPresent: row.authPresent,
-        }));
-      }
-      if (accounts.length) {
-        await syncDetectedPlansForDevice({
-          orgId: params.orgId,
-          developerId: params.userId,
-          accounts,
-        });
-      }
-      await repairDetectedPlanCycles(params.orgId);
-    } catch (error) {
-      logServerError("sync/usage/start-plan-sync", error, {
-        orgId: params.orgId,
-        deviceId: params.deviceId,
-      });
-    }
-  }
+  const shouldPlanSync =
+    inventoryChanged &&
+    (accountsApplied === "updated" || quotasApplied === "updated" || accountsReported.length > 0);
+  const deferredWork: DeferredUsageStartWork = {};
+  const inventoryMs = performance.now() - inventoryStart;
 
   const partitions = params.partitions.filter((p) => p.partitionKey && p.date && p.contentHash);
   const keys = partitions.map((p) => p.partitionKey);
+  const fingerprintStart = performance.now();
   const existing = keys.length
     ? await prisma.deviceUsageFingerprint.findMany({
         where: { deviceId: params.deviceId, partitionKey: { in: keys } },
         select: { partitionKey: true, contentHash: true },
       })
     : [];
+  const fingerprintMs = performance.now() - fingerprintStart;
   const byKey = new Map(existing.map((row) => [row.partitionKey, row.contentHash]));
   const delta = partitions.filter((p) => byKey.get(p.partitionKey) !== p.contentHash);
   const expectedRows = delta.reduce((sum, p) => sum + Math.max(1, p.rowCount ?? 1), 0);
@@ -297,17 +415,33 @@ export async function startUsageSync(params: {
     },
   });
 
+  if (shouldPlanSync) {
+    const planSync = {
+      orgId: params.orgId,
+      userId: params.userId,
+      deviceId: params.deviceId,
+      accountsReported,
+    };
+    if (options.deferHeavyWork) {
+      deferredWork.planSync = planSync;
+    } else {
+      await runInventoryPlanSync(planSync);
+    }
+  }
+
   if (!delta.length) {
-    // Still reconcile in case partitions disappeared from the lookback window.
-    await reconcileDeviceDayPartitions({
+    const emptyDeltaSettle = {
       orgId: params.orgId,
       deviceId: params.deviceId,
       manifestPartitions: partitions,
       windowFrom,
       windowTo,
-    });
-    // Empty delta can still dirty days via reconcile — settle projections now.
-    await settleSyncProjections(params.orgId);
+    };
+    if (options.deferHeavyWork) {
+      deferredWork.emptyDeltaSettle = emptyDeltaSettle;
+    } else {
+      await runEmptyDeltaSettle(emptyDeltaSettle);
+    }
   }
 
   return {
@@ -321,6 +455,10 @@ export async function startUsageSync(params: {
     ...(accountsWarning ? { accountsWarning } : {}),
     quotasApplied,
     ...(quotasWarning ? { quotasWarning } : {}),
+    ...(options.deferHeavyWork && (deferredWork.planSync || deferredWork.emptyDeltaSettle)
+      ? { deferredWork }
+      : {}),
+    timings: { inventoryMs, fingerprintMs },
   };
 }
 
@@ -436,18 +574,22 @@ export async function ingestUsageSyncChunk(params: {
   };
 }
 
-export async function commitUsageSync(params: {
-  orgId: string;
-  deviceId: string;
-  syncRunId: string;
-  expectedChunks?: number;
-}): Promise<{
+export async function commitUsageSync(
+  params: {
+    orgId: string;
+    deviceId: string;
+    syncRunId: string;
+    expectedChunks?: number;
+  },
+  options: { deferHeavyWork?: boolean } = {},
+): Promise<{
   status: string;
   receivedChunks: number;
   receivedRows: number;
   missingPartitions: string[];
   dirtyRemaining: number;
-  timings: { materializeMs: number };
+  timings: { materializeMs: number; reconcileMs: number };
+  deferredWork?: DeferredUsageCommitWork;
 }> {
   const run = await prisma.syncRun.findFirst({
     where: { id: params.syncRunId, orgId: params.orgId, deviceId: params.deviceId },
@@ -463,7 +605,7 @@ export async function commitUsageSync(params: {
       receivedRows: run.receivedRows,
       missingPartitions: [],
       dirtyRemaining,
-      timings: { materializeMs: 0 },
+      timings: { materializeMs: 0, reconcileMs: 0 },
     };
   }
 
@@ -489,6 +631,26 @@ export async function commitUsageSync(params: {
     });
     // Partial progress still landed in usage_daily — settle so the dashboard
     // improves immediately while the agent continues uploading.
+    if (options.deferHeavyWork) {
+      await enqueueMaterializationJob(params.orgId);
+      const dirtyRemaining = await prisma.analyticsDirtyDay.count({
+        where: { orgId: params.orgId, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
+      });
+      return {
+        status: "receiving",
+        receivedChunks: run.receivedChunks,
+        receivedRows: run.receivedRows,
+        missingPartitions,
+        dirtyRemaining,
+        timings: { materializeMs: 0, reconcileMs: 0 },
+        deferredWork: {
+          orgId: params.orgId,
+          deviceId: params.deviceId,
+          syncRunId: run.id,
+          settle: true,
+        },
+      };
+    }
     let dirtyRemaining = 0;
     let materializeMs = 0;
     try {
@@ -507,7 +669,7 @@ export async function commitUsageSync(params: {
       receivedRows: run.receivedRows,
       missingPartitions,
       dirtyRemaining,
-      timings: { materializeMs },
+      timings: { materializeMs, reconcileMs: 0 },
     };
   }
 
@@ -530,6 +692,41 @@ export async function commitUsageSync(params: {
     };
   });
 
+  if (options.deferHeavyWork) {
+    await prisma.device.update({
+      where: { id: params.deviceId },
+      data: { lastUsageSyncAt: new Date(), lastSeenAt: new Date() },
+    });
+    await prisma.syncRun.update({
+      where: { id: run.id },
+      data: { status: "committed", committedAt: new Date(), error: null },
+    });
+    await enqueueMaterializationJob(params.orgId);
+    const dirtyRemaining = await prisma.analyticsDirtyDay.count({
+      where: { orgId: params.orgId, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
+    });
+    return {
+      status: "committed",
+      receivedChunks: run.receivedChunks,
+      receivedRows: run.receivedRows,
+      missingPartitions: [],
+      dirtyRemaining,
+      timings: { materializeMs: 0, reconcileMs: 0 },
+      deferredWork: {
+        orgId: params.orgId,
+        deviceId: params.deviceId,
+        syncRunId: run.id,
+        reconcile: {
+          manifestPartitions,
+          windowFrom: run.windowFrom,
+          windowTo: run.windowTo,
+        },
+        settle: true,
+      },
+    };
+  }
+
+  const reconcileStart = performance.now();
   await reconcileDeviceDayPartitions({
     orgId: params.orgId,
     deviceId: params.deviceId,
@@ -537,6 +734,7 @@ export async function commitUsageSync(params: {
     windowFrom: run.windowFrom,
     windowTo: run.windowTo,
   });
+  const reconcileMs = performance.now() - reconcileStart;
 
   await prisma.device.update({
     where: { id: params.deviceId },
@@ -558,7 +756,7 @@ export async function commitUsageSync(params: {
     receivedRows: run.receivedRows,
     missingPartitions: [],
     dirtyRemaining,
-    timings: { materializeMs },
+    timings: { materializeMs, reconcileMs },
   };
 }
 

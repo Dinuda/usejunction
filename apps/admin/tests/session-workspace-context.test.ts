@@ -7,8 +7,11 @@ const mocks = vi.hoisted(() => ({
   membershipFindFirst: vi.fn(),
   membershipFindUnique: vi.fn(),
   membershipFindMany: vi.fn(),
+  deviceCount: vi.fn(),
   deviceAggregate: vi.fn(),
   toolInstallationCount: vi.fn(),
+  analyticsDirtyDayCount: vi.fn(),
+  analyticsDirtyDayFindFirst: vi.fn(),
   legacyOrgId: null as string | null,
 }));
 
@@ -33,6 +36,7 @@ vi.mock("@usejunction/db", () => ({
       findMany: mocks.membershipFindMany,
     },
     device: {
+      count: mocks.deviceCount,
       aggregate: mocks.deviceAggregate,
     },
     toolInstallation: {
@@ -40,8 +44,8 @@ vi.mock("@usejunction/db", () => ({
     },
     analyticsDirtyDay: {
       findMany: vi.fn(async () => []),
-      findFirst: vi.fn(async () => null),
-      count: vi.fn(async () => 0),
+      findFirst: mocks.analyticsDirtyDayFindFirst,
+      count: mocks.analyticsDirtyDayCount,
     },
     orgUsageDaySnapshot: {
       findMany: vi.fn(async () => []),
@@ -55,11 +59,14 @@ vi.mock("@usejunction/db", () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.legacyOrgId = null;
+  mocks.deviceCount.mockResolvedValue(0);
   mocks.deviceAggregate.mockResolvedValue({
     _count: { id: 0 },
     _max: { lastSeenAt: null, lastUsageSyncAt: null, lastAccountSyncAt: null },
   });
   mocks.toolInstallationCount.mockResolvedValue(0);
+  mocks.analyticsDirtyDayCount.mockResolvedValue(0);
+  mocks.analyticsDirtyDayFindFirst.mockResolvedValue(null);
   mocks.auth.mockResolvedValue({
     user: {
       id: "user-1",
@@ -150,12 +157,17 @@ describe("workspace context API", () => {
       dashboardReady: true,
       dirtyDayCount: 0,
     });
+    expect(mocks.deviceCount).toHaveBeenCalledTimes(1);
+    expect(mocks.deviceAggregate).not.toHaveBeenCalled();
+    expect(mocks.toolInstallationCount).not.toHaveBeenCalled();
+    expect(mocks.analyticsDirtyDayCount).not.toHaveBeenCalled();
     expect(response.headers.get("cache-control")).toContain("no-store");
     expect(response.headers.get("server-timing")).toContain("membership");
   });
 
   it("exposes a sync watermark from device and tool facts", async () => {
     mocks.membershipFindMany.mockResolvedValue([org("org-1", "One")]);
+    mocks.deviceCount.mockResolvedValue(1);
     mocks.deviceAggregate.mockResolvedValue({
       _count: { id: 1 },
       _max: {
@@ -180,6 +192,7 @@ describe("workspace context API", () => {
       dirtyDayCount: 0,
       snapshotLagSeconds: null,
     });
+    expect(mocks.toolInstallationCount).toHaveBeenCalledTimes(1);
   });
 
   it("never selects a tampered legacy cookie outside the user's memberships", async () => {

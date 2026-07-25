@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { signIn, signOut } from "next-auth/react";
+import { signOut } from "next-auth/react";
+import { startOAuthSignIn } from "@/lib/auth/oauth-sign-in";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,7 +32,11 @@ export function OAuthAccountConflictActions({
     try {
       await signOut({ redirect: false });
       if (provider) {
-        await signIn(provider, { callbackUrl });
+        const started = await startOAuthSignIn(provider, callbackUrl);
+        if (!started) {
+          setError("Sign-in is already in progress. Wait a moment and try again.");
+          setPending(false);
+        }
         return;
       }
       window.location.assign(loginHref);

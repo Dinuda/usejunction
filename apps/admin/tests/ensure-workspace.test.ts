@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   organizationCreate: vi.fn(),
   teamCreate: vi.fn(),
   membershipCreate: vi.fn(),
+  membershipFindFirst: vi.fn(),
   developerCreate: vi.fn(),
   planInterestUpdateMany: vi.fn(),
   transaction: vi.fn(),
@@ -13,6 +14,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@usejunction/db", () => ({
   prisma: {
     $transaction: mocks.transaction,
+    organizationMembership: {
+      findFirst: mocks.membershipFindFirst,
+    },
   },
 }));
 
@@ -22,13 +26,23 @@ vi.mock("@/lib/ensure-auth-user", () => ({
   isMissingAuthUserPrismaError: () => false,
 }));
 
+const onboardingMocks = vi.hoisted(() => ({
+  hasPendingWorkspaceInvite: vi.fn(async () => false),
+}));
+
 vi.mock("@/lib/onboarding-status", () => ({
-  hasPendingWorkspaceInvite: async () => false,
+  hasPendingWorkspaceInvite: (...args: unknown[]) => onboardingMocks.hasPendingWorkspaceInvite(...args),
+}));
+
+vi.mock("@/lib/errors/public", () => ({
+  logServerError: vi.fn(),
 }));
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.resetModules();
+  onboardingMocks.hasPendingWorkspaceInvite.mockResolvedValue(false);
+  mocks.membershipFindFirst.mockResolvedValue(null);
   mocks.organizationCreate.mockResolvedValue({
     id: "org_1",
     name: "Alice workspace",
@@ -69,4 +83,36 @@ test("createWorkspaceForUser does not create a Team row", async () => {
   assert.equal(developerData.orgId, "org_1");
   assert.equal(developerData.authUserId, "user_1");
   assert.equal("teamId" in developerData, false);
+});
+
+test("provisionWorkspaceOnCreateUser creates a personal workspace for OAuth signup", async () => {
+  const { provisionWorkspaceOnCreateUser } = await import("../lib/ensure-workspace");
+  const result = await provisionWorkspaceOnCreateUser({
+    id: "user_1",
+    email: "alice@example.com",
+    name: "Alice",
+  });
+
+  assert.deepEqual(result, { provisioned: true });
+  assert.equal(mocks.organizationCreate.mock.calls.length, 1);
+  assert.equal(onboardingMocks.hasPendingWorkspaceInvite.mock.calls.length, 1);
+});
+
+test("provisionWorkspaceOnCreateUser skips invitees", async () => {
+  onboardingMocks.hasPendingWorkspaceInvite.mockResolvedValue(true);
+  const { provisionWorkspaceOnCreateUser } = await import("../lib/ensure-workspace");
+  const result = await provisionWorkspaceOnCreateUser({
+    id: "user_1",
+    email: "invitee@example.com",
+    name: "Invitee",
+  });
+
+  assert.deepEqual(result, { provisioned: false, reason: "invite_pending" });
+  assert.equal(mocks.organizationCreate.mock.calls.length, 0);
+});
+
+test("provisionWorkspaceOnCreateUser skips missing identity", async () => {
+  const { provisionWorkspaceOnCreateUser } = await import("../lib/ensure-workspace");
+  const result = await provisionWorkspaceOnCreateUser({ email: "a@example.com" });
+  assert.deepEqual(result, { provisioned: false, reason: "missing_identity" });
 });

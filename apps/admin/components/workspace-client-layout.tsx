@@ -7,7 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { WorkspaceShell } from "@/components/workspace-shell";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 import { TimezoneReporter } from "@/components/timezone-reporter";
-import { useAppQuery } from "@/lib/api/client";
+import { activateWorkspace, AppApiError, useAppQuery } from "@/lib/api/client";
 import { workspaceContextKey } from "@/lib/app-pages/query-keys";
 import type { OrgBillingStatus } from "@/lib/saas-billing/status";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
@@ -40,7 +40,7 @@ type WorkspaceContext = {
 function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { data: session, status: sessionStatus } = useSession();
+  const { data: session, status: sessionStatus, update: updateSession } = useSession();
   const pathname = usePathname();
   const queryString = useSearchParams().toString();
   const lastWatermark = useRef<string | null>(null);
@@ -67,6 +67,7 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
   );
   const syncStarted = useRef(false);
   const [syncFailed, setSyncFailed] = useState(false);
+  const [syncInFlight, setSyncInFlight] = useState(false);
 
   useEffect(() => {
     if (sessionStatus !== "unauthenticated") return;
@@ -85,24 +86,22 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
   useEffect(() => {
     const context = contextQuery.data;
     if (!context?.sessionWorkspaceSyncRequired || !context.current || syncStarted.current) return;
+    const orgId = context.current.id;
     syncStarted.current = true;
-    void fetch("/api/me/workspace", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: {
-        "content-type": "application/json",
-        "x-requested-with": "usejunction-web",
-      },
-      body: JSON.stringify({ orgId: context.current.id }),
-    }).then(async (response) => {
-      if (!response.ok) throw new Error("workspace session sync failed");
-      queryClient.clear();
-      window.location.reload();
-    }).catch(() => {
-      syncStarted.current = false;
-      setSyncFailed(true);
-    });
-  }, [contextQuery.data, queryClient]);
+    setSyncInFlight(true);
+    void activateWorkspace(orgId)
+      .then(async () => {
+        await updateSession({ user: { orgId } });
+        await queryClient.invalidateQueries({ queryKey: workspaceContextKey });
+      })
+      .catch(() => {
+        syncStarted.current = false;
+        setSyncFailed(true);
+      })
+      .finally(() => {
+        setSyncInFlight(false);
+      });
+  }, [contextQuery.data, queryClient, updateSession]);
 
   useEffect(() => {
     const syncState = contextQuery.data?.sync;
@@ -128,7 +127,9 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
 
   const context = contextQuery.data;
   const current = context?.current ?? null;
-  const migrationPending = Boolean(context?.sessionWorkspaceSyncRequired && current && !syncFailed);
+  const migrationPending = Boolean(
+    syncInFlight || (context?.sessionWorkspaceSyncRequired && current && !syncFailed),
+  );
 
   return (
     <WorkspaceShell
@@ -143,10 +144,14 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
       <TimezoneReporter />
       {migrationPending ? <AppPageSkeleton /> : (
         <div className="space-y-4">
-          {contextQuery.error ? (
+          {contextQuery.error || syncFailed ? (
             <AppPageError
-              error={contextQuery.error}
+              error={
+                contextQuery.error ??
+                new AppApiError(500, "WORKSPACE_SESSION_SYNC_FAILED", "Could not sync your workspace session.")
+              }
               retry={() => {
+                syncStarted.current = false;
                 setSyncFailed(false);
                 void contextQuery.refetch();
               }}

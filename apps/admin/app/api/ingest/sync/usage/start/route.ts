@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { findDeviceByBearerToken, requireIngestAuth } from "@/lib/auth";
 import { limitedJson } from "@/lib/security/http";
 import { logServerError } from "@/lib/errors/public";
-import { startUsageSync, type ManifestPartition } from "@/lib/sync/usage-sync";
+import { runDeferredUsageStartWork, startUsageSync, type ManifestPartition } from "@/lib/sync/usage-sync";
 import { prisma } from "@usejunction/db";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 function parseSidecar(raw: unknown): { contentHash?: string; items?: Array<Record<string, unknown>> } | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
@@ -93,8 +93,32 @@ export async function POST(req: NextRequest) {
             })),
           }
         : undefined,
+    }, { deferHeavyWork: true });
+
+    const { deferredWork, timings, ...payload } = result;
+    if (deferredWork) {
+      after(async () => {
+        try {
+          await runDeferredUsageStartWork(deferredWork);
+        } catch (error) {
+          logServerError("sync/usage/start-deferred", error, { orgId, deviceId });
+        }
+      });
+    }
+
+    console.info("[sync/usage/start-timing]", {
+      orgId,
+      deviceId,
+      inventoryMs: timings.inventoryMs,
+      fingerprintMs: timings.fingerprintMs,
+      deferred: Boolean(deferredWork),
+      deferredPlanSync: Boolean(deferredWork?.planSync),
+      deferredEmptySettle: Boolean(deferredWork?.emptyDeltaSettle),
+      deltaPartitions: payload.deltaPartitions.length,
+      status: payload.status,
     });
-    return NextResponse.json({ ok: true, ...result });
+
+    return NextResponse.json({ ok: true, ...payload });
   } catch (error) {
     logServerError("sync/usage/start", error);
     return NextResponse.json({ error: "sync start failed" }, { status: 500 });

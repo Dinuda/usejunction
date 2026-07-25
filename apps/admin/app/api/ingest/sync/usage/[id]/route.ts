@@ -4,6 +4,8 @@ import { logServerError } from "@/lib/errors/public";
 import { getUsageSyncStatus } from "@/lib/sync/usage-sync";
 import { prisma } from "@usejunction/db";
 
+export const maxDuration = 60;
+
 export async function GET(
   req: NextRequest,
   context: { params: Promise<{ id: string }> },

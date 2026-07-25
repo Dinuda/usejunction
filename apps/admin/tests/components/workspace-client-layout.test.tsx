@@ -10,13 +10,16 @@ const mocks = vi.hoisted(() => ({
   useAppQuery: vi.fn(),
   replace: vi.fn(),
   invalidateQueries: vi.fn(),
+  updateSession: vi.fn(async () => ({})),
+  activateWorkspace: vi.fn(async () => undefined),
 }));
 
 vi.mock("next-auth/react", () => ({
   SessionProvider: ({ children }: { children: React.ReactNode }) => children,
   useSession: () => ({
-    data: { user: { id: "user-1", name: "User", email: "user@example.test", orgId: "org-1" } },
+    data: { user: { id: "user-1", name: "User", email: "user@example.test", orgId: null } },
     status: "authenticated",
+    update: mocks.updateSession,
   }),
 }));
 
@@ -28,6 +31,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/api/client", () => ({
   useAppQuery: mocks.useAppQuery,
+  activateWorkspace: mocks.activateWorkspace,
 }));
 
 vi.mock("@tanstack/react-query", async () => {
@@ -116,6 +120,8 @@ describe("WorkspaceClientLayout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+    mocks.updateSession.mockResolvedValue({});
+    mocks.activateWorkspace.mockResolvedValue(undefined);
     mockWorkspaceContext(undefined);
   });
 
@@ -187,6 +193,28 @@ describe("WorkspaceClientLayout", () => {
       expect(mocks.replace).toHaveBeenCalledWith("/onboarding");
     });
     expect(mocks.useAppQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("syncs the session without a full page reload when JWT orgId is stale", async () => {
+    const reloadSpy = vi.fn();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, reload: reloadSpy },
+    });
+
+    mockWorkspaceContext({
+      ...readyContext("1|2|seen|usage|"),
+      sessionWorkspaceSyncRequired: true,
+    });
+
+    await renderLayout();
+
+    await waitFor(() => {
+      expect(mocks.activateWorkspace).toHaveBeenCalledWith("org-1");
+      expect(mocks.updateSession).toHaveBeenCalledWith({ user: { orgId: "org-1" } });
+      expect(mocks.invalidateQueries).toHaveBeenCalledWith({ queryKey: workspaceContextKey });
+    });
+    expect(reloadSpy).not.toHaveBeenCalled();
   });
 
   it("polls workspace context while devices remain connected after first usage sync", async () => {
