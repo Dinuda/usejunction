@@ -8,7 +8,7 @@ test("developer calculation views use personal usage totals", async ({ page }) =
   await expect(page).toHaveURL(/\/dashboard/);
   await expect(page.getByRole("heading", { name: "Spend, traffic, coverage." })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Your plans." })).toBeVisible();
-  await expect(page.getByRole("row", { name: /Cursor gpt-4\.1 10 .*\$5\.00 Verified/i })).toBeVisible();
+  await expect(page.getByRole("row", { name: /Cursor gpt-4\.1 10 .*\$6\.00 Verified/i })).toBeVisible();
   await expect(page.getByRole("row", { name: /OpenCode opencode-go\/kimi-k2\.7-code/i })).toBeVisible();
 
   await page.goto("/activity");
