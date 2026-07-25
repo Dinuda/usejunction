@@ -34,10 +34,12 @@ Run each query in Google (AI Overview if shown), Bing Copilot, Perplexity, and C
 | Query                                          | Target URL                                                                    |
 | ---------------------------------------------- | ----------------------------------------------------------------------------- |
 | open source wakatime alternative               | `/guides/open-source-wakatime-alternative-for-ai-coding`, `/compare/wakatime` |
-| how to see Cursor plan usage for my team       | `/guides/see-plan-usage-and-waste`, `/for/cursor`                             |
+| how to see Cursor plan usage for my team       | `/guides/see-plan-usage-and-waste`, `/for/cursor`, `/compare/engineering-intelligence` |
 | what is AI coding observability                | `/blog/what-is-ai-coding-observability`, `/`                                  |
-| are we wasting Cursor Pro seats                | `/guides/see-plan-usage-and-waste`                                            |
+| are we wasting Cursor Pro seats                | `/guides/see-plan-usage-and-waste`, `/blog/ai-coding-observability-vs-jellyfish-dx-linearb` |
 | see my team's AI coding insights               | `/guides/see-team-ai-coding-usage`                                            |
+| AI coding observability vs Jellyfish DX LinearB | `/compare/engineering-intelligence`, `/blog/ai-coding-observability-vs-jellyfish-dx-linearb` |
+| Cursor seat utilization team                   | `/for/cursor`, `/guides/see-plan-usage-and-waste`                             |
 | AI coding observability open source            | `/`                                                                           |
 | Cursor Claude Code usage dashboard self-hosted | `/for/cursor`, `/for/claude-code`                                             |
 | personal API key detection AI coding tools     | `/guides/personal-vs-company-api-keys`                                        |
@@ -50,8 +52,9 @@ Run each query in Google (AI Overview if shown), Bing Copilot, Perplexity, and C
 
 - Brand: `usejunction`, `use junction`
 - Cluster A: `AI coding observability`, `open source AI coding analytics`
-- Cluster B: `Cursor seat utilization`, `Claude Code plan usage`
+- Cluster B: `Cursor seat utilization`, `Claude Code plan usage`, `are we wasting Cursor Pro seats`
 - Cluster C: `open source wakatime alternative`, `team coding insights AI`
+- Cluster D: `AI coding observability vs Jellyfish`, `engineering intelligence comparison`
 
 
 

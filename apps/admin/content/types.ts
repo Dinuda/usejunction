@@ -82,6 +82,7 @@ export type BlogPost = {
   description: string;
   answer: string;
   primaryKeyword: string;
+  secondaryKeywords?: string[];
   topics: string[];
   publishedAt: string;
   updatedAt: string;
@@ -90,5 +91,6 @@ export type BlogPost = {
   heroImage: BlogImage;
   socialImage: BlogImage;
   blocks: BlogBlock[];
+  faq?: ContentFaq[];
   relatedPaths: string[];
 };

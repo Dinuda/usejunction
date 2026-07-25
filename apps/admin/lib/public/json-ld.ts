@@ -154,7 +154,7 @@ export function buildBlogPostJsonLd(post: BlogPost) {
   const url = absoluteUrl(post.path);
   const authorUrl = absoluteUrl(post.author.path);
   const baseUrl = getSiteUrl();
-  return [
+  const graph: Record<string, unknown>[] = [
     {
       "@context": "https://schema.org",
       "@type": "BlogPosting",
@@ -164,7 +164,7 @@ export function buildBlogPostJsonLd(post: BlogPost) {
       datePublished: post.publishedAt,
       dateModified: post.updatedAt,
       articleSection: "AI coding observability",
-      keywords: post.topics.join(", "),
+      keywords: [post.primaryKeyword, ...(post.secondaryKeywords ?? []), ...post.topics].join(", "),
       author: {
         "@type": "Person",
         name: post.author.name,
@@ -190,6 +190,16 @@ export function buildBlogPostJsonLd(post: BlogPost) {
       ],
     },
   ];
+
+  if (post.faq?.length) {
+    graph.push({
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: faqEntities(post.faq),
+    });
+  }
+
+  return graph;
 }
 
 export function buildHubJsonLd(opts: { name: string; description: string; path: string; items: { name: string; path: string }[] }) {

@@ -55,6 +55,10 @@ export function BlogArticle({ post }: { post: BlogPost }) {
         </header>
 
         <article className="mx-auto w-full max-w-[760px] px-4 py-14 sm:px-6 sm:py-16 lg:py-24">
+          <div className="rounded-lg border border-border bg-card p-5 text-base leading-7 text-foreground md:text-lg md:leading-8">
+            {post.answer}
+          </div>
+
           {post.blocks.map((block, index) => {
             if (block.type === "heading") {
               return <h2 key={`${block.text}-${index}`} className="mt-16 font-display text-2xl font-semibold leading-tight tracking-[-0.025em] text-foreground sm:text-3xl">{block.text}</h2>;
@@ -79,6 +83,20 @@ export function BlogArticle({ post }: { post: BlogPost }) {
               </figure>
             );
           })}
+
+          {post.faq?.length ? (
+            <section className="mt-16">
+              <h2 className="font-display text-2xl font-semibold leading-tight tracking-[-0.025em] text-foreground sm:text-3xl">FAQ</h2>
+              <dl className="mt-6 grid gap-6">
+                {post.faq.map((item) => (
+                  <div key={item.question} className="border-l-2 border-brand-yellow pl-5">
+                    <dt className="font-semibold text-foreground">{item.question}</dt>
+                    <dd className="mt-2 text-[1.0625rem] leading-8 text-muted-foreground sm:text-lg">{item.answer}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ) : null}
 
           <section className="mt-16 border border-primary/25 bg-primary-pale p-6 sm:p-8">
             <p className="font-mono text-xs uppercase tracking-[0.16em] text-primary">Visibility before control</p>

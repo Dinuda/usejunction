@@ -85,6 +85,8 @@ export const AEO_CITE_PATHS = [
   "/guides/see-plan-usage-and-waste",
   "/guides/see-team-ai-coding-usage",
   "/guides/open-source-wakatime-alternative-for-ai-coding",
+  "/blog/ai-coding-observability-vs-jellyfish-dx-linearb",
+  "/compare/engineering-intelligence",
   "/blog/what-is-ai-coding-observability",
   "/compare/wakatime",
   "/for/cursor",

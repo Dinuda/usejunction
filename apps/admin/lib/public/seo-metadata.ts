@@ -75,7 +75,7 @@ export function blogPostMetadata(post: BlogPost): Metadata {
   return {
     title: post.title,
     description: post.description,
-    keywords: [post.primaryKeyword, ...post.topics],
+    keywords: [post.primaryKeyword, ...(post.secondaryKeywords ?? []), ...post.topics],
     authors: [{ name: post.author.name, url: absoluteUrl(post.author.path) }],
     alternates: { canonical: url },
     openGraph: {

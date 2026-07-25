@@ -13,6 +13,7 @@ test("seo registry includes priority guides and compare pages", () => {
   assert.ok(paths.has("/guides/see-team-ai-coding-usage"));
   assert.ok(paths.has("/guides/open-source-wakatime-alternative-for-ai-coding"));
   assert.ok(paths.has("/compare/wakatime"));
+  assert.ok(paths.has("/compare/engineering-intelligence"));
   assert.ok(paths.has("/for/cursor"));
   assert.ok(paths.has("/for/claude-code"));
   assert.ok(paths.has("/privacy"));
@@ -41,6 +42,8 @@ test("sitemap includes home and content hubs", () => {
   assert.ok(paths.includes("/"));
   assert.ok(paths.includes("/guides"));
   assert.ok(paths.includes("/blog/what-is-ai-coding-observability"));
+  assert.ok(paths.includes("/blog/ai-coding-observability-vs-jellyfish-dx-linearb"));
+  assert.ok(paths.includes("/compare/engineering-intelligence"));
   assert.ok(paths.includes("/authors/dinuda-yaggahavita"));
   assert.ok(!paths.includes("/blog/visibility-before-control"));
   assert.ok(!paths.includes("/blog/stop-wasting-ai-coding-seats"));
@@ -61,22 +64,28 @@ test("llms-full.txt includes page summaries", () => {
   const text = buildLlmsTxt(true);
   assert.match(text, /How to See AI Coding Plan Usage/);
   assert.match(text, /What Is AI Coding Observability/);
+  assert.match(text, /AI Coding Observability vs Jellyfish/);
   assert.ok(text.length > buildLlmsTxt(false).length);
 });
 
-test("native blog exposes one canonical founder-authored post", () => {
-  assert.equal(BLOG_POSTS.length, 1);
-  const post = BLOG_POSTS[0]!;
-  assert.equal(post.path, "/blog/what-is-ai-coding-observability");
-  assert.equal(post.author.name, "Dinuda Yaggahavita");
-  assert.notEqual(post.publishedAt, "");
-  assert.equal(post.socialImage.width, 1200);
-  assert.equal(post.socialImage.height, 630);
-  const graph = buildBlogPostJsonLd(post);
+test("native blog exposes canonical founder-authored posts", () => {
+  assert.equal(BLOG_POSTS.length, 2);
+  const flagship = BLOG_POSTS.find((post) => post.path === "/blog/ai-coding-observability-vs-jellyfish-dx-linearb");
+  assert.ok(flagship);
+  assert.equal(flagship!.author.name, "Dinuda Yaggahavita");
+  assert.notEqual(flagship!.publishedAt, "");
+  assert.equal(flagship!.socialImage.width, 1200);
+  assert.equal(flagship!.socialImage.height, 630);
+  assert.ok(flagship!.faq?.length);
+  const graph = buildBlogPostJsonLd(flagship!);
   const article = graph.find((node) => node["@type"] === "BlogPosting");
   assert.ok(article);
   assert.equal((article!.author as { name: string }).name, "Dinuda Yaggahavita");
-  assert.equal(article!.datePublished, "2026-07-22");
+  assert.equal(article!.datePublished, "2026-07-25");
+  assert.ok(graph.some((node) => node["@type"] === "FAQPage"));
+
+  const original = BLOG_POSTS.find((post) => post.path === "/blog/what-is-ai-coding-observability");
+  assert.ok(original);
 });
 
 test("home JSON-LD includes FAQPage and Organization", () => {

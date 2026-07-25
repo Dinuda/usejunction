@@ -1,3 +1,4 @@
+import { AI_CODING_OBSERVABILITY_VS_EI_POST } from "@/content/blog/ai-coding-observability-vs-engineering-intelligence";
 import { DINUDA_YAGGAHAVITA } from "@/content/authors";
 import type { BlogInline, BlogPost } from "@/content/types";
 
@@ -165,7 +166,7 @@ export const AI_CODING_OBSERVABILITY_POST: BlogPost = {
   ],
 };
 
-export const BLOG_POSTS: BlogPost[] = [AI_CODING_OBSERVABILITY_POST];
+export const BLOG_POSTS: BlogPost[] = [AI_CODING_OBSERVABILITY_VS_EI_POST, AI_CODING_OBSERVABILITY_POST];
 
 export function getBlogPostBySlug(slug: string): BlogPost | undefined {
   return BLOG_POSTS.find((post) => post.slug === slug);

@@ -46,6 +46,7 @@ export const compareWakatime: ContentPage = {
     },
   ],
   relatedPaths: [
+    "/compare/engineering-intelligence",
     "/guides/open-source-wakatime-alternative-for-ai-coding",
     "/guides/see-team-ai-coding-usage",
     "/compare/helicone",
@@ -149,7 +150,121 @@ export const compareLangfuse: ContentPage = {
   relatedPaths: ["/compare/helicone", "/guides/see-team-ai-coding-usage"],
 };
 
+export const compareEngineeringIntelligence: ContentPage = {
+  kind: "compare",
+  slug: "engineering-intelligence",
+  path: "/compare/engineering-intelligence",
+  title: "AI Coding Observability vs Jellyfish, DX, and LinearB",
+  description:
+    "Which tool fits your search? Seat waste and AI coding cost (UseJunction) vs delivery bottlenecks (LinearB), DevEx (DX), or eng-finance reporting (Jellyfish).",
+  primaryKeyword: "AI coding observability vs Jellyfish DX LinearB",
+  secondaryKeywords: [
+    "Cursor seat utilization",
+    "how to see Cursor plan usage for my team",
+    "are we wasting Cursor Pro seats",
+    "engineering intelligence platform comparison",
+    "AI coding tool cost monitoring",
+  ],
+  updatedAt: "2026-07-25",
+  answer:
+    "UseJunction answers searches about AI coding tool cost, seat utilization, and multi-vendor fleet visibility on developer laptops. Jellyfish answers engineering-finance and R&D capitalization searches. DX answers developer experience and retention searches. LinearB answers delivery speed and PR bottleneck searches. Match the tool to the problem you are searching for—not the category title.",
+  sections: [
+    {
+      heading: "Search: “Why is our Cursor bill so high?” / “Are we wasting seats?”",
+      body: [
+        "This is the fastest-growing eng-leadership search cluster in 2026: Cursor seat utilization, Claude Code plan usage, AI coding tool cost monitoring, and subscription cycle waste.",
+        "Native vendor dashboards show one product at a time. Enterprise APIs are often plan-gated. Finance sees invoices; engineering cannot explain per-user spend or idle seats before renewal.",
+        "UseJunction is built for this job: multi-tool AI coding observability—cost, plan cycles, quota pressure, enrollment health, and personal-vs-company key signals across Cursor, Claude Code, Codex, Copilot, and local models.",
+      ],
+    },
+    {
+      heading: "Search: “PRs sit for days” / “cycle time” / “DORA metrics”",
+      body: [
+        "When delivery is stuck—review pickup time, cycle time by stage, deployment frequency—teams search for workflow and DORA visibility, not AI seat waste.",
+        "LinearB fits: PR analytics, cycle-time breakdowns, gitStream automation, and action on bottlenecks.",
+        "LinearB does not reconcile Cursor + Claude spend or show org-wide AI tool sprawl.",
+      ],
+    },
+    {
+      heading: "Search: “Why are developers leaving?” / “developer experience survey”",
+      body: [
+        "When attrition, friction, and tool satisfaction are the fire, teams need structured DevEx measurement—not a cost ledger.",
+        "DX fits: Core 4 framework, Developer Experience Index (DXI), and research-backed surveys that surface friction before it shows up in exit interviews.",
+        "DX does not show per-developer AI coding cost or which paid seats sit idle.",
+      ],
+    },
+    {
+      heading: "Search: “R&D capitalization” / “where did eng investment go?”",
+      body: [
+        "When finance and the board need allocation, investment narratives, and audit-ready engineering spend, the search is business alignment—not laptop-level AI tool telemetry.",
+        "Jellyfish fits: engineering-to-business reporting, R&D capitalization support, and allocation views for executives.",
+        "Jellyfish is not a multi-vendor AI coding fleet monitor for seat waste and quota pressure.",
+      ],
+    },
+    {
+      heading: "When to stack tools",
+      body: [
+        "Many orgs need more than one layer: LinearB for delivery, DX for periodic DevEx pulses, UseJunction for AI coding spend before renewal.",
+        "UseJunction complements Helicone and Langfuse too—those observe application LLM traffic; UseJunction observes AI coding tools on developer machines.",
+      ],
+    },
+    {
+      heading: "Quick decision guide",
+      body: [
+        "Board/finance wants eng allocation → Jellyfish.",
+        "People are frustrated / leaving → DX.",
+        "PRs stall and cycle time is the KPI → LinearB.",
+        "AI tool invoices, seat waste, multi-tool sprawl → UseJunction.",
+      ],
+    },
+  ],
+  faq: [
+    {
+      question: "Does UseJunction replace Jellyfish, DX, or LinearB?",
+      answer:
+        "No. UseJunction focuses on AI coding observability—tool usage, cost, plan utilization, and device health across vendors. Jellyfish, DX, and LinearB focus on finance alignment, developer experience, and delivery workflow respectively. Many teams use complementary tools.",
+    },
+    {
+      question: "We already have LinearB. Do we still need UseJunction?",
+      answer:
+        "If finance asks about Cursor or Claude spend and seat waste, yes—LinearB does not answer that search. LinearB and UseJunction solve different problems and can run together.",
+    },
+    {
+      question: "How do I see Cursor plan usage for my whole team?",
+      answer:
+        "UseJunction enrolls a local agent on developer devices and rolls up Cursor-related usage, seat utilization, and subscription-cycle signals in one org-wide dashboard.",
+    },
+    {
+      question: "Are we wasting Cursor Pro seats?",
+      answer:
+        "Compare purchased seats and quotas to verified usage and enrollment coverage in UseJunction. Idle seats on enrolled devices—and paid seats without enrolled devices—surface as waste signals before renewal.",
+    },
+    {
+      question: "Is UseJunction an engineering intelligence platform?",
+      answer:
+        "UseJunction is AI coding observability—a narrower, deeper answer to multi-tool AI spend and seat waste. It is not a full engineering intelligence suite for DORA, DevEx surveys, or R&D capitalization.",
+    },
+    {
+      question: "Can we self-host UseJunction?",
+      answer:
+        "Yes. UseJunction is open source under the UseJunction Community License and runs via Docker Compose on infrastructure you control.",
+    },
+  ],
+  relatedPaths: [
+    "/blog/ai-coding-observability-vs-jellyfish-dx-linearb",
+    "/guides/see-plan-usage-and-waste",
+    "/guides/see-team-ai-coding-usage",
+    "/guides/open-source-wakatime-alternative-for-ai-coding",
+    "/guides/personal-vs-company-api-keys",
+    "/compare/wakatime",
+    "/compare/helicone",
+    "/for/cursor",
+    "/for/claude-code",
+  ],
+};
+
 export const COMPARE_PAGES: ContentPage[] = [
+  compareEngineeringIntelligence,
   compareWakatime,
   compareHelicone,
   comparePortkey,

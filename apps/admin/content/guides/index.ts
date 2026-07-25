@@ -69,6 +69,8 @@ export const guideSeePlanUsage: ContentPage = {
   ],
   relatedPaths: [
     "/guides/see-team-ai-coding-usage",
+    "/compare/engineering-intelligence",
+    "/blog/ai-coding-observability-vs-jellyfish-dx-linearb",
     "/for/cursor",
     "/for/claude-code",
     "/compare/wakatime",
@@ -141,6 +143,8 @@ export const guideSeeTeamUsage: ContentPage = {
   ],
   relatedPaths: [
     "/guides/see-plan-usage-and-waste",
+    "/compare/engineering-intelligence",
+    "/blog/ai-coding-observability-vs-jellyfish-dx-linearb",
     "/guides/open-source-wakatime-alternative-for-ai-coding",
     "/guides/personal-vs-company-api-keys",
     "/compare/wakatime",
