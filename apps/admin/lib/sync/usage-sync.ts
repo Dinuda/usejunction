@@ -34,21 +34,29 @@ import { bulkUpsertDeviceUsageFingerprints } from "@/lib/sync/device-usage-finge
 export const SYNC_SETTLE_BUDGET_MS = 12_000;
 
 /**
+ * Budget for settle deferred via next/server after() — nobody is waiting on the
+ * HTTP response. Sized under Hobby Fluid maxDuration (300s) with headroom.
+ */
+export const SYNC_SETTLE_DEFERRED_BUDGET_MS = 240_000;
+
+/**
  * Sync-pipeline settle: project dirty usage_daily days into org_usage_day_snapshots.
  * Chunks only mark dirty; commit (and empty-delta start) call this once.
  */
 export async function settleSyncProjections(
   orgId: string,
-  options: { maxDurationMs?: number } = {},
-): Promise<{ dirtyRemaining: number; materializeMs: number }> {
+  options: { maxDurationMs?: number; entryPoint?: "commit" | "empty_delta" | "poll" } = {},
+): Promise<{ dirtyRemaining: number; materializeMs: number; claimed?: boolean }> {
   const materializeStart = performance.now();
   const result = await materializeOrgNow(orgId, {
     includeToday: true,
     maxDurationMs: options.maxDurationMs ?? SYNC_SETTLE_BUDGET_MS,
+    entryPoint: options.entryPoint ?? "commit",
   });
   return {
     dirtyRemaining: result.dirtyRemaining,
     materializeMs: performance.now() - materializeStart,
+    claimed: result.claimed,
   };
 }
 export type ManifestPartition = {
@@ -150,7 +158,10 @@ async function runEmptyDeltaSettle(params: {
     windowFrom: params.windowFrom,
     windowTo: params.windowTo,
   });
-  await settleSyncProjections(params.orgId);
+  await settleSyncProjections(params.orgId, {
+    maxDurationMs: SYNC_SETTLE_DEFERRED_BUDGET_MS,
+    entryPoint: "empty_delta",
+  });
 }
 
 /** Plan sync + empty-delta settle deferred from the ingest route via next/server after(). */
@@ -187,11 +198,16 @@ export async function runDeferredUsageCommitWork(work: DeferredUsageCommitWork):
   }
   let materializeMs = 0;
   let dirtyRemaining = 0;
+  let claimed: boolean | undefined;
   if (work.settle) {
     try {
-      const settled = await settleSyncProjections(work.orgId);
+      const settled = await settleSyncProjections(work.orgId, {
+        maxDurationMs: SYNC_SETTLE_DEFERRED_BUDGET_MS,
+        entryPoint: "commit",
+      });
       materializeMs = settled.materializeMs;
       dirtyRemaining = settled.dirtyRemaining;
+      claimed = settled.claimed;
     } catch (error) {
       logServerError("sync/usage/commit-deferred-settle", error, {
         orgId: work.orgId,
@@ -210,6 +226,8 @@ export async function runDeferredUsageCommitWork(work: DeferredUsageCommitWork):
     reconcileMs,
     materializeMs,
     dirtyRemaining,
+    claimed: claimed ?? null,
+    settle: work.settle,
   });
 }
 
@@ -501,7 +519,7 @@ export async function ingestUsageSyncChunk(params: {
 
   const observedAt = params.observedAt ?? new Date();
   const upsertStart = performance.now();
-  const { upserted } = await ingestLocalUsageBatch({
+  const { upserted, changedDates } = await ingestLocalUsageBatch({
     orgId: params.orgId,
     userId: params.userId,
     deviceId: params.deviceId,
@@ -537,14 +555,13 @@ export async function ingestUsageSyncChunk(params: {
   });
   const fingerprintsMs = performance.now() - fingerprintsStart;
 
-  const dirtyDates = params.rows
-    .map((row) => (typeof row.date === "string" ? row.date.slice(0, 10) : null))
-    .filter((value): value is string => Boolean(value));
-  // Facts only: mark dirty + enqueue. Commit settles projections once.
-  await invalidateAnalyticsCache(params.orgId, {
-    dirtyDates: dirtyDates.length ? dirtyDates : [new Date()],
-    rematerialize: false,
-  });
+  // Facts only: mark dirty for days that actually changed + enqueue. Commit settles once.
+  if (changedDates.length) {
+    await invalidateAnalyticsCache(params.orgId, {
+      dirtyDates: changedDates,
+      rematerialize: false,
+    });
+  }
 
   await prisma.syncChunk.create({
     data: {
@@ -580,6 +597,8 @@ export async function commitUsageSync(
     deviceId: string;
     syncRunId: string;
     expectedChunks?: number;
+    /** Agent-side rows still queued after this session; skip heavy settle until 0. */
+    remainingPartitions?: number;
   },
   options: { deferHeavyWork?: boolean } = {},
 ): Promise<{
@@ -705,6 +724,9 @@ export async function commitUsageSync(
     const dirtyRemaining = await prisma.analyticsDirtyDay.count({
       where: { orgId: params.orgId, metricVersion: ORG_DAY_SNAPSHOT_VERSION },
     });
+    // Agent still has more partitions to upload — enqueue only; settle on the final pass.
+    const moreUploadsPending =
+      typeof params.remainingPartitions === "number" && params.remainingPartitions > 0;
     return {
       status: "committed",
       receivedChunks: run.receivedChunks,
@@ -721,7 +743,7 @@ export async function commitUsageSync(
           windowFrom: run.windowFrom,
           windowTo: run.windowTo,
         },
-        settle: true,
+        settle: !moreUploadsPending,
       },
     };
   }

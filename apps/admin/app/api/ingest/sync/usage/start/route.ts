@@ -5,7 +5,7 @@ import { logServerError } from "@/lib/errors/public";
 import { runDeferredUsageStartWork, startUsageSync, type ManifestPartition } from "@/lib/sync/usage-sync";
 import { prisma } from "@usejunction/db";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 function parseSidecar(raw: unknown): { contentHash?: string; items?: Array<Record<string, unknown>> } | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;

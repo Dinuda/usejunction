@@ -187,10 +187,12 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
             dashboardReady?: boolean;
             dirtyDayCount?: number;
           };
-          if (sync.dashboardReady === false || (sync.dirtyDayCount ?? 0) > 0) {
+          // Hot-window gate: only block while the visible window is still dirty.
+          // Older history may keep backfilling without blocking onboarding.
+          if (sync.dashboardReady === false) {
             beginSyncWait(
               candidate,
-              sync.dirtyDayCount && sync.dirtyDayCount > 0
+              (sync.dirtyDayCount ?? 0) > 0
                 ? `Preparing dashboard… (${sync.dirtyDayCount} day${sync.dirtyDayCount === 1 ? "" : "s"} importing)`
                 : "Preparing dashboard…",
             );

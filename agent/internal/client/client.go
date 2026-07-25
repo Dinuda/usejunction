@@ -584,12 +584,16 @@ type CommitUsageSyncResponse struct {
 	DirtyRemaining    int      `json:"dirtyRemaining"`
 }
 
-func (c *APIClient) CommitUsageSync(ctx context.Context, syncRunID string, expectedChunks int) (*CommitUsageSyncResponse, error) {
-	var out CommitUsageSyncResponse
-	if err := c.postJSON(ctx, "/api/ingest/sync/usage/commit", map[string]any{
+func (c *APIClient) CommitUsageSync(ctx context.Context, syncRunID string, expectedChunks int, remainingPartitions ...int) (*CommitUsageSyncResponse, error) {
+	payload := map[string]any{
 		"syncRunId":      syncRunID,
 		"expectedChunks": expectedChunks,
-	}, &out); err != nil {
+	}
+	if len(remainingPartitions) > 0 {
+		payload["remainingPartitions"] = remainingPartitions[0]
+	}
+	var out CommitUsageSyncResponse
+	if err := c.postJSON(ctx, "/api/ingest/sync/usage/commit", payload, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

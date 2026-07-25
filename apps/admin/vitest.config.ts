@@ -13,6 +13,8 @@ export default defineConfig({
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     exclude: ["node_modules", ".next", "e2e"],
     passWithNoTests: false,
+    // DB-backed sync/materialize paths rematerialize yesterday+today and routinely exceed 5s.
+    testTimeout: 60_000,
     pool: "threads",
     maxWorkers: 1,
     clearMocks: true,

@@ -289,7 +289,8 @@ async function bulkUpsertUsageDaily(
   rows: NormalizedLocalUsageRow[],
   observedAt: Date,
   monotonicObservedAt = false,
-) {
+): Promise<string[]> {
+  const changedDates = new Set<string>();
   for (const batch of chunkRows(rows, BULK_CHUNK)) {
     const values = batch.map(
       (row) => Prisma.sql`(
@@ -331,7 +332,7 @@ async function bulkUpsertUsageDaily(
       ? Prisma.sql`usage_daily.observed_at <= EXCLUDED.observed_at`
       : Prisma.sql`TRUE`;
 
-    await tx.$executeRaw`
+    const returned = await tx.$queryRaw<Array<{ date_key: string }>>`
       INSERT INTO usage_daily (
         id, org_id, developer_id, device_id, repository_id, date,
         provider, product, tool_name, model, source, source_ref, verified,
@@ -362,14 +363,21 @@ async function bulkUpsertUsageDaily(
         metadata = EXCLUDED.metadata,
         observed_at = EXCLUDED.observed_at
       WHERE ${conflictWhere}
+      RETURNING to_char(date, 'YYYY-MM-DD') AS date_key
     `;
+    for (const row of returned) {
+      if (row.date_key) changedDates.add(row.date_key);
+    }
   }
+  return [...changedDates];
 }
 
 export type LocalUsageBatchResult = {
   upserted: number;
   totalTokens: number;
   totalRequests: number;
+  /** Calendar days that were actually inserted or updated (not skipped by monotonic WHERE). */
+  changedDates: string[];
   sample: Array<{ date: string; toolName: string; model: string; requests: number; tokens: number }>;
 };
 
@@ -385,15 +393,16 @@ export async function ingestLocalUsageBatch(params: {
 }): Promise<LocalUsageBatchResult> {
   const normalized = normalizeLocalUsageRows(params.rows, { deviceId: params.deviceId });
   if (normalized.length === 0) {
-    return { upserted: 0, totalTokens: 0, totalRequests: 0, sample: [] };
+    return { upserted: 0, totalTokens: 0, totalRequests: 0, changedDates: [], sample: [] };
   }
 
   const repoIds = await resolveRepositoryIdMap(params.orgId, normalized);
   const rows = collapseLocalUsageRows(attachRepositoryIds(normalized, params.deviceId, repoIds));
   const observedAt = params.observedAt ?? new Date();
 
+  let changedDates: string[] = [];
   await prisma.$transaction(async (tx) => {
-    await bulkUpsertUsageDaily(
+    changedDates = await bulkUpsertUsageDaily(
       tx,
       params.orgId,
       params.userId,
@@ -421,5 +430,5 @@ export async function ingestLocalUsageBatch(params: {
     }
   }
 
-  return { upserted: rows.length, totalTokens, totalRequests, sample };
+  return { upserted: rows.length, totalTokens, totalRequests, changedDates, sample };
 }

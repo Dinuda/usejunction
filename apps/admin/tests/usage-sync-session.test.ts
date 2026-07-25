@@ -294,6 +294,85 @@ test("usage sync commit deferHeavyWork schedules reconcile+settle", { skip: !run
   }
 });
 
+test("usage sync commit skips settle when remainingPartitions > 0", { skip: !runDb }, async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const org = await prisma.organization.create({
+    data: { name: `Remain Commit Org ${suffix}`, slug: `remain-c-${suffix}` },
+  });
+  const user = await prisma.developer.create({
+    data: {
+      orgId: org.id,
+      email: `remain-c-${suffix}@example.com`,
+      name: "Remain Commit Dev",
+      role: "owner",
+    },
+  });
+  const device = await prisma.device.create({
+    data: {
+      orgId: org.id,
+      userId: user.id,
+      hostname: "remain-c-host",
+      os: "darwin",
+      architecture: "arm64",
+      agentVersion: "test",
+      deviceToken: `remain-c-tok-${suffix}`,
+    },
+  });
+
+  try {
+    const start = await startUsageSync({
+      orgId: org.id,
+      userId: user.id,
+      deviceId: device.id,
+      partitions: [
+        {
+          partitionKey: "2026-07-21|codex|gpt-5|local_scan|",
+          date: "2026-07-21",
+          tool: "codex",
+          model: "gpt-5",
+          source: "local_scan",
+          contentHash: "remain-c-hash",
+          rowCount: 1,
+        },
+      ],
+    });
+    await ingestUsageSyncChunk({
+      orgId: org.id,
+      userId: user.id,
+      deviceId: device.id,
+      syncRunId: start.syncRunId,
+      chunkId: "remain-c-chunk",
+      rows: [
+        {
+          date: "2026-07-21",
+          toolName: "codex",
+          model: "gpt-5",
+          source: "local_scan",
+          requests: 1,
+          inputTokens: 10,
+          outputTokens: 5,
+        },
+      ],
+    });
+
+    const committed = await commitUsageSync(
+      {
+        orgId: org.id,
+        deviceId: device.id,
+        syncRunId: start.syncRunId,
+        expectedChunks: 1,
+        remainingPartitions: 500,
+      },
+      { deferHeavyWork: true },
+    );
+    assert.equal(committed.status, "committed");
+    assert.equal(committed.deferredWork?.settle, false);
+    assert.ok(committed.deferredWork?.reconcile);
+  } finally {
+    await prisma.organization.delete({ where: { id: org.id } });
+  }
+});
+
 test("usage sync start deferHeavyWork defers empty-delta settle", { skip: !runDb }, async () => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const org = await prisma.organization.create({

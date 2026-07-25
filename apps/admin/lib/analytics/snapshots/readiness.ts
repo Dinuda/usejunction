@@ -135,12 +135,43 @@ export type WorkspaceSyncReadiness = Pick<
 /**
  * Cheap readiness for workspace-context polling: count-only dirty backlog and
  * oldest dirty timestamp — no stub-conflict scans or full dirty-day lists.
+ *
+ * When `windowDays` is set, `dashboardReady` only considers dirty days in
+ * [today - windowDays, yesterday] (today excluded — partial by definition and
+ * rematerialize re-dirties it every pass).
  */
 export async function getWorkspaceSyncReadiness(
   orgId: string,
-  metricVersion: string = DEFAULT_METRIC_VERSION,
+  options:
+    | string
+    | {
+        metricVersion?: string;
+        /** When set, scope dashboardReady to the last N sealed days (excludes today). */
+        windowDays?: number;
+      } = {},
 ): Promise<WorkspaceSyncReadiness> {
+  // Back-compat: previously the 2nd arg was metricVersion string.
+  const opts =
+    typeof options === "string"
+      ? { metricVersion: options }
+      : options ?? {};
+  const metricVersion = opts.metricVersion ?? DEFAULT_METRIC_VERSION;
   const dirtyDayCount = await countOrgDirtyDays(orgId, metricVersion);
+
+  let gateDirty = dirtyDayCount;
+  if (typeof opts.windowDays === "number" && opts.windowDays > 0 && dirtyDayCount > 0) {
+    const today = utcDay(new Date());
+    const yesterday = new Date(today.getTime() - 86_400_000);
+    const fromDay = new Date(today.getTime() - opts.windowDays * 86_400_000);
+    gateDirty = await prisma.analyticsDirtyDay.count({
+      where: {
+        orgId,
+        metricVersion,
+        date: { gte: fromDay, lte: yesterday },
+      },
+    });
+  }
+
   if (dirtyDayCount === 0) {
     return {
       dashboardReady: true,
@@ -157,7 +188,7 @@ export async function getWorkspaceSyncReadiness(
 
   const lagMs = oldest ? Math.max(0, Date.now() - oldest.createdAt.getTime()) : null;
   return {
-    dashboardReady: false,
+    dashboardReady: gateDirty === 0,
     dirtyDayCount,
     snapshotLagSeconds: lagMs == null ? null : Math.floor(lagMs / 1000),
   };

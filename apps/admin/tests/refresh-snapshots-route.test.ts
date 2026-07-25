@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const mocks = vi.hoisted(() => ({
   requireAppPrincipal: vi.fn(),
-  rematerializeOrgSnapshots: vi.fn(),
+  materializeOrgNow: vi.fn(),
   getDashboardReadiness: vi.fn(),
 }));
 
@@ -13,7 +13,7 @@ vi.mock("@/lib/api/app-auth", () => ({
 }));
 
 vi.mock("@/lib/analytics/snapshots", () => ({
-  rematerializeOrgSnapshots: mocks.rematerializeOrgSnapshots,
+  materializeOrgNow: mocks.materializeOrgNow,
   getDashboardReadiness: mocks.getDashboardReadiness,
 }));
 
@@ -24,7 +24,12 @@ beforeEach(() => {
     developerId: "dev-1",
     role: "admin",
   });
-  mocks.rematerializeOrgSnapshots.mockResolvedValue({ dirtyDays: 3, rows: 6, dirtyRemaining: 0 });
+  mocks.materializeOrgNow.mockResolvedValue({
+    dirtyDays: 3,
+    rows: 6,
+    dirtyRemaining: 0,
+    claimed: true,
+  });
   mocks.getDashboardReadiness.mockResolvedValue({
     dashboardReady: true,
     dirtyDayCount: 0,
@@ -50,10 +55,10 @@ test("sync-now refresh-snapshots rematerializes dirty days for the session org",
   assert.equal(body.data.dirtyRemaining, 0);
   assert.equal(body.data.dashboardReady, true);
   assert.equal(body.data.dirtyDayCount, 0);
-  assert.equal(mocks.rematerializeOrgSnapshots.mock.calls.length, 1);
-  assert.deepEqual(mocks.rematerializeOrgSnapshots.mock.calls[0], [
+  assert.equal(mocks.materializeOrgNow.mock.calls.length, 1);
+  assert.deepEqual(mocks.materializeOrgNow.mock.calls[0], [
     "org-sync-1",
-    { includeToday: true },
+    { includeToday: true, maxDurationMs: 240_000, entryPoint: "sync_now" },
   ]);
 });
 
@@ -69,5 +74,5 @@ test("sync-now refresh-snapshots forwards auth failures", async () => {
     }),
   );
   assert.equal(response.status, 401);
-  assert.equal(mocks.rematerializeOrgSnapshots.mock.calls.length, 0);
+  assert.equal(mocks.materializeOrgNow.mock.calls.length, 0);
 });

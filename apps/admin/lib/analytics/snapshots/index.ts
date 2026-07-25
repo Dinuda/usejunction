@@ -11,6 +11,7 @@ export {
   snapshotUtcDay,
   snapshotIsoDay,
   snapshotEachDay,
+  planMaterializeChunks,
 } from "./materialize";
 export {
   ensureDeveloperUsageDaySnapshots,
@@ -39,6 +40,8 @@ export {
 export {
   enqueueMaterializationJob,
   enqueueVersionBumpRematerialize,
+  claimMaterializationJob,
   materializeOrgNow,
   drainMaterializationJobs,
 } from "./jobs";
+export type { MaterializeEntryPoint } from "./jobs";

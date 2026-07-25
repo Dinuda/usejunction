@@ -220,7 +220,7 @@ From `agent/internal/scan/usage_upload.go`:
 | Constant | Value |
 |----------|-------|
 | `UsageUploadBatchSize` | 200 rows/chunk |
-| `UsageUploadMaxBatchesPerSync` | 8 (steady) / 10 (first or force-full) |
+| `UsageUploadMaxBatchesPerSync` | 8 (steady) / 25 (first or force-full) |
 | `UsageUploadConcurrency` | 4 parallel chunk POSTs |
 
 Collect loops up to 32 sync iterations to drain remaining rows. With 100 members on independent 30-minute clocks, expect ~3–4 commits/minute org-wide in the steady state (staggered), each triggering one settle attempt serialized per org.

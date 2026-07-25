@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAppPrincipal } from "@/lib/api/app-auth";
 import { appData, appError, timingHeader } from "@/lib/api/app-response";
-import { getDashboardReadiness, rematerializeOrgSnapshots } from "@/lib/analytics/snapshots";
+import { getDashboardReadiness, materializeOrgNow } from "@/lib/analytics/snapshots";
 
 /** Allow Sync now to clear large dirty backlogs without hitting the default 10s limit. */
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 /**
  * Manual Sync now completion: rematerialize leftover dirty days for the active org.
@@ -18,7 +18,11 @@ export async function POST(request: NextRequest) {
   if (principal instanceof NextResponse) return principal;
 
   try {
-    const result = await rematerializeOrgSnapshots(principal.orgId, { includeToday: true });
+    const result = await materializeOrgNow(principal.orgId, {
+      includeToday: true,
+      maxDurationMs: 240_000,
+      entryPoint: "sync_now",
+    });
     const readiness = await getDashboardReadiness(principal.orgId);
     const loaded = performance.now();
     return appData(

@@ -27,15 +27,15 @@ func TestFilterUsageLookback(t *testing.T) {
 }
 
 func TestTakeUsageUploadBatch(t *testing.T) {
-	pending := make([]types.DailyUsage, 0, 2000)
-	for i := 0; i < 2000; i++ {
-		pending = append(pending, types.DailyUsage{Date: "2026-07-21", ToolName: "codex", Model: string(rune('a'+(i%26))) + string(rune('0'+(i%10)))})
+	pending := make([]types.DailyUsage, 0, 6000)
+	for i := 0; i < 6000; i++ {
+		pending = append(pending, types.DailyUsage{Date: "2026-07-21", ToolName: "codex", Model: string(rune('a'+(i%26))) + fmt.Sprintf("%d", i)})
 	}
 	batch, remaining := TakeUsageUploadBatch(pending, 50, 2)
 	if len(batch) != 100 {
 		t.Fatalf("batch=%d", len(batch))
 	}
-	if len(remaining) != 1900 {
+	if len(remaining) != 5900 {
 		t.Fatalf("remaining=%d", len(remaining))
 	}
 	budget, rest := TakeUsageUploadBatch(pending, UsageUploadBatchSize, UsageUploadMaxBatchesPerSync)
@@ -43,7 +43,7 @@ func TestTakeUsageUploadBatch(t *testing.T) {
 	if len(budget) != wantBudget {
 		t.Fatalf("default budget=%d want %d", len(budget), wantBudget)
 	}
-	if len(rest) != 2000-wantBudget {
+	if len(rest) != 6000-wantBudget {
 		t.Fatalf("default remaining=%d", len(rest))
 	}
 	all, none := TakeUsageUploadBatch(pending[:40], 50, 2)
@@ -55,7 +55,7 @@ func TestTakeUsageUploadBatch(t *testing.T) {
 	if len(first) != wantFirst {
 		t.Fatalf("first-sync budget=%d want %d", len(first), wantFirst)
 	}
-	if len(firstRest) != 2000-wantFirst {
+	if len(firstRest) != 6000-wantFirst {
 		t.Fatalf("first-sync remaining=%d", len(firstRest))
 	}
 }

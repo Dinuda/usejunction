@@ -21,8 +21,8 @@ const UsageUploadBatchSize = 200
 const UsageUploadMaxBatchesPerSync = 8
 
 // UsageUploadMaxBatchesPerSyncFirst raises the first-sync / force-full budget
-// so ~2k partitions typically finish in one pass (200 × 10).
-const UsageUploadMaxBatchesPerSyncFirst = 10
+// so ~5k partitions typically finish in one pass (200 × 25).
+const UsageUploadMaxBatchesPerSyncFirst = 25
 
 // UsageUploadConcurrency is how many batch POSTs run at once. Keep modest so
 // the control-plane upsert loop is not saturated by one agent.

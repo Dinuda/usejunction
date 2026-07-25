@@ -129,7 +129,7 @@ func UploadUsageSession(ctx context.Context, api *client.APIClient, rows []types
 		}
 	}
 	if len(pending) == 0 {
-		_, err = api.CommitUsageSync(ctx, start.SyncRunID, 0)
+		_, err = api.CommitUsageSync(ctx, start.SyncRunID, 0, 0)
 		return 0, 0, warnings, err
 	}
 
@@ -182,7 +182,7 @@ func UploadUsageSession(ctx context.Context, api *client.APIClient, rows []types
 		uploaded += r.upserted
 	}
 
-	commit, commitErr := api.CommitUsageSync(ctx, start.SyncRunID, len(chunks))
+	commit, commitErr := api.CommitUsageSync(ctx, start.SyncRunID, len(chunks), remaining)
 	if commitErr != nil {
 		return uploaded, remaining + len(pending) - uploaded, warnings, commitErr
 	}

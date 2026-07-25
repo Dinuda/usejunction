@@ -130,8 +130,14 @@ function parseDeveloperIds(value: unknown): string[] {
   return [];
 }
 
-/** Cap each CTE window so large rematerialize jobs stay within serverless budgets. */
+/** Steady-state CTE width once the hot tip has been sealed. */
 const MATERIALIZE_CHUNK_DAYS = 14;
+
+/**
+ * Newest-first escalating widths so today seals in the first CTE, then history
+ * widens (1 → 2 → 4 → 7 → 14) for efficient backfill under a deadline.
+ */
+const MATERIALIZE_ESCALATING_CHUNK_DAYS = [1, 2, 4, 7, MATERIALIZE_CHUNK_DAYS] as const;
 
 async function withOrgDbLock(orgId: string, work: () => Promise<void>): Promise<void> {
   // In-process serialization. Cross-instance races are bounded by upsert/skipDuplicates
@@ -161,6 +167,28 @@ export async function materializeOrgUsageRange(
   return total;
 }
 
+/** Split [fromDay, toDay] into newest-first escalating chunks. Exported for tests. */
+export function planMaterializeChunks(fromDay: Date, toDay: Date): Array<{ from: Date; to: Date }> {
+  const fromMs = utcDay(fromDay).getTime();
+  const toMs = utcDay(toDay).getTime();
+  if (toMs < fromMs) return [];
+
+  const chunks: Array<{ from: Date; to: Date }> = [];
+  let cursor = toMs;
+  let stepIdx = 0;
+  while (cursor >= fromMs) {
+    const width = MATERIALIZE_ESCALATING_CHUNK_DAYS[
+      Math.min(stepIdx, MATERIALIZE_ESCALATING_CHUNK_DAYS.length - 1)
+    ]!;
+    const chunkTo = new Date(cursor);
+    const chunkFromMs = Math.max(fromMs, cursor - (width - 1) * 86_400_000);
+    chunks.push({ from: new Date(chunkFromMs), to: chunkTo });
+    cursor = chunkFromMs - 86_400_000;
+    stepIdx += 1;
+  }
+  return chunks;
+}
+
 async function materializeOrgUsageRangeChunks(
   orgId: string,
   fromDay: Date,
@@ -169,17 +197,9 @@ async function materializeOrgUsageRangeChunks(
   deadlineMs?: number,
 ): Promise<number> {
   let total = 0;
-  for (
-    let cursor = fromDay.getTime();
-    cursor <= toDay.getTime();
-    cursor += MATERIALIZE_CHUNK_DAYS * 86_400_000
-  ) {
+  for (const chunk of planMaterializeChunks(fromDay, toDay)) {
     if (typeof deadlineMs === "number" && Date.now() >= deadlineMs) break;
-    const chunkFrom = new Date(cursor);
-    const chunkTo = new Date(
-      Math.min(cursor + (MATERIALIZE_CHUNK_DAYS - 1) * 86_400_000, toDay.getTime()),
-    );
-    total += await materializeOrgUsageRangeUnlocked(orgId, chunkFrom, chunkTo, metricVersion);
+    total += await materializeOrgUsageRangeUnlocked(orgId, chunk.from, chunk.to, metricVersion);
   }
   return total;
 }
@@ -600,7 +620,8 @@ export async function materializeDirtyOrgUsageDays(
 
   let rows = 0;
   let days = 0;
-  for (const range of ranges) {
+  // Newest-first so a truncated budget seals the visible window before history.
+  for (const range of [...ranges].reverse()) {
     if (typeof options.deadlineMs === "number" && Date.now() >= options.deadlineMs) break;
     rows += await materializeOrgUsageRange(orgId, range.from, range.to, metricVersion, {
       deadlineMs: options.deadlineMs,

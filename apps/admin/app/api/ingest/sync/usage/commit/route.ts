@@ -6,7 +6,7 @@ import { commitUsageSync, runDeferredUsageCommitWork } from "@/lib/sync/usage-sy
 import { prisma } from "@usejunction/db";
 import { timingHeader } from "@/lib/api/app-response";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   const totalStart = performance.now();
@@ -48,6 +48,8 @@ export async function POST(req: NextRequest) {
         deviceId,
         syncRunId,
         expectedChunks: typeof body.expectedChunks === "number" ? body.expectedChunks : undefined,
+        remainingPartitions:
+          typeof body.remainingPartitions === "number" ? body.remainingPartitions : undefined,
       },
       { deferHeavyWork: true },
     );
