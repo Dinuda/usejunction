@@ -171,6 +171,8 @@ Requires an existing `~/.usejunction/config.json` (from `./install.sh --token â€
 
 When you enroll against a **local** control plane (`http://localhost:3001`), `/install.sh` injects `USEJUNCTION_ROOT` so `curl | sh` builds the agent from this checkout as `0.0.0-dev.*` instead of downloading a published release. Production hosts still serve the plain customer installer (published releases only).
 
+**Install gotchas:** A prior `pnpm agent:reinstall` writes `~/.usejunction/dev-source`, so later `curl | sh` against prod may still build `0.0.0-dev.*`. Production customer installs also require a **promoted** release (`GET /api/agent-releases/latest` must return 200); a GitHub `agent-v*` tag alone is not enough. See [Install script behavior (prod vs dev)](docs/agent-releases.md#install-script-behavior-prod-vs-dev).
+
 For faster change detection, install `fswatch` (`brew install fswatch`). Without it, the watcher polls every ~750ms.
 
 ## Architecture

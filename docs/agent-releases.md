@@ -410,6 +410,121 @@ usejunction update --rollback
 
 That restores the retained binary, restarts the service, and reports rollback confirmation.
 
+## Install script behavior (prod vs dev)
+
+`install.sh` chooses between **downloading a published release** and **building from a local checkout**. The `--url` flag only selects which control plane to enroll against; it does **not** by itself force a production binary.
+
+### Decision flow
+
+```mermaid
+flowchart TD
+  A[curl install.sh] --> B{~/.usejunction/dev-source exists?}
+  B -->|yes| C[Set USEJUNCTION_ROOT from pin]
+  B -->|no| D{GET /api/agent-releases/latest}
+  C --> E[Build from source as 0.0.0-dev.*]
+  D -->|404 / no version| F{Local checkout available?}
+  D -->|active release| G[Download published artifact]
+  F -->|no| H[Exit: no active release]
+  F -->|yes| E
+```
+
+1. **Check for a dev pin** — If `~/.usejunction/dev-source` exists and points at a repo with `agent/main.go`, the installer sets `USEJUNCTION_ROOT` and builds from that checkout.
+2. **Check the control plane** — `GET /api/agent-releases/latest` must return an active or superseded release. The installer parses `manifest.version` from the JSON response.
+3. **Prefer source when pinned** — A pinned checkout always rebuilds locally; it never silently downloads a published release over your working tree.
+4. **Download only when published** — If step 2 succeeds and no dev pin forces a source build, the installer downloads the artifact advertised by the control plane (control-plane mirror first, GitHub fallback). It does **not** guess a version from GitHub when the control plane has no active release.
+
+Quick check:
+
+```bash
+curl -fsSL https://usejunction.dev/api/agent-releases/latest
+# 200 + manifest.version → customer install path is ready
+# 404 {"error":"no active release"} → promote a release first (see below)
+```
+
+### Local dev builds (`0.0.0-dev.*`)
+
+When the installer builds from source it stamps:
+
+```text
+0.0.0-dev.<git-short-sha>.<unix-timestamp>
+```
+
+This is intentional:
+
+- Published semver (`0.3.7`) sorts above `0.0.0-dev.*`, so OTA would otherwise overwrite a developer’s local build on the next heartbeat.
+- The agent updater refuses OTA over `0.0.0-dev.*` binaries (`ErrLocalDevPinned`).
+- The control plane treats dev versions as compatible for local work but they are not fleet releases.
+
+**What creates the dev pin**
+
+| Action | Effect |
+|--------|--------|
+| `pnpm agent:reinstall` / `scripts/dev-agent-reinstall.sh` | Rebuilds from repo, writes `~/.usejunction/dev-source` |
+| `install.sh` with `USEJUNCTION_ROOT` set | Same: source build + dev pin |
+| Prior source-based install | Pin persists across later `curl \| sh` runs |
+
+**Symptom:** Install against `https://usejunction.dev` still prints `Building agent from source … as v0.0.0-dev.…` and `Using pinned local checkout from ~/.usejunction/dev-source`.
+
+**Cause:** This machine is in developer mode, not customer mode. The control plane URL does not override the pin.
+
+**To switch back to a published release on this machine:**
+
+```bash
+rm ~/.usejunction/dev-source
+USEJUNCTION_FORCE_RELEASE=1 curl -fsSL https://usejunction.dev/install.sh | sh -s -- --token <token> --url https://usejunction.dev
+```
+
+`USEJUNCTION_FORCE_RELEASE=1` is required if a `0.0.0-dev.*` binary is already installed; otherwise the installer keeps the existing dev binary.
+
+### Production install requires promotion, not just a GitHub tag
+
+Customer installs on `https://usejunction.dev` need an **active** `agentRelease` row in Postgres. Tagging `agent-vX.Y.Z` only creates an immutable **candidate** on GitHub Releases; **promotion** is a separate protected step that calls `POST /api/internal/agent-releases/promote`.
+
+| State | GitHub Releases | `/api/agent-releases/latest` | `curl …/install.sh` on prod |
+|-------|-----------------|------------------------------|-----------------------------|
+| Tag pushed, draft candidate | Artifacts exist (may be draft) | 404 | Fails unless local checkout pinned |
+| Promoted | Published + signed manifest | 200 with `manifest.version` | Downloads published binary |
+| Paused on control plane | May still exist on GitHub | 404 (paused excluded) | Fails unless local checkout |
+
+**Symptom:**
+
+```text
+No active agent release is published on https://usejunction.dev, and no local checkout was available to build from.
+```
+
+**Cause:** No release has been promoted (or the active release was paused). A `agent-v*` tag on GitHub alone is not enough.
+
+**Fix (operators):**
+
+```bash
+gh workflow run agent-release-control.yml \
+  -f action=promote \
+  -f version=0.3.7 \
+  -f urgency=normal
+```
+
+Then verify:
+
+```bash
+curl -fsSL https://usejunction.dev/api/agent-releases/latest | jq .manifest.version
+```
+
+**Fix (developer on this machine, before promotion):**
+
+```bash
+USEJUNCTION_ROOT=/path/to/usejunction curl -fsSL https://usejunction.dev/install.sh | sh -s -- --token <token> --url https://usejunction.dev
+# or, after enroll: pnpm agent:reinstall
+```
+
+### Environment overrides
+
+| Variable | Effect |
+|----------|--------|
+| `USEJUNCTION_ROOT` | Force build from this monorepo checkout |
+| `USEJUNCTION_BUILD_FROM_SOURCE=1` | Prefer source build when possible |
+| `USEJUNCTION_FORCE_RELEASE=1` | Download published release even if a `0.0.0-dev.*` binary is installed |
+| `USEJUNCTION_URL` / `--url` | Control plane base URL for enroll and release lookup (default local: `http://localhost:3001`) |
+
 ## Coverage model
 
 Coverage is defined against the release-time cohort (`cohortMember = true`).
@@ -599,3 +714,14 @@ Common failure modes:
 - device architecture does not match a published artifact
 - checksum validation failed on the agent
 - the agent was rolled back and the version is locally blocked
+
+### Install-specific failures
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| `Building agent … as v0.0.0-dev.…` against prod URL | `~/.usejunction/dev-source` pin from `pnpm agent:reinstall` or prior source install | Expected for dev; remove pin + `USEJUNCTION_FORCE_RELEASE=1` for a fleet binary |
+| `No active agent release is published on …` | `/api/agent-releases/latest` returns 404 — nothing promoted (or release paused) | Run **Agent release control** promote workflow; confirm with `curl …/api/agent-releases/latest` |
+| Install worked locally (`localhost:3001`) but fails on prod | Local admin injects `USEJUNCTION_ROOT`; prod has no promoted release | Promote a release for prod customers; use `USEJUNCTION_ROOT` for pre-promote dev enroll |
+| GitHub shows `agent-v0.3.7` but install still fails | Tag ≠ activation; installer trusts control plane, not GitHub alone | Promote that version to the control plane |
+
+See [Install script behavior (prod vs dev)](#install-script-behavior-prod-vs-dev) for the full decision flow.

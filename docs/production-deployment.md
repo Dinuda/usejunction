@@ -150,6 +150,14 @@ Pushing to `main` does **not** update enrolled devices.
 
 Full ship checklist: [agent-releases.md § How to ship a production agent release](./agent-releases.md#how-to-ship-a-production-agent-release).
 
+**Before sharing the customer install URL:** confirm promotion, not just the GitHub tag:
+
+```bash
+curl -fsSL https://usejunction.dev/api/agent-releases/latest
+```
+
+A `404` means `curl | install.sh` will fail for customers without a local dev checkout. See [Install script behavior (prod vs dev)](./agent-releases.md#install-script-behavior-prod-vs-dev).
+
 ## First-time go-live checklist
 
 1. [ ] Production Postgres provisioned; pooled Prisma-compatible `DATABASE_URL` set
