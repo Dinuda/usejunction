@@ -25,7 +25,7 @@ export async function startOAuthSignIn(
   oauthSignInInFlight = true;
 
   try {
-    const result = await signIn(provider, { callbackUrl });
+    const result = (await signIn(provider, { callbackUrl })) as { error?: string } | undefined;
     if (result?.error) {
       oauthSignInInFlight = false;
       return false;
