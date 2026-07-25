@@ -4,10 +4,12 @@ import { limitedJson } from "@/lib/security/http";
 import { logServerError } from "@/lib/errors/public";
 import { commitUsageSync } from "@/lib/sync/usage-sync";
 import { prisma } from "@usejunction/db";
+import { timingHeader } from "@/lib/api/app-response";
 
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
+  const totalStart = performance.now();
   try {
     const parsedBody = await limitedJson(req, 64 * 1024);
     if (!parsedBody.ok) return parsedBody.response;
@@ -46,7 +48,20 @@ export async function POST(req: NextRequest) {
       syncRunId,
       expectedChunks: typeof body.expectedChunks === "number" ? body.expectedChunks : undefined,
     });
-    return NextResponse.json({ ok: true, ...result });
+    const totalMs = performance.now() - totalStart;
+    const serverTiming = timingHeader({
+      materialize: result.timings.materializeMs,
+      total: totalMs,
+    });
+    console.info("[sync/usage/commit-timing]", {
+      orgId,
+      deviceId,
+      syncRunId,
+      materializeMs: result.timings.materializeMs,
+      dirtyRemaining: result.dirtyRemaining,
+      totalMs,
+    });
+    return NextResponse.json({ ok: true, ...result }, { headers: { "server-timing": serverTiming } });
   } catch (error) {
     logServerError("sync/usage/commit", error);
     return NextResponse.json({ error: "sync commit failed" }, { status: 500 });

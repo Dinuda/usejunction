@@ -2,7 +2,6 @@ import { prisma } from "@usejunction/db";
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 import {
-  ensureOrgUsageDaySnapshots,
   readOrgUsageFromSnapshots,
   type SnapshotToolDay,
 } from "@/lib/analytics/snapshots";
@@ -297,21 +296,21 @@ async function readAllocatedCycleUsage(
   return usageBySlice;
 }
 
-export async function getOrgOverview(
-  context: InsightContext,
-  input: OverviewInput,
-): Promise<InsightEnvelope<OrgOverviewV1>> {
-  assertInsightRoles(context, rolesFor("org_overview"));
+export type OrgOverviewShellData = {
+  coverage: {
+    developers: number;
+    devices: number;
+    configuredTools: number;
+    trackedTools: number;
+  };
+  health: Awaited<ReturnType<typeof getDashboardConfigHealth>>;
+  detectedInstallations: Array<{ toolName: string; count: number }>;
+};
 
-  const orgId = context.orgId;
-  const cycleView: CycleView = input.cycleView;
-
-  // Load plans first so current/previous cycle views can align KPI/chart windows
-  // to billing cycles (same behavior as team/tools/signals).
-  // Load the subscription rows once. The same rows are needed to resolve
-  // cycle windows and to calculate plan utilization below.
-  const subscriptionRows = await listSubscriptions(orgId);
-  const subscriptions: SubscriptionCycleSource[] = filterCycleCodingSubscriptions(subscriptionRows, isCodingTool).map((plan) => ({
+function mapSubscriptionCycleSources(
+  subscriptionRows: Awaited<ReturnType<typeof listSubscriptions>>,
+): SubscriptionCycleSource[] {
+  return filterCycleCodingSubscriptions(subscriptionRows, isCodingTool).map((plan) => ({
     id: plan.id,
     name: plan.name,
     toolKey: plan.toolKey,
@@ -325,6 +324,77 @@ export async function getOrgOverview(
     startDate: plan.createdAt,
     endDate: null as Date | null,
   }));
+}
+
+/** Static org metadata — no usage windows or snapshot reads. */
+export async function getOrgOverviewShell(orgId: string): Promise<OrgOverviewShellData> {
+  const [totalDevelopers, deviceCoverage, configuredTools, trackedTools, health, detectedInstallations] =
+    await Promise.all([
+      prisma.developer.count({ where: { orgId } }),
+      readDeviceCoverage(orgId),
+      prisma.toolInstallation.count({ where: { orgId, detected: true, configured: true } }),
+      prisma.toolInstallation.count({ where: { orgId, detected: true } }),
+      getDashboardConfigHealth(orgId),
+      prisma.toolInstallation.groupBy({
+        by: ["toolName"],
+        where: { orgId, detected: true },
+        _count: { id: true },
+      }),
+    ]);
+
+  return {
+    coverage: {
+      developers: totalDevelopers,
+      devices: deviceCoverage.devices,
+      configuredTools,
+      trackedTools,
+    },
+    health,
+    detectedInstallations: detectedInstallations.map((row) => ({
+      toolName: row.toolName,
+      count: row._count.id,
+    })),
+  };
+}
+
+export type OrgOverviewMetricsData = Omit<OrgOverviewV1, "coverage" | "hasActivity"> & {
+  coverage: Pick<OrgOverviewV1["coverage"], "activeDevelopers">;
+  /** Usage-only activity signal; client merges shell.detectedInstallations for empty-state. */
+  hasUsageActivity: boolean;
+};
+
+function mergeOverviewShell(
+  shell: OrgOverviewShellData,
+  metrics: OrgOverviewMetricsData,
+): OrgOverviewV1 {
+  return {
+    ...metrics,
+    hasActivity:
+      metrics.hasUsageActivity ||
+      metrics.tools.some((tool) => tool.requests > 0) ||
+      shell.detectedInstallations.length > 0,
+    coverage: {
+      ...shell.coverage,
+      activeDevelopers: metrics.coverage.activeDevelopers,
+    },
+  };
+}
+
+export async function getOrgOverviewMetrics(
+  context: InsightContext,
+  input: OverviewInput,
+  options: {
+    subscriptions: Awaited<ReturnType<typeof listSubscriptions>>;
+    shell?: OrgOverviewShellData;
+  },
+): Promise<InsightEnvelope<OrgOverviewV1 | OrgOverviewMetricsData>> {
+  assertInsightRoles(context, rolesFor("org_overview"));
+
+  const orgId = context.orgId;
+  const cycleView: CycleView = input.cycleView;
+  const { shell } = options;
+  const subscriptionRows = options.subscriptions;
+  const subscriptions = mapSubscriptionCycleSources(subscriptionRows);
 
   let reportWindow: MetricWindow;
   let previousWindow: MetricWindow;
@@ -347,24 +417,8 @@ export async function getOrgOverview(
     previousToExclusive: usageExclusiveEnd(previousWindow.to),
   };
 
-  // Seal stubs (and fail-safe rematerialize if snaps were wiped) for the union
-  // window once — never two parallel ensures that each touch ~30 days.
-  const ensureFrom = new Date(Math.min(reportWindow.from.getTime(), previousWindow.from.getTime()));
-  const ensureTo = new Date(Math.max(reportWindow.to.getTime(), previousWindow.to.getTime()));
-  await ensureOrgUsageDaySnapshots(orgId, ensureFrom, ensureTo);
-
-  const [
-    currentUsage,
-    previousUsage,
-    failures,
-    totalDevelopers,
-    deviceCoverage,
-    configuredTools,
-    trackedTools,
-    health,
-    detectedInstallations,
-    planUsage,
-  ] = await Promise.all([
+  // Page reads never ensure/rematerialize — sync commit + cron own freshness.
+  const [currentUsage, previousUsage, failures, planUsage] = await Promise.all([
     readOverviewUsage(orgId, reportWindow, true, { ensure: false }),
     readOverviewUsage(orgId, previousWindow, false, { ensure: false }),
     prisma.$queryRaw<
@@ -386,16 +440,6 @@ export async function getOrgOverview(
         AND r.status <> 'success'
       ORDER BY r.created_at DESC LIMIT 5
     `,
-    prisma.developer.count({ where: { orgId } }),
-    readDeviceCoverage(orgId),
-    prisma.toolInstallation.count({ where: { orgId, detected: true, configured: true } }),
-    prisma.toolInstallation.count({ where: { orgId, detected: true } }),
-    getDashboardConfigHealth(orgId),
-    prisma.toolInstallation.groupBy({
-      by: ["toolName"],
-      where: { orgId, detected: true },
-      _count: { id: true },
-    }),
     getPlanUsage(context, { reportWindow }, { subscriptions: subscriptionRows }),
   ]);
 
@@ -432,7 +476,6 @@ export async function getOrgOverview(
       reportWindow.to.getTime(),
     ));
     if (allocFrom.getTime() < reportWindow.from.getTime() || allocTo.getTime() > reportWindow.to.getTime()) {
-      await ensureOrgUsageDaySnapshots(orgId, allocFrom, allocTo);
       const expanded = await readOverviewUsage(orgId, toMetricWindow(allocFrom, allocTo), true, { ensure: false });
       allocationToolDays = expanded.toolDays;
     }
@@ -462,22 +505,30 @@ export async function getOrgOverview(
     cost: tool.cost,
     activeDevelopers: tool.activeDevelopers,
   }));
-  for (const installation of detectedInstallations) {
-    if (!mergedTools.some((tool) => tool.name === installation.toolName)) {
-      mergedTools.push({ name: installation.toolName, requests: 0, cost: 0, activeDevelopers: 0 });
+  if (shell) {
+    for (const installation of shell.detectedInstallations) {
+      if (!mergedTools.some((tool) => tool.name === installation.toolName)) {
+        mergedTools.push({ name: installation.toolName, requests: 0, cost: 0, activeDevelopers: 0 });
+      }
     }
   }
 
+  const planVerdicts = planUsage.data.subscriptions.map((row) => ({
+    id: row.planTemplateId,
+    name: `${toolDisplayName(row.toolName)} ${row.planName}`,
+    verdict: row.verdict,
+  }));
   const attention = buildAttentionItems({
-    healthIssues: health.issues,
-    planVerdicts: planUsage.data.subscriptions.map((row) => ({
-      id: row.planTemplateId,
-      name: `${toolDisplayName(row.toolName)} ${row.planName}`,
-      verdict: row.verdict,
-    })),
+    healthIssues: shell?.health.issues ?? [],
+    planVerdicts,
   });
 
-  const data: OrgOverviewV1 = {
+  const hasUsageActivity =
+    usageKpis.modelCalls > 0 ||
+    usageKpis.tokens > 0 ||
+    mergedTools.some((tool) => tool.requests > 0);
+
+  const metrics: OrgOverviewMetricsData = {
     range,
     cycleView,
     period: {
@@ -486,11 +537,7 @@ export async function getOrgOverview(
       previousFrom: dates.previousFrom.toISOString(),
       previousTo: dates.previousTo.toISOString(),
     },
-    hasActivity:
-      usageKpis.modelCalls > 0 ||
-      usageKpis.tokens > 0 ||
-      mergedTools.some((tool) => tool.requests > 0) ||
-      detectedInstallations.length > 0,
+    hasUsageActivity,
     partialData: Boolean(usageKpis.partialData || previousKpis.partialData),
     observation,
     kpis: {
@@ -498,10 +545,8 @@ export async function getOrgOverview(
         value: cycleCommitment,
         previousValue: 0,
         deltaPercent: null,
-        basis: subscriptionSlices.length ? "subscriptions" : "none",
+        basis: subscriptionSlices.length ? ("subscriptions" as const) : ("none" as const),
       },
-      // Usage KPIs use the same report-window org totals as the chart/tools list,
-      // not subscription-cycle allocation (which is $0 when no plans are configured).
       verifiedUsageCost: {
         value: usageKpis.verifiedUsageCost,
         previousValue: previousKpis.verifiedUsageCost,
@@ -539,8 +584,6 @@ export async function getOrgOverview(
             };
           }),
         ).map((row) => {
-          // Seat billing anchors can start after recent traffic (newly detected
-          // Ultra). Floor with report-window requests so Current cycles matches Tools.
           const key = canonicalToolKey(row.toolKey ?? row.toolName);
           const reportCalls = reportWindowRequests.get(key) ?? 0;
           return reportCalls > row.modelCalls ? { ...row, modelCalls: reportCalls } : row;
@@ -583,11 +626,7 @@ export async function getOrgOverview(
     attention,
     tools: mergedTools,
     coverage: {
-      developers: totalDevelopers,
       activeDevelopers: currentUsage.activeDevelopers,
-      devices: deviceCoverage.devices,
-      configuredTools,
-      trackedTools,
     },
     failures: failures.map((failure) => ({
       id: failure.id,
@@ -600,6 +639,8 @@ export async function getOrgOverview(
     })),
   };
 
+  const data = shell ? mergeOverviewShell(shell, metrics) : metrics;
+
   return makeInsightEnvelope({
     context,
     kind: "overview",
@@ -607,6 +648,19 @@ export async function getOrgOverview(
     dataThrough: currentUsage.dataThrough,
     data,
   });
+}
+
+export async function getOrgOverview(
+  context: InsightContext,
+  input: OverviewInput,
+): Promise<InsightEnvelope<OrgOverviewV1>> {
+  const orgId = context.orgId;
+  const [subscriptionRows, shell] = await Promise.all([
+    listSubscriptions(orgId),
+    getOrgOverviewShell(orgId),
+  ]);
+  const envelope = await getOrgOverviewMetrics(context, input, { subscriptions: subscriptionRows, shell });
+  return envelope as InsightEnvelope<OrgOverviewV1>;
 }
 
 export function overviewInputFromRange(

@@ -120,30 +120,45 @@ func runOnboard() error {
 	ui.QuietLine("Config saved to " + config.ConfigPath())
 
 	setupStep := ui.StepStart("Enabling Claude Code metrics")
-	if err := configure.RunSetup(res.cfg, configure.SetupOptions{EnableOtel: true}); err != nil {
-		setupStep.Fail(err.Error())
-		ui.WarnLine(fmt.Sprintf("setup warning: %v", err))
+	reportStep := ui.StepStart("Uploading initial usage")
+
+	var setupErr error
+	var stats *reportStats
+	var reportErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		setupErr = configure.RunSetup(res.cfg, configure.SetupOptions{EnableOtel: true})
+	}()
+	go func() {
+		defer wg.Done()
+		stats, reportErr = runInitialReportWithProgress(true, func(step, message string) {
+			reportStep.Update(humanizeCollectProgress(step, message))
+		})
+	}()
+	wg.Wait()
+
+	if setupErr != nil {
+		setupStep.Fail(setupErr.Error())
+		ui.WarnLine(fmt.Sprintf("setup warning: %v", setupErr))
 	} else {
 		setupStep.Done("OpenTelemetry usage export → UseJunction")
 		ui.QuietLine("Writes ~/.usejunction/claude-env.sh so Claude Code can send usage metrics")
 	}
 
-	reportStep := ui.StepStart("Uploading initial usage")
-	stats, err := runInitialReportWithProgress(true, func(step, message string) {
-		reportStep.Update(humanizeCollectProgress(step, message))
-	})
 	tools := []types.ToolStatus{}
 	if stats != nil {
 		tools = stats.ToolList
 	}
-	if err != nil {
-		if errors.Is(err, errUsageQueuePending) && stats != nil {
+	if reportErr != nil {
+		if errors.Is(reportErr, errUsageQueuePending) && stats != nil {
 			reportStep.Done(fmt.Sprintf("%d tools · %d accounts · %d quotas · %d usage rows (more queued)",
 				stats.Tools, stats.Accounts, stats.Quotas, stats.Usage))
-			ui.WarnLine(fmt.Sprintf("initial report warning: %v", err))
+			ui.WarnLine(fmt.Sprintf("initial report warning: %v", reportErr))
 		} else {
-			reportStep.Fail(err.Error())
-			ui.WarnLine(fmt.Sprintf("initial report warning: %v", err))
+			reportStep.Fail(reportErr.Error())
+			ui.WarnLine(fmt.Sprintf("initial report warning: %v", reportErr))
 		}
 	} else if stats != nil {
 		reportStep.Done(fmt.Sprintf("%d tools · %d accounts · %d quotas · %d usage rows",

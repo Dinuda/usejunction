@@ -1,8 +1,7 @@
 import { prisma } from "@usejunction/db";
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import { resolveReportWindow } from "@/lib/analytics/contracts/time-window";
-import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
-import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
+import { readToolActivityFromSnapshots } from "@/lib/analytics/snapshots";
 
 export interface DashboardToolsData {
   tools: Array<{
@@ -57,7 +56,7 @@ export async function getDashboardTools(
   orgId: string,
   reportWindow: MetricWindow = resolveReportWindow({ range: 30 }),
 ): Promise<DashboardToolsData> {
-  const [installations, configured, usageRows, claims, quotas] = await Promise.all([
+  const [installations, configured, toolActivity, claims, quotas] = await Promise.all([
     prisma.toolInstallation.groupBy({
       by: ["toolName"],
       where: { orgId, detected: true },
@@ -68,12 +67,7 @@ export async function getDashboardTools(
       where: { orgId, detected: true, configured: true },
       _count: { id: true },
     }),
-    readUsageMetrics({
-      orgId,
-      window: reportWindow,
-      measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
-      dimensions: ["tool", "costKind"],
-    }),
+    readToolActivityFromSnapshots(orgId, reportWindow, { ensure: false }),
     prisma.developerToolClaim.groupBy({
       by: ["toolName", "source"],
       where: { orgId, enabled: true },
@@ -83,32 +77,18 @@ export async function getDashboardTools(
   ]);
 
   const configuredMap = new Map(configured.map((c) => [c.toolName, c._count.id]));
-  const activityMap = new Map<
-    string,
-    { requests: number; cost: number; tokens: number; inputTokens: number; outputTokens: number }
-  >();
-  for (const row of usageRows.data.rows) {
-    const toolName = dimension(row, "tool") || "unknown";
-    const current = activityMap.get(toolName) ?? {
-      requests: 0,
-      cost: 0,
-      tokens: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-    };
-    const cost = summarizeCanonicalCosts([{
-      costMicros: metricNumber(row, "costMicros"),
-      costKind: dimension(row, "costKind"),
-    }]);
-    const inputTokens = metricNumber(row, "inputTokens");
-    const outputTokens = metricNumber(row, "outputTokens");
-    current.requests += metricNumber(row, "requests");
-    current.cost += cost.totalUsageCost;
-    current.inputTokens += inputTokens;
-    current.outputTokens += outputTokens;
-    current.tokens += inputTokens + outputTokens;
-    activityMap.set(toolName, current);
-  }
+  const activityMap = new Map(
+    toolActivity.map((row) => [
+      row.toolName,
+      {
+        requests: row.requests,
+        cost: row.cost,
+        tokens: row.tokens,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+      },
+    ]),
+  );
 
   const quotasByTool = new Map<string, DashboardToolsData["tools"][number]["quotas"]>();
 

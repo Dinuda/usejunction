@@ -40,6 +40,7 @@ vi.mock("@usejunction/db", () => ({
     },
     analyticsDirtyDay: {
       findMany: vi.fn(async () => []),
+      findFirst: vi.fn(async () => null),
       count: vi.fn(async () => 0),
     },
     orgUsageDaySnapshot: {

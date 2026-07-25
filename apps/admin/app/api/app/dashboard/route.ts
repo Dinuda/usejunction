@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAppPrincipal } from "@/lib/api/app-auth";
 import { appData, timingHeader } from "@/lib/api/app-response";
-import { loadDashboardPage } from "@/lib/app-pages/dashboard";
+import { loadDashboardPage, type DashboardSlice } from "@/lib/app-pages/dashboard";
+
+function parseDashboardSlice(value: string | null): DashboardSlice {
+  if (value === "shell" || value === "metrics") return value;
+  return "full";
+}
 
 export async function GET(request: NextRequest) {
   const started = performance.now();
@@ -10,13 +15,17 @@ export async function GET(request: NextRequest) {
   if (principal instanceof NextResponse) return principal;
 
   const query = request.nextUrl.searchParams;
-  const data = await loadDashboardPage(principal, {
-    view: query.get("view"),
-    days: query.get("days"),
-    from: query.get("from"),
-    to: query.get("to"),
-    scope: query.get("scope"),
-  });
+  const data = await loadDashboardPage(
+    principal,
+    {
+      view: query.get("view"),
+      days: query.get("days"),
+      from: query.get("from"),
+      to: query.get("to"),
+      scope: query.get("scope"),
+    },
+    parseDashboardSlice(query.get("slice")),
+  );
   const loaded = performance.now();
   return appData(data, {
     serverTiming: timingHeader({

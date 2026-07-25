@@ -100,6 +100,18 @@ export function useAppQuery<T>(
   });
 }
 
+/** Page data queries keep the previous payload visible while filters change. */
+export function useAppPageQuery<T>(
+  queryKey: QueryKey,
+  url: string,
+  options: Omit<UseQueryOptions<T, AppApiError>, "queryKey" | "queryFn" | "placeholderData"> = {},
+) {
+  return useAppQuery<T>(queryKey, url, {
+    placeholderData: (previousData) => previousData,
+    ...options,
+  });
+}
+
 /** Refetch every active private page model after a successful browser mutation. */
 export function useInvalidateAppData() {
   const queryClient = useQueryClient();

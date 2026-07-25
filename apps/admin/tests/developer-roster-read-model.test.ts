@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   developerFindMany: vi.fn(),
   membershipFindMany: vi.fn(),
-  readUsageMetrics: vi.fn(),
+  readDeveloperActivityFromSnapshots: vi.fn(),
 }));
 
 vi.mock("@usejunction/db", () => ({
@@ -13,18 +13,14 @@ vi.mock("@usejunction/db", () => ({
   },
 }));
 
-vi.mock("@/lib/analytics/query", () => ({
-  dimension: (row: { dimensions?: Record<string, string> }, key: string) =>
-    row.dimensions?.[key] ?? "",
-  metricNumber: (row: { metrics?: Record<string, number> }, key: string) =>
-    row.metrics?.[key] ?? 0,
-  readUsageMetrics: mocks.readUsageMetrics,
+vi.mock("@/lib/analytics/snapshots", () => ({
+  readDeveloperActivityFromSnapshots: mocks.readDeveloperActivityFromSnapshots,
 }));
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.resetModules();
-  mocks.readUsageMetrics.mockResolvedValue({ data: { rows: [] } });
+  mocks.readDeveloperActivityFromSnapshots.mockResolvedValue([]);
   mocks.membershipFindMany.mockResolvedValue([]);
 });
 
@@ -62,6 +58,7 @@ describe("getDeveloperRoster", () => {
     expect(developer).not.toHaveProperty("assignedPlans");
     expect(developer).not.toHaveProperty("manualPlans");
     expect(mocks.membershipFindMany).not.toHaveBeenCalled();
+    expect(mocks.readDeveloperActivityFromSnapshots).toHaveBeenCalled();
   });
 
   it("resolves linked role from OrganizationMembership, not Developer.role", async () => {

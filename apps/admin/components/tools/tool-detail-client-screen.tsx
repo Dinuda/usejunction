@@ -12,7 +12,7 @@ import {
 import type { RollingPeriod } from "@/lib/dashboard/period-prefs";
 import type { getToolDetail } from "@/lib/queries/dashboard/tool-detail";
 import type { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
-import { useAppQuery } from "@/lib/api/client";
+import { useAppPageQuery } from "@/lib/api/client";
 import { toolDetailKey } from "@/lib/app-pages/query-keys";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
@@ -39,7 +39,7 @@ export default function ToolDetailClientScreen() {
   const searchParams = useSearchParams();
   const rawToolKey = routeParams.toolKey;
   const queryString = searchParams.toString();
-  const query = useAppQuery<ToolPayload>(
+  const query = useAppPageQuery<ToolPayload>(
     toolDetailKey(rawToolKey, queryString),
     `/api/app/tools/${encodeURIComponent(rawToolKey)}${queryString ? `?${queryString}` : ""}`,
   );

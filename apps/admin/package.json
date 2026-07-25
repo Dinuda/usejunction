@@ -5,8 +5,9 @@
   "license": "LicenseRef-UseJunction-Community-1.0",
   "scripts": {
     "dev": "next dev --turbopack --port 3001",
-    "build": "pnpm --filter @usejunction/db generate && pnpm check:client-boundaries && next build && pnpm check:client-build",
+    "build": "pnpm --filter @usejunction/db generate && pnpm check:client-boundaries && pnpm check:snapshot-page-reads && next build && pnpm check:client-build",
     "check:client-boundaries": "node scripts/check-client-boundaries.mjs",
+    "check:snapshot-page-reads": "node scripts/check-snapshot-page-reads.mjs",
     "check:client-build": "node scripts/assert-client-build.mjs",
     "start": "next start --port 3001",
     "test": "vitest run",
@@ -19,7 +20,8 @@
     "verify:calcs": "dotenv -e ../../.env -- tsx --tsconfig tsconfig.json scripts/verify-calculation-run.ts",
     "verify:calcs:local": "dotenv -e .env -- tsx --tsconfig tsconfig.json scripts/verify-local-data-run.ts",
     "test:e2e": "playwright test",
-    "test:all": "pnpm test && pnpm e2e:seed && pnpm test:e2e"
+    "test:all": "pnpm test && pnpm e2e:seed && pnpm test:e2e",
+    "bench:snapshot-load": "dotenv -e .env -- tsx --tsconfig tsconfig.json bench/snapshot-load/run.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

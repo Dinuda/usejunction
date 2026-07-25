@@ -6,9 +6,9 @@ Related docs: [Central Analytics Engine](central-analytics-engine.md), [Tool Syn
 
 ## Short answer
 
-**Yes — the main dashboard KPIs and trends load from sealed `org_usage_day_snapshots`, not live `usage_daily` queries.**
+**Yes — all workspace usage surfaces load from sealed `org_usage_day_snapshots`, not live `usage_daily` queries.**
 
-Dirty days are flagged as `partialData` / `dashboardReady: false`. The dashboard does **not** overlay live CTE results on top of stale snapshots while materialization catches up.
+Dirty days are flagged as `partialData` / `dashboardReady: false`. Pages do **not** overlay live CTE results on top of stale snapshots while materialization catches up, and they never rematerialize inline on the read path.
 
 Quota cards are a separate path: they read live `quota_snapshot` rows updated at sync **start**, and never touch usage day snapshots.
 
@@ -19,7 +19,7 @@ flowchart LR
   UD --> Dirty["analytics_dirty_day"]
   Dirty --> Mat["materializeOrgUsageRange"]
   Mat --> Snap["org_usage_day_snapshots"]
-  Snap --> Dash["Dashboard KPIs / trends"]
+  Snap --> Pages["Dashboard_Team_Activity_Tools_Reports"]
   QS --> QuotaUI["Plan / quota UI"]
 ```
 
@@ -29,18 +29,34 @@ flowchart LR
 
 | Surface | Data source | Notes |
 |---------|-------------|-------|
-| Team dashboard KPIs, trends | `org_usage_day_snapshots` via `readOrgUsageFromSnapshots` | Dirty days → `partialData: true` |
-| Personal / You dashboard usage KPIs | `readDeveloperUsageFromSnapshots` | Same partial contract |
-| Quota / plan utilization cards | `quota_snapshot` via `readQuotas` | Updated on sync start; always live |
-| Activity drill-down, tool detail, developer list | Live SQL on `usage_daily` via `executeUsageQuery` | No snapshot lag |
-| Personal model breakdown (productivity rows) | Live `usage_daily` | Mixed with snapshot KPIs on You page |
-| Reports | Sealed `daily_report_usage_snapshots` | Separate from org-day snapshots |
+| Team dashboard KPIs, trends, tools | `org_usage_day_snapshots` via `readOrgUsageFromSnapshots` | Dirty days → `partialData: true` |
+| Personal / You dashboard (KPIs, models, productivity) | `readDeveloperUsageFromSnapshots` | Includes model + productivity measures |
+| Activity (team) | `getDashboardUsage` → org snapshots | Models / by-day / by-tool from sealed grains |
+| Team roster activity | `readDeveloperActivityFromSnapshots` | Developer + developer×tool grains |
+| Tools list / tool detail | Tool + model snapshot grains | Quotas stay on `quota_snapshot` |
+| Plan utilization billing lines | Developer×tool snapshots mapped via catalog | No live billing-facts CTE on page path |
+| Activity report subjects | Org/dev day+tool snapshots | `daily_report_usage_snapshots` remains for sealed send payloads |
+| Quota cards | `quota_snapshot` via `readQuotas` | Always live |
+| `/api/insights/query` | Live `usage_daily` CTE | Debug / ad-hoc escape hatch only |
+
+Snapshot grains (`org-day-snap-v2`):
+
+| Grain | `developerId` | `toolName` | `modelName` |
+|-------|---------------|------------|-------------|
+| Org day | `""` | `""` | `""` |
+| Org tool | `""` | tool | `""` |
+| Developer day | id | `""` | `""` |
+| Developer tool | id | tool | `""` |
+| Org tool×model | `""` | tool | model |
+| Developer tool×model | id | tool | model |
+
+Measures per row: requests, sessions, input/output/cache/reasoning tokens, suggested/accepted/added/deleted lines, commits, verified/estimated/actual spend micros.
 
 Key read-path contract (`apps/admin/lib/analytics/snapshots/read.ts`):
 
-> Dirty days are reported as importing/partial — never recomputed via live CTEs.
+> Dirty days are reported as importing/partial — never recomputed via live CTEs. Default `ensure: false` on page readers.
 
-Drill-down pages therefore can show fresher numbers than the headline KPI cards while a sync is in flight.
+After a snapshot version bump, cron / Sync now rematerialize fills new grains before model/productivity fields appear.
 
 ---
 
@@ -81,7 +97,7 @@ Snapshots refresh during **materialization**: a CTE over `usage_daily` writes se
 | **Daily cron `usage-daily-refresh`** | `15 0 * * *` UTC | Queue drain — up to 80 jobs / 45 s |
 | **Daily cron `materialize-org-day-snapshots`** | `45 0 * * *` UTC | Up to 100 dirty + 100 active orgs |
 | **Calculation / pricing version bump** | Deploy | `enqueueVersionBumpRematerialize` for all orgs |
-| **Read-path corruption detect** | `ensureOrgUsageDaySnapshots` finds stub conflicts | ≤14 days inline; rest → queue |
+| **Read-path corruption detect** | `ensureOrgUsageDaySnapshots` finds stub conflicts | Mark dirty + enqueue only (never inline) |
 
 ### Sync pipeline timeline
 
@@ -107,7 +123,7 @@ commit → settleSyncProjections → rematerializeOrgSnapshots → snapshots fre
 
 ### Read-path ensure (not a refresh)
 
-On dashboard load, `ensureOrgUsageDaySnapshots` may insert zero stubs for missing calendar days or mark corrupt sealed days dirty. It does **not** normally rematerialize on read — sync commit and cron own freshness.
+On page load, readers use `ensure: false` by default. Optional `ensureOrgUsageDaySnapshots` may insert zero stubs for empty calendar days or mark corrupt sealed days dirty and enqueue the worker. It does **not** rematerialize on read — sync commit and cron own freshness.
 
 ---
 

@@ -1,5 +1,5 @@
 import { prisma } from "@usejunction/db";
-import { getDashboardReadiness } from "@/lib/analytics/snapshots/readiness";
+import { getWorkspaceSyncReadiness } from "@/lib/analytics/snapshots/readiness";
 import { canonicalToolKey, findCatalogTool } from "@/lib/tools/catalog";
 
 export type LocalSyncContext = {
@@ -140,7 +140,7 @@ export async function getLocalSyncPanelContext(
   if (!developer) return null;
   const [summary, readiness] = await Promise.all([
     Promise.resolve(summarizeDeveloperDevices(developer.devices)),
-    getDashboardReadiness(orgId),
+    getWorkspaceSyncReadiness(orgId),
   ]);
   return {
     lastSeenAt: summary.lastSeenAt,
@@ -161,7 +161,7 @@ export async function getLocalSyncContext(orgId: string, authUserId: string): Pr
   const [summary, orgWideNeedsPlanSync, readiness] = await Promise.all([
     Promise.resolve(summarizeDeveloperDevices(developer.devices)),
     orgNeedsPlanSync(orgId),
-    getDashboardReadiness(orgId),
+    getWorkspaceSyncReadiness(orgId),
   ]);
 
   return {

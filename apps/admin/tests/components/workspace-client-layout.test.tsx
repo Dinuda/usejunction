@@ -64,6 +64,8 @@ type WorkspaceContextData = {
     lastUsageSyncAt: string | null;
     lastAccountSyncAt: string | null;
     watermark: string;
+    dashboardReady?: boolean;
+    dirtyDayCount?: number;
   };
   sessionWorkspaceSyncRequired: boolean;
 };
@@ -199,7 +201,17 @@ describe("WorkspaceClientLayout", () => {
     const interval = options.refetchInterval!({
       state: { data: readyContext("1|2|seen|usage|") },
     });
-    expect(interval).toBe(15_000);
+    expect(interval).toBe(30_000);
+
+    const dirtyInterval = options.refetchInterval!({
+      state: {
+        data: readyContext("1|2|seen|usage|", {
+          dashboardReady: false,
+          dirtyDayCount: 3,
+        }),
+      },
+    });
+    expect(dirtyInterval).toBe(15_000);
 
     const noDeviceInterval = options.refetchInterval!({
       state: {

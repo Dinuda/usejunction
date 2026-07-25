@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type MouseEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Check, ListFilter, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,6 +39,7 @@ import {
   type RollingPeriodPrefs,
 } from "@/lib/dashboard/period-prefs";
 import { copyAudienceScope } from "@/lib/audience-scope";
+import { prefetchDashboardMetrics } from "@/lib/app-pages/dashboard-prefetch";
 import { cn } from "@/lib/utils";
 
 function cycleViewHref(basePath: string, view: Exclude<CycleView, "last_30_days">) {
@@ -78,6 +80,7 @@ export function CycleViewPicker({
   basePath?: string;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [prefs, setPrefs] = useState<RollingPeriodPrefs>({
     active: period,
     saved: period.kind === "custom" ? [period] : [],
@@ -107,6 +110,11 @@ export function CycleViewPicker({
   }, [basePath, router, view]);
 
   const rollingLabel = rollingPeriodLabel(prefs.active);
+
+  function prefetchCycleView(view: Exclude<CycleView, "last_30_days">) {
+    if (basePath !== "/dashboard") return;
+    prefetchDashboardMetrics(queryClient, view);
+  }
 
   function applyPeriod(next: RollingPeriod) {
     const updated = setActiveRollingPeriod(next);
@@ -246,6 +254,8 @@ export function CycleViewPicker({
           <Button key={value} asChild size="sm" variant="ghost" className="shrink-0">
             <Link
               href={cycleViewHref(basePath, value)}
+              onMouseEnter={() => prefetchCycleView(value)}
+              onFocus={() => prefetchCycleView(value)}
               className={cn(
                 "h-8 rounded-none px-3 text-xs font-semibold",
                 view === value

@@ -1,9 +1,12 @@
 export { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
 export {
   getOrgOverview,
+  getOrgOverviewMetrics,
+  getOrgOverviewShell,
   overviewInputFromBounds,
   overviewInputFromRange,
 } from "@/lib/insights/queries/get-org-overview";
+export type { OrgOverviewMetricsData, OrgOverviewShellData } from "@/lib/insights/queries/get-org-overview";
 export type { InsightContext, InsightEnvelope, InsightKind } from "@/lib/insights/contracts/envelope";
 export type { PlanUsageInput, PlanUsageV1 } from "@/lib/insights/contracts/plan-usage.v1";
 export type { OrgOverviewV1, OverviewInput } from "@/lib/insights/contracts/overview.v1";

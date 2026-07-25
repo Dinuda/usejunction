@@ -10,9 +10,15 @@ import {
 } from "@/lib/dashboard/cycle-view";
 import { parseRollingPeriodFromSearch, type RollingPeriod } from "@/lib/dashboard/period-prefs";
 import { getMeOverview } from "@/lib/queries/me/overview";
-import { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
+import { getLocalSyncContext, getLocalSyncPanelContext } from "@/lib/queries/me/local-sync-context";
 import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
-import { getOrgOverview, overviewInputFromBounds, overviewInputFromRange } from "@/lib/insights";
+import {
+  getOrgOverview,
+  getOrgOverviewMetrics,
+  getOrgOverviewShell,
+  overviewInputFromBounds,
+  overviewInputFromRange,
+} from "@/lib/insights";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { logServerError } from "@/lib/errors/public";
 import { canManageSettings } from "@/lib/rbac/permissions";
@@ -23,6 +29,16 @@ function overviewInputForView(cycleView: CycleView, period: RollingPeriod) {
   return overviewInputFromRange(period.days, new Date());
 }
 
+function insightContext(principal: AppPrincipal) {
+  return {
+    orgId: principal.orgId,
+    actorId: principal.userId,
+    roles: [principal.role],
+    now: new Date(),
+    timezone: UTC_TIMEZONE,
+  };
+}
+
 export type DashboardSearch = {
   view?: string | null;
   days?: string | null;
@@ -31,7 +47,13 @@ export type DashboardSearch = {
   scope?: string | null;
 };
 
-export async function loadDashboardPage(principal: AppPrincipal, search: DashboardSearch = {}) {
+export type DashboardSlice = "full" | "shell" | "metrics";
+
+export async function loadDashboardPage(
+  principal: AppPrincipal,
+  search: DashboardSearch = {},
+  slice: DashboardSlice = "full",
+) {
   const isDeveloper = principal.role === "user";
   const canSwitchAudience = canManageSettings(principal.role);
   const scope = canSwitchAudience ? parseAudienceScope(search.scope ?? null) : "team";
@@ -89,34 +111,67 @@ export async function loadDashboardPage(principal: AppPrincipal, search: Dashboa
     });
   }
 
-  const [overviewResult, syncContext] = await Promise.all([
-    getOrgOverview(
-      {
-        orgId: principal.orgId,
-        actorId: principal.userId,
-        roles: [principal.role],
-        now: new Date(),
-        timezone: UTC_TIMEZONE,
-      },
-      overviewInputForView(cycleView, rollingPeriod),
-    )
+  const context = insightContext(principal);
+  const overviewInput = overviewInputForView(cycleView, rollingPeriod);
+
+  if (slice === "shell") {
+    const [shell, syncPanel] = await Promise.all([
+      getOrgOverviewShell(principal.orgId),
+      getLocalSyncPanelContext(principal.orgId, principal.userId),
+    ]);
+    return jsonSafe({
+      kind: "organization" as const,
+      slice: "shell" as const,
+      scope: "team" as const,
+      canSwitchAudience,
+      shell,
+      needsPersonalConnect: !syncPanel || syncPanel.deviceCount === 0,
+      syncPanel,
+    });
+  }
+
+  if (slice === "metrics") {
+    const overviewResult = await getOrgOverviewMetrics(context, overviewInput, {
+      subscriptions,
+    })
+      .then((envelope) => ({ data: envelope.data, error: null as string | null }))
+      .catch((error) => {
+        logServerError("dashboard/overview", error);
+        return { data: null, error: "Could not load dashboard." };
+      });
+
+    return jsonSafe({
+      kind: "organization" as const,
+      slice: "metrics" as const,
+      scope: "team" as const,
+      canSwitchAudience,
+      cycleView,
+      rollingPeriod,
+      overview: overviewResult.data,
+      error: overviewResult.error,
+    });
+  }
+
+  const [overviewResult, syncPanel] = await Promise.all([
+    getOrgOverview(context, overviewInput)
       .then((envelope) => ({ data: envelope.data, error: null as string | null }))
       .catch((error) => {
         logServerError("dashboard/overview", error);
         return { data: null, error: "Could not load dashboard." };
       }),
-    getLocalSyncContext(principal.orgId, principal.userId),
+    getLocalSyncPanelContext(principal.orgId, principal.userId),
   ]);
 
   return jsonSafe({
     kind: "organization" as const,
+    slice: "full" as const,
     scope: "team" as const,
     canSwitchAudience,
     cycleView,
     rollingPeriod,
     overview: overviewResult.data,
     error: overviewResult.error,
-    needsPersonalConnect: !syncContext || syncContext.deviceCount === 0,
-    syncContext,
+    needsPersonalConnect: !syncPanel || syncPanel.deviceCount === 0,
+    syncPanel,
   });
 }

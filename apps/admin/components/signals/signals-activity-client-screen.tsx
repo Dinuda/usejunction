@@ -16,7 +16,7 @@ import {
 import type { RollingPeriod } from "@/lib/dashboard/period-prefs";
 import type { getWorkActivity, readSignalsFilterOptions } from "@/lib/signals";
 import { workSessionsToCsv } from "@/lib/signals/work-export";
-import { useAppQuery } from "@/lib/api/client";
+import { useAppPageQuery } from "@/lib/api/client";
 import { signalsActivityKey } from "@/lib/app-pages/query-keys";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
@@ -35,7 +35,7 @@ type SignalsActivityPayload = {
 export default function SignalsActivityClientScreen() {
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
-  const query = useAppQuery<SignalsActivityPayload>(
+  const query = useAppPageQuery<SignalsActivityPayload>(
     signalsActivityKey(queryString),
     `/api/app/signals/activity${queryString ? `?${queryString}` : ""}`,
   );

@@ -9,7 +9,7 @@ import { WorkspaceSettingsCard } from "@/components/settings/workspace-settings-
 import type { getOrgActivitySettings } from "@/lib/activity/service";
 import type { getOrgSignalsPolicy } from "@/lib/signals/service";
 import type { getOrgBillingStatus } from "@/lib/saas-billing/status";
-import { useAppQuery } from "@/lib/api/client";
+import { useAppPageQuery } from "@/lib/api/client";
 import { notificationPreferencesKey, settingsKey } from "@/lib/app-pages/query-keys";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
@@ -24,13 +24,13 @@ type SettingsPayload = {
 };
 
 export default function SettingsClientScreen() {
-  const prefsQuery = useAppQuery<EmailReportsPrefs>(
+  const prefsQuery = useAppPageQuery<EmailReportsPrefs>(
     notificationPreferencesKey,
     "/api/app/me/notification-preferences",
   );
   const canManageOrg =
     prefsQuery.data?.role === "owner" || prefsQuery.data?.role === "admin";
-  const orgQuery = useAppQuery<SettingsPayload>(
+  const orgQuery = useAppPageQuery<SettingsPayload>(
     settingsKey,
     "/api/app/settings",
     { enabled: canManageOrg },

@@ -31,7 +31,7 @@ import type { getMeOverview } from "@/lib/queries/me/overview";
 import { formatCompactNumber } from "@/lib/format";
 import type { getPersonalSignalsLedger } from "@/lib/signals/read";
 import type { OrgActivitySettings } from "@/lib/activity/contracts";
-import { useAppQuery } from "@/lib/api/client";
+import { useAppPageQuery } from "@/lib/api/client";
 import { activityKey } from "@/lib/app-pages/query-keys";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 import { DashboardSetupPanel } from "@/components/dashboard/setup-panel";
@@ -360,7 +360,7 @@ type ActivityPayload =
 export default function ActivityClientScreen() {
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
-  const query = useAppQuery<ActivityPayload>(
+  const query = useAppPageQuery<ActivityPayload>(
     activityKey(queryString),
     `/api/app/activity${queryString ? `?${queryString}` : ""}`,
   );

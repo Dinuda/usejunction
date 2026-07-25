@@ -1,13 +1,8 @@
 import { prisma } from "@usejunction/db";
 import { inclusiveDayCount, usageWindowDays } from "@/lib/metrics/date-range";
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
-import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
-import {
-  ensureDeveloperUsageDaySnapshots,
-  ensureOrgUsageDaySnapshots,
-  readDeveloperUsageFromSnapshots,
-} from "@/lib/analytics/snapshots";
-import { getDashboardReadiness } from "@/lib/analytics/snapshots/readiness";
+import { readDeveloperUsageFromSnapshots } from "@/lib/analytics/snapshots";
+import { getWorkspaceSyncReadiness } from "@/lib/analytics/snapshots/readiness";
 import { orgNeedsPlanSync } from "@/lib/queries/me/local-sync-context";
 import { canonicalToolKey, findCatalogTool, isCodingTool } from "@/lib/tools/catalog";
 import type { OrganizationRole } from "@/lib/workspace-context";
@@ -216,7 +211,11 @@ export async function getMeOverview(
 export async function getDeveloperOverview(
   orgId: string,
   developerId: string,
-  options: { reportWindow?: MetricWindow; cycleView?: CycleView } = {},
+  options: {
+    reportWindow?: MetricWindow;
+    cycleView?: CycleView;
+    includeOrgPlanSync?: boolean;
+  } = {},
 ): Promise<MeOverviewData | null> {
   const developer = await prisma.developer.findFirst({
     where: { orgId, id: developerId },
@@ -225,6 +224,7 @@ export async function getDeveloperOverview(
   if (!developer) return null;
   return buildMeOverview(orgId, developer, developer.role as OrganizationRole, options.reportWindow, {
     cycleView: options.cycleView,
+    includeOrgPlanSync: options.includeOrgPlanSync,
   });
 }
 
@@ -243,54 +243,12 @@ async function buildMeOverview(
     timezone: UTC_TIMEZONE,
     grain: "day",
   };
-  // Dashboard spend KPIs + plan-card $ come from sealed developer snapshots (same
-  // generation as Team). Productivity / model breakdowns stay on live usage_daily.
-  const productivityMeasures = [
-    "sessions",
-    "cacheReadTokens",
-    "cacheWriteTokens",
-    "reasoningTokens",
-    "suggestedLines",
-    "acceptedLines",
-    "addedLines",
-    "deletedLines",
-    "commits",
-  ] as const;
-  await ensureOrgUsageDaySnapshots(orgId, snapshotWindow.from, snapshotWindow.to);
-  await ensureDeveloperUsageDaySnapshots(orgId, developer.id, snapshotWindow.from, snapshotWindow.to);
-
-  const [snapshotUsage, summary, models, planAssignments] = await Promise.all([
+  // All usage KPIs, productivity, and model breakdowns come from sealed snapshots.
+  const [snapshotUsage, planAssignments] = await Promise.all([
     readDeveloperUsageFromSnapshots(orgId, developer.id, snapshotWindow, {
       includeTools: true,
+      includeModels: true,
       ensure: false,
-    }),
-    readUsageMetrics({
-      orgId,
-      developerId: developer.id,
-      window: usage30d,
-      measures: [...productivityMeasures],
-      limit: 1,
-    }),
-    readUsageMetrics({
-      orgId,
-      developerId: developer.id,
-      window: usage30d,
-      measures: [
-        "requests",
-        "sessions",
-        "inputTokens",
-        "outputTokens",
-        "cacheReadTokens",
-        "cacheWriteTokens",
-        "reasoningTokens",
-        "suggestedLines",
-        "acceptedLines",
-        "addedLines",
-        "deletedLines",
-        "commits",
-        "costMicros",
-      ],
-      dimensions: ["tool", "model", "source", "costKind"],
     }),
     prisma.developerPlanAssignment.findMany({
       where: {
@@ -313,12 +271,11 @@ async function buildMeOverview(
     }),
   ]);
 
-  const summaryRow = summary.data.rows[0];
   const verifiedUsageCost = snapshotUsage.kpis.verifiedUsageCost;
   const estimatedApiCost = snapshotUsage.kpis.estimatedApiCost;
   const tokens = snapshotUsage.kpis.tokens;
-  const inputTokens = snapshotUsage.dayTotals.reduce((sum, row) => sum + row.inputTokens, 0);
-  const outputTokens = snapshotUsage.dayTotals.reduce((sum, row) => sum + row.outputTokens, 0);
+  const inputTokens = snapshotUsage.kpis.inputTokens;
+  const outputTokens = snapshotUsage.kpis.outputTokens;
   const rangeDays = inclusiveDayCount(usage30d.from, usage30d.to);
   const seatRows: SubscriptionSeatRow[] = planAssignments
     .filter((row) => isCodingTool(row.toolName))
@@ -347,75 +304,77 @@ async function buildMeOverview(
     snapshotUsage.tools.map((row) => ({
       toolName: row.toolName || "unknown",
       requests: row.requests,
-      tokens: 0,
+      tokens: row.tokens,
       cost: row.cost,
     })),
     detectedToolNames,
   );
 
-  const modelUsageRows: ModelUsageRow[] = models.data.rows.flatMap((row) => {
-    const source = dimension(row, "source");
-    const storedCostKind = dimension(row, "costKind");
-    const requests = metricNumber(row, "requests");
-    const rowInputTokens = metricNumber(row, "inputTokens");
-    const rowOutputTokens = metricNumber(row, "outputTokens");
-    const cost = metricNumber(row, "costMicros") / 1_000_000;
+  const modelUsageRows: ModelUsageRow[] = snapshotUsage.models.flatMap((row) => {
+    const cost = row.verifiedUsageCost + row.estimatedApiCost;
+    const source = row.verifiedUsageCost > 0 ? "vendor_verified" : "device_observed";
+    const storedCostKind =
+      row.verifiedUsageCost > 0 ? "verified_usage" : cost > 0 ? "estimated_api" : null;
     const costKind = resolveModelUsageCostKind({ source, cost, storedCostKind });
-    const suggestedLines = metricNumber(row, "suggestedLines");
-    const acceptedLines = metricNumber(row, "acceptedLines");
-    const productivity = suggestedLines > 0 || acceptedLines > 0 || metricNumber(row, "commits") > 0;
-    const usage = requests > 0 || rowInputTokens > 0 || rowOutputTokens > 0 || cost > 0;
+    const productivity =
+      row.suggestedLines > 0 || row.acceptedLines > 0 || row.commits > 0;
+    const usage =
+      row.requests > 0 || row.inputTokens > 0 || row.outputTokens > 0 || cost > 0;
     const common = {
-      toolName: dimension(row, "tool") || "unknown",
-      model: dimension(row, "model") || "unknown",
+      toolName: row.toolName || "unknown",
+      model: row.modelName || "unknown",
       source,
     };
     const output: ModelUsageRow[] = [];
-    if (usage) output.push({
-      ...common,
-      inputTokens: rowInputTokens,
-      outputTokens: rowOutputTokens,
-      cacheReadTokens: metricNumber(row, "cacheReadTokens"),
-      cacheWriteTokens: metricNumber(row, "cacheWriteTokens"),
-      reasoningTokens: metricNumber(row, "reasoningTokens"),
-      cost,
-      requests,
-      suggestedLines: 0,
-      acceptedLines: 0,
-      verified: costKind === "verified_usage",
-      costKind,
-      metricKind: "usage",
-    });
-    if (productivity) output.push({
-      ...common,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-      reasoningTokens: 0,
-      cost: 0,
-      requests: 0,
-      suggestedLines,
-      acceptedLines,
-      verified: false,
-      costKind: null,
-      metricKind: "productivity",
-    });
+    if (usage) {
+      output.push({
+        ...common,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        cacheReadTokens: row.cacheReadTokens,
+        cacheWriteTokens: row.cacheWriteTokens,
+        reasoningTokens: row.reasoningTokens,
+        cost,
+        requests: row.requests,
+        suggestedLines: 0,
+        acceptedLines: 0,
+        verified: costKind === "verified_usage",
+        costKind,
+        metricKind: "usage",
+      });
+    }
+    if (productivity) {
+      output.push({
+        ...common,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        cost: 0,
+        requests: 0,
+        suggestedLines: row.suggestedLines,
+        acceptedLines: row.acceptedLines,
+        verified: false,
+        costKind: null,
+        metricKind: "productivity",
+      });
+    }
     return output;
   });
 
   const aiCoding30d: AiCodingMetrics = {
-    suggestedLines: metricNumber(summaryRow, "suggestedLines"),
-    acceptedLines: metricNumber(summaryRow, "acceptedLines"),
-    addedLines: metricNumber(summaryRow, "addedLines"),
-    deletedLines: metricNumber(summaryRow, "deletedLines"),
-    commits: metricNumber(summaryRow, "commits"),
+    suggestedLines: snapshotUsage.kpis.suggestedLines,
+    acceptedLines: snapshotUsage.kpis.acceptedLines,
+    addedLines: snapshotUsage.kpis.addedLines,
+    deletedLines: snapshotUsage.kpis.deletedLines,
+    commits: snapshotUsage.kpis.commits,
     aiPercent: null,
     inputTokens,
     outputTokens,
-    cacheReadTokens: metricNumber(summaryRow, "cacheReadTokens"),
-    cacheWriteTokens: metricNumber(summaryRow, "cacheWriteTokens"),
-    reasoningTokens: metricNumber(summaryRow, "reasoningTokens"),
+    cacheReadTokens: snapshotUsage.kpis.cacheReadTokens,
+    cacheWriteTokens: snapshotUsage.kpis.cacheWriteTokens,
+    reasoningTokens: snapshotUsage.kpis.reasoningTokens,
     cost: verifiedUsageCost + estimatedApiCost,
     verifiedCost: verifiedUsageCost,
   };
@@ -443,7 +402,7 @@ async function buildMeOverview(
   const needsPlanSync =
     personalNeedsPlanSync ||
     (options.includeOrgPlanSync === false ? false : await orgNeedsPlanSync(orgId));
-  const readiness = await getDashboardReadiness(orgId);
+  const readiness = await getWorkspaceSyncReadiness(orgId);
 
   return {
     developer: {
@@ -471,7 +430,7 @@ async function buildMeOverview(
     },
     usage30d: {
       requests: snapshotUsage.kpis.modelCalls,
-      sessions: metricNumber(summaryRow, "sessions"),
+      sessions: snapshotUsage.kpis.sessions,
       inputTokens: String(inputTokens),
       outputTokens: String(outputTokens),
       costMicros: String(Math.round((verifiedUsageCost + estimatedApiCost) * 1_000_000)),

@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
 import { jsonSafe } from "@/lib/api/app-response";
-import { getDashboardReadiness } from "@/lib/analytics/snapshots/readiness";
+import { getWorkspaceSyncReadiness } from "@/lib/analytics/snapshots/readiness";
 import { ACTIVE_ORG_COOKIE } from "@/lib/require-organization";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
 import { computeOrgBillingStatus } from "@/lib/saas-billing/status";
@@ -123,7 +123,7 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
       prisma.toolInstallation.count({
         where: { orgId: current.orgId, detected: true },
       }),
-      getDashboardReadiness(current.orgId),
+      getWorkspaceSyncReadiness(current.orgId),
     ]);
     const lastSeenAt = latestIso(deviceAgg._max.lastSeenAt);
     const lastUsageSyncAt = latestIso(deviceAgg._max.lastUsageSyncAt);

@@ -1,6 +1,8 @@
 import { UTC_TIMEZONE, type MetricWindow } from "@/lib/analytics/contracts/time-window";
-import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
-import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
+import {
+  readDeveloperUsageFromSnapshots,
+  readOrgUsageFromSnapshots,
+} from "@/lib/analytics/snapshots";
 import { utcDateOnly } from "@/lib/metrics/date-range";
 import { canonicalToolKey, toolDisplayName } from "@/lib/tools/catalog";
 
@@ -62,10 +64,8 @@ function finishTopTools(
 }
 
 /**
- * Report usage with the same source-priority accounting as the dashboard
- * (`USAGE_ACCOUNTING_POLICY_VERSION = source-priority-v1`).
- *
- * Never sum raw usageDaily rows — that double-counts vendor + device sources.
+ * Report usage from sealed org/developer day snapshots (same source-priority
+ * accounting as the dashboard). Never sums raw usage_daily rows.
  */
 export async function readCanonicalReportUsage(input: {
   orgId: string;
@@ -74,60 +74,28 @@ export async function readCanonicalReportUsage(input: {
   toLocalDate: string;
 }): Promise<CanonicalReportUsage> {
   const window = metricWindow(input.fromLocalDate, input.toLocalDate);
-  const developerId = input.developerId ?? undefined;
+  const developerId = input.developerId?.trim() || null;
 
-  const [summary, costs, tools, days] = await Promise.all([
-    readUsageMetrics({
-      orgId: input.orgId,
-      developerId,
-      window,
-      measures: ["requests", "inputTokens", "outputTokens", "costMicros", "activeDevelopers"],
-      limit: 1,
-    }),
-    readUsageMetrics({
-      orgId: input.orgId,
-      developerId,
-      window,
-      measures: ["costMicros"],
-      dimensions: ["costKind"],
-    }),
-    readUsageMetrics({
-      orgId: input.orgId,
-      developerId,
-      window,
-      measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
-      dimensions: ["tool"],
-    }),
-    readUsageMetrics({
-      orgId: input.orgId,
-      developerId,
-      window,
-      measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
-      dimensions: ["day"],
-    }),
-  ]);
+  const snapshot = developerId
+    ? await readDeveloperUsageFromSnapshots(input.orgId, developerId, window, {
+        includeTools: true,
+        ensure: false,
+      })
+    : await readOrgUsageFromSnapshots(input.orgId, window, {
+        includeTools: true,
+        ensure: false,
+      });
 
-  const summaryRow = summary.data.rows[0];
-  const costSummary = summarizeCanonicalCosts(
-    costs.data.rows.map((row) => ({
-      costMicros: metricNumber(row, "costMicros"),
-      costKind: dimension(row, "costKind"),
-    })),
-  );
-
-  const requests = metricNumber(summaryRow, "requests");
-  const tokens =
-    metricNumber(summaryRow, "inputTokens") + metricNumber(summaryRow, "outputTokens");
-  // Match dashboard "Estimated usage" = verified + estimated (not seat commitment).
-  const cost = costSummary.verifiedUsageCost + costSummary.estimatedApiCost;
-  const activeDevelopers = metricNumber(summaryRow, "activeDevelopers");
+  const requests = snapshot.kpis.modelCalls;
+  const tokens = snapshot.kpis.tokens;
+  const verifiedUsageCost = snapshot.kpis.verifiedUsageCost;
+  const estimatedApiCost = snapshot.kpis.estimatedApiCost;
+  const cost = verifiedUsageCost + estimatedApiCost;
+  const activeDevelopers = snapshot.activeDevelopers;
 
   const byTool = new Map<string, CanonicalReportToolRow>();
-  for (const row of tools.data.rows) {
-    const rawName = dimension(row, "tool") || "unknown";
-    const key = canonicalToolKey(rawName);
-    const rowTokens = metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens");
-    const rowCost = metricNumber(row, "costMicros") / 1_000_000;
+  for (const row of snapshot.tools) {
+    const key = canonicalToolKey(row.toolName);
     const existing = byTool.get(key) ?? {
       toolName: key,
       displayName: toolDisplayName(key),
@@ -137,20 +105,18 @@ export async function readCanonicalReportUsage(input: {
       sharePercent: 0,
       tokenSharePercent: 0,
     };
-    existing.requests += metricNumber(row, "requests");
-    existing.tokens += rowTokens;
-    existing.cost += rowCost;
+    existing.requests += row.requests;
+    existing.tokens += row.tokens;
+    existing.cost += row.cost;
     byTool.set(key, existing);
   }
 
   const byDay = new Map<string, CanonicalDayTotals>();
-  for (const row of days.data.rows) {
-    const date = dimension(row, "day");
-    if (!date) continue;
-    byDay.set(date, {
-      tokens: metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens"),
-      cost: metricNumber(row, "costMicros") / 1_000_000,
-      requests: metricNumber(row, "requests"),
+  for (const row of snapshot.dayTotals) {
+    byDay.set(row.date, {
+      tokens: row.inputTokens + row.outputTokens,
+      cost: row.verifiedUsageCost + row.estimatedApiCost,
+      requests: row.requests,
     });
   }
 
@@ -158,8 +124,8 @@ export async function readCanonicalReportUsage(input: {
     requests,
     tokens,
     cost,
-    verifiedUsageCost: costSummary.verifiedUsageCost,
-    estimatedApiCost: costSummary.estimatedApiCost,
+    verifiedUsageCost,
+    estimatedApiCost,
     tools: byTool.size,
     topTools: finishTopTools(byTool, tokens, cost),
     byDay,

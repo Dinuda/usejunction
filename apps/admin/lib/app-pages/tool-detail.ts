@@ -73,6 +73,7 @@ export async function loadToolDetailPage(
   const [detail, syncContext] = await Promise.all([
     getToolDetail(principal.orgId, toolKey, reportWindow, {
       developerId: access.scope === "personal" ? access.developerId : undefined,
+      subscriptions,
     }),
     getLocalSyncPanelContext(principal.orgId, principal.userId),
   ]);

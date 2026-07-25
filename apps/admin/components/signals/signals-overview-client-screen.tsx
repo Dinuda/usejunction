@@ -20,7 +20,7 @@ import {
 } from "@/lib/dashboard/cycle-view";
 import type { RollingPeriod } from "@/lib/dashboard/period-prefs";
 import type { getWorkOverview } from "@/lib/signals";
-import { useAppQuery } from "@/lib/api/client";
+import { useAppPageQuery } from "@/lib/api/client";
 import { signalsOverviewKey } from "@/lib/app-pages/query-keys";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
@@ -39,7 +39,7 @@ type SignalsOverviewPayload = {
 export default function SignalsOverviewClientScreen() {
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
-  const query = useAppQuery<SignalsOverviewPayload>(
+  const query = useAppPageQuery<SignalsOverviewPayload>(
     signalsOverviewKey(queryString),
     `/api/app/signals/overview${queryString ? `?${queryString}` : ""}`,
   );

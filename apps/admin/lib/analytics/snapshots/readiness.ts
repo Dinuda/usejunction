@@ -1,8 +1,7 @@
 import { prisma } from "@usejunction/db";
-import { CALCULATION_VERSION, PRICING_VERSION } from "@/lib/metrics/source-priority";
+import { ORG_DAY_SNAPSHOT_VERSION } from "./materialize";
 
-/** Keep in sync with ORG_DAY_SNAPSHOT_VERSION in materialize.ts (avoid circular imports). */
-const DEFAULT_METRIC_VERSION = `org-day-snap-v1:${CALCULATION_VERSION}:${PRICING_VERSION}`;
+const DEFAULT_METRIC_VERSION = ORG_DAY_SNAPSHOT_VERSION;
 
 function utcDay(date: Date | string): Date {
   if (typeof date === "string") return new Date(`${date.slice(0, 10)}T00:00:00.000Z`);
@@ -126,4 +125,40 @@ export async function countOrgDirtyDays(
   return prisma.analyticsDirtyDay.count({
     where: { orgId, metricVersion },
   });
+}
+
+export type WorkspaceSyncReadiness = Pick<
+  DashboardReadiness,
+  "dashboardReady" | "dirtyDayCount" | "snapshotLagSeconds"
+>;
+
+/**
+ * Cheap readiness for workspace-context polling: count-only dirty backlog and
+ * oldest dirty timestamp — no stub-conflict scans or full dirty-day lists.
+ */
+export async function getWorkspaceSyncReadiness(
+  orgId: string,
+  metricVersion: string = DEFAULT_METRIC_VERSION,
+): Promise<WorkspaceSyncReadiness> {
+  const dirtyDayCount = await countOrgDirtyDays(orgId, metricVersion);
+  if (dirtyDayCount === 0) {
+    return {
+      dashboardReady: true,
+      dirtyDayCount: 0,
+      snapshotLagSeconds: null,
+    };
+  }
+
+  const oldest = await prisma.analyticsDirtyDay.findFirst({
+    where: { orgId, metricVersion },
+    orderBy: [{ createdAt: "asc" }, { date: "asc" }],
+    select: { createdAt: true },
+  });
+
+  const lagMs = oldest ? Math.max(0, Date.now() - oldest.createdAt.getTime()) : null;
+  return {
+    dashboardReady: false,
+    dirtyDayCount,
+    snapshotLagSeconds: lagMs == null ? null : Math.floor(lagMs / 1000),
+  };
 }

@@ -5,10 +5,12 @@ import { logServerError } from "@/lib/errors/public";
 import { ingestUsageSyncChunk } from "@/lib/sync/usage-sync";
 import type { LocalUsageInputRow } from "@/lib/ingest/local-usage-batch";
 import { prisma } from "@usejunction/db";
+import { timingHeader } from "@/lib/api/app-response";
 
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
+  const totalStart = performance.now();
   try {
     const parsedBody = await limitedJson(req, 1024 * 1024);
     if (!parsedBody.ok) return parsedBody.response;
@@ -63,7 +65,23 @@ export async function POST(req: NextRequest) {
       rows,
       observedAt: typeof body.observedAt === "string" ? new Date(body.observedAt) : new Date(),
     });
-    return NextResponse.json({ ok: true, ...result });
+    const totalMs = performance.now() - totalStart;
+    const serverTiming = timingHeader({
+      upsert: result.timings.upsertMs,
+      fingerprints: result.timings.fingerprintsMs,
+      total: totalMs,
+    });
+    console.info("[sync/usage/chunk-timing]", {
+      orgId,
+      deviceId,
+      syncRunId,
+      chunkId,
+      rowCount: rows.length,
+      upsertMs: result.timings.upsertMs,
+      fingerprintsMs: result.timings.fingerprintsMs,
+      totalMs,
+    });
+    return NextResponse.json({ ok: true, ...result }, { headers: { "server-timing": serverTiming } });
   } catch (error) {
     logServerError("sync/usage/chunk", error);
     const message = error instanceof Error ? error.message : "sync chunk failed";

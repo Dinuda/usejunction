@@ -1,7 +1,7 @@
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
-import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
+import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
+import { readOrgUsageFromSnapshots } from "@/lib/analytics/snapshots";
 import { usageWindowDays } from "@/lib/metrics/date-range";
-import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
 
 export interface DashboardUsageData {
   byModel: Array<{
@@ -52,137 +52,117 @@ export interface DashboardUsageData {
   };
 }
 
-const usageMeasures = [
-  "requests",
-  "sessions",
-  "inputTokens",
-  "outputTokens",
-  "cacheReadTokens",
-  "cacheWriteTokens",
-  "reasoningTokens",
-  "suggestedLines",
-  "acceptedLines",
-  "addedLines",
-  "deletedLines",
-  "commits",
-  "costMicros",
-] as const;
-
 export async function getDashboardUsage(
   orgId: string,
   daysOrWindow: number | MetricWindow = 30,
 ): Promise<DashboardUsageData> {
-  const window =
-    typeof daysOrWindow === "number" ? usageWindowDays(Math.min(daysOrWindow, 90)) : daysOrWindow;
-  const [summary, costs, models, tools, trend] = await Promise.all([
-    readUsageMetrics({ orgId, window, measures: [...usageMeasures], limit: 1 }),
-    readUsageMetrics({ orgId, window, measures: ["costMicros"], dimensions: ["source", "costKind"] }),
-    readUsageMetrics({ orgId, window, measures: [...usageMeasures], dimensions: ["tool", "model", "source"] }),
-    readUsageMetrics({
-      orgId,
-      window,
-      measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
-      dimensions: ["tool"],
-    }),
-    readUsageMetrics({
-      orgId,
-      window,
-      measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
-      dimensions: ["day"],
-    }),
-  ]);
+  const window: MetricWindow =
+    typeof daysOrWindow === "number"
+      ? {
+          ...usageWindowDays(Math.min(daysOrWindow, 90)),
+          timezone: UTC_TIMEZONE,
+          grain: "day",
+        }
+      : daysOrWindow;
 
-  const summaryRow = summary.data.rows[0];
-  const costSummary = summarizeCanonicalCosts(
-    costs.data.rows.map((row) => ({
-      costMicros: metricNumber(row, "costMicros"),
-      costKind: dimension(row, "costKind"),
-    })),
-  );
+  const snapshot = await readOrgUsageFromSnapshots(orgId, window, {
+    includeTools: true,
+    includeModels: true,
+    ensure: false,
+  });
 
   const byModel: DashboardUsageData["byModel"] = [];
   const productivityModels: DashboardUsageData["productivityModels"] = [];
-  for (const row of models.data.rows) {
-    const toolName = dimension(row, "tool") || "unknown";
-    const model = dimension(row, "model") || "unknown";
-    const source = dimension(row, "source");
-    const requests = metricNumber(row, "requests");
-    const inputTokens = metricNumber(row, "inputTokens");
-    const outputTokens = metricNumber(row, "outputTokens");
-    const cost = metricNumber(row, "costMicros") / 1_000_000;
-    const suggestedLines = metricNumber(row, "suggestedLines");
-    const acceptedLines = metricNumber(row, "acceptedLines");
-    const addedLines = metricNumber(row, "addedLines");
-    const deletedLines = metricNumber(row, "deletedLines");
-    const commits = metricNumber(row, "commits");
 
-    if (requests || inputTokens || outputTokens || cost) {
+  for (const row of snapshot.models) {
+    // Org activity uses org-level model grains (developerId "").
+    if (row.developerId !== "") continue;
+    const cost = row.verifiedUsageCost + row.estimatedApiCost;
+    const hasUsage =
+      row.requests > 0 || row.inputTokens > 0 || row.outputTokens > 0 || cost > 0;
+    if (hasUsage) {
       byModel.push({
-        model,
-        toolName,
-        requests,
-        tokens: inputTokens + outputTokens,
+        model: row.modelName || "unknown",
+        toolName: row.toolName || "unknown",
+        requests: row.requests,
+        tokens: row.inputTokens + row.outputTokens,
         cost,
-        source,
-        verified: source === "vendor_verified",
-        costKind: source === "vendor_verified" ? "verified_usage" : cost > 0 ? "estimated_api" : null,
-        inputTokens,
-        outputTokens,
-        cacheReadTokens: metricNumber(row, "cacheReadTokens"),
-        cacheWriteTokens: metricNumber(row, "cacheWriteTokens"),
-        reasoningTokens: metricNumber(row, "reasoningTokens"),
+        source: row.verifiedUsageCost > 0 ? "vendor_verified" : "device_observed",
+        verified: row.verifiedUsageCost > 0,
+        costKind:
+          row.verifiedUsageCost > 0
+            ? "verified_usage"
+            : cost > 0
+              ? "estimated_api"
+              : null,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        cacheReadTokens: row.cacheReadTokens,
+        cacheWriteTokens: row.cacheWriteTokens,
+        reasoningTokens: row.reasoningTokens,
       });
     }
-    if (suggestedLines || acceptedLines || addedLines || deletedLines || commits) {
+    if (
+      row.suggestedLines ||
+      row.acceptedLines ||
+      row.addedLines ||
+      row.deletedLines ||
+      row.commits
+    ) {
       productivityModels.push({
-        toolName,
-        model,
-        source,
-        suggestedLines,
-        acceptedLines,
-        addedLines,
-        deletedLines,
-        commits,
+        toolName: row.toolName || "unknown",
+        model: row.modelName || "unknown",
+        source: "device_observed",
+        suggestedLines: row.suggestedLines,
+        acceptedLines: row.acceptedLines,
+        addedLines: row.addedLines,
+        deletedLines: row.deletedLines,
+        commits: row.commits,
       });
     }
   }
 
-  byModel.sort((a, b) => b.cost - a.cost || b.requests - a.requests || a.model!.localeCompare(b.model!));
-  productivityModels.sort((a, b) => b.acceptedLines - a.acceptedLines || a.model.localeCompare(b.model));
+  byModel.sort(
+    (a, b) => b.cost - a.cost || b.requests - a.requests || (a.model ?? "").localeCompare(b.model ?? ""),
+  );
+  productivityModels.sort(
+    (a, b) => b.acceptedLines - a.acceptedLines || a.model.localeCompare(b.model),
+  );
 
+  const { kpis } = snapshot;
   return {
     byModel,
     productivityModels,
-    byTool: tools.data.rows.map((row) => ({
-      toolName: dimension(row, "tool") || "unknown",
-      requests: metricNumber(row, "requests"),
-      tokens: metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens"),
-      cost: metricNumber(row, "costMicros") / 1_000_000,
+    byTool: snapshot.tools.map((row) => ({
+      toolName: row.toolName || "unknown",
+      requests: row.requests,
+      tokens: row.tokens,
+      cost: row.cost,
     })),
-    byDay: trend.data.rows.map((row) => ({
-      date: dimension(row, "day"),
-      requests: metricNumber(row, "requests"),
-      tokens: metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens"),
-      cost: metricNumber(row, "costMicros") / 1_000_000,
+    byDay: snapshot.dayTotals.map((row) => ({
+      date: row.date,
+      requests: row.requests,
+      tokens: row.inputTokens + row.outputTokens,
+      cost: row.verifiedUsageCost + row.estimatedApiCost,
     })),
     kpis: {
-      modelCalls: metricNumber(summaryRow, "requests"),
-      sessions: metricNumber(summaryRow, "sessions"),
-      verifiedUsageCost: costSummary.verifiedUsageCost,
-      estimatedApiCost: costSummary.estimatedApiCost,
-      actualSpendCost: costSummary.actualSpendCost,
-      totalUsageCost: costSummary.totalUsageCost,
-      inputTokens: metricNumber(summaryRow, "inputTokens"),
-      outputTokens: metricNumber(summaryRow, "outputTokens"),
-      cacheReadTokens: metricNumber(summaryRow, "cacheReadTokens"),
-      cacheWriteTokens: metricNumber(summaryRow, "cacheWriteTokens"),
-      reasoningTokens: metricNumber(summaryRow, "reasoningTokens"),
-      suggestedLines: metricNumber(summaryRow, "suggestedLines"),
-      acceptedLines: metricNumber(summaryRow, "acceptedLines"),
-      addedLines: metricNumber(summaryRow, "addedLines"),
-      deletedLines: metricNumber(summaryRow, "deletedLines"),
-      commits: metricNumber(summaryRow, "commits"),
-      partialData: false,
+      modelCalls: kpis.modelCalls,
+      sessions: kpis.sessions,
+      verifiedUsageCost: kpis.verifiedUsageCost,
+      estimatedApiCost: kpis.estimatedApiCost,
+      actualSpendCost: kpis.actualSpendCost,
+      totalUsageCost: kpis.verifiedUsageCost + kpis.estimatedApiCost + kpis.actualSpendCost,
+      inputTokens: kpis.inputTokens,
+      outputTokens: kpis.outputTokens,
+      cacheReadTokens: kpis.cacheReadTokens,
+      cacheWriteTokens: kpis.cacheWriteTokens,
+      reasoningTokens: kpis.reasoningTokens,
+      suggestedLines: kpis.suggestedLines,
+      acceptedLines: kpis.acceptedLines,
+      addedLines: kpis.addedLines,
+      deletedLines: kpis.deletedLines,
+      commits: kpis.commits,
+      partialData: kpis.partialData,
     },
   };
 }

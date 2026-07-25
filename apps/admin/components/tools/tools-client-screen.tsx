@@ -24,7 +24,7 @@ import type { listSubscriptions } from "@/lib/tools/subscriptions";
 import { canonicalToolKey, serializeCatalog, toolDisplayName } from "@/lib/tools/catalog";
 import { formatCompactNumber, formatUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useAppQuery } from "@/lib/api/client";
+import { useAppPageQuery } from "@/lib/api/client";
 import { toolsKey } from "@/lib/app-pages/query-keys";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
@@ -330,7 +330,7 @@ type ToolsPayload =
 export default function ToolsClientScreen() {
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
-  const query = useAppQuery<ToolsPayload>(
+  const query = useAppPageQuery<ToolsPayload>(
     toolsKey(queryString),
     `/api/app/tools${queryString ? `?${queryString}` : ""}`,
   );

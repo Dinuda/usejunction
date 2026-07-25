@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { createContext, useContext } from "react";
+import { createContext, useContext, useMemo } from "react";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
 import { MemberHubNav } from "@/components/developers/member-hub-nav";
 import { MemberHubPeriodFilter } from "@/components/developers/member-hub-period";
@@ -10,20 +10,14 @@ import { MemberRoleSelect } from "@/components/developers/member-role-select";
 import { PageHeader } from "@/components/page-header";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
-import { useAppQuery } from "@/lib/api/client";
-import { teamMemberKey } from "@/lib/app-pages/query-keys";
-import { canManageSettings, type OrganizationRole } from "@/lib/rbac/permissions";
-import type { getDeveloperOverview } from "@/lib/queries/me/overview";
-import type { DeveloperRosterData } from "@/lib/read-models/developers";
+import { useAppPageQuery } from "@/lib/api/client";
+import { teamMemberHubKey, teamMemberWorkKey } from "@/lib/app-pages/query-keys";
+import type { TeamMemberHubPayload, TeamMemberWorkPayload } from "@/lib/app-pages/team-member";
+import { canManageSettings } from "@/lib/rbac/permissions";
 import type { WorkActivityV1 } from "@/lib/signals/queries/get-work-activity";
 
-export type MemberClientData = {
+export type MemberClientData = TeamMemberHubPayload & {
   section: "overview" | "coding" | "fleet" | "work";
-  developerId: string;
-  developer: DeveloperRosterData["developers"][number];
-  role: OrganizationRole;
-  personal: NonNullable<Awaited<ReturnType<typeof getDeveloperOverview>>>;
-  selectedPeriodLabel: string;
   work: WorkActivityV1 | null;
   workExtractionEnabled: boolean;
 };
@@ -36,7 +30,7 @@ export function useMemberClientData() {
   return value;
 }
 
-function sectionFromPath(pathname: string) {
+function sectionFromPath(pathname: string): MemberClientData["section"] {
   if (pathname.endsWith("/coding")) return "coding";
   if (pathname.endsWith("/fleet")) return "fleet";
   if (pathname.endsWith("/work")) return "work";
@@ -49,18 +43,37 @@ export function MemberClientLayout({ children }: { children: React.ReactNode }) 
   const searchParams = useSearchParams();
   const section = sectionFromPath(pathname);
   const periodQuery = searchParams.toString();
-  const apiQuery = new URLSearchParams(periodQuery);
-  apiQuery.set("section", section);
-  const query = useAppQuery<MemberClientData>(
-    teamMemberKey(developerId, section, periodQuery),
-    `/api/app/team/${encodeURIComponent(developerId)}?${apiQuery.toString()}`,
+  const hubQuery = useAppPageQuery<TeamMemberHubPayload>(
+    teamMemberHubKey(developerId, periodQuery),
+    `/api/app/team/${encodeURIComponent(developerId)}${periodQuery ? `?${periodQuery}` : ""}`,
   );
-  if (query.isPending) return <AppPageSkeleton />;
-  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
-  const { developer, role } = query.data;
+  const needsWork = section === "overview" || section === "work";
+  const workLimit = section === "work" ? 200 : 4;
+  const workQueryString = useMemo(() => {
+    const params = new URLSearchParams(periodQuery);
+    params.set("slice", "work");
+    params.set("limit", String(workLimit));
+    return params.toString();
+  }, [periodQuery, workLimit]);
+  const workQuery = useAppPageQuery<TeamMemberWorkPayload>(
+    teamMemberWorkKey(developerId, periodQuery, workLimit),
+    `/api/app/team/${encodeURIComponent(developerId)}?${workQueryString}`,
+    { enabled: needsWork && Boolean(hubQuery.data) },
+  );
+
+  if (hubQuery.isPending) return <AppPageSkeleton />;
+  if (hubQuery.error) return <AppPageError error={hubQuery.error} retry={() => void hubQuery.refetch()} />;
+
+  const { developer, role } = hubQuery.data;
+  const contextValue: MemberClientData = {
+    ...hubQuery.data,
+    section,
+    work: needsWork ? (workQuery.data?.work ?? null) : null,
+    workExtractionEnabled: needsWork ? (workQuery.data?.workExtractionEnabled ?? false) : false,
+  };
 
   return (
-    <MemberDataContext.Provider value={query.data}>
+    <MemberDataContext.Provider value={contextValue}>
       <PageHeader
         className="mb-8"
         eyebrow={
@@ -78,6 +91,9 @@ export function MemberClientLayout({ children }: { children: React.ReactNode }) 
         ) : <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Role: {developer.role}</p>}
         <MemberHubNav developerId={developerId} />
       </PageHeader>
+      {workQuery.error && needsWork ? (
+        <AppPageError error={workQuery.error} retry={() => void workQuery.refetch()} />
+      ) : null}
       {children}
     </MemberDataContext.Provider>
   );

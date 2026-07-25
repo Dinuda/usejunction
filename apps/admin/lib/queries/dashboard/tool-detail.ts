@@ -1,11 +1,14 @@
 import { prisma } from "@usejunction/db";
-import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import { resolveReportWindow } from "@/lib/analytics/contracts/time-window";
+import {
+  readModelActivityFromSnapshots,
+  readOrgUsageFromSnapshots,
+  readDeveloperUsageFromSnapshots,
+} from "@/lib/analytics/snapshots";
 import { findCatalogTool, subscriptionToolKeys, toolUsageNames } from "@/lib/tools/catalog";
-import { summarizeCanonicalCosts } from "@/lib/metrics/cost-summary";
 import { mapVendorPlanToCatalog } from "@/lib/tools/sync-detected";
-import { listSubscriptions } from "@/lib/tools/subscriptions";
+import { listSubscriptions, type listSubscriptions as ListSubscriptions } from "@/lib/tools/subscriptions";
 
 export type ToolDetailData = {
   toolKey: string;
@@ -88,7 +91,7 @@ export async function getToolDetail(
   orgId: string,
   toolKey: string,
   reportWindow: MetricWindow = resolveReportWindow({ range: 30 }),
-  options: { developerId?: string } = {},
+  options: { developerId?: string; subscriptions?: Awaited<ReturnType<typeof ListSubscriptions>> } = {},
 ): Promise<ToolDetailData | null> {
   const tool = findCatalogTool(toolKey);
   if (!tool) return null;
@@ -100,7 +103,24 @@ export async function getToolDetail(
   const developerFilter = developerId ? { userId: developerId } : {};
   const assignmentDeveloperFilter = developerId ? { developerId } : {};
 
-  const [installations, accounts, quotas, usageRows, subscriptions, assignments, modelRows] =
+  const usagePromise = developerId
+    ? readDeveloperUsageFromSnapshots(orgId, developerId, reportWindow, {
+        includeTools: true,
+        toolNames: names,
+        ensure: false,
+      })
+    : readOrgUsageFromSnapshots(orgId, reportWindow, {
+        includeTools: true,
+        toolNames: names,
+        ensure: false,
+      });
+
+  const subscriptionsPromise =
+    options.subscriptions !== undefined
+      ? Promise.resolve(options.subscriptions)
+      : listSubscriptions(orgId);
+
+  const [installations, accounts, quotas, usageSnapshot, subscriptions, assignments, modelRows] =
     await Promise.all([
       prisma.toolInstallation.findMany({
         where: { orgId, detected: true, toolName: { in: inventoryNames }, ...developerFilter },
@@ -133,17 +153,8 @@ export async function getToolDetail(
         },
         orderBy: { updatedAt: "desc" },
       }),
-      readUsageMetrics({
-        orgId,
-        window: reportWindow,
-        measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
-        dimensions: ["source", "costKind"],
-        filters: {
-          toolNames: names,
-          ...(developerId ? { developerIds: [developerId] } : {}),
-        },
-      }),
-      listSubscriptions(orgId),
+      usagePromise,
+      subscriptionsPromise,
       prisma.developerPlanAssignment.findMany({
         where: {
           orgId,
@@ -162,15 +173,10 @@ export async function getToolDetail(
         },
         orderBy: { createdAt: "desc" },
       }),
-      readUsageMetrics({
-        orgId,
-        window: reportWindow,
-        measures: ["requests", "inputTokens", "outputTokens", "costMicros"],
-        dimensions: ["developer", "model"],
-        filters: {
-          toolNames: names,
-          ...(developerId ? { developerIds: [developerId] } : {}),
-        },
+      readModelActivityFromSnapshots(orgId, reportWindow, {
+        toolNames: names,
+        developerId: developerId ?? undefined,
+        ensure: false,
       }),
     ]);
 
@@ -198,17 +204,10 @@ export async function getToolDetail(
           active: subscription.active,
         }));
 
-  const requests = usageRows.data.rows.reduce((sum, row) => sum + metricNumber(row, "requests"), 0);
-  const usageCost = summarizeCanonicalCosts(
-    usageRows.data.rows.map((row) => ({
-      costMicros: metricNumber(row, "costMicros"),
-      costKind: dimension(row, "costKind"),
-    })),
-  ).totalUsageCost;
-  const tokens = usageRows.data.rows.reduce(
-    (sum, row) => sum + metricNumber(row, "inputTokens") + metricNumber(row, "outputTokens"),
-    0,
-  );
+  const toolTotals = usageSnapshot.tools;
+  const requests = toolTotals.reduce((sum, row) => sum + row.requests, 0);
+  const usageCost = toolTotals.reduce((sum, row) => sum + row.cost, 0);
+  const tokens = toolTotals.reduce((sum, row) => sum + row.tokens, 0);
 
   const peopleMap = new Map<
     string,
@@ -316,22 +315,17 @@ export async function getToolDetail(
   const deviceIds = new Set(installations.map((item) => item.deviceId));
 
   const modelsByDeveloper: ToolDetailData["modelsByDeveloper"] = [];
-  for (const row of modelRows.data.rows) {
-    const developerId = dimension(row, "developer");
-    const model = dimension(row, "model") || "unknown";
-    if (!developerId) continue;
-    const requests = metricNumber(row, "requests");
-    const inputTokens = metricNumber(row, "inputTokens");
-    const outputTokens = metricNumber(row, "outputTokens");
-    const costMicros = metricNumber(row, "costMicros");
-    if (!requests && !inputTokens && !outputTokens && !costMicros) continue;
+  for (const row of modelRows) {
+    if (!row.developerId) continue;
+    const cost = row.verifiedUsageCost + row.estimatedApiCost;
+    if (!row.requests && !row.inputTokens && !row.outputTokens && !cost) continue;
     modelsByDeveloper.push({
-      developerId,
-      developerName: peopleMap.get(developerId)?.name ?? "Unknown developer",
-      model,
-      requests,
-      tokens: inputTokens + outputTokens,
-      cost: costMicros / 1_000_000,
+      developerId: row.developerId,
+      developerName: peopleMap.get(row.developerId)?.name ?? "Unknown developer",
+      model: row.modelName || "unknown",
+      requests: row.requests,
+      tokens: row.inputTokens + row.outputTokens,
+      cost,
     });
   }
   modelsByDeveloper.sort(

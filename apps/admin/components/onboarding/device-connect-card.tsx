@@ -33,6 +33,8 @@ type EnrollmentCredentials = {
   expiresAt: string;
 };
 
+export type DeviceConnectEnrollmentCredentials = EnrollmentCredentials;
+
 type Props = {
   title?: string;
   description?: string;
@@ -42,6 +44,12 @@ type Props = {
   pollAfterCopy?: boolean;
   /** Hide the inline waiting row (e.g. when parent renders status elsewhere). */
   hideInlineStatus?: boolean;
+  /** Devices from parent bootstrap — skips mount-time status fetch when set. */
+  initialDevices?: Device[];
+  /** Token prefetched by parent after bootstrap. */
+  initialCredentials?: EnrollmentCredentials | null;
+  /** When true with initialDevices, do not GET /api/onboarding on mount. */
+  skipInitialStatusFetch?: boolean;
   onPollingStateChange?: (state: {
     isPolling: boolean;
     waitingForTools: boolean;
@@ -75,6 +83,9 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
     compact = false,
     pollAfterCopy = false,
     hideInlineStatus = false,
+    initialDevices,
+    initialCredentials = null,
+    skipInitialStatusFetch = false,
     onPollingStateChange,
     onConnected,
   },
@@ -170,13 +181,13 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
     if (candidate && isReadyDevice(candidate) && hasUsageReady(candidate)) {
       setDevice(candidate);
       try {
-        const ctxRes = await fetch("/api/app/workspace-context", { cache: "no-store" });
-        if (ctxRes.ok) {
-          const ctx = (await ctxRes.json()) as {
-            data?: { sync?: { dashboardReady?: boolean; dirtyDayCount?: number } };
+        const syncRes = await fetch("/api/onboarding/sync-status", { cache: "no-store" });
+        if (syncRes.ok) {
+          const sync = (await syncRes.json()) as {
+            dashboardReady?: boolean;
+            dirtyDayCount?: number;
           };
-          const sync = ctx.data?.sync;
-          if (sync && (sync.dashboardReady === false || (sync.dirtyDayCount ?? 0) > 0)) {
+          if (sync.dashboardReady === false || (sync.dirtyDayCount ?? 0) > 0) {
             beginSyncWait(
               candidate,
               sync.dirtyDayCount && sync.dirtyDayCount > 0
@@ -206,21 +217,6 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
     }
 
     setError(null);
-    const bootstrap = await fetch("/api/onboarding", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json", "x-requested-with": "usejunction-web" },
-      body: "{}",
-    });
-    if (bootstrap.status === 401) {
-      window.location.href = "/login?from=/onboarding";
-      return null;
-    }
-    if (!bootstrap.ok) {
-      const data = await bootstrap.json().catch(() => ({}));
-      setError(userFacingError(data.error, "Unable to prepare your workspace."));
-      return null;
-    }
 
     const response = await fetch("/api/me/enrollment-token", {
       method: "POST",
@@ -232,6 +228,10 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
       body: JSON.stringify({ rotate }),
     });
     const data = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      window.location.href = "/login?from=/onboarding";
+      return null;
+    }
     if (!response.ok) {
       setError(userFacingError(data.error, "Unable to create a connect command."));
       return null;
@@ -293,10 +293,25 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
     initializedRef.current = true;
 
     void (async () => {
-      const status = await refreshStatus();
-      const devices = status?.devices ?? [];
-      setKnownIds(new Set(devices.map((item) => item.id)));
-      const existing = status?.next ?? null;
+      let devices: Device[];
+      let existing: Device | null;
+
+      if (skipInitialStatusFetch && initialDevices !== undefined) {
+        devices = initialDevices;
+        existing = devices[0] ?? null;
+        setKnownIds(new Set(devices.map((item) => item.id)));
+      } else {
+        const status = await refreshStatus();
+        devices = status?.devices ?? [];
+        existing = status?.next ?? null;
+        setKnownIds(new Set(devices.map((item) => item.id)));
+      }
+
+      if (initialCredentials) {
+        setToken(initialCredentials.token);
+        setExpiresAt(initialCredentials.expiresAt);
+        setControlPlaneUrl(initialCredentials.controlPlaneUrl);
+      }
 
       if (existing) {
         markEnrollmentConsumed();
@@ -304,13 +319,21 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
         if (shouldEnterSyncWait(existing)) {
           beginSyncWait(existing);
         }
-      } else {
+      } else if (!initialCredentials) {
         await generateToken();
       }
 
       setLoading(false);
     })();
-  }, [beginSyncWait, generateToken, markEnrollmentConsumed, refreshStatus]);
+  }, [
+    beginSyncWait,
+    generateToken,
+    initialCredentials,
+    initialDevices,
+    markEnrollmentConsumed,
+    refreshStatus,
+    skipInitialStatusFetch,
+  ]);
 
   useEffect(() => {
     if (fullyConnected) return;

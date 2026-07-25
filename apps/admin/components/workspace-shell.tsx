@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { prefetchNavPage } from "@/lib/app-pages/nav-prefetch";
 import {
   Activity,
   Home,
@@ -94,6 +96,11 @@ function AppSidebar({
 }) {
   const nav = navForRole(role);
   const { setOpenMobile } = useSidebar();
+  const queryClient = useQueryClient();
+
+  function warmNavCache(href: string) {
+    prefetchNavPage(queryClient, href);
+  }
 
   return (
     <Sidebar collapsible="offcanvas" variant="sidebar">
@@ -122,6 +129,8 @@ function AppSidebar({
                       href={href}
                       aria-current={isActive ? "page" : undefined}
                       onClick={() => setOpenMobile(false)}
+                      onMouseEnter={() => warmNavCache(href)}
+                      onFocus={() => warmNavCache(href)}
                     >
                       <Icon aria-hidden="true" />
                       <span>{label}</span>

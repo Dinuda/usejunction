@@ -29,6 +29,7 @@ import {
 } from "@/lib/billing/plan-utilization-policy";
 import {
   rollingPeriodLabel,
+  DEFAULT_ROLLING_PERIOD,
   type RollingPeriod,
 } from "@/lib/dashboard/period-prefs";
 import {
@@ -44,12 +45,18 @@ import { cn } from "@/lib/utils";
 import type { OrgOverviewV1 } from "@/lib/insights";
 import type { getMeOverview } from "@/lib/queries/me/overview";
 import type { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
-import { useAppQuery } from "@/lib/api/client";
-import { dashboardKey } from "@/lib/app-pages/query-keys";
+import { useAppPageQuery, useAppQuery } from "@/lib/api/client";
+import { dashboardKey, dashboardMetricsKey, dashboardShellKey, workspaceContextKey } from "@/lib/app-pages/query-keys";
+import type { WorkspaceContextPayload } from "@/lib/app-pages/workspace-context";
+import { mergeOrgOverviewShellMetrics } from "@/lib/app-pages/dashboard-merge";
+import type { OrgOverviewMetricsData, OrgOverviewShellData } from "@/lib/insights";
+import type { getLocalSyncPanelContext } from "@/lib/queries/me/local-sync-context";
 import { AppPageError } from "@/components/app-data-state";
-import { DashboardCrunchingState } from "@/components/dashboard/dashboard-crunching-state";
+import {
+  DashboardPageLoading,
+  DashboardPeriodRefreshing,
+} from "@/components/dashboard/dashboard-period-refreshing";
 import { SubscriptionUpgradedBanner } from "@/components/saas-billing/subscription-upgraded-banner";
-import { workspaceContextKey } from "@/lib/app-pages/query-keys";
 
 const AiCodingPanel = dynamic(() => import("@/components/dashboard/ai-coding-panel").then((mod) => mod.AiCodingPanel), { ssr: false });
 const CoverageChart = dynamic(() => import("@/components/dashboard/coverage-chart").then((mod) => mod.CoverageChart), { ssr: false });
@@ -466,12 +473,14 @@ function PersonalHome({
   allowPeriodControls,
   cycleView,
   rollingPeriod,
+  refreshing = false,
 }: {
   data: Awaited<ReturnType<typeof getMeOverview>>;
   audienceSwitcher?: ReactNode;
   allowPeriodControls: boolean;
   cycleView: CycleView;
   rollingPeriod: RollingPeriod;
+  refreshing?: boolean;
 }) {
   const usage = data.usage30d;
   const usageCost = data.kpis.verifiedUsageCost + data.kpis.estimatedApiCost;
@@ -496,12 +505,6 @@ function PersonalHome({
     toolsUsage: data.toolsUsage30d,
   });
   const { avgUtilization } = personalCycleSummary(planCards);
-  const historyUpdating =
-    data.sync.dashboardReady === false || (data.sync.dirtyDayCount ?? 0) > 0;
-  const historySubtitle =
-    (data.sync.dirtyDayCount ?? 0) > 0
-      ? `Importing usage history (${data.sync.dirtyDayCount} day${data.sync.dirtyDayCount === 1 ? "" : "s"} remaining)…`
-      : "Building your usage snapshot…";
 
   return (
     <>
@@ -536,13 +539,7 @@ function PersonalHome({
               dirtyDayCount={data.sync.dirtyDayCount}
             />
           </div>
-          {historyUpdating ? (
-            <DashboardCrunchingState
-              title="Updating usage history."
-              subtitle={historySubtitle}
-              revealAfterMs={0}
-            />
-          ) : (
+          <DashboardPeriodRefreshing refreshing={refreshing}>
             <>
           <div className="grid grid-cols-2 items-stretch gap-y-5 sm:gap-y-8 xl:grid-cols-4">
             <Kpi
@@ -772,60 +769,103 @@ function PersonalHome({
             </Panel>
           </div>
             </>
-          )}
+            </DashboardPeriodRefreshing>
         </>
       )}
     </>
   );
 }
 
-type DashboardPayload =
-  | {
-      kind: "personal";
-      scope: AudienceScope;
-      canSwitchAudience: boolean;
-      youUnlinked?: boolean;
-      allowPeriodControls: boolean;
-      cycleView: CycleView;
-      rollingPeriod: RollingPeriod;
-      periodLabel: string;
-      personal: Awaited<ReturnType<typeof getMeOverview>> | null;
-      needsPersonalConnect?: boolean;
-      syncContext?: Awaited<ReturnType<typeof getLocalSyncContext>>;
-    }
-  | {
-      kind: "organization";
-      scope: AudienceScope;
-      canSwitchAudience: boolean;
-      cycleView: CycleView;
-      rollingPeriod: RollingPeriod;
-      overview: OrgOverviewV1 | null;
-      error: string | null;
-      needsPersonalConnect: boolean;
-      syncContext: Awaited<ReturnType<typeof getLocalSyncContext>>;
-    };
+type PersonalDashboardPayload = {
+  kind: "personal";
+  scope: AudienceScope;
+  canSwitchAudience: boolean;
+  youUnlinked?: boolean;
+  allowPeriodControls: boolean;
+  cycleView: CycleView;
+  rollingPeriod: RollingPeriod;
+  periodLabel: string;
+  personal: Awaited<ReturnType<typeof getMeOverview>> | null;
+  needsPersonalConnect?: boolean;
+  syncContext?: Awaited<ReturnType<typeof getLocalSyncContext>>;
+};
+
+type OrgDashboardShellPayload = {
+  kind: "organization";
+  slice: "shell";
+  scope: "team";
+  canSwitchAudience: boolean;
+  shell: OrgOverviewShellData;
+  needsPersonalConnect: boolean;
+  syncPanel: Awaited<ReturnType<typeof getLocalSyncPanelContext>>;
+};
+
+type OrgDashboardMetricsPayload = {
+  kind: "organization";
+  slice: "metrics";
+  scope: "team";
+  canSwitchAudience: boolean;
+  cycleView: CycleView;
+  rollingPeriod: RollingPeriod;
+  overview: OrgOverviewMetricsData | null;
+  error: string | null;
+};
 
 export default function DashboardPage() {
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
-  const billingQuery = useAppQuery<{ billing: { effectivePlan: string } | null }>(
+  const scopeParam = searchParams.get("scope");
+
+  const workspaceQuery = useAppQuery<WorkspaceContextPayload>(
     workspaceContextKey,
     "/api/app/workspace-context",
   );
-  const billing = billingQuery.data?.billing;
+  const role = workspaceQuery.data?.current?.role;
+  const workspaceReady = workspaceQuery.data?.current != null;
+  const isPersonalDashboard = workspaceReady && (role === "user" || scopeParam === "you");
+  const isOrgDashboard = workspaceReady && !isPersonalDashboard;
+
+  const billing = workspaceQuery.data?.billing;
   const isTeamPlan =
     billing?.effectivePlan === "team" || billing?.effectivePlan === "enterprise";
-  const query = useAppQuery<DashboardPayload>(
+
+  const personalQuery = useAppPageQuery<PersonalDashboardPayload>(
     dashboardKey(queryString),
     `/api/app/dashboard${queryString ? `?${queryString}` : ""}`,
+    { enabled: isPersonalDashboard },
   );
-  // Pending without cached data: plain skeleton first; crunching copy only after 1.5s.
-  if (query.isPending && !query.data) return <DashboardCrunchingState />;
-  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
 
-  const switcher = query.data.canSwitchAudience ? <AudienceScopeSwitcher /> : null;
+  const shellQuery = useAppQuery<OrgDashboardShellPayload>(
+    dashboardShellKey,
+    "/api/app/dashboard?slice=shell",
+    { enabled: isOrgDashboard, staleTime: 5 * 60 * 1000 },
+  );
 
-  if (query.data.kind === "personal") {
+  const metricsParams = new URLSearchParams(searchParams.toString());
+  metricsParams.set("slice", "metrics");
+  const metricsQueryString = metricsParams.toString();
+  const metricsQuery = useAppPageQuery<OrgDashboardMetricsPayload>(
+    dashboardMetricsKey(metricsQueryString),
+    `/api/app/dashboard?${metricsQueryString}`,
+    { enabled: isOrgDashboard },
+  );
+
+  if (!workspaceReady) {
+    return <DashboardPageLoading showSyncPlaceholder />;
+  }
+
+  if (isPersonalDashboard) {
+    const query = personalQuery;
+    if (query.isPending && !query.data) {
+      return <DashboardPageLoading showSyncPlaceholder />;
+    }
+    if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+    if (!query.data) {
+      return <DashboardPageLoading showSyncPlaceholder />;
+    }
+
+    const switcher = query.data.canSwitchAudience ? <AudienceScopeSwitcher /> : null;
+
     if (query.data.youUnlinked || !query.data.personal) {
       return (
         <>
@@ -851,6 +891,7 @@ export default function DashboardPage() {
         </>
       );
     }
+
     return (
       <PersonalHome
         data={query.data.personal}
@@ -858,20 +899,50 @@ export default function DashboardPage() {
         allowPeriodControls={query.data.allowPeriodControls}
         cycleView={query.data.cycleView}
         rollingPeriod={query.data.rollingPeriod}
+        refreshing={personalQuery.isFetching && personalQuery.isPlaceholderData}
       />
     );
   }
 
-  const { cycleView, rollingPeriod, error, needsPersonalConnect, syncContext } = query.data;
-  const data = query.data.overview;
+  const shellPending = shellQuery.isPending && !shellQuery.data;
+  const metricsPending = metricsQuery.isPending && !metricsQuery.data;
+
+  if (shellQuery.error) {
+    return <AppPageError error={shellQuery.error} retry={() => void shellQuery.refetch()} />;
+  }
+  if (metricsQuery.error && !metricsQuery.data) {
+    return <AppPageError error={metricsQuery.error} retry={() => void metricsQuery.refetch()} />;
+  }
+
+  // Cold load: keep the real title (and shell chrome once available) while metrics load.
+  if (shellPending || (metricsPending && !shellQuery.data)) {
+    return (
+      <DashboardPageLoading showSyncPlaceholder>
+        {role && role !== "user" ? <AudienceScopeSwitcher /> : null}
+      </DashboardPageLoading>
+    );
+  }
+
+  if (!shellQuery.data) {
+    return (
+      <DashboardPageLoading showSyncPlaceholder>
+        {role && role !== "user" ? <AudienceScopeSwitcher /> : null}
+      </DashboardPageLoading>
+    );
+  }
+
+  const switcher = shellQuery.data.canSwitchAudience ? <AudienceScopeSwitcher /> : null;
+  const { needsPersonalConnect, syncPanel, shell } = shellQuery.data;
+  const cycleView = metricsQuery.data?.cycleView ?? "last_30_days";
+  const rollingPeriod = metricsQuery.data?.rollingPeriod ?? DEFAULT_ROLLING_PERIOD;
+  const error = metricsQuery.data?.error ?? null;
+  const metricsOverview = metricsQuery.data?.overview ?? null;
+  const data =
+    metricsOverview && shell ? mergeOrgOverviewShellMetrics(shell, metricsOverview) : null;
   const empty = data && !data.hasActivity && data.coverage.devices === 0;
-  const historyUpdating =
-    !!syncContext &&
-    (syncContext.dashboardReady === false || (syncContext.dirtyDayCount ?? 0) > 0);
-  const historySubtitle =
-    syncContext && (syncContext.dirtyDayCount ?? 0) > 0
-      ? `Importing usage history (${syncContext.dirtyDayCount} day${syncContext.dirtyDayCount === 1 ? "" : "s"} remaining)…`
-      : "Building your usage snapshot…";
+  // Period / filter change only — keep sealed numbers visible on background refetch.
+  const metricsRefreshing =
+    metricsPending || (metricsQuery.isFetching && metricsQuery.isPlaceholderData);
 
   return (
     <>
@@ -884,24 +955,29 @@ export default function DashboardPage() {
             ? "Connect a machine, then invite people. Metrics show up as soon as the first request lands."
             : undefined
         }
-        actions={!empty && data ? <CycleViewPicker view={cycleView} period={rollingPeriod} /> : null}
+        actions={
+          !empty && (data || metricsRefreshing) ? (
+            <CycleViewPicker view={cycleView} period={rollingPeriod} />
+          ) : null
+        }
         mobileActionsInline
       >
         {switcher}
       </PageHeader>
 
-      {syncContext ? (
+      {syncPanel ? (
         <div className="mb-8">
           <LocalSyncPanel
-            lastSeenAt={syncContext.lastSeenAt}
-            lastUsageSyncAt={syncContext.lastUsageSyncAt}
-            lastAccountSyncAt={syncContext.lastAccountSyncAt}
-            dashboardReady={syncContext.dashboardReady}
-            dirtyDayCount={syncContext.dirtyDayCount}
+            lastSeenAt={syncPanel.lastSeenAt}
+            lastUsageSyncAt={syncPanel.lastUsageSyncAt}
+            lastAccountSyncAt={syncPanel.lastAccountSyncAt}
+            dashboardReady={syncPanel.dashboardReady}
+            dirtyDayCount={syncPanel.dirtyDayCount}
           />
         </div>
       ) : null}
 
+      <DashboardPeriodRefreshing refreshing={metricsRefreshing && !error && !empty}>
       {error ? (
         <Alert variant="destructive" className="rounded-none">
           <AlertDescription className="flex flex-wrap items-center gap-3">
@@ -913,12 +989,6 @@ export default function DashboardPage() {
         </Alert>
       ) : empty ? (
         <DashboardSetupPanel />
-      ) : historyUpdating ? (
-        <DashboardCrunchingState
-          title="Updating usage history."
-          subtitle={historySubtitle}
-          revealAfterMs={0}
-        />
       ) : data ? (
         <>
           <div className="grid grid-cols-2 items-stretch gap-y-5 sm:gap-y-8 xl:grid-cols-4">
@@ -1201,6 +1271,7 @@ export default function DashboardPage() {
           )}
         </>
       ) : null}
+      </DashboardPeriodRefreshing>
     </>
   );
 }

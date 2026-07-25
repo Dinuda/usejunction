@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma, prisma } from "@usejunction/db";
 import { assertCanEnrollDevice } from "@/lib/saas-billing/status";
 import { generateDeviceToken } from "@/lib/auth";
-import { ensureActiveReleaseDeployment, normalizeAgentVersion } from "@/lib/agent-updates";
+import { normalizeAgentVersion } from "@/lib/agent-updates";
 import { getPublicAppUrl } from "@/lib/public-url";
 import { hashOpaqueToken } from "@/lib/security";
 import { limitedJson } from "@/lib/security/http";
@@ -56,6 +56,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: enrollmentCheck.message }, { status: 403 });
     }
 
+    const telemetryPromise = prisma.telemetryEndpoint.findUnique({
+      where: { orgId },
+      select: { enabled: true },
+    });
+
     const deviceToken = generateDeviceToken();
     const deviceTokenHash = hashOpaqueToken(deviceToken);
     let device;
@@ -89,21 +94,9 @@ export async function POST(req: NextRequest) {
       throw error;
     }
 
-    await ensureActiveReleaseDeployment({
-      id: device.id,
-      orgId: device.orgId,
-      os: device.os,
-      architecture: device.architecture,
-      agentVersion: device.agentVersion,
-    }).catch((error) => {
-      logServerError("enroll/active-release-attach", error);
-    });
-
+    // Release deployment attach runs on first heartbeat (updateDirectiveForHeartbeat).
+    const telemetryEndpoint = await telemetryPromise;
     const appUrl = getPublicAppUrl(req);
-    const telemetryEndpoint = await prisma.telemetryEndpoint.findUnique({
-      where: { orgId },
-      select: { enabled: true },
-    });
 
     return NextResponse.json({
       deviceId: device.id,

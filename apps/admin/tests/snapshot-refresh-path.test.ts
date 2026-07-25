@@ -418,7 +418,7 @@ test("invalidateAnalyticsCache keeps large dirty sets dirty-only", { skip: !runD
   }
 });
 
-test("ensure recovers when snapshots were wiped but usage_daily remains", { skip: !runDb }, async () => {
+test("ensure enqueues rematerialize when snapshots were wiped but usage_daily remains", { skip: !runDb }, async () => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const org = await prisma.organization.create({
     data: { name: `Wipe Org ${suffix}`, slug: `wipe-${suffix}` },
@@ -462,9 +462,11 @@ test("ensure recovers when snapshots were wiped but usage_daily remains", { skip
     await prisma.orgUsageDaySnapshot.deleteMany({ where: { orgId: org.id } });
 
     const result = await ensureOrgUsageDaySnapshots(org.id, from, to);
-    // Small corrupt windows heal inline so dashboard loads stop looping.
-    assert.ok(result.recovered > 0, "expected inline recovery for wiped stubs");
-    assert.equal(result.pendingDirty, 0);
+    // Read path never rematerializes — missing-with-usage days are enqueued dirty.
+    assert.equal(result.recovered, 0);
+    assert.ok(result.pendingDirty > 0, "expected dirty days enqueued for worker");
+
+    await materializeDirtyOrgUsageDays(org.id);
 
     const total = await prisma.orgUsageDaySnapshot.findFirst({
       where: {
@@ -481,6 +483,7 @@ test("ensure recovers when snapshots were wiped but usage_daily remains", { skip
     // Second ensure stays warm — no further recovery.
     const again = await ensureOrgUsageDaySnapshots(org.id, from, to);
     assert.equal(again.recovered, 0);
+    assert.equal(again.pendingDirty, 0);
   } finally {
     await prisma.organization.delete({ where: { id: org.id } });
   }
@@ -545,8 +548,10 @@ test("ensure marks token/cost-only stubs dirty after first ingest (requests=0)",
     });
 
     const stubbed = await ensureOrgUsageDaySnapshots(org.id, day, day);
-    assert.ok(stubbed.recovered > 0, "expected fail-safe to heal token/cost-only usage stubs");
-    assert.equal(stubbed.pendingDirty, 0);
+    assert.equal(stubbed.recovered, 0, "ensure must not rematerialize on read path");
+    assert.ok(stubbed.pendingDirty > 0, "expected corrupt stub marked dirty");
+
+    await materializeDirtyOrgUsageDays(org.id);
 
     const total = await prisma.orgUsageDaySnapshot.findFirst({
       where: {
@@ -566,7 +571,7 @@ test("ensure marks token/cost-only stubs dirty after first ingest (requests=0)",
   }
 });
 
-test("ensure heals undercounted snaps (codex-only while cursor vendor exists)", { skip: !runDb }, async () => {
+test("ensure enqueues undercounted snaps (codex-only while cursor vendor exists)", { skip: !runDb }, async () => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const org = await prisma.organization.create({
     data: { name: `Undercount Org ${suffix}`, slug: `undercount-${suffix}` },
@@ -663,7 +668,10 @@ test("ensure heals undercounted snaps (codex-only while cursor vendor exists)", 
     });
 
     const result = await ensureOrgUsageDaySnapshots(org.id, day, day);
-    assert.ok(result.recovered > 0, "expected undercount to heal inline");
+    assert.equal(result.recovered, 0, "ensure must not rematerialize on read path");
+    assert.ok(result.pendingDirty > 0, "expected undercount marked dirty");
+
+    await materializeDirtyOrgUsageDays(org.id);
 
     const total = await prisma.orgUsageDaySnapshot.findFirst({
       where: {

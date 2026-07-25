@@ -6,10 +6,25 @@ export function dashboardKey(queryString = "") {
   return ["app", "dashboard", queryString] as const;
 }
 
+export const dashboardShellKey = ["app", "dashboard", "shell"] as const;
+
+export function dashboardMetricsKey(queryString = "") {
+  return ["app", "dashboard", "metrics", queryString] as const;
+}
+
 export function teamKey(queryString = "") {
   return ["app", "team", queryString] as const;
 }
 
+export function teamMemberHubKey(developerId: string, periodQuery = "") {
+  return ["app", "team", developerId, "hub", periodQuery] as const;
+}
+
+export function teamMemberWorkKey(developerId: string, periodQuery = "", limit = 4) {
+  return ["app", "team", developerId, "work", periodQuery, limit] as const;
+}
+
+/** @deprecated Use teamMemberHubKey — section is no longer part of the cache key. */
 export function teamMemberKey(developerId: string, section: string, periodQuery = "") {
   return ["app", "team", developerId, section, periodQuery] as const;
 }

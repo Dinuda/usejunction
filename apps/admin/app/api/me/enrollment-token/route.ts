@@ -1,18 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
-import { requireOrgRole, audit, rolesFor } from "@/lib/rbac";
+import { requireAppPrincipal } from "@/lib/api/app-auth";
+import { audit, rolesFor } from "@/lib/rbac";
 import { getPublicAppUrl } from "@/lib/public-url";
 import { assertCanEnrollDevice } from "@/lib/saas-billing/status";
 import { issueEnrollmentToken } from "@/lib/enrollment-token";
-import { limitedJson } from "@/lib/security/http";
+import { limitedJson, browserMutationGuard } from "@/lib/security/http";
 
 export async function POST(req: NextRequest) {
-  const auth = await requireOrgRole(req, rolesFor("self_view"));
-  if (auth instanceof NextResponse) return auth;
-  const developer = await prisma.developer.findFirst({ where: { orgId: auth.orgId, authUserId: auth.userId } });
+  const rejected = browserMutationGuard(req);
+  if (rejected) return rejected;
+
+  const principal = await requireAppPrincipal(req, rolesFor("self_view"));
+  if (principal instanceof NextResponse) return principal;
+
+  const developer = await prisma.developer.findFirst({
+    where: { orgId: principal.orgId, authUserId: principal.userId },
+  });
   if (!developer) return NextResponse.json({ error: "developer profile required" }, { status: 409 });
 
-  const enrollGate = await assertCanEnrollDevice(auth.orgId, developer.id);
+  const enrollGate = await assertCanEnrollDevice(principal.orgId, developer.id);
   if (!enrollGate.allowed) {
     return NextResponse.json({ error: enrollGate.message }, { status: 403 });
   }
@@ -22,14 +29,14 @@ export async function POST(req: NextRequest) {
   const rotate = body.rotate === true;
 
   const issued = await issueEnrollmentToken({
-    orgId: auth.orgId,
+    orgId: principal.orgId,
     developerId: developer.id,
     rotate,
   });
   await audit({
-    orgId: auth.orgId,
+    orgId: principal.orgId,
     actorType: "user",
-    actorId: auth.userId,
+    actorId: principal.userId,
     action: rotate ? "enrollment_token.rotated" : "enrollment_token.created",
     targetType: "enrollment_token",
     targetId: issued.id,

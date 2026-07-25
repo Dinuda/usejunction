@@ -41,6 +41,9 @@ type Config struct {
 	// LastFullUsageRescanDay is the UTC YYYY-MM-DD of the last control-plane
 	// sealed full usage rescan this agent completed.
 	LastFullUsageRescanDay string `json:"lastFullUsageRescanDay,omitempty"`
+	// LastCollectCompletedAt is when the most recent collect finished (RFC3339Nano).
+	// Used to skip the daemon's immediate post-onboard duplicate collect.
+	LastCollectCompletedAt string `json:"lastCollectCompletedAt,omitempty"`
 }
 
 const DefaultLocalSyncPort = 47832

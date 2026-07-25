@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
-import { DeviceConnectCard } from "@/components/onboarding/device-connect-card";
+import { DeviceConnectCard, type DeviceConnectEnrollmentCredentials } from "@/components/onboarding/device-connect-card";
+import type { DeviceConnectSnapshot } from "@/lib/device-connect-state";
 import { InviteTeamForm } from "@/components/onboarding/invite-team-form";
 import { hasToolBrandIcon, ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { Button } from "@/components/ui/button";
@@ -27,10 +28,46 @@ type OnboardingStatus = {
       hostname: string;
       os: string;
       lastSeenAt: string;
+      lastUsageSyncAt?: string | null;
       toolInstallations: Array<{ toolName: string; version?: string | null }>;
     }>;
   } | null;
 };
+
+async function fetchEnrollmentCredentials(): Promise<DeviceConnectEnrollmentCredentials | null> {
+  const response = await fetch("/api/me/enrollment-token", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "content-type": "application/json",
+      "x-requested-with": "usejunction-web",
+    },
+    body: JSON.stringify({ rotate: false }),
+  });
+  if (!response.ok) return null;
+  const data = (await response.json()) as {
+    token?: string;
+    expiresAt?: string;
+    controlPlaneUrl?: string;
+  };
+  if (!data.token || !data.expiresAt) return null;
+  return {
+    token: data.token,
+    expiresAt: data.expiresAt,
+    controlPlaneUrl: data.controlPlaneUrl || window.location.origin,
+  };
+}
+
+function mapDevicesFromStatus(status: OnboardingStatus): DeviceConnectSnapshot[] {
+  return (status.developer?.devices ?? []).map((device) => ({
+    id: device.id,
+    hostname: device.hostname,
+    os: device.os,
+    lastSeenAt: device.lastSeenAt,
+    lastUsageSyncAt: device.lastUsageSyncAt ?? null,
+    toolInstallations: device.toolInstallations,
+  }));
+}
 
 type Path = "choose" | "connect" | "invite";
 
@@ -128,6 +165,9 @@ export function OnboardingExperience() {
   const [finishing, setFinishing] = useState(false);
   const [path, setPath] = useState<Path | null>(null);
   const [connectInProgress, setConnectInProgress] = useState(false);
+  const [prefetchedCredentials, setPrefetchedCredentials] =
+    useState<DeviceConnectEnrollmentCredentials | null>(null);
+  const [tokenPrefetchDone, setTokenPrefetchDone] = useState(false);
 
   const refresh = useCallback(async (mode: "bootstrap" | "poll" = "poll") => {
     const response =
@@ -170,6 +210,15 @@ export function OnboardingExperience() {
         if (current) return current;
         return canChooseOnboardingPath(role) ? "choose" : "connect";
       });
+      if (!hasReadyDevice(next)) {
+        void fetchEnrollmentCredentials()
+          .then((credentials) => {
+            if (credentials) setPrefetchedCredentials(credentials);
+          })
+          .finally(() => setTokenPrefetchDone(true));
+      } else {
+        setTokenPrefetchDone(true);
+      }
     }
     setLoading(false);
   }, []);
@@ -270,6 +319,9 @@ export function OnboardingExperience() {
   }
 
   if (path === "connect" || !canChoose) {
+    const connectDevices = mapDevicesFromStatus(status);
+    const needsToken = connectDevices.length === 0;
+
     return (
       <AuthShell
         size="md"
@@ -280,15 +332,24 @@ export function OnboardingExperience() {
         statement="One command. Real data."
       >
         <div className="space-y-5">
-          <DeviceConnectCard
-            compact
-            onPollingStateChange={({ isPolling, waitingForTools, deviceEnrolled }) => {
-              setConnectInProgress(isPolling || (waitingForTools && !deviceEnrolled));
-            }}
-            onConnected={() => {
-              void refresh("poll");
-            }}
-          />
+          {needsToken && !tokenPrefetchDone ? (
+            <div className="space-y-3" aria-busy="true">
+              <Skeleton className="h-24" />
+            </div>
+          ) : (
+            <DeviceConnectCard
+              compact
+              skipInitialStatusFetch
+              initialDevices={connectDevices}
+              initialCredentials={prefetchedCredentials}
+              onPollingStateChange={({ isPolling, waitingForTools, deviceEnrolled }) => {
+                setConnectInProgress(isPolling || (waitingForTools && !deviceEnrolled));
+              }}
+              onConnected={() => {
+                void refresh("poll");
+              }}
+            />
+          )}
           <div className="space-y-2 pt-2 text-center">
             {canChoose ? (
               <button

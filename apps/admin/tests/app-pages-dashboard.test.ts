@@ -4,8 +4,11 @@ const mocks = vi.hoisted(() => ({
   listSubscriptions: vi.fn(),
   getMeOverview: vi.fn(),
   getLocalSyncContext: vi.fn(),
+  getLocalSyncPanelContext: vi.fn(),
   resolveLinkedDeveloperId: vi.fn(),
   getOrgOverview: vi.fn(),
+  getOrgOverviewShell: vi.fn(),
+  getOrgOverviewMetrics: vi.fn(),
   logServerError: vi.fn(),
 }));
 
@@ -19,6 +22,7 @@ vi.mock("@/lib/queries/me/overview", () => ({
 
 vi.mock("@/lib/queries/me/local-sync-context", () => ({
   getLocalSyncContext: mocks.getLocalSyncContext,
+  getLocalSyncPanelContext: mocks.getLocalSyncPanelContext,
 }));
 
 vi.mock("@/lib/queries/me/resolve-developer", () => ({
@@ -27,6 +31,8 @@ vi.mock("@/lib/queries/me/resolve-developer", () => ({
 
 vi.mock("@/lib/insights", () => ({
   getOrgOverview: mocks.getOrgOverview,
+  getOrgOverviewShell: mocks.getOrgOverviewShell,
+  getOrgOverviewMetrics: mocks.getOrgOverviewMetrics,
   overviewInputFromBounds: vi.fn(),
   overviewInputFromRange: vi.fn((days: number) => ({ rangeDays: days })),
 }));
@@ -51,8 +57,25 @@ beforeEach(() => {
     dirtyDayCount: 0,
     snapshotLagSeconds: null,
   });
+  mocks.getLocalSyncPanelContext.mockResolvedValue({
+    lastSeenAt: null,
+    lastUsageSyncAt: null,
+    lastAccountSyncAt: null,
+    deviceCount: 1,
+    dashboardReady: true,
+    dirtyDayCount: 0,
+    snapshotLagSeconds: null,
+  });
   mocks.resolveLinkedDeveloperId.mockResolvedValue("dev-1");
   mocks.getOrgOverview.mockResolvedValue({ data: { hasActivity: true } });
+  mocks.getOrgOverviewShell.mockResolvedValue({
+    coverage: { developers: 3, devices: 2, configuredTools: 1, trackedTools: 2 },
+    health: { issues: [] },
+    detectedInstallations: [],
+  });
+  mocks.getOrgOverviewMetrics.mockResolvedValue({
+    data: { hasUsageActivity: true, coverage: { activeDevelopers: 2 } },
+  });
 });
 
 describe("loadDashboardPage personal period window", () => {
@@ -163,6 +186,7 @@ describe("loadDashboardPage manager org overview", () => {
 
     expect(data).toMatchObject({
       kind: "organization",
+      slice: "full",
       scope: "team",
       canSwitchAudience: false,
       error: null,
@@ -176,6 +200,8 @@ describe("loadDashboardPage manager org overview", () => {
       }),
       expect.any(Object),
     );
+    expect(mocks.getLocalSyncPanelContext).toHaveBeenCalledWith("org-1", "user-mgr");
+    expect(mocks.getLocalSyncContext).not.toHaveBeenCalled();
     expect(mocks.getMeOverview).not.toHaveBeenCalled();
   });
 
@@ -198,5 +224,59 @@ describe("loadDashboardPage manager org overview", () => {
       overview: null,
     });
     expect(mocks.logServerError).toHaveBeenCalledWith("dashboard/overview", expect.any(Error));
+  });
+
+  it("loads shell slice without metrics or full sync context", async () => {
+    const { loadDashboardPage } = await import("@/lib/app-pages/dashboard");
+    const data = await loadDashboardPage(
+      {
+        userId: "user-mgr",
+        email: "manager@example.test",
+        orgId: "org-1",
+        role: "manager",
+      },
+      {},
+      "shell",
+    );
+
+    expect(data).toMatchObject({
+      kind: "organization",
+      slice: "shell",
+      shell: { coverage: { developers: 3 } },
+    });
+    expect(mocks.getOrgOverviewShell).toHaveBeenCalledWith("org-1");
+    expect(mocks.getOrgOverviewMetrics).not.toHaveBeenCalled();
+    expect(mocks.getOrgOverview).not.toHaveBeenCalled();
+    expect(mocks.getLocalSyncPanelContext).toHaveBeenCalled();
+    expect(mocks.getLocalSyncContext).not.toHaveBeenCalled();
+  });
+
+  it("loads metrics slice without shell or sync context", async () => {
+    const { loadDashboardPage } = await import("@/lib/app-pages/dashboard");
+    const data = await loadDashboardPage(
+      {
+        userId: "user-mgr",
+        email: "manager@example.test",
+        orgId: "org-1",
+        role: "manager",
+      },
+      { view: "previous_cycles" },
+      "metrics",
+    );
+
+    expect(data).toMatchObject({
+      kind: "organization",
+      slice: "metrics",
+      cycleView: "previous_cycles",
+      overview: { hasUsageActivity: true },
+    });
+    expect(mocks.getOrgOverviewMetrics).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: "org-1" }),
+      expect.objectContaining({ cycleView: "previous_cycles" }),
+      expect.objectContaining({ subscriptions: [] }),
+    );
+    expect(mocks.getOrgOverviewShell).not.toHaveBeenCalled();
+    expect(mocks.getLocalSyncPanelContext).not.toHaveBeenCalled();
+    expect(mocks.getLocalSyncContext).not.toHaveBeenCalled();
   });
 });

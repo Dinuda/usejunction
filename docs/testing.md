@@ -41,6 +41,10 @@ Full contract, surfaces, views, pass criteria, and triage: [Calculation verifica
 
 CI runs `verify:calcs` and `tests/calculation-verification.integration.test.ts` in the GitHub Actions `e2e` job after `e2e:seed` (see [calculation-verification.md](calculation-verification.md#ci-github-actions)).
 
+## Load / bench (manual)
+
+Opt-in snapshot pipeline load test (100-device staggered sync, dirty-marker backlog). **Not run in CI.** See [apps/admin/bench/snapshot-load/README.md](../apps/admin/bench/snapshot-load/README.md).
+
 ## Daily report cron (local)
 
 Manual trigger and troubleshooting (`due: 0`, Resend, idempotency): [daily-reports.md](./daily-reports.md#run-the-report-job-locally).

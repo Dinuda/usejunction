@@ -267,7 +267,13 @@ func runCollectLoop(
 
 	// Initial collect on startup, then schedule the next relative to completion.
 	next := collectionInterval
-	if runOnce() {
+	cfg, _ := config.Load()
+	if cfg != nil && shouldSkipInitialDaemonCollect(cfg) {
+		if verbose {
+			fmt.Println("[daemon] skipping initial collect — onboard just finished")
+		}
+		backoff = collectRetryBase
+	} else if runOnce() {
 		next = backoff
 		backoff = min(backoff*2, collectionInterval)
 	} else {

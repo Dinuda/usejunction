@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
 
   const status = await buildOnboardingStatusForOrg(session.user.id, result.orgId, {
     includeDeveloper: true,
+    mode: "full",
   });
   const dataMs = performance.now();
 
@@ -105,6 +106,7 @@ export async function GET(request: NextRequest) {
   const includeDeveloper = request.nextUrl.searchParams.get("include") === "developer";
   const status = await buildOnboardingStatus(session.user.id, session.user.orgId, {
     includeDeveloper,
+    mode: includeDeveloper ? "poll" : "full",
   });
   const dataMs = performance.now();
 

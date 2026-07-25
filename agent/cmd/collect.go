@@ -296,12 +296,36 @@ func collectAndReportWithTools(
 		progress("complete", "Sync failed")
 		return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), toolList, warnings, fmt.Errorf("usage: %w", uploadErr)
 	}
+	if cfgErr == nil {
+		markCollectCompleted(cfg)
+	}
 	if usageIncomplete {
 		progress("complete", "Sync complete with usage still queued")
 		return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), toolList, warnings, errUsageQueuePending
 	}
 	progress("complete", "Sync complete")
 	return len(toolReports), len(accountReports), len(quotaReports), len(usageReports), toolList, warnings, nil
+}
+
+func markCollectCompleted(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	cfg.LastCollectCompletedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	if err := config.Save(cfg); err != nil && verbose {
+		fmt.Printf("[report] persist lastCollectCompletedAt: %v\n", err)
+	}
+}
+
+func shouldSkipInitialDaemonCollect(cfg *config.Config) bool {
+	if cfg == nil || strings.TrimSpace(cfg.LastCollectCompletedAt) == "" {
+		return false
+	}
+	completedAt, err := time.Parse(time.RFC3339Nano, cfg.LastCollectCompletedAt)
+	if err != nil {
+		return false
+	}
+	return time.Since(completedAt) < 10*time.Minute
 }
 
 func maybeReportWorkSessions(api *client.APIClient, progress collectProgress) error {
@@ -425,6 +449,13 @@ func collectProvider(ctx context.Context, p providers.Provider, refresh bool) pr
 		Version:    status.Version,
 	})
 
+	// Scan usage before quota HTTP so upload can start sooner after all providers finish.
+	if daily, scanErr := p.ScanLocalUsage(ctx, refresh); scanErr == nil {
+		for _, row := range daily {
+			result.usageReports = append(result.usageReports, usageToAggregate(row))
+		}
+	}
+
 	acc, _ := p.AccountIdentity(ctx)
 	var quotaSnaps []types.QuotaSnapshot
 	switch p.ID() {
@@ -483,12 +514,6 @@ func collectProvider(ctx context.Context, p providers.Provider, refresh bool) pr
 			CreditsRemaining: snap.CreditsRemaining,
 			Source:           snap.Source,
 		})
-	}
-
-	if daily, scanErr := p.ScanLocalUsage(ctx, refresh); scanErr == nil {
-		for _, row := range daily {
-			result.usageReports = append(result.usageReports, usageToAggregate(row))
-		}
 	}
 
 	if o, ok := p.(*providers.OllamaProvider); ok {

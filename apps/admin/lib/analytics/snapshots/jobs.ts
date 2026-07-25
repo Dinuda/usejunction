@@ -38,13 +38,14 @@ export async function enqueueMaterializationJob(orgId: string): Promise<void> {
  */
 export async function materializeOrgNow(
   orgId: string,
-  options: { includeToday?: boolean } = {},
+  options: { includeToday?: boolean; maxDurationMs?: number } = {},
 ): Promise<{ dirtyDays: number; rows: number; dirtyRemaining: number }> {
   await enqueueMaterializationJob(orgId);
   try {
     const result = await rematerializeOrgSnapshots(orgId, {
       metricVersion: ORG_DAY_SNAPSHOT_VERSION,
       includeToday: options.includeToday !== false,
+      maxDurationMs: options.maxDurationMs,
     });
     const status = result.dirtyRemaining > 0 ? "pending" : "idle";
     await prisma.analyticsWatermark.upsert({

@@ -136,6 +136,7 @@ describe("POST /api/onboarding", () => {
     expect(mocks.syncSessionWorkspace).toHaveBeenCalledWith("user-1", "org-1");
     expect(mocks.buildOnboardingStatusForOrg).toHaveBeenCalledWith("user-1", "org-1", {
       includeDeveloper: true,
+      mode: "full",
     });
     expect(payload).toMatchObject({
       configured: true,
@@ -224,6 +225,7 @@ describe("GET /api/onboarding", () => {
     expect(response.status).toBe(200);
     expect(mocks.buildOnboardingStatus).toHaveBeenCalledWith("user-1", null, {
       includeDeveloper: false,
+      mode: "full",
     });
     expect(payload.developer).toBeUndefined();
     expect(response.headers.get("server-timing")).toContain("total");
@@ -239,6 +241,7 @@ describe("GET /api/onboarding", () => {
 
     expect(mocks.buildOnboardingStatus).toHaveBeenCalledWith("user-1", null, {
       includeDeveloper: true,
+      mode: "poll",
     });
     expect(payload.developer).toEqual(statusPayload.developer);
   });

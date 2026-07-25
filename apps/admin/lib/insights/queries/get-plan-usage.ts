@@ -1,5 +1,9 @@
 import { prisma } from "@usejunction/db";
-import { internalAnalyticsScope, readCachedCanonicalBillingFacts, readDataThrough } from "@/lib/analytics/query";
+import { internalAnalyticsScope, readDataThrough } from "@/lib/analytics/query";
+import {
+  ORG_DAY_SNAPSHOT_VERSION,
+  snapshotUtcDay,
+} from "@/lib/analytics/snapshots";
 import { calculateBilling, serializeBillingLine } from "@/lib/billing/calculator";
 import { cycleToJson, resolveBillingCycle } from "@/lib/billing/cycles";
 import {
@@ -30,7 +34,7 @@ import { readQuotas } from "@/lib/insights/readers/quotas";
 import { readSubscriptions } from "@/lib/insights/readers/subscriptions";
 import { paceAwarePlanVerdict } from "@/lib/quotas/pace";
 import { rolesFor } from "@/lib/rbac/permissions";
-import { canonicalToolKey } from "@/lib/tools/catalog";
+import { canonicalToolKey, findCatalogTool } from "@/lib/tools/catalog";
 
 function emptyVerdict(): PlanVerdict {
   return evaluatePlanUtilization({ primaryQuota: null, included: null });
@@ -64,6 +68,122 @@ function summarize(rows: Array<{ primaryRatio: number | null; verdict: PlanVerdi
   };
 }
 
+/** Build billing-fact-shaped usage rows from sealed developer×tool snapshots. */
+async function billingFactsFromSnapshots(
+  orgId: string,
+  window: { from: Date; to: Date },
+  developerId?: string,
+) {
+  const from = snapshotUtcDay(window.from);
+  const to = snapshotUtcDay(window.to);
+  const rows = await prisma.orgUsageDaySnapshot.findMany({
+    where: {
+      orgId,
+      metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+      date: { gte: from, lte: to },
+      modelName: "",
+      toolName: { not: "" },
+      developerId: developerId ? developerId : { not: "" },
+    },
+    select: {
+      date: true,
+      developerId: true,
+      toolName: true,
+      inputTokens: true,
+      outputTokens: true,
+      cacheReadTokens: true,
+      verifiedUsageCostMicros: true,
+      estimatedApiCostMicros: true,
+      actualSpendCostMicros: true,
+      sourceObservedThrough: true,
+    },
+  });
+
+  return rows.flatMap((row) => {
+    const catalog = findCatalogTool(canonicalToolKey(row.toolName));
+    const provider = catalog?.provider ?? "unknown";
+    const product = catalog?.product ?? row.toolName;
+    const facts: Array<{
+      date: Date;
+      developerId: string | null;
+      provider: string;
+      product: string;
+      toolName: string;
+      source: string;
+      costMicros: bigint;
+      inputTokens: bigint;
+      outputTokens: bigint;
+      cacheReadTokens: bigint;
+      observedAt: Date;
+    }> = [];
+    const observedAt = row.sourceObservedThrough ?? row.date;
+    if (row.verifiedUsageCostMicros > BigInt(0)) {
+      facts.push({
+        date: row.date,
+        developerId: row.developerId || null,
+        provider,
+        product,
+        toolName: row.toolName,
+        source: "vendor_verified",
+        costMicros: row.verifiedUsageCostMicros,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        cacheReadTokens: row.cacheReadTokens,
+        observedAt,
+      });
+    }
+    if (row.estimatedApiCostMicros > BigInt(0)) {
+      facts.push({
+        date: row.date,
+        developerId: row.developerId || null,
+        provider,
+        product,
+        toolName: row.toolName,
+        source: "estimated",
+        costMicros: row.estimatedApiCostMicros,
+        inputTokens: row.verifiedUsageCostMicros > BigInt(0) ? BigInt(0) : row.inputTokens,
+        outputTokens: row.verifiedUsageCostMicros > BigInt(0) ? BigInt(0) : row.outputTokens,
+        cacheReadTokens: row.verifiedUsageCostMicros > BigInt(0) ? BigInt(0) : row.cacheReadTokens,
+        observedAt,
+      });
+    }
+    if (row.actualSpendCostMicros > BigInt(0)) {
+      facts.push({
+        date: row.date,
+        developerId: row.developerId || null,
+        provider,
+        product,
+        toolName: row.toolName,
+        source: "invoice_imported",
+        costMicros: row.actualSpendCostMicros,
+        inputTokens: BigInt(0),
+        outputTokens: BigInt(0),
+        cacheReadTokens: BigInt(0),
+        observedAt,
+      });
+    }
+    if (
+      facts.length === 0 &&
+      (row.inputTokens > BigInt(0) || row.outputTokens > BigInt(0) || row.cacheReadTokens > BigInt(0))
+    ) {
+      facts.push({
+        date: row.date,
+        developerId: row.developerId || null,
+        provider,
+        product,
+        toolName: row.toolName,
+        source: "device_observed",
+        costMicros: BigInt(0),
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        cacheReadTokens: row.cacheReadTokens,
+        observedAt,
+      });
+    }
+    return facts;
+  });
+}
+
 export async function getPlanUsage(
   context: InsightContext,
   input: PlanUsageInput,
@@ -72,11 +192,12 @@ export async function getPlanUsage(
   assertInsightRoles(context, rolesFor("org_overview"));
 
   const analyticsScope = internalAnalyticsScope(context.orgId, input.developerId);
-  // Billing facts only depend on the resolved scope/window, so start this
-  // expensive analytics read with the independent plan readers instead of
-  // waiting for them to finish first.
-  const billingFactsPromise = readCachedCanonicalBillingFacts(analyticsScope, input.reportWindow);
-  const [subscriptions, assignments, quotaRows, dataThrough, billingFactsResult] = await Promise.all([
+  const billingFactsPromise = billingFactsFromSnapshots(
+    context.orgId,
+    input.reportWindow,
+    input.developerId,
+  );
+  const [subscriptions, assignments, quotaRows, dataThrough, billingFacts] = await Promise.all([
     options.subscriptions ? Promise.resolve(options.subscriptions) : readSubscriptions(context.orgId),
     readAssignments(context.orgId, { developerId: input.developerId }),
     readQuotas(context.orgId, { developerId: input.developerId }),
@@ -86,7 +207,7 @@ export async function getPlanUsage(
 
   const billingLines = calculateBilling({
     assignments,
-    usage: billingFactsResult.facts,
+    usage: billingFacts,
     from: input.reportWindow.from,
     to: input.reportWindow.to,
   });

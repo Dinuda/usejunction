@@ -3,7 +3,7 @@
 import { useParams, useSearchParams } from "next/navigation";
 import { WorkSessionDetailView } from "@/components/signals/work-session-detail-view";
 import type { getWorkSessionDetail } from "@/lib/signals/queries/get-work-session-detail";
-import { useAppQuery } from "@/lib/api/client";
+import { useAppPageQuery } from "@/lib/api/client";
 import { signalsWorkKey } from "@/lib/app-pages/query-keys";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
@@ -12,7 +12,7 @@ type WorkDetailPayload = { session: NonNullable<Awaited<ReturnType<typeof getWor
 export default function SignalsWorkDetailClientScreen() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const searchParams = useSearchParams();
-  const query = useAppQuery<WorkDetailPayload>(
+  const query = useAppPageQuery<WorkDetailPayload>(
     signalsWorkKey(sessionId),
     `/api/app/signals/activity/work/${encodeURIComponent(sessionId)}`,
   );

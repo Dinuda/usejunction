@@ -18,7 +18,7 @@ import type { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
 import type { OrgDeviceSyncStatus } from "@/lib/queries/team/device-syncs";
 import type { getDeveloperRoster } from "@/lib/read-models/developers";
 import type { listSubscriptions } from "@/lib/tools/subscriptions";
-import { useAppQuery } from "@/lib/api/client";
+import { useAppPageQuery } from "@/lib/api/client";
 import { teamKey } from "@/lib/app-pages/query-keys";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
@@ -45,7 +45,7 @@ export default function TeamClientScreen() {
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
   const [view, setView] = useState<TeamView>("active");
-  const query = useAppQuery<TeamPayload>(
+  const query = useAppPageQuery<TeamPayload>(
     teamKey(queryString),
     `/api/app/team${queryString ? `?${queryString}` : ""}`,
   );

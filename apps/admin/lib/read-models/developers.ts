@@ -1,14 +1,14 @@
 import { prisma } from "@usejunction/db";
-import { dimension, metricNumber, readUsageMetrics } from "@/lib/analytics/query";
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import { resolveReportWindow } from "@/lib/analytics/contracts/time-window";
+import { readDeveloperActivityFromSnapshots } from "@/lib/analytics/snapshots";
 
 export async function getDeveloperRoster(
   orgId: string,
   options: { developerId?: string; reportWindow?: MetricWindow } = {},
 ) {
   const reportWindow = options.reportWindow ?? resolveReportWindow({ range: 30 });
-  const [developers, activity, toolActivity] = await Promise.all([
+  const [developers, activity] = await Promise.all([
     prisma.developer.findMany({
       where: {
         orgId,
@@ -46,19 +46,9 @@ export async function getDeveloperRoster(
         },
       },
     }),
-    readUsageMetrics({
-      orgId,
-      window: reportWindow,
-      measures: ["requests", "costMicros"],
-      dimensions: ["developer"],
-      ...(options.developerId ? { filters: { developerIds: [options.developerId] } } : {}),
-    }),
-    readUsageMetrics({
-      orgId,
-      window: reportWindow,
-      measures: ["requests"],
-      dimensions: ["developer", "tool"],
-      ...(options.developerId ? { filters: { developerIds: [options.developerId] } } : {}),
+    readDeveloperActivityFromSnapshots(orgId, reportWindow, {
+      developerId: options.developerId,
+      ensure: false,
     }),
   ]);
 
@@ -79,42 +69,37 @@ export async function getDeveloperRoster(
   const roleByUserId = new Map(memberships.map((row) => [row.userId, row.role]));
 
   const activityMap = new Map(
-    activity.data.rows.map((row) => [
-      dimension(row, "developer"),
+    activity.map((row) => [
+      row.developerId,
       {
-        requests: metricNumber(row, "requests"),
-        cost: metricNumber(row, "costMicros") / 1_000_000,
+        requests: row.requests,
+        cost: row.cost,
+        usedTools: row.tools,
       },
     ]),
   );
 
-  const usedToolsMap = new Map<string, string[]>();
-  for (const row of toolActivity.data.rows) {
-    const developerId = dimension(row, "developer");
-    const toolName = dimension(row, "tool");
-    if (!developerId || !toolName || metricNumber(row, "requests") <= 0) continue;
-    const existing = usedToolsMap.get(developerId) ?? [];
-    existing.push(toolName);
-    usedToolsMap.set(developerId, existing);
-  }
-
   return {
-    developers: developers.map((developer) => ({
-      id: developer.id,
-      name: developer.name,
-      email: developer.email,
-      authUserId: developer.authUserId,
-      role:
-        developer.authUserId != null
-          ? (roleByUserId.get(developer.authUserId) ?? developer.role)
-          : developer.role,
-      createdAt: developer.createdAt,
-      devices: developer.devices,
-      vendorSeats: developer.seatAssignments,
-      toolEvidence: developer.toolClaims,
-      usedTools: [...new Set(usedToolsMap.get(developer.id) ?? [])],
-      ...(activityMap.get(developer.id) ?? { requests: 0, cost: 0 }),
-    })),
+    developers: developers.map((developer) => {
+      const usage = activityMap.get(developer.id);
+      return {
+        id: developer.id,
+        name: developer.name,
+        email: developer.email,
+        authUserId: developer.authUserId,
+        role:
+          developer.authUserId != null
+            ? (roleByUserId.get(developer.authUserId) ?? developer.role)
+            : developer.role,
+        createdAt: developer.createdAt,
+        devices: developer.devices,
+        vendorSeats: developer.seatAssignments,
+        toolEvidence: developer.toolClaims,
+        usedTools: [...new Set(usage?.usedTools ?? [])],
+        requests: usage?.requests ?? 0,
+        cost: usage?.cost ?? 0,
+      };
+    }),
   };
 }
 

@@ -33,7 +33,9 @@ export type OnboardingStatusPayload = {
   steps?: { install: boolean; team: boolean };
 };
 
-const membershipSelect = {
+export type OnboardingStatusMode = "full" | "poll";
+
+const membershipSelectFull = {
   role: true,
   onboardingCompletedAt: true,
   setupChecklistDismissedAt: true,
@@ -47,7 +49,23 @@ const membershipSelect = {
   },
 } as const;
 
-async function resolveMembership(userId: string, sessionOrgId: string | null | undefined) {
+const membershipSelectPoll = {
+  role: true,
+  onboardingCompletedAt: true,
+  setupChecklistDismissedAt: true,
+  organization: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+    },
+  },
+} as const;
+
+type MembershipFull = NonNullable<Awaited<ReturnType<typeof resolveMembershipFull>>>;
+type MembershipPoll = NonNullable<Awaited<ReturnType<typeof resolveMembershipPoll>>>;
+
+async function resolveMembershipFull(userId: string, sessionOrgId: string | null | undefined) {
   const cookieStore = await cookies();
   const cookieOrgId = cookieStore.get(ACTIVE_ORG_COOKIE)?.value;
   const candidateOrgId = cookieOrgId ?? sessionOrgId;
@@ -55,7 +73,7 @@ async function resolveMembership(userId: string, sessionOrgId: string | null | u
   if (candidateOrgId) {
     const membership = await prisma.organizationMembership.findUnique({
       where: { userId_orgId: { userId, orgId: candidateOrgId } },
-      select: membershipSelect,
+      select: membershipSelectFull,
     });
     if (membership) return membership;
   }
@@ -63,7 +81,27 @@ async function resolveMembership(userId: string, sessionOrgId: string | null | u
   return prisma.organizationMembership.findFirst({
     where: { userId },
     orderBy: { createdAt: "desc" },
-    select: membershipSelect,
+    select: membershipSelectFull,
+  });
+}
+
+async function resolveMembershipPoll(userId: string, sessionOrgId: string | null | undefined) {
+  const cookieStore = await cookies();
+  const cookieOrgId = cookieStore.get(ACTIVE_ORG_COOKIE)?.value;
+  const candidateOrgId = cookieOrgId ?? sessionOrgId;
+
+  if (candidateOrgId) {
+    const membership = await prisma.organizationMembership.findUnique({
+      where: { userId_orgId: { userId, orgId: candidateOrgId } },
+      select: membershipSelectPoll,
+    });
+    if (membership) return membership;
+  }
+
+  return prisma.organizationMembership.findFirst({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    select: membershipSelectPoll,
   });
 }
 
@@ -96,8 +134,8 @@ async function loadDeveloper(userId: string, orgId: string): Promise<OnboardingD
   });
 }
 
-function statusFromMembership(
-  membership: NonNullable<Awaited<ReturnType<typeof resolveMembership>>>,
+function statusFromMembershipFull(
+  membership: MembershipFull,
   developer: OnboardingDeveloper | null | undefined,
   includeDeveloper: boolean,
 ): OnboardingStatusPayload {
@@ -124,6 +162,28 @@ function statusFromMembership(
   };
 }
 
+function statusFromMembershipPoll(
+  membership: MembershipPoll,
+  developer: OnboardingDeveloper | null | undefined,
+  includeDeveloper: boolean,
+): OnboardingStatusPayload {
+  const deviceConnected = Boolean(developer?.devices.length);
+
+  return {
+    configured: true,
+    role: membership.role,
+    currentStep: includeDeveloper && deviceConnected ? "complete" : "install",
+    onboardingCompletedAt: membership.onboardingCompletedAt,
+    setupChecklistDismissedAt: membership.setupChecklistDismissedAt,
+    organization: {
+      id: membership.organization.id,
+      name: membership.organization.name,
+      slug: membership.organization.slug,
+    },
+    ...(includeDeveloper ? { developer: developer ?? null } : {}),
+  };
+}
+
 /** True when the email has a redeemable org invite and should not get a personal workspace. */
 export async function hasPendingWorkspaceInvite(email: string): Promise<boolean> {
   const normalized = email.trim().toLowerCase();
@@ -139,28 +199,55 @@ export async function hasPendingWorkspaceInvite(email: string): Promise<boolean>
 export async function buildOnboardingStatusForOrg(
   userId: string,
   orgId: string,
-  options?: { includeDeveloper?: boolean },
+  options?: { includeDeveloper?: boolean; mode?: OnboardingStatusMode },
 ): Promise<OnboardingStatusPayload> {
   const includeDeveloper = options?.includeDeveloper === true;
+  const mode = options?.mode ?? "full";
+
+  if (mode === "poll") {
+    const membership = await prisma.organizationMembership.findUnique({
+      where: { userId_orgId: { userId, orgId } },
+      select: membershipSelectPoll,
+    });
+    if (!membership) {
+      return { configured: false, role: null, currentStep: "install" };
+    }
+    const developer = includeDeveloper ? await loadDeveloper(userId, orgId) : undefined;
+    return statusFromMembershipPoll(membership, developer, includeDeveloper);
+  }
+
   const membership = await prisma.organizationMembership.findUnique({
     where: { userId_orgId: { userId, orgId } },
-    select: membershipSelect,
+    select: membershipSelectFull,
   });
   if (!membership) {
     return { configured: false, role: null, currentStep: "install" };
   }
 
   const developer = includeDeveloper ? await loadDeveloper(userId, orgId) : undefined;
-  return statusFromMembership(membership, developer, includeDeveloper);
+  return statusFromMembershipFull(membership, developer, includeDeveloper);
 }
 
 export async function buildOnboardingStatus(
   userId: string,
   sessionOrgId: string | null | undefined,
-  options?: { includeDeveloper?: boolean },
+  options?: { includeDeveloper?: boolean; mode?: OnboardingStatusMode },
 ): Promise<OnboardingStatusPayload> {
   const includeDeveloper = options?.includeDeveloper === true;
-  const membership = await resolveMembership(userId, sessionOrgId);
+  const mode = options?.mode ?? "full";
+
+  if (mode === "poll") {
+    const membership = await resolveMembershipPoll(userId, sessionOrgId);
+    if (!membership) {
+      return { configured: false, role: null, currentStep: "install" };
+    }
+    const developer = includeDeveloper
+      ? await loadDeveloper(userId, membership.organization.id)
+      : undefined;
+    return statusFromMembershipPoll(membership, developer, includeDeveloper);
+  }
+
+  const membership = await resolveMembershipFull(userId, sessionOrgId);
   if (!membership) {
     return { configured: false, role: null, currentStep: "install" };
   }
@@ -168,7 +255,7 @@ export async function buildOnboardingStatus(
   const developer = includeDeveloper
     ? await loadDeveloper(userId, membership.organization.id)
     : undefined;
-  return statusFromMembership(membership, developer, includeDeveloper);
+  return statusFromMembershipFull(membership, developer, includeDeveloper);
 }
 
 /** True when this user has an enrolled device that has reported at least one tool. */

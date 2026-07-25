@@ -28,14 +28,28 @@ import {
   type QuotaInventoryItem,
 } from "@/lib/sync/quotas-inventory";
 import { repairDetectedPlanCycles, syncDetectedPlansForDevice } from "@/lib/tools/sync-detected";
+import { bulkUpsertDeviceUsageFingerprints } from "@/lib/sync/device-usage-fingerprints";
+
+/** Soft time budget for commit-path seal so daemon sync returns before Hobby 60s cap. */
+export const SYNC_SETTLE_BUDGET_MS = 12_000;
 
 /**
  * Sync-pipeline settle: project dirty usage_daily days into org_usage_day_snapshots.
  * Chunks only mark dirty; commit (and empty-delta start) call this once.
  */
-export async function settleSyncProjections(orgId: string): Promise<{ dirtyRemaining: number }> {
-  const result = await materializeOrgNow(orgId, { includeToday: true });
-  return { dirtyRemaining: result.dirtyRemaining };
+export async function settleSyncProjections(
+  orgId: string,
+  options: { maxDurationMs?: number } = {},
+): Promise<{ dirtyRemaining: number; materializeMs: number }> {
+  const materializeStart = performance.now();
+  const result = await materializeOrgNow(orgId, {
+    includeToday: true,
+    maxDurationMs: options.maxDurationMs ?? SYNC_SETTLE_BUDGET_MS,
+  });
+  return {
+    dirtyRemaining: result.dirtyRemaining,
+    materializeMs: performance.now() - materializeStart,
+  };
 }
 export type ManifestPartition = {
   partitionKey: string;
@@ -319,7 +333,13 @@ export async function ingestUsageSyncChunk(params: {
   contentHash?: string;
   rows: LocalUsageInputRow[];
   observedAt?: Date;
-}): Promise<{ upserted: number; duplicate: boolean; receivedChunks: number; receivedRows: number }> {
+}): Promise<{
+  upserted: number;
+  duplicate: boolean;
+  receivedChunks: number;
+  receivedRows: number;
+  timings: { upsertMs: number; fingerprintsMs: number };
+}> {
   const run = await prisma.syncRun.findFirst({
     where: { id: params.syncRunId, orgId: params.orgId, deviceId: params.deviceId },
   });
@@ -337,10 +357,12 @@ export async function ingestUsageSyncChunk(params: {
       duplicate: true,
       receivedChunks: run.receivedChunks,
       receivedRows: run.receivedRows,
+      timings: { upsertMs: 0, fingerprintsMs: 0 },
     };
   }
 
   const observedAt = params.observedAt ?? new Date();
+  const upsertStart = performance.now();
   const { upserted } = await ingestLocalUsageBatch({
     orgId: params.orgId,
     userId: params.userId,
@@ -349,8 +371,9 @@ export async function ingestUsageSyncChunk(params: {
     observedAt,
     monotonicObservedAt: true,
   });
+  const upsertMs = performance.now() - upsertStart;
 
-  // Update fingerprints for uploaded rows.
+  // Update fingerprints for uploaded rows (one bulk ON CONFLICT per batch).
   const fps: Array<{ partitionKey: string; contentHash: string; date: Date }> = [];
   for (const raw of params.rows) {
     const normalized = normalizeUusWireRecord(raw as Record<string, unknown>);
@@ -368,19 +391,13 @@ export async function ingestUsageSyncChunk(params: {
       date: utcDate(normalized.date),
     });
   }
-  for (const fp of fps) {
-    await prisma.deviceUsageFingerprint.upsert({
-      where: { deviceId_partitionKey: { deviceId: params.deviceId, partitionKey: fp.partitionKey } },
-      create: {
-        orgId: params.orgId,
-        deviceId: params.deviceId,
-        partitionKey: fp.partitionKey,
-        contentHash: fp.contentHash,
-        date: fp.date,
-      },
-      update: { contentHash: fp.contentHash, date: fp.date },
-    });
-  }
+  const fingerprintsStart = performance.now();
+  await bulkUpsertDeviceUsageFingerprints({
+    orgId: params.orgId,
+    deviceId: params.deviceId,
+    rows: fps,
+  });
+  const fingerprintsMs = performance.now() - fingerprintsStart;
 
   const dirtyDates = params.rows
     .map((row) => (typeof row.date === "string" ? row.date.slice(0, 10) : null))
@@ -415,6 +432,7 @@ export async function ingestUsageSyncChunk(params: {
     duplicate: false,
     receivedChunks: updated.receivedChunks,
     receivedRows: updated.receivedRows,
+    timings: { upsertMs, fingerprintsMs },
   };
 }
 
@@ -429,6 +447,7 @@ export async function commitUsageSync(params: {
   receivedRows: number;
   missingPartitions: string[];
   dirtyRemaining: number;
+  timings: { materializeMs: number };
 }> {
   const run = await prisma.syncRun.findFirst({
     where: { id: params.syncRunId, orgId: params.orgId, deviceId: params.deviceId },
@@ -444,6 +463,7 @@ export async function commitUsageSync(params: {
       receivedRows: run.receivedRows,
       missingPartitions: [],
       dirtyRemaining,
+      timings: { materializeMs: 0 },
     };
   }
 
@@ -470,8 +490,11 @@ export async function commitUsageSync(params: {
     // Partial progress still landed in usage_daily — settle so the dashboard
     // improves immediately while the agent continues uploading.
     let dirtyRemaining = 0;
+    let materializeMs = 0;
     try {
-      dirtyRemaining = (await settleSyncProjections(params.orgId)).dirtyRemaining;
+      const settled = await settleSyncProjections(params.orgId);
+      dirtyRemaining = settled.dirtyRemaining;
+      materializeMs = settled.materializeMs;
     } catch (error) {
       logServerError("sync/partial-commit-settle", error, { orgId: params.orgId, syncRunId: run.id });
       dirtyRemaining = await prisma.analyticsDirtyDay.count({
@@ -484,6 +507,7 @@ export async function commitUsageSync(params: {
       receivedRows: run.receivedRows,
       missingPartitions,
       dirtyRemaining,
+      timings: { materializeMs },
     };
   }
 
@@ -524,9 +548,9 @@ export async function commitUsageSync(params: {
     data: { status: "committed", committedAt: new Date(), error: null },
   });
 
-  // Sync-pipeline settle: project dirty days before commit returns.
+  // Sync-pipeline settle: project dirty days before commit returns (time-budgeted).
   // dirtyRemaining === 0 means dashboard history is caught up; cron is fallback.
-  const { dirtyRemaining } = await settleSyncProjections(params.orgId);
+  const { dirtyRemaining, materializeMs } = await settleSyncProjections(params.orgId);
 
   return {
     status: "committed",
@@ -534,6 +558,7 @@ export async function commitUsageSync(params: {
     receivedRows: run.receivedRows,
     missingPartitions: [],
     dirtyRemaining,
+    timings: { materializeMs },
   };
 }
 

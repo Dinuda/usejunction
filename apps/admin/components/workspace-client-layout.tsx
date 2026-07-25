@@ -59,9 +59,9 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
         // Poll faster while history rematerialize is still draining so the
         // dashboard does not sit on a stale "Last synced" / $0 view.
         if (syncState.dashboardReady === false || (syncState.dirtyDayCount ?? 0) > 0) {
-          return 5_000;
+          return 15_000;
         }
-        return 15_000;
+        return 30_000;
       },
     },
   );

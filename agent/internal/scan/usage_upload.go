@@ -12,8 +12,8 @@ import (
 const UsageLookbackDays = 60 // ~2 months
 
 // UsageUploadBatchSize is how many aggregates one control-plane POST carries.
-// Dense Codex upserts are hundreds of ms each; keep this small.
-const UsageUploadBatchSize = 50
+// Larger batches cut HTTP round-trips; chunk route caps body at 1 MB (Hobby-safe).
+const UsageUploadBatchSize = 200
 
 // UsageUploadMaxBatchesPerSync caps how much of the pending queue one collect
 // cycle drains in steady state. Remaining rows finish on later heartbeats /
@@ -21,8 +21,8 @@ const UsageUploadBatchSize = 50
 const UsageUploadMaxBatchesPerSync = 8
 
 // UsageUploadMaxBatchesPerSyncFirst raises the first-sync / force-full budget
-// so ~1k partitions typically finish in one or two passes.
-const UsageUploadMaxBatchesPerSyncFirst = 32
+// so ~2k partitions typically finish in one pass (200 × 10).
+const UsageUploadMaxBatchesPerSyncFirst = 10
 
 // UsageUploadConcurrency is how many batch POSTs run at once. Keep modest so
 // the control-plane upsert loop is not saturated by one agent.

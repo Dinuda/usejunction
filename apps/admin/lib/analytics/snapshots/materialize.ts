@@ -30,19 +30,6 @@ function alertSnapshotFailsafe(
   logServerError(scope, error, { orgId, ...details });
 }
 
-function collapseDaysToRanges(days: Date[]): Array<{ from: Date; to: Date }> {
-  const ranges: Array<{ from: Date; to: Date }> = [];
-  for (const day of days) {
-    const last = ranges[ranges.length - 1];
-    if (last && day.getTime() === last.to.getTime() + 86_400_000) {
-      last.to = day;
-    } else {
-      ranges.push({ from: day, to: day });
-    }
-  }
-  return ranges;
-}
-
 function newId() {
   return `c${randomBytes(12).toString("hex")}`;
 }
@@ -435,6 +422,8 @@ async function materializeOrgUsageRangeUnlocked(
     const modelName = isModelGrain ? (row.modelName ?? "") : "";
     // Model grains require a tool name; day-total rows keep model empty.
     if (isModelGrain && toolName === "") continue;
+    // Empty model from the model grouping set duplicates the tool rollup — skip.
+    if (isModelGrain && modelName === "") continue;
     if (!isDayTotal && toolName === "" && !isDeveloperGrain) continue;
     // Null/empty developer_id costs stay on org rollups only — skip colliding developer grains.
     if (isDeveloperGrain && developerId === "") continue;
@@ -615,11 +604,15 @@ export async function materializeDirtyOrgUsageDays(
  */
 export async function rematerializeOrgSnapshots(
   orgId: string,
-  options: { metricVersion?: string; includeToday?: boolean } = {},
+  options: { metricVersion?: string; includeToday?: boolean; maxDurationMs?: number } = {},
 ): Promise<{ dirtyDays: number; rows: number; dirtyRemaining: number }> {
   const metricVersion = options.metricVersion ?? ORG_DAY_SNAPSHOT_VERSION;
   const today = utcDay(new Date());
   const yesterday = new Date(today.getTime() - 86_400_000);
+  const deadline =
+    typeof options.maxDurationMs === "number" && options.maxDurationMs > 0
+      ? Date.now() + options.maxDurationMs
+      : null;
 
   if (options.includeToday !== false) {
     await markOrgUsageDaysDirty(orgId, [yesterday, today], metricVersion);
@@ -629,6 +622,7 @@ export async function rematerializeOrgSnapshots(
   let rows = 0;
   // Cap passes so a runaway dirty set cannot hang Sync forever (90 days × 20 = 1800).
   for (let pass = 0; pass < 20; pass += 1) {
+    if (deadline !== null && Date.now() >= deadline) break;
     const result = await materializeDirtyOrgUsageDays(orgId, {
       metricVersion,
       limit: 90,
@@ -643,16 +637,10 @@ export async function rematerializeOrgSnapshots(
   return { dirtyDays, rows, dirtyRemaining };
 }
 
-/** Heal at most this many corrupt days inline on ensure (rest → job queue). */
-const INLINE_CORRUPT_RECOVER_DAY_CAP = 14;
-
 /**
  * Org-total snapshot days that conflict with usage_daily:
  * - empty stubs (no observed-through, all zeros) with any usage signal
  * - undercounts (sealed requests=0 / $0 while usage_daily has requests / cost)
- *
- * Incomplete rematerialize (e.g. Codex-only while Cursor vendor rows exist) is a
- * common undercount shape and must not stay sealed forever.
  */
 async function findCorruptOrgDaySnapshots(
   orgId: string,
@@ -678,6 +666,7 @@ async function findCorruptOrgDaySnapshots(
         AND metric_version = ${metricVersion}
         AND tool_name = ''
         AND developer_id = ''
+        AND model_name = ''
         AND date >= ${fromKey}::date
         AND date <= ${toKey}::date
     ),
@@ -733,8 +722,8 @@ async function findCorruptOrgDaySnapshots(
 /**
  * Read-path seal: insert empty org-total stubs for missing days that are not
  * already dirty. Corrupt sealed days (empty stubs / undercounts vs usage_daily)
- * are marked dirty, enqueued for the worker, and healed inline when the set is
- * small enough that dashboard loads do not loop on snapshots_missing forever.
+ * are marked dirty and enqueued for the worker — never rematerialized inline
+ * so page loads stay fast.
  */
 export async function ensureOrgUsageDaySnapshots(
   orgId: string,
@@ -747,7 +736,7 @@ export async function ensureOrgUsageDaySnapshots(
   const toDay = utcDay(to);
   let stubbed = 0;
   let hadCoverage = false;
-  let recovered = 0;
+  const recovered = 0;
   let pendingDirty = 0;
 
   try {
@@ -759,6 +748,7 @@ export async function ensureOrgUsageDaySnapshots(
             metricVersion,
             toolName: "",
             developerId: "",
+            modelName: "",
             date: { gte: fromDay, lte: toDay },
           },
           select: { date: true },
@@ -813,30 +803,6 @@ export async function ensureOrgUsageDaySnapshots(
               reason: "missing-days-with-usage",
             });
           }
-
-          // Heal small missing-with-usage windows inline (same cap as corrupt stubs)
-          // so wiped snapshots recover on ensure without waiting for the worker.
-          const healDays = toDirty.slice(0, INLINE_CORRUPT_RECOVER_DAY_CAP);
-          let healedRows = 0;
-          for (const range of collapseDaysToRanges(healDays)) {
-            healedRows += await materializeOrgUsageRangeUnlocked(
-              orgId,
-              range.from,
-              range.to,
-              metricVersion,
-            );
-          }
-          if (healedRows > 0) {
-            recovered += healedRows;
-            const remainingDirty = await prisma.analyticsDirtyDay.count({
-              where: {
-                orgId,
-                metricVersion,
-                date: { gte: fromDay, lte: toDay },
-              },
-            });
-            pendingDirty = remainingDirty;
-          }
         }
 
         if (toStub.length) {
@@ -847,10 +813,20 @@ export async function ensureOrgUsageDaySnapshots(
               date: day,
               toolName: "",
               developerId: "",
+              modelName: "",
               metricVersion,
               requests: 0,
+              sessions: 0,
               inputTokens: BigInt(0),
               outputTokens: BigInt(0),
+              cacheReadTokens: BigInt(0),
+              cacheWriteTokens: BigInt(0),
+              reasoningTokens: BigInt(0),
+              suggestedLines: 0,
+              acceptedLines: 0,
+              addedLines: 0,
+              deletedLines: 0,
+              commits: 0,
               verifiedUsageCostMicros: BigInt(0),
               estimatedApiCostMicros: BigInt(0),
               actualSpendCostMicros: BigInt(0),
@@ -868,7 +844,7 @@ export async function ensureOrgUsageDaySnapshots(
       const corruptDays = await findCorruptOrgDaySnapshots(orgId, fromDay, toDay, metricVersion);
       if (!corruptDays.length) return;
 
-      console.warn("[analytics/snapshots_missing] healing org-day snapshots", {
+      console.warn("[analytics/snapshots_missing] enqueueing corrupt org-day snapshots", {
         orgId,
         from: isoDay(fromDay),
         to: isoDay(toDay),
@@ -880,7 +856,6 @@ export async function ensureOrgUsageDaySnapshots(
       const marked = await markOrgUsageDaysDirty(orgId, corruptDays, metricVersion);
       pendingDirty += marked.length;
 
-      // Durable drain even if this process exits before inline recovery finishes.
       try {
         const { enqueueMaterializationJob } = await import("./jobs");
         await enqueueMaterializationJob(orgId);
@@ -889,46 +864,24 @@ export async function ensureOrgUsageDaySnapshots(
           days: corruptDays.length,
         });
       }
-
-      // Heal small corrupt windows under the lock we already hold (no nested lock).
-      const healDays = corruptDays.slice(0, INLINE_CORRUPT_RECOVER_DAY_CAP);
-      let healedRows = 0;
-      for (const range of collapseDaysToRanges(healDays)) {
-        healedRows += await materializeOrgUsageRangeUnlocked(
-          orgId,
-          range.from,
-          range.to,
-          metricVersion,
-        );
-      }
-      recovered = healDays.length;
-      if (healedRows > 0) {
-        pendingDirty = await prisma.analyticsDirtyDay.count({
-          where: {
-            orgId,
-            metricVersion,
-            date: { gte: fromDay, lte: toDay },
-          },
-        });
-      }
     });
   } catch (error) {
     alertSnapshotFailsafe("analytics/snapshots_inaccessible", orgId, error, {
       from: isoDay(fromDay),
       to: isoDay(toDay),
     });
-    // Last resort: rematerialize under lock (rare — snaps table inaccessible / schema drift).
+    // Do not rematerialize on the read path — enqueue and surface the error.
     try {
-      await withOrgDbLock(orgId, async () => {
-        recovered = await materializeOrgUsageRangeChunks(orgId, fromDay, toDay, metricVersion);
-      });
-    } catch (retryError) {
-      alertSnapshotFailsafe("analytics/snapshots_recover_failed", orgId, retryError, {
+      const { enqueueMaterializationJob } = await import("./jobs");
+      await enqueueMaterializationJob(orgId);
+    } catch (enqueueError) {
+      alertSnapshotFailsafe("analytics/snapshots_enqueue_failed", orgId, enqueueError, {
         from: isoDay(fromDay),
         to: isoDay(toDay),
+        reason: "inaccessible-fallback",
       });
-      throw retryError;
     }
+    throw error;
   }
 
   return { stubbed, hadCoverage, recovered, pendingDirty };
