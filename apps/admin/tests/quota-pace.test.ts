@@ -393,7 +393,7 @@ test("paceAwarePlanVerdict keeps DATA_STALE and falls back when pace timing is u
   );
 });
 
-test("projectQuotaPace forms a baseline instead of extrapolating one early reading", () => {
+test("projectQuotaPace falls back to linear projection when cycle history is still forming", () => {
   const now = new Date("2026-07-26T14:00:00.000Z");
   const [quota] = mapQuotaSnapshots(
     [
@@ -413,10 +413,41 @@ test("projectQuotaPace forms a baseline instead of extrapolating one early readi
   quota!.history = [];
 
   const pace = projectQuotaPace(quota!, now);
-  assert.equal(pace.code, "FORMING");
-  assert.equal(pace.projectionState, "forming");
-  assert.equal(pace.daysToExhaust, null);
-  assert.equal(paceVerdictLabel(pace.code), "Awaiting next sync");
+  assert.notEqual(pace.code, "FORMING");
+  assert.equal(pace.projectionState, "reliable");
+  assert.ok(pace.daysToExhaust != null);
+});
+
+test("projectQuotaPace uses prior-cycle burn when the current cycle is still forming", () => {
+  const now = new Date("2026-07-26T14:00:00.000Z");
+  const priorResetAt = "2026-07-25T10:09:00.000Z";
+  const currentResetAt = "2026-08-02T10:09:00.000Z";
+  const [quota] = mapQuotaSnapshots(
+    [
+      {
+        toolName: "codex",
+        windowType: "weekly",
+        usedPercent: 14,
+        creditsRemaining: null,
+        resetAt: new Date(currentResetAt),
+        source: "oauth_api",
+        updatedAt: now,
+        deviceId: "device-1",
+      },
+    ],
+    now,
+  );
+  quota!.history = [
+    { usedPercent: 10, observedAt: "2026-07-24T10:00:00.000Z", resetAt: priorResetAt },
+    { usedPercent: 80, observedAt: "2026-07-25T09:00:00.000Z", resetAt: priorResetAt },
+    { usedPercent: 14, observedAt: "2026-07-26T14:00:00.000Z", resetAt: currentResetAt },
+  ];
+
+  const pace = projectQuotaPace(quota!, now);
+  assert.equal(pace.code, "EXCESS");
+  assert.equal(pace.projectionState, "reliable");
+  assert.ok(pace.exhaustAt);
+  assert.match(pace.summary, /above pace/i);
 });
 
 test("projectQuotaPace stops forming after a mature unchanged baseline", () => {

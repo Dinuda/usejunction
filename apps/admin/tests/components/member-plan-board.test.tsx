@@ -44,6 +44,8 @@ test("MemberPlanBoard renders vendor percentage, reset, expected marker, and uti
 
   expect(screen.getByText("10%")).toBeInTheDocument();
   expect(screen.getByText("Underutilized")).toBeInTheDocument();
-  expect(screen.getByText("resets in 15d")).toBeInTheDocument();
+  expect(screen.getByText("Aug 1")).toBeInTheDocument();
+  expect(screen.queryByText(/resets in/i)).toBeNull();
+  expect(cards[0]?.quotaSyncedAt).toBeTruthy();
   expect(container.querySelector('span[aria-hidden="true"][style*="left: 50%"]')).not.toBeNull();
 });

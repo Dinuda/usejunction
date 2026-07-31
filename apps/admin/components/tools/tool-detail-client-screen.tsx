@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
+import { ConnectionRepairBanner } from "@/components/dashboard/connection-repair-banner";
 import { ToolProviderDetail } from "@/components/tools/tool-provider-detail";
 import {
   cycleViewPeriodLabel,
@@ -60,18 +61,23 @@ export default function ToolDetailClientScreen() {
   return (
     <>
       {syncContext?.deviceCount ? (
-        <div className="mb-8">
-          <LocalSyncPanel
+        <>
+          <ConnectionRepairBanner
             scope={kind === "personal" ? "you" : "team"}
-            lastSeenAt={syncContext.lastSeenAt}
-            lastUsageSyncAt={syncContext.lastUsageSyncAt}
-            lastAccountSyncAt={syncContext.lastAccountSyncAt}
-            dashboardReady={syncContext.dashboardReady}
-            dirtyDayCount={syncContext.dirtyDayCount}
-            staleDeviceCount={syncContext.staleDeviceCount}
             recoveryDevices={syncContext.recoveryDevices}
           />
-        </div>
+          <div className="mb-8">
+            <LocalSyncPanel
+              scope={kind === "personal" ? "you" : "team"}
+              lastSeenAt={syncContext.lastSeenAt}
+              lastUsageSyncAt={syncContext.lastUsageSyncAt}
+              lastAccountSyncAt={syncContext.lastAccountSyncAt}
+              dashboardReady={syncContext.dashboardReady}
+              dirtyDayCount={syncContext.dirtyDayCount}
+              staleDeviceCount={syncContext.staleDeviceCount}
+            />
+          </div>
+        </>
       ) : null}
       <ToolProviderDetail
         data={serialized}

@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/panel";
 import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
+import { ConnectionRepairBanner } from "@/components/dashboard/connection-repair-banner";
 import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
 import {
   cycleViewShortSuffix,
@@ -144,6 +145,7 @@ function PersonalTools({
 
   return (
     <>
+      <ConnectionRepairBanner scope="you" recoveryDevices={sync.recoveryDevices} />
       <PageHeader
         title="Your tools, usage, spend."
         description="Tools on your connected computers, with your requests, tokens, and live quota windows."
@@ -157,7 +159,6 @@ function PersonalTools({
             dashboardReady={sync.dashboardReady}
             dirtyDayCount={sync.dirtyDayCount}
             staleDeviceCount={sync.staleDeviceCount}
-            recoveryDevices={sync.recoveryDevices}
           />
         ) : null}
       </PageHeader>
@@ -379,6 +380,7 @@ export default function ToolsClientScreen() {
         </Alert>
       ) : null}
 
+      <ConnectionRepairBanner scope="team" recoveryDevices={syncContext?.recoveryDevices} />
       <SubscriptionInventory
         detected={data}
         initialCatalog={serializedCatalog}
@@ -400,7 +402,6 @@ export default function ToolsClientScreen() {
             dashboardReady={syncContext.dashboardReady}
             dirtyDayCount={syncContext.dirtyDayCount}
             staleDeviceCount={syncContext.staleDeviceCount}
-            recoveryDevices={syncContext.recoveryDevices}
           />
         ) : null}
       </SubscriptionInventory>

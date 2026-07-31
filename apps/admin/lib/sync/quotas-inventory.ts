@@ -109,20 +109,26 @@ export async function applyDeviceQuotaInventory(params: {
   deviceId: string;
   items: QuotaInventoryItem[];
   contentHash: string;
-}): Promise<{ upserted: number }> {
+}): Promise<{ upserted: number; pruned: number }> {
   const started = Date.now();
   let upserted = 0;
+  let pruned = 0;
   const sample: Array<{
     toolName: string;
     windowType: string;
     usedPercent: number | null;
     creditsRemaining: number | null;
   }> = [];
+  const windowsByTool = new Map<string, Set<string>>();
 
   for (const snap of params.items) {
     const toolName = String(snap.toolName ?? "").trim();
     const windowType = String(snap.windowType ?? "").trim();
     if (!toolName || !windowType) continue;
+
+    const windows = windowsByTool.get(toolName) ?? new Set<string>();
+    windows.add(windowType);
+    windowsByTool.set(toolName, windows);
 
     const existing = await prisma.quotaSnapshot.findFirst({
       where: { deviceId: params.deviceId, toolName, windowType },
@@ -168,6 +174,17 @@ export async function applyDeviceQuotaInventory(params: {
     upserted += 1;
   }
 
+  for (const [toolName, windowTypes] of windowsByTool) {
+    const result = await prisma.quotaSnapshot.deleteMany({
+      where: {
+        deviceId: params.deviceId,
+        toolName,
+        windowType: { notIn: [...windowTypes] },
+      },
+    });
+    pruned += result.count;
+  }
+
   await recordQuotaObservations({ deviceId: params.deviceId, items: params.items });
 
   const now = new Date();
@@ -188,10 +205,10 @@ export async function applyDeviceQuotaInventory(params: {
     kind: "quota",
     status: "ok",
     summary: `Quota sync · ${upserted} snapshots${toolNames.length ? ` · ${toolNames.join(", ")}` : ""}`,
-    requestSummary: { quotas: upserted, tools: toolNames, sample, via: "sync-start" },
-    responseSummary: { upserted },
+    requestSummary: { quotas: upserted, pruned, tools: toolNames, sample, via: "sync-start" },
+    responseSummary: { upserted, pruned },
     durationMs: Date.now() - started,
   });
 
-  return { upserted };
+  return { upserted, pruned };
 }

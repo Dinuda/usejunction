@@ -149,7 +149,7 @@ func TestParseCodexUsageResponse(t *testing.T) {
 	if snapshots[0].WindowType != "session_5h" || snapshots[1].WindowType != "weekly" {
 		t.Fatalf("window types = %q, %q", snapshots[0].WindowType, snapshots[1].WindowType)
 	}
-	if snapshots[3].WindowType != "rate_limit_resets" || snapshots[3].CreditsRemaining == nil || *snapshots[3].CreditsRemaining != 2 {
+	if snapshots[3].WindowType != "rate_limit_resets" || snapshots[3].CreditsRemaining == nil || *snapshots[3].CreditsRemaining != 1 {
 		t.Fatalf("reset credits snapshot = %+v", snapshots[3])
 	}
 	primaryReset := time.Unix(1784526148, 0).UTC().Format(time.RFC3339)
@@ -285,15 +285,30 @@ func TestCodexPromoSnapshot(t *testing.T) {
 	}
 }
 
-func TestCodexResetCreditsZeroProducesNothing(t *testing.T) {
+func TestCodexResetCreditsZeroProducesExplicitSnapshot(t *testing.T) {
 	usage := codexUsageResponse{
 		RateLimitResetCredits: &codexResetCreditsSummary{AvailableCount: 0},
 	}
-	if snaps := codexQuotaSnapshots(usage, "oauth_api"); len(snaps) != 0 {
-		t.Fatalf("expected empty, got %+v", snaps)
+	snaps := codexQuotaSnapshots(usage, "oauth_api")
+	if len(snaps) != 1 || snaps[0].WindowType != "rate_limit_resets" {
+		t.Fatalf("expected zero reset snapshot, got %+v", snaps)
 	}
-	if snaps := codexResetCreditSnapshots(&codexResetCreditsResponse{AvailableCount: 0}, "oauth_api"); snaps != nil {
-		t.Fatalf("expected nil, got %+v", snaps)
+	if snaps[0].CreditsRemaining == nil || *snaps[0].CreditsRemaining != 0 {
+		t.Fatalf("credits = %+v", snaps[0].CreditsRemaining)
+	}
+	detailed := codexResetCreditSnapshots(&codexResetCreditsResponse{AvailableCount: 0}, "oauth_api")
+	if len(detailed) != 1 || detailed[0].CreditsRemaining == nil || *detailed[0].CreditsRemaining != 0 {
+		t.Fatalf("expected zero detailed snapshot, got %+v", detailed)
+	}
+}
+
+func TestCodexResetCreditsPreferApplicableCount(t *testing.T) {
+	usage := codexUsageResponse{
+		RateLimitResetCredits: &codexResetCreditsSummary{AvailableCount: 2, ApplicableAvailableCount: 1},
+	}
+	snaps := codexQuotaSnapshots(usage, "oauth_api")
+	if len(snaps) != 1 || snaps[0].CreditsRemaining == nil || *snaps[0].CreditsRemaining != 1 {
+		t.Fatalf("expected applicable count, got %+v", snaps)
 	}
 }
 

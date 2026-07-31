@@ -227,6 +227,29 @@ func codexCreditsBalance(v any) float64 {
 	return numberValue(v)
 }
 
+func codexResetCreditsAvailableCount(summary *codexResetCreditsSummary) int {
+	if summary == nil {
+		return 0
+	}
+	if summary.ApplicableAvailableCount > 0 {
+		return summary.ApplicableAvailableCount
+	}
+	return summary.AvailableCount
+}
+
+func codexResetCreditSnapshot(available int, nearestExpiry *string, source string) types.QuotaSnapshot {
+	snap := types.QuotaSnapshot{
+		ToolName:         "codex",
+		WindowType:       "rate_limit_resets",
+		CreditsRemaining: floatPtr(float64(available)),
+		Source:           source,
+	}
+	if nearestExpiry != nil {
+		snap.ResetAt = nearestExpiry
+	}
+	return snap
+}
+
 func codexQuotaSnapshots(usage codexUsageResponse, source string) []types.QuotaSnapshot {
 	var snapshots []types.QuotaSnapshot
 	if primary := usage.RateLimit.PrimaryWindow; primary.UsedPercent > 0 || codexResetAt(primary.ResetAt) != nil {
@@ -257,13 +280,8 @@ func codexQuotaSnapshots(usage codexUsageResponse, source string) []types.QuotaS
 			Source:           source,
 		})
 	}
-	if summary := usage.RateLimitResetCredits; summary != nil && summary.AvailableCount > 0 {
-		snapshots = append(snapshots, types.QuotaSnapshot{
-			ToolName:         "codex",
-			WindowType:       "rate_limit_resets",
-			CreditsRemaining: floatPtr(float64(summary.AvailableCount)),
-			Source:           source,
-		})
+	if summary := usage.RateLimitResetCredits; summary != nil {
+		snapshots = append(snapshots, codexResetCreditSnapshot(codexResetCreditsAvailableCount(summary), nil, source))
 	}
 	if usage.Promo != nil && strings.TrimSpace(usage.Promo.Title) != "" {
 		snapshots = append(snapshots, types.QuotaSnapshot{
@@ -325,16 +343,7 @@ func codexResetCreditSnapshots(credits *codexResetCreditsResponse, source string
 	if available == 0 && credits.AvailableCount > 0 {
 		available = credits.AvailableCount
 	}
-	if available <= 0 {
-		return nil
-	}
-	return []types.QuotaSnapshot{{
-		ToolName:         "codex",
-		WindowType:       "rate_limit_resets",
-		CreditsRemaining: floatPtr(float64(available)),
-		ResetAt:          nearestExpiry,
-		Source:           source,
-	}}
+	return []types.QuotaSnapshot{codexResetCreditSnapshot(available, nearestExpiry, source)}
 }
 
 func CodexAccountFromAuth(home string) (*types.ToolAccount, error) {
@@ -447,9 +456,8 @@ func ProbeCodexQuota(ctx context.Context, home string) ([]types.QuotaSnapshot, *
 	snapshots := codexQuotaSnapshots(usage, "oauth_api")
 	// Prefer the dedicated inventory endpoint when available (includes expiry).
 	if resetCredits, err := fetchCodexResetCredits(ctx, auth); err == nil {
-		if detailed := codexResetCreditSnapshots(resetCredits, "oauth_api"); len(detailed) > 0 {
-			snapshots = replaceQuotaWindow(snapshots, "rate_limit_resets", detailed)
-		}
+		detailed := codexResetCreditSnapshots(resetCredits, "oauth_api")
+		snapshots = replaceQuotaWindow(snapshots, "rate_limit_resets", detailed)
 	}
 
 	return snapshots, account, nil

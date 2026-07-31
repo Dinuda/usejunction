@@ -1,17 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PlatformCommand } from "@/components/onboarding/platform-command";
 import { formatRelativeTime } from "@/lib/format";
 import { DEVICE_STALE_AFTER_MS } from "@/lib/devices/health";
 import { useInvalidateAppData } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
-import { buildPlatformResumeCommands } from "@/lib/connect-command";
-import type { DeviceRecoverySummary } from "@/lib/sync/remote-sync";
 
 type SyncScope = "team" | "you";
 type PanelStatus = "idle" | "syncing" | "ok" | "unreachable" | "error";
@@ -184,7 +180,6 @@ export function LocalSyncPanel({
   dashboardReady,
   dirtyDayCount,
   staleDeviceCount,
-  recoveryDevices: recoveryDevicesProp,
 }: {
   scope?: SyncScope;
   lastSeenAt?: string | null;
@@ -193,35 +188,24 @@ export function LocalSyncPanel({
   dashboardReady?: boolean;
   dirtyDayCount?: number;
   staleDeviceCount?: number;
-  recoveryDevices?: DeviceRecoverySummary[];
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const invalidateAppData = useInvalidateAppData();
   const [pending, startTransition] = useTransition();
   const [status, setStatus] = useState<PanelStatus>("idle");
   const [request, setRequest] = useState<RemoteSyncRequest | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
-  const [repairDevice, setRepairDevice] = useState<DeviceRecoverySummary | null>(null);
   const [pendingDays, setPendingDays] = useState(dirtyDayCount ?? 0);
   const lastSucceededRef = useRef(0);
   const drainingRef = useRef(false);
   const healthReconcileRef = useRef(false);
   const storageKey = useMemo(() => `usejunction:last-sync-request:${scope}`, [scope]);
   const uploadedAt = latestTimestamp(lastUsageSyncAt, lastAccountSyncAt) ?? lastSeenAt;
-  const recoveryDevices = recoveryDevicesProp ?? [];
   const staleCount = staleDeviceCount ?? (
     lastSeenAt != null && Date.now() - Date.parse(lastSeenAt) > DEVICE_STALE_AFTER_MS ? 1 : 0
   );
   const ready = dashboardReady !== false;
   const historyPending = pendingDays > 0;
-
-  useEffect(() => {
-    const requestedId = searchParams.get("repair");
-    if (!requestedId || repairDevice || recoveryDevices.length === 0) return;
-    const requested = recoveryDevices.find((device) => device.id === requestedId);
-    if (requested) setRepairDevice(requested);
-  }, [recoveryDevices, repairDevice, searchParams]);
 
   const refreshAppData = useCallback(async () => {
     if (drainingRef.current) return;
@@ -365,53 +349,11 @@ export function LocalSyncPanel({
       : `Last synced ${formatRelativeTime(uploadedAt)}`;
   const visibleDetail = detail ?? syncDetail(request, scope, pendingDays);
   const buttonText = status === "syncing" ? "Syncing..." : scope === "team" ? "Sync team" : "Sync now";
-  const ownedRecoveryDevice = recoveryDevices.find((device) => device.isCurrentUser) ?? null;
-  const canRepairFromHere = scope === "you" || Boolean(ownedRecoveryDevice);
 
   return (
     <div className="flex items-center justify-between gap-2 sm:gap-4">
       <div className="min-w-0">
         <p className="text-xs leading-5 text-muted-foreground sm:text-sm">{statusLabel}</p>
-        {recoveryDevices.length > 0 ? (
-          <div className="mt-3 flex flex-col gap-3 border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-sm text-amber-800 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-start gap-2">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <div className="min-w-0">
-                <p className="font-medium">
-                  {canRepairFromHere
-                    ? "Connection needs attention."
-                    : `${recoveryDevices.length} machine${recoveryDevices.length === 1 ? "" : "s"} need${recoveryDevices.length === 1 ? "s" : ""} attention.`}
-                </p>
-                <p className="mt-0.5 text-xs text-amber-800/80 dark:text-amber-200/80">
-                  {canRepairFromHere
-                    ? `${ownedRecoveryDevice?.hostname ?? recoveryDevices[0]?.hostname ?? "This machine"} has not reported for 2 days.`
-                    : "The machine owner has been notified to repair the existing agent enrollment."}
-                </p>
-              </div>
-            </div>
-            {canRepairFromHere ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="shrink-0 border-amber-500/40 bg-background text-foreground hover:bg-amber-500/10"
-                onClick={() => setRepairDevice(ownedRecoveryDevice ?? recoveryDevices[0] ?? null)}
-              >
-                Repair connection
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="shrink-0 border-amber-500/40 bg-background text-foreground hover:bg-amber-500/10"
-                onClick={() => router.push("/team")}
-              >
-                Review machines
-              </Button>
-            )}
-          </div>
-        ) : null}
         {visibleDetail ? <SyncDetailLine detail={visibleDetail} status={status} /> : null}
       </div>
       <Button
@@ -429,22 +371,6 @@ export function LocalSyncPanel({
         )}
         {status === "syncing" ? <span className="shimmer text-muted-foreground">{buttonText}</span> : buttonText}
       </Button>
-      <Dialog open={Boolean(repairDevice)} onOpenChange={(open) => !open && setRepairDevice(null)}>
-        <DialogContent className="max-w-xl gap-5 sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Repair connection.</DialogTitle>
-            <DialogDescription>
-              Run this command on {repairDevice?.hostname ?? "the affected machine"}. It preserves the existing enrollment and restarts the agent.
-            </DialogDescription>
-          </DialogHeader>
-          {repairDevice ? (
-            <PlatformCommand
-              commands={buildPlatformResumeCommands(typeof window !== "undefined" ? window.location.origin : "")}
-              footerDescription="Your device history stays attached to this machine. The command does not create another device."
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

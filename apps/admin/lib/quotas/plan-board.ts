@@ -38,6 +38,7 @@ export type MemberPlanWindow = {
   resetsAt: string | null;
   signal: string;
   stale: boolean;
+  observedAt: string;
 };
 
 export type MemberPlanBoardCard = {
@@ -54,6 +55,8 @@ export type MemberPlanBoardCard = {
   promotions: MemberPlanWindow[];
   /** Non-primary, non-promo windows (e.g. secondary plan windows). */
   otherWindows: MemberPlanWindow[];
+  /** Latest quota observation across this tool's windows. */
+  quotaSyncedAt: string | null;
   /** Period usage folded onto the product card. */
   usage: {
     requests: number;
@@ -91,7 +94,22 @@ function toWindow(row: QuotaUtilization): MemberPlanWindow {
       resetsAt: row.resetsAt,
     }),
     stale: row.stale,
+    observedAt: row.observedAt,
   };
+}
+
+function visiblePromotion(window: MemberPlanWindow): boolean {
+  if (window.stale) return false;
+  if (window.remaining != null && window.remaining <= 0) return false;
+  return true;
+}
+
+function latestObservedAt(rows: QuotaUtilization[]): string | null {
+  let latest: string | null = null;
+  for (const row of rows) {
+    if (!latest || row.observedAt > latest) latest = row.observedAt;
+  }
+  return latest;
 }
 
 function catalogPlanDisplayName(toolKey: string, planKey: string | null | undefined): string | null {
@@ -170,7 +188,7 @@ export function buildMemberPlanBoard(input: {
   const historyByKey = new Map<string, QuotaHistorySample[]>();
   for (const sample of input.quotaHistory ?? []) {
     const resetAt = new Date(sample.resetAt).toISOString();
-    const key = `${sample.deviceId}:${sample.toolName}:${sample.windowType}:${resetAt}`;
+    const key = `${sample.deviceId}:${sample.toolName}:${sample.windowType}`;
     const list = historyByKey.get(key) ?? [];
     list.push({
       usedPercent: sample.usedPercent,
@@ -182,7 +200,7 @@ export function buildMemberPlanBoard(input: {
   for (const row of rows) {
     if (!row.deviceId || !row.resetsAt) continue;
     row.history = historyByKey.get(
-      `${row.deviceId}:${row.observationToolName}:${row.windowType}:${row.resetsAt}`,
+      `${row.deviceId}:${row.observationToolName}:${row.windowType}`,
     ) ?? [];
   }
   const byTool = new Map<string, QuotaUtilization[]>();
@@ -258,8 +276,9 @@ export function buildMemberPlanBoard(input: {
     for (const row of toolRows) {
       if (row.quotaKey === primaryKey) continue;
       const window = toWindow(row);
-      if (window.kind === "promo" || window.kind === "credits") promotions.push(window);
-      else otherWindows.push(window);
+      if (window.kind === "promo" || window.kind === "credits") {
+        if (visiblePromotion(window)) promotions.push(window);
+      } else otherWindows.push(window);
     }
 
     const { planName, accountEmail } = pickPlanName(
@@ -280,6 +299,7 @@ export function buildMemberPlanBoard(input: {
       primary: primary ? toWindow(primary) : null,
       promotions,
       otherWindows,
+      quotaSyncedAt: latestObservedAt(toolRows),
       usage: usage
         ? {
             requests: usage.requests,
@@ -313,6 +333,7 @@ export function buildMemberPlanBoard(input: {
       primary: null,
       promotions: [],
       otherWindows: [],
+      quotaSyncedAt: null,
       usage: {
         requests: usage.requests,
         tokens: usage.tokens,

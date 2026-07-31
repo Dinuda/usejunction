@@ -102,6 +102,48 @@ test("buildMemberPlanBoard groups primary pace and promo/credit windows per tool
   assert.equal(chatgpt.usage?.cost, 18.5);
 });
 
+test("buildMemberPlanBoard hides zero and stale rate-limit reset promotions", () => {
+  const now = new Date("2026-07-18T12:00:00.000Z");
+  const staleAt = new Date(now.getTime() - 40 * 60 * 60 * 1000);
+  const cards = buildMemberPlanBoard({
+    now,
+    snapshots: [
+      {
+        toolName: "codex",
+        windowType: "weekly",
+        usedPercent: 2,
+        creditsRemaining: null,
+        resetAt: new Date("2026-08-05T00:00:00.000Z"),
+        source: "oauth_api",
+        updatedAt: now,
+      },
+      {
+        toolName: "codex",
+        windowType: "rate_limit_resets",
+        usedPercent: null,
+        creditsRemaining: 0,
+        resetAt: null,
+        source: "oauth_api",
+        updatedAt: now,
+      },
+      {
+        toolName: "codex",
+        windowType: "rate_limit_resets",
+        usedPercent: null,
+        creditsRemaining: 2,
+        resetAt: null,
+        source: "oauth_api",
+        updatedAt: staleAt,
+      },
+    ],
+  });
+
+  const chatgpt = cards.find((card) => card.toolKey === "chatgpt-codex");
+  assert.ok(chatgpt);
+  assert.equal(chatgpt.promotions.length, 0);
+  assert.equal(chatgpt.quotaSyncedAt, now.toISOString());
+});
+
 test("buildMemberPlanBoard honors a weekly usage-window override over a shorter window", () => {
   const now = new Date("2026-07-26T14:00:00.000Z");
   const cards = buildMemberPlanBoard({

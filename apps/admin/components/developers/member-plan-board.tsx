@@ -16,7 +16,7 @@ import type {
   MemberPlanWindow,
 } from "@/lib/quotas/plan-board";
 import type { WorkActivitySession } from "@/lib/signals/queries/get-work-activity";
-import { formatCompactNumber, formatUsd } from "@/lib/format";
+import { formatCompactNumber, formatRelativeTime, formatShortDate, formatUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 function toneForPace(code: QuotaPaceCode) {
@@ -41,14 +41,18 @@ function barTone(code: QuotaPaceCode, usedPercent: number | null) {
   return "bg-foreground/70";
 }
 
-function resetLabel(window: MemberPlanWindow): string | null {
+function resetShortDate(window: MemberPlanWindow): string | null {
   if (!window.resetsAt) return null;
-  const date = new Date(window.resetsAt);
-  if (Number.isNaN(date.getTime())) return null;
-  const days = Math.round((date.getTime() - Date.now()) / 86_400_000);
-  if (days <= 0) return "resets soon";
-  if (days === 1) return "resets in 1d";
-  return `resets in ${days}d`;
+  const label = formatShortDate(window.resetsAt);
+  return label === "unknown" ? null : label;
+}
+
+function windowUsageLabel(window: MemberPlanWindow): string {
+  const used = window.usedPercent;
+  const reset = resetShortDate(window);
+  if (used == null) return reset ?? "—";
+  const percent = `${Math.round(used)}%`;
+  return reset ? `${percent} ${reset}` : percent;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -100,7 +104,7 @@ function WindowMeter({
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-sm font-medium">{window.windowLabel}</p>
         <p className={cn("text-sm font-semibold tabular-nums", toneForPace(code))}>
-          {used != null ? `${Math.round(used)}%` : "—"}
+          {windowUsageLabel(window)}
         </p>
       </div>
       <div className="mt-2 h-1.5 w-full bg-muted">
@@ -126,7 +130,7 @@ function PlanCardButton({
   const expected = card.pace.expectedPercent;
   const width = used == null ? 0 : Math.min(100, Math.max(2, used));
   const mark = expected == null ? null : Math.min(100, Math.max(0, expected));
-  const reset = card.primary ? resetLabel(card.primary) : null;
+  const primaryResetDate = card.primary ? resetShortDate(card.primary) : null;
   const tokens = card.usage?.tokens ?? 0;
   const cacheTokens = (card.usage?.cacheReadTokens ?? 0) + (card.usage?.cacheWriteTokens ?? 0);
 
@@ -151,6 +155,9 @@ function PlanCardButton({
             <p className={cn("text-2xl font-semibold tabular-nums", toneForPace(card.pace.code))}>
               {used != null ? `${Math.round(used)}%` : "—"}
             </p>
+            {primaryResetDate ? (
+              <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">{primaryResetDate}</p>
+            ) : null}
             <p className={cn("mt-0.5 text-[0.7rem] font-medium", toneForPace(card.pace.code))}>
               {paceVerdictLabel(card.pace.code)}
             </p>
@@ -184,7 +191,6 @@ function PlanCardButton({
           {card.usage && card.usage.cost > 0 ? (
             <Stat label="Usage" value={formatUsd(card.usage.cost)} />
           ) : null}
-          {reset ? <Stat label="Reset" value={reset} /> : null}
           {card.promotions.map((promo) => (
             <Stat
               key={promo.quotaKey}
@@ -237,7 +243,6 @@ function PlanCardButton({
             {card.usage && card.usage.requests > 0 ? (
               <Stat label="Calls" value={formatCompactNumber(card.usage.requests)} />
             ) : null}
-            {reset ? <Stat label="Reset" value={reset} /> : null}
             {card.promotions.map((promo) => (
               <Stat
                 key={promo.quotaKey}
@@ -246,6 +251,12 @@ function PlanCardButton({
               />
             ))}
           </section>
+
+          {card.quotaSyncedAt ? (
+            <p className="text-xs text-muted-foreground">
+              Quota synced {formatRelativeTime(card.quotaSyncedAt)}
+            </p>
+          ) : null}
 
           <section className="min-w-0">
             <p className="mb-3 text-[0.65rem] uppercase tracking-[0.08em] text-muted-foreground">

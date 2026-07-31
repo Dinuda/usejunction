@@ -10,15 +10,13 @@ export async function attachQuotaHistory(
   if (!current.length) return quotas;
   const deviceIds = [...new Set(current.map((quota) => quota.deviceId!))];
   const toolNames = [...new Set(current.map((quota) => quota.observationToolName))];
-  const resetAtValues = [...new Set(current.map((quota) => new Date(quota.resetsAt!).toISOString()))].map(
-    (value) => new Date(value),
-  );
+  const windowTypes = [...new Set(current.map((quota) => quota.windowType))];
   const observations = await prisma.quotaObservation.findMany({
     where: {
       orgId,
       deviceId: { in: deviceIds },
       toolName: { in: toolNames },
-      resetAt: { in: resetAtValues },
+      windowType: { in: windowTypes },
       observedAt: { gte: new Date((options.now ?? new Date()).getTime() - 90 * 24 * 60 * 60 * 1000) },
       ...(options.developerId ? { device: { userId: options.developerId } } : {}),
     },
@@ -27,7 +25,7 @@ export async function attachQuotaHistory(
   });
   const byKey = new Map<string, QuotaHistorySample[]>();
   for (const observation of observations) {
-    const key = `${observation.deviceId}:${observation.toolName}:${observation.windowType}:${observation.resetAt.toISOString()}`;
+    const key = `${observation.deviceId}:${observation.toolName}:${observation.windowType}`;
     const list = byKey.get(key) ?? [];
     list.push({
       usedPercent: observation.usedPercent,
@@ -39,7 +37,7 @@ export async function attachQuotaHistory(
   return quotas.map((quota) => ({
     ...quota,
     history: quota.deviceId && quota.resetsAt
-      ? byKey.get(`${quota.deviceId}:${quota.observationToolName}:${quota.windowType}:${quota.resetsAt}`) ?? []
+      ? byKey.get(`${quota.deviceId}:${quota.observationToolName}:${quota.windowType}`) ?? []
       : [],
   }));
 }

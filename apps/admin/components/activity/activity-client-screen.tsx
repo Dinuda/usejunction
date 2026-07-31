@@ -20,6 +20,7 @@ import { DeviceActivityFeed } from "@/components/activity/device-activity-feed";
 import { SentReportsSection } from "@/components/activity/sent-reports-section";
 import { UsageBreakdownList } from "@/components/activity/usage-breakdown-list";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
+import { ConnectionRepairBanner } from "@/components/dashboard/connection-repair-banner";
 import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
 import { FlowPath, SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
 import { type CycleView, type CycleViewWindows } from "@/lib/dashboard/cycle-view";
@@ -234,7 +235,6 @@ function SharedActivityView({ view }: { view: ActivityViewModel }) {
             dashboardReady={view.sync.dashboardReady}
             dirtyDayCount={view.sync.dirtyDayCount}
             staleDeviceCount={view.sync.staleDeviceCount}
-            recoveryDevices={view.sync.recoveryDevices}
           />
         </div>
       ) : null}
@@ -397,6 +397,9 @@ export default function ActivityClientScreen() {
 
   return (
     <>
+      {isYou && view ? (
+        <ConnectionRepairBanner scope="you" recoveryDevices={view.sync?.recoveryDevices} />
+      ) : null}
       <ActivityPageHeader
         title={isYou ? "Your activity." : "Activity."}
         description={

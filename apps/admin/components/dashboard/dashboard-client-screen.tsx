@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { ArrowUpRight, Info } from "lucide-react";
 import { ConnectMachineBanner } from "@/components/dashboard/connect-machine-banner";
+import { ConnectionRepairBanner } from "@/components/dashboard/connection-repair-banner";
 import { CycleUtilizationBar } from "@/components/dashboard/cycle-utilization-bar";
 import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
@@ -63,6 +64,11 @@ import { SubscriptionUpgradedBanner } from "@/components/saas-billing/subscripti
 const AiCodingPanel = dynamic(() => import("@/components/dashboard/ai-coding-panel").then((mod) => mod.AiCodingPanel), { ssr: false });
 const CoverageChart = dynamic(() => import("@/components/dashboard/coverage-chart").then((mod) => mod.CoverageChart), { ssr: false });
 const OverviewChart = dynamic(() => import("@/components/dashboard/overview-chart").then((mod) => mod.OverviewChart), { ssr: false });
+
+const panelRowClass =
+  "block px-4 py-5 transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:px-5";
+const panelRowStaticClass = "block px-4 py-5 sm:px-5";
+const panelRowListClass = "-mx-4 sm:-mx-5";
 
 function Delta({ value, inverse = false }: { value: number | null; inverse?: boolean }) {
   if (value === null) return null;
@@ -317,15 +323,12 @@ function CycleStatus({
   if (projectionState === "forming") {
     return null;
   }
-  const hint = code === "NEAR_LIMIT" ? null : verdictHint(code, { expectedEndDateLabel });
-  const statusLabel =
-    code === "NEAR_LIMIT"
-      ? [verdictLabel(code), expectedEndDateLabel ? `Projected limit ${expectedEndDateLabel}` : null].filter(Boolean).join(" · ")
-      : verdictLabel(code);
+  const hint = verdictHint(code, { expectedEndDateLabel });
+  const statusLabel = verdictLabel(code);
   return (
-    <div className="mt-1.5">
-      <p className={cn("text-xs font-medium", verdictToneClass(code))}>{statusLabel}</p>
-      {hint ? <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p> : null}
+    <div className="mt-1.5 flex items-baseline justify-between gap-3">
+      {hint ? <p className="min-w-0 text-xs text-muted-foreground">{hint}</p> : <span />}
+      <p className={cn("shrink-0 text-xs font-medium", verdictToneClass(code))}>{statusLabel}</p>
     </div>
   );
 }
@@ -431,8 +434,13 @@ function personalPlanMeta(
   if (card.usage && card.usage.cost > 0) {
     parts.push(`Usage ${formatUsd(card.usage.cost)}`);
   }
-  const reset = formatPaceDays(card.pace.daysToReset);
-  if (reset) parts.push(`resets in ${reset}`);
+  const resetDate = card.primary?.resetsAt ? formatShortDate(card.primary.resetsAt) : null;
+  if (resetDate && resetDate !== "unknown") {
+    parts.push(`Resets ${resetDate}`);
+  } else {
+    const reset = formatPaceDays(card.pace.daysToReset);
+    if (reset) parts.push(`Resets in ${reset}`);
+  }
   return parts.length ? parts.join(" · ") : null;
 }
 
@@ -548,6 +556,7 @@ function PersonalHome({
 
   return (
     <>
+      <ConnectionRepairBanner scope="you" recoveryDevices={data.sync.recoveryDevices} />
       <ConnectMachineBanner show={empty} />
       <PageHeader
         title={empty ? "Nothing reporting yet." : "Spend, traffic, coverage."}
@@ -584,7 +593,6 @@ function PersonalHome({
               dashboardReady={data.sync.dashboardReady}
               dirtyDayCount={data.sync.dirtyDayCount}
               staleDeviceCount={data.sync.staleDeviceCount}
-              recoveryDevices={data.sync.recoveryDevices}
             />
           </div>
           <DashboardPeriodRefreshing refreshing={refreshing}>
@@ -648,7 +656,7 @@ function PersonalHome({
               </div>
             </div>
             {planCards.length ? (
-              <ul>
+              <ul className={panelRowListClass}>
                 {planCards.map((card) => {
                   const href = findCatalogTool(card.toolKey) ? `/tools/${card.toolKey}` : null;
                   const verdictCode = paceToVerdictCode(card.pace.code, card.pace.usedPercent);
@@ -718,11 +726,6 @@ function PersonalHome({
                           showPercent={false}
                         />
                       </div>
-                      {used != null && card.primary ? (
-                        <p className="mt-1.5 text-xs text-muted-foreground">
-                          {Math.round(used)}% of {card.primary.windowLabel.toLowerCase()} limit
-                        </p>
-                      ) : null}
                       {meta ? (
                         <p className="mt-2 text-xs text-muted-foreground">{meta}</p>
                       ) : null}
@@ -742,12 +745,12 @@ function PersonalHome({
                         <Link
                           href={href}
                           prefetch={false}
-                          className="block py-5 transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+                          className={panelRowClass}
                         >
                           {body}
                         </Link>
                       ) : (
-                        <div className="py-5">{body}</div>
+                        <div className={panelRowStaticClass}>{body}</div>
                       )}
                     </li>
                   );
@@ -926,6 +929,7 @@ export default function DashboardPage() {
     if (query.data.youUnlinked || !query.data.personal) {
       return (
         <>
+          <ConnectionRepairBanner scope="you" recoveryDevices={query.data.syncContext?.recoveryDevices} />
           <ConnectMachineBanner show={query.data.needsPersonalConnect ?? true} />
           <PageHeader
             title="Your numbers."
@@ -943,7 +947,6 @@ export default function DashboardPage() {
                 dashboardReady={query.data.syncContext.dashboardReady}
                 dirtyDayCount={query.data.syncContext.dirtyDayCount}
                 staleDeviceCount={query.data.syncContext.staleDeviceCount}
-                recoveryDevices={query.data.syncContext.recoveryDevices}
               />
             </div>
           ) : null}
@@ -1008,6 +1011,7 @@ export default function DashboardPage() {
 
   return (
     <>
+      <ConnectionRepairBanner scope="team" recoveryDevices={syncPanel?.recoveryDevices} />
       <SubscriptionUpgradedBanner isTeam={isTeamPlan} />
       <ConnectMachineBanner show={needsPersonalConnect} />
       <PageHeader
@@ -1041,7 +1045,6 @@ export default function DashboardPage() {
             dashboardReady={syncPanel.dashboardReady}
             dirtyDayCount={syncPanel.dirtyDayCount}
             staleDeviceCount={syncPanel.staleDeviceCount}
-            recoveryDevices={syncPanel.recoveryDevices}
           />
         </div>
       ) : null}
@@ -1120,7 +1123,7 @@ export default function DashboardPage() {
               bordered={false}
             />
             {data.subscriptionCycles.length ? (
-              <ul>
+              <ul className={panelRowListClass}>
                 {data.subscriptionCycles.map((row) => {
                   const toolKey = canonicalToolKey(row.toolKey ?? row.toolName);
                   const href = findCatalogTool(toolKey) ? `/tools/${toolKey}` : null;
@@ -1161,11 +1164,6 @@ export default function DashboardPage() {
                               />
                             ) : null}
                           </div>
-                          {row.projectionState === "forming" ? (
-                            <p className="text-[0.65rem] font-medium text-muted-foreground">
-                              {paceVerdictLabel("FORMING")}
-                            </p>
-                          ) : null}
                           {href ? (
                             <ArrowUpRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
                           ) : null}
@@ -1180,11 +1178,6 @@ export default function DashboardPage() {
                           showPercent={!showNoPlanMeterBar(toolKey, noQuota)}
                         />
                       </div>
-                      {row.utilizationPercent != null && row.usageWindow ? (
-                        <p className="mt-1.5 text-xs text-muted-foreground">
-                          {Math.round(row.utilizationPercent)}% of {row.usageWindow.label.toLowerCase()} limit
-                        </p>
-                      ) : null}
                       {isOpenCodeFreePlan ? (
                         openCodeFreePlanNote(usageCost, reportWindowLabel)
                       ) : row.verdictCode && row.verdictCode !== "UNKNOWN" ? (
@@ -1216,12 +1209,12 @@ export default function DashboardPage() {
                         <Link
                           href={href}
                           prefetch={false}
-                          className="block py-5 transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+                          className={panelRowClass}
                         >
                           {body}
                         </Link>
                       ) : (
-                        <div className="py-5">{body}</div>
+                        <div className={panelRowStaticClass}>{body}</div>
                       )}
                     </li>
                   );
