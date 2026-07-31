@@ -53,6 +53,8 @@ vi.mock("@/components/team/team-syncs-panel", () => ({
 vi.mock("@/components/app-data-state", () => ({
   AppPageError: ({ error }: { error: Error }) => <div>{error.message}</div>,
   AppPageSkeleton: () => <div>page loading</div>,
+  isBlockingAppQueryError: (error: unknown, hasData: boolean) => Boolean(error) && !hasData,
+  useAppQueryErrorToast: vi.fn(),
 }));
 
 const rosterData = {

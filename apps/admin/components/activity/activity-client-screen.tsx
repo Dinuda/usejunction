@@ -34,7 +34,7 @@ import type { getPersonalSignalsLedger } from "@/lib/signals/read";
 import type { OrgActivitySettings } from "@/lib/activity/contracts";
 import { useAppPageQuery } from "@/lib/api/client";
 import { activityKey } from "@/lib/app-pages/query-keys";
-import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
+import { AppPageError, AppPageSkeleton, isBlockingAppQueryError, useAppQueryErrorToast } from "@/components/app-data-state";
 import { DashboardSetupPanel } from "@/components/dashboard/setup-panel";
 
 type DeviceFeed = Awaited<ReturnType<typeof getDeviceActivityFeed>>;
@@ -387,8 +387,12 @@ export default function ActivityClientScreen() {
     return fromOrganization(payload.usage, payload.deviceFeed, payload.periodLabel);
   }, [payload]);
 
-  if (query.isPending) return <AppPageSkeleton />;
-  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  useAppQueryErrorToast(query.error && query.data ? query.error : null, { retry: () => void query.refetch() });
+
+  if (query.isPending && !query.data) return <AppPageSkeleton />;
+  if (isBlockingAppQueryError(query.error, Boolean(query.data))) {
+    return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  }
   if (!payload) return <AppPageSkeleton />;
 
   const isYou = payload.kind === "personal";

@@ -9,7 +9,7 @@ import { MemberRemoveButton } from "@/components/developers/member-remove-button
 import { MemberRoleSelect } from "@/components/developers/member-role-select";
 import { PageHeader } from "@/components/page-header";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
-import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
+import { AppPageError, AppPageSkeleton, isBlockingAppQueryError, useAppQueryErrorToast } from "@/components/app-data-state";
 import { useAppPageQuery } from "@/lib/api/client";
 import { teamMemberHubKey, teamMemberWorkKey } from "@/lib/app-pages/query-keys";
 import type { TeamMemberHubPayload, TeamMemberWorkPayload } from "@/lib/app-pages/team-member";
@@ -61,8 +61,16 @@ export function MemberClientLayout({ children }: { children: React.ReactNode }) 
     { enabled: needsWork && Boolean(hubQuery.data) },
   );
 
-  if (hubQuery.isPending) return <AppPageSkeleton />;
-  if (hubQuery.error) return <AppPageError error={hubQuery.error} retry={() => void hubQuery.refetch()} />;
+  useAppQueryErrorToast(workQuery.error, {
+    enabled: needsWork && Boolean(hubQuery.data),
+    retry: () => void workQuery.refetch(),
+  });
+
+  if (hubQuery.isPending && !hubQuery.data) return <AppPageSkeleton />;
+  if (isBlockingAppQueryError(hubQuery.error, Boolean(hubQuery.data))) {
+    return <AppPageError error={hubQuery.error} retry={() => void hubQuery.refetch()} />;
+  }
+  if (!hubQuery.data) return <AppPageSkeleton />;
 
   const { developer, role } = hubQuery.data;
   const contextValue: MemberClientData = {
@@ -96,9 +104,6 @@ export function MemberClientLayout({ children }: { children: React.ReactNode }) 
         ) : <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Role: {developer.role}</p>}
         <MemberHubNav developerId={developerId} />
       </PageHeader>
-      {workQuery.error && needsWork ? (
-        <AppPageError error={workQuery.error} retry={() => void workQuery.refetch()} />
-      ) : null}
       {children}
     </MemberDataContext.Provider>
   );

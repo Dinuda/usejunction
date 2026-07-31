@@ -5,7 +5,7 @@ import { WorkSessionDetailView } from "@/components/signals/work-session-detail-
 import type { getWorkSessionDetail } from "@/lib/signals/queries/get-work-session-detail";
 import { useAppPageQuery } from "@/lib/api/client";
 import { signalsWorkKey } from "@/lib/app-pages/query-keys";
-import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
+import { AppPageError, AppPageSkeleton, isBlockingAppQueryError, useAppQueryErrorToast } from "@/components/app-data-state";
 
 type WorkDetailPayload = { session: NonNullable<Awaited<ReturnType<typeof getWorkSessionDetail>>>["data"] };
 
@@ -16,8 +16,13 @@ export default function SignalsWorkDetailClientScreen() {
     signalsWorkKey(sessionId),
     `/api/app/signals/activity/work/${encodeURIComponent(sessionId)}`,
   );
-  if (query.isPending) return <AppPageSkeleton />;
-  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  useAppQueryErrorToast(query.error && query.data ? query.error : null, { retry: () => void query.refetch() });
+
+  if (query.isPending && !query.data) return <AppPageSkeleton />;
+  if (isBlockingAppQueryError(query.error, Boolean(query.data))) {
+    return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  }
+  if (!query.data) return <AppPageSkeleton />;
   const session = query.data.session;
   const fromDeveloper = searchParams.get("from") === "team";
   const backHref = fromDeveloper

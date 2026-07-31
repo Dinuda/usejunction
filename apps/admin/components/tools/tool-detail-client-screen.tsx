@@ -13,10 +13,10 @@ import {
 } from "@/lib/dashboard/cycle-view";
 import type { RollingPeriod } from "@/lib/dashboard/period-prefs";
 import type { getToolDetail } from "@/lib/queries/dashboard/tool-detail";
-import type { RemoteSyncPanelContext } from "@/lib/sync/remote-sync";
+import type { RemoteSyncPanelContext } from "@/lib/sync/remote-sync-context";
 import { useAppPageQuery } from "@/lib/api/client";
 import { toolDetailKey } from "@/lib/app-pages/query-keys";
-import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
+import { AppPageError, AppPageSkeleton, isBlockingAppQueryError, useAppQueryErrorToast } from "@/components/app-data-state";
 
 type ToolPayload = {
   kind?: "organization" | "personal";
@@ -53,8 +53,13 @@ export default function ToolDetailClientScreen() {
     }
   }, [query.data, queryString, rawToolKey, router]);
 
-  if (query.isPending) return <AppPageSkeleton />;
-  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  useAppQueryErrorToast(query.error && query.data ? query.error : null, { retry: () => void query.refetch() });
+
+  if (query.isPending && !query.data) return <AppPageSkeleton />;
+  if (isBlockingAppQueryError(query.error, Boolean(query.data))) {
+    return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  }
+  if (!query.data) return <AppPageSkeleton />;
   const { kind, toolKey, cycleView, rollingPeriod, cycleWindows, detail: serialized, syncContext } = query.data;
   const scope = kind === "personal" ? "self" : "org";
 

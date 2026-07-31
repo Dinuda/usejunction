@@ -19,7 +19,7 @@ import type { getWorkActivity, readSignalsFilterOptions } from "@/lib/signals";
 import { workSessionsToCsv } from "@/lib/signals/work-export";
 import { useAppPageQuery } from "@/lib/api/client";
 import { signalsActivityKey } from "@/lib/app-pages/query-keys";
-import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
+import { AppPageError, AppPageSkeleton, isBlockingAppQueryError, useAppQueryErrorToast } from "@/components/app-data-state";
 
 type SignalsActivityPayload = {
   scope: AudienceScope;
@@ -41,8 +41,13 @@ export default function SignalsActivityClientScreen() {
     signalsActivityKey(queryString),
     `/api/app/signals/activity${queryString ? `?${queryString}` : ""}`,
   );
-  if (query.isPending) return <AppPageSkeleton />;
-  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  useAppQueryErrorToast(query.error && query.data ? query.error : null, { retry: () => void query.refetch() });
+
+  if (query.isPending && !query.data) return <AppPageSkeleton />;
+  if (isBlockingAppQueryError(query.error, Boolean(query.data))) {
+    return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  }
+  if (!query.data) return <AppPageSkeleton />;
   const { scope, cycleView, rollingPeriod, cycleWindows, developerId, tool, options, work, youUnlinked } = query.data;
   const isYou = scope === "you";
 

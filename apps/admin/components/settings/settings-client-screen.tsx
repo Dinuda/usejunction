@@ -11,7 +11,7 @@ import type { getOrgSignalsPolicy } from "@/lib/signals/service";
 import type { getOrgBillingStatus } from "@/lib/saas-billing/status";
 import { useAppPageQuery } from "@/lib/api/client";
 import { notificationPreferencesKey, settingsKey } from "@/lib/app-pages/query-keys";
-import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
+import { AppPageError, AppPageSkeleton, isBlockingAppQueryError, useAppQueryErrorToast } from "@/components/app-data-state";
 
 type SettingsPayload = {
   orgId: string;
@@ -36,11 +36,18 @@ export default function SettingsClientScreen() {
     { enabled: canManageOrg },
   );
 
-  if (prefsQuery.isPending || (canManageOrg && orgQuery.isPending)) return <AppPageSkeleton />;
-  if (prefsQuery.error) {
+  useAppQueryErrorToast(orgQuery.error, {
+    enabled: canManageOrg && Boolean(prefsQuery.data),
+    retry: () => void orgQuery.refetch(),
+  });
+
+  if ((prefsQuery.isPending && !prefsQuery.data) || (canManageOrg && orgQuery.isPending && !orgQuery.data)) {
+    return <AppPageSkeleton />;
+  }
+  if (isBlockingAppQueryError(prefsQuery.error, Boolean(prefsQuery.data))) {
     return <AppPageError error={prefsQuery.error} retry={() => void prefsQuery.refetch()} />;
   }
-  if (canManageOrg && orgQuery.error) {
+  if (canManageOrg && isBlockingAppQueryError(orgQuery.error, Boolean(orgQuery.data))) {
     return <AppPageError error={orgQuery.error} retry={() => void orgQuery.refetch()} />;
   }
 

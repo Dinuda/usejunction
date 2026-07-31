@@ -6,6 +6,15 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AppApiError } from "@/lib/api/client";
+import { appQueryErrorMessage } from "@/lib/errors/app-query-errors";
+
+export {
+  appQueryErrorMessage,
+  isBlockingAppQueryError,
+  notifyAppQueryError,
+  useAppQueryErrorToast,
+  useErrorMessageToast,
+} from "@/lib/errors/app-query-errors";
 
 export function AppPageSkeleton() {
   return (
@@ -38,9 +47,7 @@ export function AppPageError({ error, retry }: { error: AppApiError; retry: () =
   return (
     <Alert variant="destructive">
       <AlertDescription className="flex flex-wrap items-center gap-3">
-        <span className="flex-1">
-          {error.status === 401 ? "Your session has expired. Sign in again." : error.message}
-        </span>
+        <span className="flex-1">{appQueryErrorMessage(error)}</span>
         {error.status === 401 ? (
           <Button asChild size="sm" variant="outline"><a href="/login">Sign in</a></Button>
         ) : (

@@ -23,7 +23,7 @@ import type { RollingPeriod } from "@/lib/dashboard/period-prefs";
 import type { getWorkOverview } from "@/lib/signals";
 import { useAppPageQuery } from "@/lib/api/client";
 import { signalsOverviewKey } from "@/lib/app-pages/query-keys";
-import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
+import { AppPageError, AppPageSkeleton, isBlockingAppQueryError, useAppQueryErrorToast } from "@/components/app-data-state";
 
 const SignalsTrendChart = dynamic(() => import("@/components/signals/signals-trend-chart").then((mod) => mod.SignalsTrendChart), { ssr: false });
 
@@ -45,8 +45,13 @@ export default function SignalsOverviewClientScreen() {
     signalsOverviewKey(queryString),
     `/api/app/signals/overview${queryString ? `?${queryString}` : ""}`,
   );
-  if (query.isPending) return <AppPageSkeleton />;
-  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  useAppQueryErrorToast(query.error && query.data ? query.error : null, { retry: () => void query.refetch() });
+
+  if (query.isPending && !query.data) return <AppPageSkeleton />;
+  if (isBlockingAppQueryError(query.error, Boolean(query.data))) {
+    return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  }
+  if (!query.data) return <AppPageSkeleton />;
   const { scope, cycleView, rollingPeriod, cycleWindows, periodLabel, work, youUnlinked } = query.data;
   const isYou = scope === "you";
   const topTool = work.topTools[0] ?? null;

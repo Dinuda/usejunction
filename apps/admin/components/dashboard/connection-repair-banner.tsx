@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PlatformCommand } from "@/components/onboarding/platform-command";
 import { buildPlatformResumeCommands } from "@/lib/connect-command";
-import type { DeviceRecoverySummary } from "@/lib/sync/remote-sync";
+import type { DeviceRecoverySummary } from "@/lib/sync/remote-sync-context";
 
 const HIDE_KEY_PREFIX = "uj:hide-repair-banner:";
 

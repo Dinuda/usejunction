@@ -11,7 +11,7 @@ import {
 } from "@/lib/dashboard/cycle-view";
 import { parseRollingPeriodFromSearch, type RollingPeriod } from "@/lib/dashboard/period-prefs";
 import { getMeOverview } from "@/lib/queries/me/overview";
-import { getRemoteSyncPanelContext } from "@/lib/sync/remote-sync";
+import { getRemoteSyncPanelContext } from "@/lib/sync/remote-sync-context";
 import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
 import {
   getOrgOverview,

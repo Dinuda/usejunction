@@ -179,7 +179,7 @@ export function buildPdfAreaChartSvg(
 
 function loadLogoDataUri(): string {
   try {
-    const logoPath = path.join(process.cwd(), "public", "usejunction.png");
+    const logoPath = path.join(process.cwd(), "public/usejunction.png");
     const buf = fs.readFileSync(logoPath);
     return `data:image/png;base64,${buf.toString("base64")}`;
   } catch {

@@ -16,7 +16,6 @@ import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/panel";
 import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
 import { ToolBrandIcon, ToolLogoTile } from "@/components/tools/tool-brand-icon";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -48,13 +47,13 @@ import { cn } from "@/lib/utils";
 import type { OrgOverviewV1 } from "@/lib/insights";
 import { billingSeatLabel, estimatedUsageLabel, estimatedUsageWindowTooltip } from "@/lib/insights/billing-copy";
 import type { getMeOverview } from "@/lib/queries/me/overview";
-import type { RemoteSyncPanelContext } from "@/lib/sync/remote-sync";
+import type { RemoteSyncPanelContext } from "@/lib/sync/remote-sync-context";
 import { useAppPageQuery, useAppQuery } from "@/lib/api/client";
 import { dashboardKey, dashboardMetricsKey, dashboardShellKey, workspaceContextKey } from "@/lib/app-pages/query-keys";
 import type { WorkspaceContextPayload } from "@/lib/app-pages/workspace-context";
 import { mergeOrgOverviewShellMetrics } from "@/lib/app-pages/dashboard-merge";
 import type { OrgOverviewMetricsData, OrgOverviewShellData } from "@/lib/insights";
-import { AppPageError } from "@/components/app-data-state";
+import { AppPageError, isBlockingAppQueryError, useAppQueryErrorToast, useErrorMessageToast } from "@/components/app-data-state";
 import {
   DashboardPageLoading,
   DashboardPeriodRefreshing,
@@ -910,6 +909,23 @@ export default function DashboardPage() {
     { enabled: isOrgDashboard },
   );
 
+  useAppQueryErrorToast(
+    isPersonalDashboard && personalQuery.error && personalQuery.data ? personalQuery.error : null,
+    { retry: () => void personalQuery.refetch() },
+  );
+  useAppQueryErrorToast(
+    isOrgDashboard && shellQuery.error && shellQuery.data ? shellQuery.error : null,
+    { retry: () => void shellQuery.refetch() },
+  );
+  useAppQueryErrorToast(
+    isOrgDashboard && metricsQuery.error && metricsQuery.data ? metricsQuery.error : null,
+    { retry: () => void metricsQuery.refetch() },
+  );
+  useErrorMessageToast(isOrgDashboard ? metricsQuery.data?.error ?? null : null, {
+    enabled: isOrgDashboard,
+    retry: () => void metricsQuery.refetch(),
+  });
+
   if (!workspaceReady) {
     return <DashboardPageLoading showSyncPlaceholder />;
   }
@@ -919,7 +935,9 @@ export default function DashboardPage() {
     if (query.isPending && !query.data) {
       return <DashboardPageLoading showSyncPlaceholder />;
     }
-    if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+    if (isBlockingAppQueryError(query.error, Boolean(query.data))) {
+      return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+    }
     if (!query.data) {
       return <DashboardPageLoading showSyncPlaceholder />;
     }
@@ -971,10 +989,10 @@ export default function DashboardPage() {
   const shellPending = shellQuery.isPending && !shellQuery.data;
   const metricsPending = metricsQuery.isPending && !metricsQuery.data;
 
-  if (shellQuery.error) {
+  if (isBlockingAppQueryError(shellQuery.error, Boolean(shellQuery.data))) {
     return <AppPageError error={shellQuery.error} retry={() => void shellQuery.refetch()} />;
   }
-  if (metricsQuery.error && !metricsQuery.data) {
+  if (isBlockingAppQueryError(metricsQuery.error, Boolean(metricsQuery.data))) {
     return <AppPageError error={metricsQuery.error} retry={() => void metricsQuery.refetch()} />;
   }
 
@@ -1050,16 +1068,7 @@ export default function DashboardPage() {
       ) : null}
 
       <DashboardPeriodRefreshing refreshing={metricsRefreshing && !error && !empty}>
-      {error ? (
-        <Alert variant="destructive" className="rounded-none">
-          <AlertDescription className="flex flex-wrap items-center gap-3">
-            <span className="flex-1">{error}</span>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/dashboard">Retry</Link>
-            </Button>
-          </AlertDescription>
-        </Alert>
-      ) : empty ? (
+      {empty ? (
         <DashboardSetupPanel />
       ) : data ? (
         <>

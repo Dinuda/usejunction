@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { WorkspaceShell } from "@/components/workspace-shell";
-import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
+import { AppPageError, AppPageSkeleton, isBlockingAppQueryError } from "@/components/app-data-state";
 import { TimezoneReporter } from "@/components/timezone-reporter";
 import { activateWorkspace, AppApiError, useAppQuery } from "@/lib/api/client";
 import { workspaceContextKey } from "@/lib/app-pages/query-keys";
@@ -168,6 +168,11 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
     syncInFlight || (context?.sessionWorkspaceSyncRequired && current && !syncFailed),
   );
 
+  const contextError = contextQuery.error ?? (syncFailed
+    ? new AppApiError(500, "WORKSPACE_SESSION_SYNC_FAILED", "Could not sync your workspace session.")
+    : null);
+  const blockingContextError = isBlockingAppQueryError(contextError, Boolean(context));
+
   return (
     <WorkspaceShell
       organizations={context?.organizations ?? []}
@@ -179,23 +184,17 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
       billing={context?.billing ?? null}
     >
       <TimezoneReporter />
-      {migrationPending ? <AppPageSkeleton /> : (
-        <div className="space-y-4">
-          {contextQuery.error || syncFailed ? (
-            <AppPageError
-              error={
-                contextQuery.error ??
-                new AppApiError(500, "WORKSPACE_SESSION_SYNC_FAILED", "Could not sync your workspace session.")
-              }
-              retry={() => {
-                syncStarted.current = false;
-                setSyncFailed(false);
-                void contextQuery.refetch();
-              }}
-            />
-          ) : null}
-          {children}
-        </div>
+      {migrationPending ? <AppPageSkeleton /> : blockingContextError ? (
+        <AppPageError
+          error={contextError}
+          retry={() => {
+            syncStarted.current = false;
+            setSyncFailed(false);
+            void contextQuery.refetch();
+          }}
+        />
+      ) : (
+        children
       )}
     </WorkspaceShell>
   );

@@ -4,7 +4,7 @@ import { getOrgActivitySettings } from "@/lib/activity/service";
 import { parseCycleView, cycleViewWindows, reportWindowForCycleView } from "@/lib/dashboard/cycle-view";
 import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
 import { getToolDetail } from "@/lib/queries/dashboard/tool-detail";
-import { getRemoteSyncPanelContext } from "@/lib/sync/remote-sync";
+import { getRemoteSyncPanelContext } from "@/lib/sync/remote-sync-context";
 import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { canonicalToolKey, findCatalogTool, subscriptionToolKeys } from "@/lib/tools/catalog";

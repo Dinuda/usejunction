@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { BarChart3, ChevronDown, ChevronUp, Loader2, SquarePen, Users } from "lucide-react";
 import { toast } from "sonner";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useErrorMessageToast } from "@/components/app-data-state";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { SignalsKpi } from "@/components/signals/signals-ui";
@@ -115,6 +115,8 @@ export function DeveloperToolInventory({
   const [addSubscriptionOpen, setAddSubscriptionOpen] = useState(false);
   const [planUsageByDeveloper, setPlanUsageByDeveloper] = useState(() => planUsageMap(initialPlanUsage ?? []));
 
+  useErrorMessageToast(error);
+  useErrorMessageToast(planUsageError, { retry: retryPlanUsage });
   useEffect(() => {
     setDevelopers(initialDevelopers);
     setSubscriptions(initialSubscriptions);
@@ -288,25 +290,6 @@ export function DeveloperToolInventory({
             }
           />
         </div>
-      ) : null}
-
-      {error ? (
-        <Alert variant="destructive" className="rounded-none">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      ) : null}
-
-      {planUsageError ? (
-        <Alert variant="destructive" className="rounded-none">
-          <AlertDescription className="flex flex-wrap items-center gap-3">
-            <span className="flex-1">Could not load plan usage.</span>
-            {retryPlanUsage ? (
-              <Button size="sm" variant="outline" onClick={retryPlanUsage}>
-                Retry
-              </Button>
-            ) : null}
-          </AlertDescription>
-        </Alert>
       ) : null}
 
       <Panel as="section" padded={false}>

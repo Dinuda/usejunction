@@ -19,7 +19,7 @@ vi.mock("@/lib/queries/me/overview", () => ({
   getMeOverview: mocks.getMeOverview,
 }));
 
-vi.mock("@/lib/sync/remote-sync", () => ({
+vi.mock("@/lib/sync/remote-sync-context", () => ({
   getRemoteSyncPanelContext: mocks.getRemoteSyncPanelContext,
 }));
 

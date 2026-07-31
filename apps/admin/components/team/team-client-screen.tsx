@@ -18,9 +18,10 @@ import type { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
 import type { OrgDeviceSyncStatus } from "@/lib/queries/team/device-syncs";
 import type { getDeveloperRoster } from "@/lib/read-models/developers";
 import type { listSubscriptions } from "@/lib/tools/subscriptions";
+import { userFacingError } from "@/lib/errors/user-facing";
 import { useAppPageQuery } from "@/lib/api/client";
 import { teamInvitesKey, teamKey, teamSyncsKey, teamUsageKey } from "@/lib/app-pages/query-keys";
-import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
+import { AppPageError, AppPageSkeleton, isBlockingAppQueryError, useAppQueryErrorToast } from "@/components/app-data-state";
 
 type TeamView = "active" | "invited" | "syncs";
 
@@ -75,8 +76,25 @@ export default function TeamClientScreen() {
     "/api/app/team/syncs",
     { enabled: view === "syncs" },
   );
-  if (query.isPending) return <AppPageSkeleton />;
-  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  useAppQueryErrorToast(usageQuery.error, {
+    enabled: view === "active" && Boolean(query.data),
+    message: usageQuery.error ? userFacingError(usageQuery.error.message, "Could not load plan usage.") : undefined,
+    retry: () => void usageQuery.refetch(),
+  });
+  useAppQueryErrorToast(invitesQuery.error, {
+    enabled: view === "invited" && Boolean(query.data),
+    retry: () => void invitesQuery.refetch(),
+  });
+  useAppQueryErrorToast(syncsQuery.error, {
+    enabled: view === "syncs" && Boolean(query.data),
+    retry: () => void syncsQuery.refetch(),
+  });
+
+  if (query.isPending && !query.data) return <AppPageSkeleton />;
+  if (isBlockingAppQueryError(query.error, Boolean(query.data))) {
+    return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  }
+  if (!query.data) return <AppPageSkeleton />;
   const {
     cycleView,
     rollingPeriod,
@@ -136,24 +154,17 @@ export default function TeamClientScreen() {
           periodSuffix={periodSuffix}
         />
       ) : view === "invited" ? (
-        invitesQuery.isPending ? (
+        invitesQuery.isPending && !invitesQuery.data ? (
           <AppPageSkeleton />
-        ) : invitesQuery.error ? (
-          <AppPageError
-            error={invitesQuery.error}
-            retry={() => void invitesQuery.refetch()}
-          />
         ) : (
-          <TeamInvitedPanel initialInvites={invitesQuery.data.pendingInvites} />
+          <TeamInvitedPanel initialInvites={invitesQuery.data?.pendingInvites ?? []} />
         )
+      ) : syncsQuery.isPending && !syncsQuery.data ? (
+        <AppPageSkeleton />
+      ) : syncsQuery.data ? (
+        <TeamSyncsPanel syncs={syncsQuery.data.syncs} />
       ) : (
-        syncsQuery.isPending ? (
-          <AppPageSkeleton />
-        ) : syncsQuery.error ? (
-          <AppPageError error={syncsQuery.error} retry={() => void syncsQuery.refetch()} />
-        ) : (
-          <TeamSyncsPanel syncs={syncsQuery.data.syncs} />
-        )
+        <AppPageSkeleton />
       )}
     </>
   );

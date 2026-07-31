@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { requireAppPrincipal } from "@/lib/api/app-auth";
 import { appData, appError } from "@/lib/api/app-response";
-import { reconcileDeviceHealth, resolveLinkedDeveloper, type SyncRequestScope } from "@/lib/sync/remote-sync";
+import { reconcileDeviceHealth } from "@/lib/sync/remote-sync";
+import { resolveLinkedDeveloper, type SyncRequestScope } from "@/lib/sync/remote-sync-context";
 import { hasCapability } from "@/lib/rbac/permissions";
 import { browserMutationGuard, limitedJson } from "@/lib/security/http";
 

@@ -96,8 +96,7 @@ export async function sendAuthEmail({
 }
 
 async function loadTeamInviteInlineAssets() {
-  const publicDir = path.join(process.cwd(), "public");
-  const logo = await readFile(path.join(publicDir, "usejunction.png"));
+  const logo = await readFile(path.join(process.cwd(), "public/usejunction.png"));
   return [
     {
       filename: "usejunction.png",

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { ChevronRight } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { SubscriptionInventory } from "@/components/tools/subscription-inventory";
 import { PageHeader } from "@/components/page-header";
@@ -20,7 +19,7 @@ import {
 } from "@/lib/dashboard/cycle-view";
 import type { RollingPeriod } from "@/lib/dashboard/period-prefs";
 import type { getDashboardTools } from "@/lib/queries/dashboard/tools";
-import type { RemoteSyncPanelContext } from "@/lib/sync/remote-sync";
+import type { RemoteSyncPanelContext } from "@/lib/sync/remote-sync-context";
 import type { getMeOverview } from "@/lib/queries/me/overview";
 import type { listSubscriptions } from "@/lib/tools/subscriptions";
 import { canonicalToolKey, serializeCatalog, toolDisplayName } from "@/lib/tools/catalog";
@@ -28,7 +27,7 @@ import { formatCompactNumber, formatUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useAppPageQuery } from "@/lib/api/client";
 import { toolsKey } from "@/lib/app-pages/query-keys";
-import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
+import { AppPageError, AppPageSkeleton, isBlockingAppQueryError, useAppQueryErrorToast, useErrorMessageToast } from "@/components/app-data-state";
 
 const serializedCatalog = serializeCatalog();
 
@@ -341,8 +340,15 @@ export default function ToolsClientScreen() {
     toolsKey(queryString),
     `/api/app/tools${queryString ? `?${queryString}` : ""}`,
   );
-  if (query.isPending) return <AppPageSkeleton />;
-  if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  const payloadError = query.data?.kind === "organization" ? query.data.error : null;
+  useErrorMessageToast(payloadError, { retry: () => void query.refetch() });
+  useAppQueryErrorToast(query.error && query.data ? query.error : null, { retry: () => void query.refetch() });
+
+  if (query.isPending && !query.data) return <AppPageSkeleton />;
+  if (isBlockingAppQueryError(query.error, Boolean(query.data))) {
+    return <AppPageError error={query.error} retry={() => void query.refetch()} />;
+  }
+  if (!query.data) return <AppPageSkeleton />;
 
   if (query.data.kind === "personal") {
     const { personal, syncContext, canBrowseTools } = query.data;
@@ -369,17 +375,11 @@ export default function ToolsClientScreen() {
     }
     return <PersonalTools data={personal} sync={syncContext} canBrowseTools={Boolean(canBrowseTools)} />;
   }
-  const { cycleView, rollingPeriod, cycleWindows, detected: data, error: err, syncContext, defaultTab } = query.data;
+  const { cycleView, rollingPeriod, cycleWindows, detected: data, syncContext, defaultTab } = query.data;
   const periodSuffix = cycleViewShortSuffix(cycleView, rollingPeriod);
 
   return (
     <>
-      {err ? (
-        <Alert variant="destructive" className="mb-6 rounded-none">
-          <AlertDescription>{err}</AlertDescription>
-        </Alert>
-      ) : null}
-
       <ConnectionRepairBanner scope="team" recoveryDevices={syncContext?.recoveryDevices} />
       <SubscriptionInventory
         detected={data}

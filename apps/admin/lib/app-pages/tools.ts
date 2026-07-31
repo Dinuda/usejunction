@@ -3,7 +3,7 @@ import { jsonSafe } from "@/lib/api/app-response";
 import { getOrgActivitySettings } from "@/lib/activity/service";
 import { parseCycleView, cycleViewWindows, reportWindowForCycleView } from "@/lib/dashboard/cycle-view";
 import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
-import { getRemoteSyncPanelContext } from "@/lib/sync/remote-sync";
+import { getRemoteSyncPanelContext } from "@/lib/sync/remote-sync-context";
 import { getMeOverview } from "@/lib/queries/me/overview";
 import { getDashboardTools } from "@/lib/queries/dashboard/tools";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
