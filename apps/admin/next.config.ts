@@ -13,6 +13,11 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(__dirname, "../.."),
   serverExternalPackages: ["@sparticuz/chromium", "ably", "puppeteer-core", "playwright"],
   outputFileTracingIncludes: {
+    // Prisma engineType=client needs the WASM query compiler in every serverless function.
+    "/*": [
+      "./node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/*.wasm",
+      "./node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/query_compiler_bg.js",
+    ],
     "/api/cron/daily-report-send": [
       "./node_modules/.pnpm/@sparticuz+chromium*/node_modules/@sparticuz/chromium/**/*",
       "./public/usejunction.png",

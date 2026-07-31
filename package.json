@@ -3,6 +3,7 @@
   "private": true,
   "license": "LicenseRef-UseJunction-Community-1.0",
   "scripts": {
+    "postinstall": "pnpm --filter @usejunction/db generate",
     "dev": "./scripts/dev-start.sh",
     "dev:admin": "pnpm --filter @usejunction/admin dev",
     "dev:agent": "./scripts/dev-agent-watch.sh",
