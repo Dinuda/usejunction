@@ -61,11 +61,18 @@ curl -sS -X POST "http://localhost:3001/api/cron/daily-report-send" \
   -H "Content-Type: application/json"
 ```
 
-**Local testing without waiting for 19:00** (non-production only):
+**Send immediately** (bypass 19:00 / Sunday gates; requires `CRON_SECRET`):
 
 ```bash
 curl -sS -X POST "http://localhost:3001/api/cron/daily-report-send?force=1" \
   -H "Authorization: Bearer development-cron"
+```
+
+Production (same flags; use your Vercel `CRON_SECRET`):
+
+```bash
+curl -sS -X POST "https://usejunction.dev/api/cron/daily-report-send?force=1" \
+  -H "Authorization: Bearer $CRON_SECRET"
 ```
 
 Send again even if already delivered today:
@@ -74,8 +81,6 @@ Send again even if already delivered today:
 curl -sS -X POST "http://localhost:3001/api/cron/daily-report-send?force=1&resend=1" \
   -H "Authorization: Bearer development-cron"
 ```
-
-`force` and `resend` are ignored in production.
 
 If you set `CRON_SECRET` in `.env`, use that value instead.
 

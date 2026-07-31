@@ -36,6 +36,32 @@ test("daily report cron sends for due users", async () => {
   assert.equal(mocks.runDailyReportSend.mock.calls.length, 1);
 });
 
+test("daily report cron force bypasses timezone gate in production", async () => {
+  const prevEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  try {
+    const { POST } = await import("@/app/api/cron/daily-report-send/route");
+    const response = await POST(
+      new Request("http://localhost/api/cron/daily-report-send?force=1&resend=1", {
+        method: "POST",
+        headers: { authorization: "Bearer test-cron-secret" },
+      }) as never,
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.manualTrigger?.ignoreHour, true);
+    assert.equal(body.manualTrigger?.resend, true);
+    assert.equal(mocks.runDailyReportSend.mock.calls.length, 1);
+    assert.deepEqual(mocks.runDailyReportSend.mock.calls[0][1], {
+      ignoreHour: true,
+      resend: true,
+      utcHour: undefined,
+    });
+  } finally {
+    process.env.NODE_ENV = prevEnv;
+  }
+});
+
 test("daily report cron rejects invalid secret", async () => {
   const { POST } = await import("@/app/api/cron/daily-report-send/route");
   const response = await POST(

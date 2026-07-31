@@ -32,10 +32,7 @@ function resolveUtcHour(req: NextRequest): number | undefined {
   return fromSchedule ?? undefined;
 }
 
-function devTestFlags(req: NextRequest): { ignoreHour: boolean; resend: boolean } {
-  if (process.env.NODE_ENV === "production") {
-    return { ignoreHour: false, resend: false };
-  }
+function manualTriggerFlags(req: NextRequest): { ignoreHour: boolean; resend: boolean } {
   const url = req.nextUrl ?? new URL(req.url);
   const force = url.searchParams.get("force") === "1";
   const resend = url.searchParams.get("resend") === "1";
@@ -50,8 +47,8 @@ function devTestFlags(req: NextRequest): { ignoreHour: boolean; resend: boolean 
  * schedules `5 0 * * *` … `5 23 * * *`. The hour is read from
  * `x-vercel-cron-schedule` (or `?utcHour=` for local testing).
  *
- * Local testing (non-production only):
- *   ?force=1          — ignore the 19:00 local hour gate
+ * Manual trigger (CRON_SECRET required; use for ops, not scheduled crons):
+ *   ?force=1          — ignore the 19:00 local hour / Sunday gate
  *   ?resend=1         — send again even if already delivered today
  *   ?utcHour=13       — only process the UTC hour-13 timezone bucket
  */
@@ -61,8 +58,8 @@ async function handle(req: NextRequest) {
   const denied = authorizeCron(req);
   if (denied) return denied;
 
-  const flags = devTestFlags(req);
-  const utcHour = resolveUtcHour(req);
+  const flags = manualTriggerFlags(req);
+  const utcHour = flags.ignoreHour ? undefined : resolveUtcHour(req);
 
   try {
     const result = await runDailyReportSend(new Date(), {
@@ -72,9 +69,7 @@ async function handle(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       ...result,
-      ...(process.env.NODE_ENV !== "production" && (flags.ignoreHour || flags.resend)
-        ? { testMode: flags }
-        : {}),
+      ...(flags.ignoreHour || flags.resend ? { manualTrigger: flags } : {}),
     });
   } catch (error) {
     logServerError("cron/daily-report-send", error);
