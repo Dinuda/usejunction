@@ -61,7 +61,9 @@ const measureOrderSql: Record<UsageMeasure, Prisma.Sql> = {
 };
 
 function listFilter(column: Prisma.Sql, values: string[] | undefined) {
-  return values?.length ? Prisma.sql`${column} IN (${Prisma.join(values)})` : null;
+  return values?.length
+    ? Prisma.sql`${column} IN (${Prisma.join(values.map((value) => Prisma.sql`${value}`))})`
+    : null;
 }
 
 function canonicalUsageCtes(scope: AnalyticsScope, query: NormalizedUsageQueryV1) {
@@ -150,7 +152,7 @@ function canonicalUsageCtes(scope: AnalyticsScope, query: NormalizedUsageQueryV1
     ), selected AS (
       SELECT * FROM canonical
       WHERE (selected_activity OR selected_cost OR effective_metric_kind = 'productivity')
-        ${finalWhere.length ? Prisma.sql`AND ${Prisma.join(finalWhere, " AND ")}` : Prisma.empty}
+        AND (${finalWhere.length ? Prisma.join(finalWhere, " AND ") : Prisma.sql`TRUE`})
     )
   `;
 }
@@ -161,10 +163,10 @@ export async function runUsageQuerySql(
   query: NormalizedUsageQueryV1,
 ): Promise<AnalyticsQueryRow[]> {
   const dimensionPairs = query.dimensions.map((dimension) =>
-    Prisma.sql`${dimension}, ${dimensionSql[dimension]}`,
+    Prisma.sql`${dimension}::text, ${dimensionSql[dimension]}`,
   );
   const measurePairs = query.measures.map((measure) =>
-    Prisma.sql`${measure}, ${measureValueSql[measure]}`,
+    Prisma.sql`${measure}::text, ${measureValueSql[measure]}`,
   );
   const dimensionsJson = dimensionPairs.length
     ? Prisma.sql`jsonb_build_object(${Prisma.join(dimensionPairs)})`
@@ -204,7 +206,7 @@ export async function readDataThrough(client: QueryClient, scope: AnalyticsScope
     SELECT MAX(date) AS "dataThrough"
     FROM usage_daily
     WHERE org_id = ${scope.orgId}
-      ${scope.developerId ? Prisma.sql`AND developer_id = ${scope.developerId}` : Prisma.empty}
+      AND (${scope.developerId ? Prisma.sql`developer_id = ${scope.developerId}` : Prisma.sql`TRUE`})
   `);
   return rows[0]?.dataThrough ?? null;
 }

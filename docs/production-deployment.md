@@ -56,6 +56,7 @@ Set these on the `admin` project for **Production**. Build/runtime fail closed w
 | `INGEST_SECRET` | `openssl rand -base64 48` |
 | `CRON_SECRET` | `openssl rand -base64 48` |
 | `AGENT_RELEASE_OPERATIONS_TOKEN` | `openssl rand -base64 32` — **same value** as GitHub `agent-production` |
+| `ABLY_API_KEY` | Ably API key for instant fleet sync push (`ably-key:…` from the Ably dashboard) |
 | `INTEGRATION_ENCRYPTION_KEY` | `openssl rand -base64 32` (must decode to 32 bytes) |
 | `NEXTAUTH_URL` | `https://usejunction.dev` |
 | `NEXT_PUBLIC_APP_URL` | `https://usejunction.dev` |

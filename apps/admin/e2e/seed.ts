@@ -67,6 +67,7 @@ async function main() {
       agentVersion: "0.1.0",
       deviceToken: "uj_e2e_calculation_device",
       lastSeenAt: deviceSeenAt,
+      lastToolsSyncAt: deviceSeenAt,
       lastUsageSyncAt: deviceSeenAt,
     },
   });

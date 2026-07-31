@@ -68,6 +68,7 @@ test("Add a team tool sheet lists Codex/Work once and creates a ChatGPT subscrip
     planKey: "plus",
     billingCadence: "monthly",
     seatCapacity: 2,
+    usageWindowPreference: "auto",
     billingOwner: null,
     externalReference: null,
     notes: null,

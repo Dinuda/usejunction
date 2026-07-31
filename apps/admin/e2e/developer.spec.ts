@@ -77,7 +77,9 @@ test("developer onboarding resume opens connect flow", async ({ page }) => {
   setOnboardingState(developerEmail, "incomplete");
   try {
     await page.goto("/onboarding?resume=1");
-    await expect(page.getByText(/e2e-laptop is live|Connect this device|Connected/i).first()).toBeVisible();
+    await expect(
+      page.getByText(/e2e-laptop is live|Connect this computer|Connect command|Device enrolled|Connected/i).first(),
+    ).toBeVisible();
   } finally {
     setOnboardingState(developerEmail, "complete");
   }
