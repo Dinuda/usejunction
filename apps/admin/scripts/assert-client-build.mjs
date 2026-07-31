@@ -26,6 +26,13 @@ const pageDataTracePaths = [
   ".next/server/app/api/app/signals/overview/route.js.nft.json",
 ];
 
+const prismaApiTracePaths = [
+  ".next/server/app/api/agent-releases/latest/route.js.nft.json",
+  ".next/server/app/api/internal/agent-releases/promote/route.js.nft.json",
+  ".next/server/app/auth/continue/route.js.nft.json",
+  ".next/server/app/onboarding/page.js.nft.json",
+];
+
 const mib = 1024 * 1024;
 
 async function readTrace(tracePath) {
@@ -105,6 +112,17 @@ if (pageDataBytes >= 15 * mib) {
   );
 }
 
+const prismaApiTraces = await Promise.all(prismaApiTracePaths.map(readTrace));
+for (const trace of prismaApiTraces) {
+  const wasmFiles = trace.files.filter((file) => file.endsWith(".wasm"));
+  if (!wasmFiles.length) {
+    throw new Error(
+      `Prisma WASM query compiler missing from API trace (${trace.tracePath}). ` +
+        "Ensure outputFileTracingIncludes covers /api/**/* in next.config.ts.",
+    );
+  }
+}
+
 console.log(
-  `Client build assertions passed: ${requiredWorkspaceRoutes.length} routes, page traces below 5 MiB, page-data traces ${(pageDataBytes / mib).toFixed(2)} MiB with no native Prisma engines.`,
+  `Client build assertions passed: ${requiredWorkspaceRoutes.length} routes, page traces below 5 MiB, page-data traces ${(pageDataBytes / mib).toFixed(2)} MiB with no native Prisma engines, Prisma WASM traced for agent-release APIs.`,
 );

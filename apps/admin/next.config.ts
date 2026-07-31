@@ -7,19 +7,25 @@ import { assertSecureProductionEnv } from "./lib/security/env-guard";
 loadEnvConfig(path.join(__dirname, "../.."));
 assertSecureProductionEnv();
 
+/** Prisma engineType=client loads query_compiler_bg.wasm at runtime; Vercel must trace it into lambdas. */
+const prismaClientTraceIncludes = [
+  "../../node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/*.wasm",
+  "../../node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/query_compiler_bg.js",
+  "../../node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/query_compiler_bg.wasm",
+];
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../.."),
   serverExternalPackages: ["@sparticuz/chromium", "ably", "puppeteer-core", "playwright"],
   outputFileTracingIncludes: {
-    // Prisma engineType=client needs the WASM query compiler in every serverless function.
-    "/*": [
-      "./node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/*.wasm",
-      "./node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/query_compiler_bg.js",
-    ],
+    // "/*" only matches one path segment (e.g. /about), not /api/** routes that use Prisma.
+    "/api/**/*": prismaClientTraceIncludes,
+    "/auth/**/*": prismaClientTraceIncludes,
+    "/onboarding/**": prismaClientTraceIncludes,
     "/api/cron/daily-report-send": [
-      "./node_modules/.pnpm/@sparticuz+chromium*/node_modules/@sparticuz/chromium/**/*",
+      "../../node_modules/.pnpm/@sparticuz+chromium*/node_modules/@sparticuz/chromium/**/*",
       "./public/usejunction.png",
     ],
   },
