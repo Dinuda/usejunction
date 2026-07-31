@@ -3,15 +3,30 @@ set -euo pipefail
 
 ENROLL_TOKEN=""
 CONTROL_PLANE_URL="${USEJUNCTION_URL:-http://localhost:3001}"
-INSTALL_DIR="${HOME}/.usejunction/bin"
-APP_NAME="UseJunction"
-APP_DIR="${HOME}/.usejunction/${APP_NAME}.app"
-LEGACY_APP_DIR="${HOME}/.usejunction/UseJunction Agent.app"
+AGENT_PROFILE="${USEJUNCTION_PROFILE:-default}"
 VERSION="0.1.0"
 UPGRADE_ONLY=false
+RESUME_ONLY=false
+
+# Profile paths — resolved by resolve_profile_paths after args/URL are known.
+HOME_DIR=""
+INSTALL_DIR=""
+APP_NAME=""
+APP_DIR=""
+LEGACY_APP_DIR=""
+CLI_NAME=""
+LAUNCHD_LABEL=""
+LAUNCHD_PLIST=""
+SYSTEMD_UNIT=""
+PATH_MARKER=""
+DEV_SOURCE_FILE=""
+CONFIG_PATH=""
+AGENT_LOG=""
+AGENT_ERR=""
+BINARY=""
 
 usage() {
-  echo "Usage: curl -fsSL <control-plane>/install.sh | sh -s -- [--token <token> | --upgrade] [--url <control-plane>]"
+  echo "Usage: curl -fsSL <control-plane>/install.sh | sh -s -- [--token <token> | --upgrade | --resume] [--url <control-plane>] [--profile default|test]"
   exit 1
 }
 
@@ -19,14 +34,64 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --token|--enroll-token) ENROLL_TOKEN="$2"; shift 2 ;;
     --url) CONTROL_PLANE_URL="$2"; shift 2 ;;
+    --profile) AGENT_PROFILE="$2"; shift 2 ;;
     --upgrade) UPGRADE_ONLY=true; shift ;;
+    --resume) RESUME_ONLY=true; shift ;;
     -h|--help) usage ;;
     *) echo "Unknown option: $1"; usage ;;
   esac
 done
 
 CONTROL_PLANE_URL="${CONTROL_PLANE_URL%/}"
-DEV_SOURCE_FILE="${HOME}/.usejunction/dev-source"
+
+is_local_control_plane() {
+  case "$CONTROL_PLANE_URL" in
+    http://localhost:*|https://localhost:*|http://127.0.0.1:*|https://127.0.0.1:*|http://[::1]:*|https://[::1]:*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+resolve_profile_paths() {
+  if [[ "$AGENT_PROFILE" == "default" ]] && is_local_control_plane; then
+    AGENT_PROFILE="test"
+  fi
+  case "$AGENT_PROFILE" in
+    test)
+      HOME_DIR="${HOME}/.usejunction-test"
+      APP_NAME="UseJunctionTest"
+      CLI_NAME="usejunction-test"
+      LAUNCHD_LABEL="com.usejunction.agent.test"
+      LAUNCHD_PLIST="com.usejunction.agent.test.plist"
+      SYSTEMD_UNIT="usejunction-agent-test.service"
+      PATH_MARKER="# UseJunction CLI (test)"
+      ;;
+    default)
+      HOME_DIR="${HOME}/.usejunction"
+      APP_NAME="UseJunction"
+      CLI_NAME="usejunction"
+      LAUNCHD_LABEL="com.usejunction.agent"
+      LAUNCHD_PLIST="com.usejunction.agent.plist"
+      SYSTEMD_UNIT="usejunction-agent.service"
+      PATH_MARKER="# UseJunction CLI"
+      ;;
+    *)
+      echo "Unknown agent profile: ${AGENT_PROFILE} (expected default or test)" >&2
+      exit 1
+      ;;
+  esac
+  INSTALL_DIR="${HOME_DIR}/bin"
+  APP_DIR="${HOME_DIR}/${APP_NAME}.app"
+  LEGACY_APP_DIR="${HOME_DIR}/UseJunction Agent.app"
+  DEV_SOURCE_FILE="${HOME_DIR}/dev-source"
+  CONFIG_PATH="${HOME_DIR}/config.json"
+  AGENT_LOG="${HOME_DIR}/agent.log"
+  AGENT_ERR="${HOME_DIR}/agent.err"
+  BINARY="${INSTALL_DIR}/${CLI_NAME}"
+}
+
+resolve_profile_paths
 FORCE_RELEASE="${USEJUNCTION_FORCE_RELEASE:-0}"
 
 # Prefer the checkout pinned by pnpm agent:reinstall / dev:agent so curl|install.sh
@@ -40,12 +105,21 @@ if [[ -z "${USEJUNCTION_ROOT:-}" && -f "$DEV_SOURCE_FILE" ]]; then
   fi
 fi
 
-if [[ -z "$ENROLL_TOKEN" && "$UPGRADE_ONLY" != true ]]; then
+if [[ "$UPGRADE_ONLY" == true && "$RESUME_ONLY" == true ]]; then
+  echo "--upgrade and --resume cannot be used together." >&2
+  exit 1
+fi
+
+if [[ -z "$ENROLL_TOKEN" && "$UPGRADE_ONLY" != true && "$RESUME_ONLY" != true ]]; then
   usage
 fi
 
-if [[ "$UPGRADE_ONLY" == true && ! -f "${HOME}/.usejunction/config.json" ]]; then
-  echo "No existing UseJunction enrollment found at ~/.usejunction/config.json" >&2
+if [[ "$UPGRADE_ONLY" == true && ! -f "$CONFIG_PATH" ]]; then
+  echo "No existing UseJunction enrollment found at ${CONFIG_PATH}" >&2
+  exit 1
+fi
+if [[ "$RESUME_ONLY" == true && ! -f "$CONFIG_PATH" ]]; then
+  echo "Existing UseJunction enrollment not found at ${CONFIG_PATH}; resume cannot safely re-enroll this device." >&2
   exit 1
 fi
 
@@ -72,7 +146,11 @@ esac
 
 mkdir -p "$INSTALL_DIR"
 
-PATH_MARKER="# UseJunction CLI"
+shell_rc_has_usejunction_path() {
+  local rc="$1"
+  [[ -f "$rc" ]] || return 1
+  grep -qF "${HOME_DIR}/bin" "$rc" 2>/dev/null || grep -qF "$PATH_MARKER" "$rc" 2>/dev/null
+}
 
 detect_shell_rc() {
   local shell_name="${SHELL##*/}"
@@ -100,12 +178,6 @@ detect_shell_rc() {
   fi
 }
 
-shell_rc_has_usejunction_path() {
-  local rc="$1"
-  [[ -f "$rc" ]] || return 1
-  grep -qF '.usejunction/bin' "$rc" 2>/dev/null || grep -qF "$PATH_MARKER" "$rc" 2>/dev/null
-}
-
 ensure_cli_on_path() {
   local rc
   rc="$(detect_shell_rc || true)"
@@ -113,52 +185,52 @@ ensure_cli_on_path() {
     if ! shell_rc_has_usejunction_path "$rc"; then
       mkdir -p "$(dirname "$rc")"
       if [[ "${SHELL##*/}" == "fish" ]]; then
-        cat >>"$rc" <<'EOF'
+        cat >>"$rc" <<EOF
 
-# UseJunction CLI
-fish_add_path ~/.usejunction/bin
+${PATH_MARKER}
+fish_add_path ${HOME_DIR}/bin
 EOF
       else
-        cat >>"$rc" <<'EOF'
+        cat >>"$rc" <<EOF
 
-# UseJunction CLI
-export PATH="$HOME/.usejunction/bin:$PATH"
+${PATH_MARKER}
+export PATH="${HOME_DIR}/bin:\$PATH"
 EOF
       fi
       echo "Added UseJunction CLI to ${rc}"
     fi
   else
-    echo "Could not detect a shell rc file; add ~/.usejunction/bin to your PATH manually."
+    echo "Could not detect a shell rc file; add ${HOME_DIR}/bin to your PATH manually."
   fi
   export PATH="$INSTALL_DIR:$PATH"
 }
 
 print_cli_instructions() {
   echo ""
-  echo "UseJunction installed. Admin panel: ${CONTROL_PLANE_URL}"
-  echo "CLI: ${INSTALL_DIR}/usejunction"
+  if [[ "$AGENT_PROFILE" == "test" ]]; then
+    echo "UseJunction test agent installed. Admin panel: ${CONTROL_PLANE_URL}"
+  else
+    echo "UseJunction installed. Admin panel: ${CONTROL_PLANE_URL}"
+  fi
+  echo "CLI: ${INSTALL_DIR}/${CLI_NAME}"
   echo "Next: open a new terminal, or run: export PATH=\"${INSTALL_DIR}:\$PATH\""
-  echo "Then: usejunction status"
-  echo "Rollback an update: usejunction update --rollback"
+  echo "Then: ${CLI_NAME} status"
+  echo "Rollback an update: ${CLI_NAME} update --rollback"
 }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd || true)"
-BINARY="$INSTALL_DIR/usejunction"
 ARCHIVE="usejunction-${OS}-${ARCH}"
 
-is_local_control_plane() {
-  case "$CONTROL_PLANE_URL" in
-    http://localhost:*|https://localhost:*|http://127.0.0.1:*|https://127.0.0.1:*|http://[::1]:*|https://[::1]:*)
-      return 0
-      ;;
-  esac
-  return 1
+agent_profile_args() {
+  if [[ "$AGENT_PROFILE" == "test" ]]; then
+    printf '%s\n' --profile test
+  fi
 }
 
 write_dev_source_pin() {
   local root="$1"
   [[ -n "$root" && -f "${root}/agent/main.go" ]] || return 0
-  mkdir -p "${HOME}/.usejunction"
+  mkdir -p "${HOME_DIR}"
   printf '%s\n' "$root" > "$DEV_SOURCE_FILE"
   echo "Pinned local checkout at ${DEV_SOURCE_FILE} → ${root}"
 }
@@ -248,7 +320,7 @@ migrate_legacy_macos_app() {
 install_macos_app_bundle() {
   local binary="$1"
   local package_script=""
-  local staged_app="${HOME}/.usejunction/${APP_NAME}.new.app"
+  local staged_app="${HOME_DIR}/${APP_NAME}.new.app"
   rm -rf "$staged_app"
   if package_script="$(find_package_script)"; then
     bash "$package_script" "$binary" "$staged_app" "$VERSION"
@@ -285,7 +357,7 @@ install_macos_app_bundle() {
 
 swap_macos_app() {
   local staged_app="$1"
-  local previous_app="${HOME}/.usejunction/${APP_NAME}.previous.app"
+  local previous_app="${HOME_DIR}/${APP_NAME}.previous.app"
   migrate_legacy_macos_app
   rm -rf "$previous_app"
   if [[ -d "$APP_DIR" ]]; then
@@ -299,7 +371,7 @@ swap_macos_app() {
 
 link_macos_cli() {
   mkdir -p "$INSTALL_DIR"
-  ln -sf "../${APP_NAME}.app/Contents/MacOS/usejunction" "${INSTALL_DIR}/usejunction"
+  ln -sf "../${APP_NAME}.app/Contents/MacOS/usejunction" "${INSTALL_DIR}/${CLI_NAME}"
 }
 
 download_macos_agent() {
@@ -309,7 +381,7 @@ download_macos_agent() {
   local app_path
   if app_path="$(download_agent "$base" "$tmp_dir" "$app_archive")"; then
     local extracted="${tmp_dir}/extracted"
-    local staged_app="${HOME}/.usejunction/${APP_NAME}.new.app"
+    local staged_app="${HOME_DIR}/${APP_NAME}.new.app"
     rm -rf "$extracted" "$staged_app"
     mkdir -p "$extracted"
     ditto -x -k "$app_path" "$extracted"
@@ -608,7 +680,27 @@ if [[ "$UPGRADE_ONLY" == true && -x "$BINARY" ]]; then
   fi
 fi
 
-install_agent
+RESUME_EXISTING_BINARY=""
+if [[ "$RESUME_ONLY" == true ]]; then
+  RESUME_EXISTING_BINARY="$(installed_agent_binary 2>/dev/null || true)"
+  if [[ -n "$RESUME_EXISTING_BINARY" && -x "$RESUME_EXISTING_BINARY" && "$HAS_PUBLISHED_RELEASE" == true ]]; then
+    CURRENT_JSON="$($RESUME_EXISTING_BINARY status --format json 2>/dev/null || true)"
+    CURRENT_VERSION="$(printf '%s' "$CURRENT_JSON" | sed -n 's/.*"agentVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+    if [[ -n "$CURRENT_VERSION" ]] && ! is_local_dev_version "$CURRENT_VERSION"; then
+      VERSION_ORDER="$(semver_compare "$VERSION" "$CURRENT_VERSION" 2>/dev/null || true)"
+      if [[ "$VERSION_ORDER" == "1" ]]; then
+        echo "Refreshing the outdated agent from v${CURRENT_VERSION} to v${VERSION} for setup recovery."
+        RESUME_EXISTING_BINARY=""
+      fi
+    fi
+  fi
+fi
+if [[ -n "$RESUME_EXISTING_BINARY" ]]; then
+  BINARY="$RESUME_EXISTING_BINARY"
+  echo "Using existing UseJunction agent for setup recovery."
+else
+  install_agent
+fi
 if [[ "$OS" == "darwin" ]]; then
   BINARY="${APP_DIR}/Contents/MacOS/usejunction"
 else
@@ -619,34 +711,80 @@ ensure_cli_on_path
 if [[ "$UPGRADE_ONLY" == true ]]; then
   echo "Restarting existing background agent…"
   if [[ "$OS" == "darwin" ]]; then
-    launchctl kickstart -k "gui/$(id -u)/com.usejunction.agent" 2>/dev/null || {
-      PLIST="${HOME}/Library/LaunchAgents/com.usejunction.agent.plist"
+    launchctl kickstart -k "gui/$(id -u)/${LAUNCHD_LABEL}" 2>/dev/null || {
+      PLIST="${HOME}/Library/LaunchAgents/${LAUNCHD_PLIST}"
       launchctl unload "$PLIST" 2>/dev/null || true
       launchctl load "$PLIST"
     }
   elif [[ "$OS" == "linux" ]] && command -v systemctl >/dev/null 2>&1; then
     systemctl --user daemon-reload
-    systemctl --user restart usejunction-agent.service
+    systemctl --user restart "${SYSTEMD_UNIT}"
   fi
-  "$BINARY" status
+  # shellcheck disable=SC2046
+  "$BINARY" $(agent_profile_args) status
   echo "UseJunction agent upgraded to v${VERSION}."
-  echo "CLI: ${INSTALL_DIR}/usejunction"
+  echo "CLI: ${INSTALL_DIR}/${CLI_NAME}"
   echo "Next: open a new terminal, or run: export PATH=\"${INSTALL_DIR}:\$PATH\""
   exit 0
 fi
 
-"$BINARY" onboard --token "$ENROLL_TOKEN" --url "$CONTROL_PLANE_URL"
+RESUME_FAILED=false
+ONBOARD_FAILED=false
+if [[ "$RESUME_ONLY" == true ]]; then
+  echo "Resuming UseJunction setup from the existing enrollment…"
+  # shellcheck disable=SC2046
+  if ! "$BINARY" $(agent_profile_args) setup; then
+    RESUME_FAILED=true
+    echo "Initial sync is still incomplete; the background agent will keep retrying." >&2
+  fi
+else
+  # shellcheck disable=SC2046
+  if ! "$BINARY" $(agent_profile_args) onboard --token "$ENROLL_TOKEN" --url "$CONTROL_PLANE_URL"; then
+    if [[ ! -f "$CONFIG_PATH" ]]; then
+      echo "Device onboarding failed before enrollment completed." >&2
+      exit 1
+    fi
+    ONBOARD_FAILED=true
+    echo "Device enrolled, but the first sync did not complete. The background agent will keep retrying." >&2
+  fi
+fi
 
-# macOS launchd user agent
-if [[ "$OS" == "darwin" ]]; then
-  PLIST="${HOME}/Library/LaunchAgents/com.usejunction.agent.plist"
-  cat > "$PLIST" <<EOF
+write_launchd_plist() {
+  PLIST="${HOME}/Library/LaunchAgents/${LAUNCHD_PLIST}"
+  if [[ "$AGENT_PROFILE" == "test" ]]; then
+    cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.usejunction.agent</string>
+  <string>${LAUNCHD_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${BINARY}</string>
+    <string>--profile</string>
+    <string>test</string>
+    <string>daemon</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${AGENT_LOG}</string>
+  <key>StandardErrorPath</key>
+  <string>${AGENT_ERR}</string>
+</dict>
+</plist>
+EOF
+  else
+    cat > "$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${LAUNCHD_LABEL}</string>
   <key>ProgramArguments</key>
   <array>
     <string>${BINARY}</string>
@@ -657,12 +795,19 @@ if [[ "$OS" == "darwin" ]]; then
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>${HOME}/.usejunction/agent.log</string>
+  <string>${AGENT_LOG}</string>
   <key>StandardErrorPath</key>
-  <string>${HOME}/.usejunction/agent.err</string>
+  <string>${AGENT_ERR}</string>
 </dict>
 </plist>
 EOF
+  fi
+}
+
+# macOS launchd user agent
+if [[ "$OS" == "darwin" ]]; then
+  write_launchd_plist
+  PLIST="${HOME}/Library/LaunchAgents/${LAUNCHD_PLIST}"
   launchctl unload "$PLIST" 2>/dev/null || true
   launchctl load "$PLIST"
   echo "Started background agent (launchd)."
@@ -672,13 +817,18 @@ fi
 if [[ "$OS" == "linux" ]] && command -v systemctl >/dev/null 2>&1; then
   UNIT_DIR="${HOME}/.config/systemd/user"
   mkdir -p "$UNIT_DIR"
-  cat > "$UNIT_DIR/usejunction-agent.service" <<EOF
+  if [[ "$AGENT_PROFILE" == "test" ]]; then
+    EXEC_START="${BINARY} --profile test daemon"
+  else
+    EXEC_START="${BINARY} daemon"
+  fi
+  cat > "$UNIT_DIR/${SYSTEMD_UNIT}" <<EOF
 [Unit]
-Description=UseJunction Agent
+Description=UseJunction Agent (${AGENT_PROFILE})
 After=network.target
 
 [Service]
-ExecStart=${BINARY} daemon
+ExecStart=${EXEC_START}
 Restart=always
 RestartSec=30
 
@@ -686,8 +836,26 @@ RestartSec=30
 WantedBy=default.target
 EOF
   systemctl --user daemon-reload
-  systemctl --user enable --now usejunction-agent.service
+  systemctl --user enable --now "${SYSTEMD_UNIT}"
   echo "Started background agent (systemd user)."
 fi
 
-"$BINARY" onboard --complete
+if [[ "$RESUME_ONLY" == true ]]; then
+  # shellcheck disable=SC2046
+  "$BINARY" $(agent_profile_args) status
+  if [[ "$RESUME_FAILED" == true ]]; then
+    echo "UseJunction setup recovery did not complete. Re-run this resume command after checking your network." >&2
+    exit 1
+  fi
+  echo "UseJunction setup resumed successfully."
+  exit 0
+fi
+
+if [[ "$ONBOARD_FAILED" == true ]]; then
+  echo "UseJunction was installed, but setup is incomplete." >&2
+  echo "Retry with: curl -fsSL ${CONTROL_PLANE_URL}/install.sh | sh -s -- --resume --url ${CONTROL_PLANE_URL}" >&2
+  exit 1
+fi
+
+# shellcheck disable=SC2046
+"$BINARY" $(agent_profile_args) onboard --complete

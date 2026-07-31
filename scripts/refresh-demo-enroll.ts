@@ -1,7 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../packages/db/src/index";
 import { createHash } from "crypto";
-
-const prisma = new PrismaClient();
 
 async function main() {
   const raw = process.env.DEMO_ENROLLMENT_TOKEN || "uj_enroll_demo_token_change_me";

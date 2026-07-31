@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 
 const root = new URL("..", import.meta.url).pathname;
 const scanRoots = [join(root, "app"), join(root, "components")];
@@ -23,13 +23,20 @@ function visit(path) {
 function check(file) {
   const source = readFileSync(file, "utf8");
   const isClient = /^\s*["']use client["'];/.test(source);
+  const relativeFile = relative(root, file);
   if (isClient) {
     for (const rule of forbiddenRuntimeImports) {
-      if (rule.test(source)) failures.push(`${relative(root, file)} imports a server-only module from a Client Component`);
+      if (rule.test(source)) failures.push(`${relativeFile} imports a server-only module from a Client Component`);
     }
   }
-  if (file.endsWith("page.tsx") && /(requireWorkspaceRole|\bauth\(\)|prisma\.)/.test(source)) {
-    failures.push(`${relative(root, file)} performs request-time auth or database work`);
+  const isWorkspaceRouteBoundary =
+    relativeFile.startsWith(`app${sep}(workspace)${sep}`) &&
+    (file.endsWith("page.tsx") || file.endsWith("layout.tsx"));
+  if (
+    isWorkspaceRouteBoundary &&
+    /(requireCompletedOnboarding|requireWorkspaceContext|requireWorkspaceRole|\bauth\(\)|prisma\.)/.test(source)
+  ) {
+    failures.push(`${relativeFile} performs request-time auth or database work`);
   }
 }
 

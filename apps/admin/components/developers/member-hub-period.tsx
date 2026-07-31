@@ -3,7 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
-import { parseCycleView } from "@/lib/dashboard/cycle-view";
+import { parseCycleView, type CycleViewWindows } from "@/lib/dashboard/cycle-view";
 import {
   DEFAULT_ROLLING_PERIOD,
   periodsEqual,
@@ -17,7 +17,13 @@ import { cn } from "@/lib/utils";
  * Global period cycler for the member hub — stays on the current tab and
  * applies to Overview / Work / Coding / Fleet via shared URL params.
  */
-export function MemberHubPeriodFilter({ className }: { className?: string }) {
+export function MemberHubPeriodFilter({
+  className,
+  cycleWindows,
+}: {
+  className?: string;
+  cycleWindows?: CycleViewWindows;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -43,7 +49,12 @@ export function MemberHubPeriodFilter({ className }: { className?: string }) {
 
   return (
     <div className={cn(className)}>
-      <CycleViewPicker view={cycleView} period={period} basePath={pathname} />
+      <CycleViewPicker
+        view={cycleView}
+        period={period}
+        basePath={pathname}
+        cycleWindows={cycleWindows}
+      />
     </div>
   );
 }

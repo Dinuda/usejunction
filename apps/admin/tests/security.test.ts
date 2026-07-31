@@ -22,6 +22,7 @@ const secureProductionEnv = {
   INGEST_SECRET: "b".repeat(32),
   CRON_SECRET: "c".repeat(32),
   AGENT_RELEASE_OPERATIONS_TOKEN: "d".repeat(32),
+  ABLY_API_KEY: "ably-key:" + "e".repeat(32),
   NEXT_PUBLIC_APP_URL: "https://app.example.com",
   NEXTAUTH_URL: "https://app.example.com",
 } as NodeJS.ProcessEnv;

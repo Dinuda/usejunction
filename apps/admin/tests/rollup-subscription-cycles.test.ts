@@ -352,3 +352,68 @@ test("live enrichment attaches expected end when plan is near limit", () => {
   assert.ok(live[0]?.expectedEndAt);
   assert.ok(new Date(live[0]!.expectedEndAt!).getTime() < new Date("2026-08-01T00:00:00.000Z").getTime());
 });
+
+test("live rollups mark inconsistent quota windows as mixed and use the earliest reset", () => {
+  const cycles = [
+    {
+      id: "chatgpt-codex",
+      toolName: "codex",
+      toolKey: "chatgpt-codex",
+      planNames: ["Plus", "Pro"],
+      planCount: 2,
+      cycleSpend: 40,
+      verifiedUsageCost: 0,
+      estimatedApiCost: 0,
+      modelCalls: 4,
+      windowFrom: "2026-07-01",
+      windowTo: "2026-07-31",
+      spendSharePercent: 100,
+      utilizationPercent: null,
+      utilizationDisplayPercent: null,
+      verdictCode: null,
+      expectedEndAt: null,
+      billingCycle: cycle("2026-08-01"),
+    },
+  ];
+  const makePlan = (id: string, windowType: string, resetAt: string) => ({
+    planTemplateId: id,
+    toolKey: "chatgpt-codex",
+    toolName: "codex",
+    planName: id,
+    tier: "paid",
+    seatCapacity: 1,
+    assignedSeats: 1,
+    availableSeats: 0,
+    billingCadence: "monthly",
+    usageWindowPreference: "auto",
+    billingCycle: cycle("2026-08-01"),
+    cycleSeatMicros: "20000000",
+    includedCycleMicros: "0",
+    primaryQuota: {
+      rawRatio: 0.4,
+      displayRatio: 0.4,
+      resetsAt: resetAt,
+      windowType,
+      toolKey: "chatgpt-codex",
+      stale: false,
+    },
+    quotas: [],
+    included: null,
+    primaryRatio: 0.4,
+    projectionState: "forming",
+    verdict: { code: "UNKNOWN", severity: "info", reasons: [], policyVersion: "plan-utilization-v1" },
+    billing: null,
+  }) as unknown as PlanUsageSubscriptionRow;
+
+  const [row] = enrichSubscriptionCyclesWithUtilization(
+    cycles,
+    [
+      makePlan("Plus", "weekly", "2026-08-02T10:00:00.000Z"),
+      makePlan("Pro", "session_5h", "2026-07-26T19:00:00.000Z"),
+    ],
+    { now: new Date("2026-07-26T14:00:00.000Z") },
+  );
+  assert.equal(row?.usageWindow?.label, "Mixed usage windows");
+  assert.equal(row?.usageWindow?.resetAt, "2026-07-26T19:00:00.000Z");
+  assert.equal(row?.projectionState, "forming");
+});

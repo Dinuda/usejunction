@@ -76,7 +76,11 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
       }}
     >
       <div className="public-container flex h-16 items-center justify-between md:grid md:grid-cols-[1fr_auto_1fr]">
-        <Link href="/" className="inline-flex h-10 items-center md:justify-self-start" aria-label="UseJunction home">
+        <Link
+          href="/"
+          className="inline-flex h-10 items-center md:col-start-2 md:row-start-1 md:justify-self-center"
+          aria-label="UseJunction home"
+        >
           <Image
             src={usejunctionLogo}
             alt={siteConfig.name}
@@ -87,7 +91,10 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
           />
         </Link>
 
-        <nav className="hidden h-10 items-center gap-8 md:flex md:justify-self-center" aria-label="Primary navigation">
+        <nav
+          className="hidden h-10 items-center gap-8 md:col-start-1 md:row-start-1 md:flex md:justify-self-start"
+          aria-label="Primary navigation"
+        >
           {navLinks.map((link) => (
             <Link
               key={link.href}
@@ -109,7 +116,7 @@ export function MarketingTopNav({ isAuthenticated }: MarketingTopNavProps) {
           ))}
         </nav>
 
-        <div className="hidden h-10 items-center gap-3 md:flex md:justify-self-end">
+        <div className="hidden h-10 items-center gap-3 md:col-start-3 md:row-start-1 md:flex md:justify-self-end">
           <GithubStarBadge href={siteConfig.githubUrl} />
           {isAuthenticated ? (
             <Link href="/dashboard" className="public-btn public-btn-yellow rounded-none font-semibold">

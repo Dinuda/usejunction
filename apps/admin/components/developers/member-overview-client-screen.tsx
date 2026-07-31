@@ -20,8 +20,12 @@ export default function MemberOverviewClientScreen() {
   const queryString = searchParams.toString();
   const periodQs = queryString ? `?${queryString}` : "";
 
-  const tokens =
-    Number(BigInt(personal.usage30d.inputTokens)) + Number(BigInt(personal.usage30d.outputTokens));
+  const inputTokens = Number(BigInt(personal.usage30d.inputTokens));
+  const outputTokens = Number(BigInt(personal.usage30d.outputTokens));
+  const cacheTokens =
+    Number(BigInt(personal.usage30d.cacheReadTokens)) +
+    Number(BigInt(personal.usage30d.cacheWriteTokens));
+  const tokens = inputTokens + outputTokens;
   const verified = personal.usage30d.verifiedUsageCost;
   const estimated = personal.usage30d.estimatedApiCost;
 
@@ -72,7 +76,7 @@ export default function MemberOverviewClientScreen() {
         <SignalsKpi
           label="Tokens"
           value={formatCompactNumber(tokens)}
-          sub={`in ${formatCompactNumber(Number(BigInt(personal.usage30d.inputTokens)))} · out ${formatCompactNumber(Number(BigInt(personal.usage30d.outputTokens)))}`}
+          sub={`in ${formatCompactNumber(inputTokens)} · out ${formatCompactNumber(outputTokens)} · cache ${formatCompactNumber(cacheTokens)}`}
           accent
           className="pl-8"
         />

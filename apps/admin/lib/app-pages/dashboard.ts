@@ -4,13 +4,14 @@ import { parseAudienceScope } from "@/lib/audience-scope";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 import {
   cycleViewPeriodLabel,
+  cycleViewWindows,
   parseCycleView,
   reportWindowForCycleView,
   type CycleView,
 } from "@/lib/dashboard/cycle-view";
 import { parseRollingPeriodFromSearch, type RollingPeriod } from "@/lib/dashboard/period-prefs";
 import { getMeOverview } from "@/lib/queries/me/overview";
-import { getLocalSyncContext, getLocalSyncPanelContext } from "@/lib/queries/me/local-sync-context";
+import { getRemoteSyncPanelContext } from "@/lib/sync/remote-sync";
 import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
 import {
   getOrgOverview,
@@ -21,7 +22,7 @@ import {
 } from "@/lib/insights";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { logServerError } from "@/lib/errors/public";
-import { canManageSettings } from "@/lib/rbac/permissions";
+import { canSeeOrgOverview } from "@/lib/rbac/permissions";
 
 function overviewInputForView(cycleView: CycleView, period: RollingPeriod) {
   if (cycleView !== "last_30_days") return { cycleView };
@@ -55,7 +56,7 @@ export async function loadDashboardPage(
   slice: DashboardSlice = "full",
 ) {
   const isDeveloper = principal.role === "user";
-  const canSwitchAudience = canManageSettings(principal.role);
+  const canSwitchAudience = canSeeOrgOverview(principal.role);
   const scope = canSwitchAudience ? parseAudienceScope(search.scope ?? null) : "team";
 
   const subscriptions = await listSubscriptions(principal.orgId);
@@ -67,6 +68,7 @@ export async function loadDashboardPage(
   });
   const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, new Date());
   const periodLabel = cycleViewPeriodLabel(cycleView, rollingPeriod);
+  const cycleWindows = cycleViewWindows(subscriptions);
 
   if (isDeveloper) {
     const personal = await getMeOverview(principal.orgId, principal.userId, principal.role, {
@@ -81,6 +83,7 @@ export async function loadDashboardPage(
       cycleView,
       rollingPeriod,
       periodLabel,
+      cycleWindows,
       personal,
     });
   }
@@ -88,7 +91,7 @@ export async function loadDashboardPage(
   if (canSwitchAudience && scope === "you") {
     const [linkedId, syncContext] = await Promise.all([
       resolveLinkedDeveloperId(principal.orgId, principal.userId),
-      getLocalSyncContext(principal.orgId, principal.userId),
+      getRemoteSyncPanelContext(principal.orgId, principal.userId, "you"),
     ]);
     const personal = linkedId
       ? await getMeOverview(principal.orgId, principal.userId, principal.role, {
@@ -105,6 +108,7 @@ export async function loadDashboardPage(
       cycleView,
       rollingPeriod,
       periodLabel,
+      cycleWindows,
       personal,
       needsPersonalConnect: !syncContext || syncContext.deviceCount === 0,
       syncContext,
@@ -117,7 +121,7 @@ export async function loadDashboardPage(
   if (slice === "shell") {
     const [shell, syncPanel] = await Promise.all([
       getOrgOverviewShell(principal.orgId),
-      getLocalSyncPanelContext(principal.orgId, principal.userId),
+      getRemoteSyncPanelContext(principal.orgId, principal.userId, "team"),
     ]);
     return jsonSafe({
       kind: "organization" as const,
@@ -147,6 +151,7 @@ export async function loadDashboardPage(
       canSwitchAudience,
       cycleView,
       rollingPeriod,
+      cycleWindows,
       overview: overviewResult.data,
       error: overviewResult.error,
     });
@@ -159,7 +164,7 @@ export async function loadDashboardPage(
         logServerError("dashboard/overview", error);
         return { data: null, error: "Could not load dashboard." };
       }),
-    getLocalSyncPanelContext(principal.orgId, principal.userId),
+      getRemoteSyncPanelContext(principal.orgId, principal.userId, "team"),
   ]);
 
   return jsonSafe({
@@ -169,6 +174,7 @@ export async function loadDashboardPage(
     canSwitchAudience,
     cycleView,
     rollingPeriod,
+    cycleWindows,
     overview: overviewResult.data,
     error: overviewResult.error,
     needsPersonalConnect: !syncPanel || syncPanel.deviceCount === 0,

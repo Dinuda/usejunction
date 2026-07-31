@@ -2,12 +2,12 @@ import type { AppPrincipal } from "@/lib/api/app-auth";
 import { jsonSafe } from "@/lib/api/app-response";
 import { parseAudienceScope } from "@/lib/audience-scope";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
-import { parseCycleView, reportWindowForCycleView } from "@/lib/dashboard/cycle-view";
+import { parseCycleView, cycleViewWindows, reportWindowForCycleView } from "@/lib/dashboard/cycle-view";
 import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
 import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
 import { getWorkActivity, readSignalsFilterOptions } from "@/lib/signals";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
-import { canManageSettings } from "@/lib/rbac/permissions";
+import { canSeeOrgOverview } from "@/lib/rbac/permissions";
 
 export type SignalsActivitySearch = {
   view?: string | null;
@@ -33,6 +33,7 @@ export async function loadSignalsActivityPage(principal: AppPrincipal, search: S
     readSignalsFilterOptions(principal.orgId),
   ]);
   const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
+  const cycleWindows = cycleViewWindows(subscriptions, now);
 
   let developerId = scope === "team" ? (search.developerId || undefined) : undefined;
   let youUnlinked = false;
@@ -62,10 +63,11 @@ export async function loadSignalsActivityPage(principal: AppPrincipal, search: S
 
   return jsonSafe({
     scope,
-    canSwitchAudience: canManageSettings(principal.role),
+    canSwitchAudience: canSeeOrgOverview(principal.role),
     youUnlinked,
     cycleView,
     rollingPeriod,
+    cycleWindows,
     developerId,
     tool,
     options,

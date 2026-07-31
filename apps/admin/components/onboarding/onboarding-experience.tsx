@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
 import Image from "next/image";
 import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
-import { DeviceConnectCard, type DeviceConnectEnrollmentCredentials } from "@/components/onboarding/device-connect-card";
-import type { DeviceConnectSnapshot } from "@/lib/device-connect-state";
+import { DeviceConnectCard } from "@/components/onboarding/device-connect-card";
+import { isReadyDevice, type DeviceConnectSnapshot } from "@/lib/device-connect-state";
 import { InviteTeamForm } from "@/components/onboarding/invite-team-form";
+import { useOnboardingStatus } from "@/components/onboarding/onboarding-status-provider";
 import { hasToolBrandIcon, ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,7 +18,7 @@ import {
   type OrganizationRole,
 } from "@/lib/rbac/permissions";
 
-type OnboardingStatus = {
+export type OnboardingStatus = {
   configured: boolean;
   role?: string | null;
   onboardingCompletedAt?: string | null;
@@ -28,43 +28,23 @@ type OnboardingStatus = {
       id: string;
       hostname: string;
       os: string;
+      createdAt?: string;
       lastSeenAt: string;
+      lastToolsSyncAt?: string | null;
       lastUsageSyncAt?: string | null;
       toolInstallations: Array<{ toolName: string; version?: string | null }>;
     }>;
   } | null;
 };
 
-async function fetchEnrollmentCredentials(): Promise<DeviceConnectEnrollmentCredentials | null> {
-  const response = await fetch("/api/me/enrollment-token", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: {
-      "content-type": "application/json",
-      "x-requested-with": "usejunction-web",
-    },
-    body: JSON.stringify({ rotate: false }),
-  });
-  if (!response.ok) return null;
-  const data = (await response.json()) as {
-    token?: string;
-    expiresAt?: string;
-    controlPlaneUrl?: string;
-  };
-  if (!data.token || !data.expiresAt) return null;
-  return {
-    token: data.token,
-    expiresAt: data.expiresAt,
-    controlPlaneUrl: data.controlPlaneUrl || window.location.origin,
-  };
-}
-
 function mapDevicesFromStatus(status: OnboardingStatus): DeviceConnectSnapshot[] {
   return (status.developer?.devices ?? []).map((device) => ({
     id: device.id,
     hostname: device.hostname,
     os: device.os,
+    createdAt: device.createdAt,
     lastSeenAt: device.lastSeenAt,
+    lastToolsSyncAt: device.lastToolsSyncAt ?? null,
     lastUsageSyncAt: device.lastUsageSyncAt ?? null,
     toolInstallations: device.toolInstallations,
   }));
@@ -153,22 +133,30 @@ function ChoiceCard({
   );
 }
 
-function hasReadyDevice(status: OnboardingStatus | null) {
-  return Boolean(
-    status?.developer?.devices.find((item) => (item.toolInstallations?.length ?? 0) > 0),
-  );
+function initialPath(status: OnboardingStatus | null): Path | null {
+  if (!status?.configured) return null;
+  return canChooseOnboardingPath(status.role as OrganizationRole | null)
+    ? "choose"
+    : "connect";
 }
 
-export function OnboardingExperience() {
-  const { data: session, status: sessionStatus } = useSession();
-  const [status, setStatus] = useState<OnboardingStatus | null>(null);
-  const [loading, setLoading] = useState(true);
+export function OnboardingExperience({
+  initialStatus,
+  needsSessionSync,
+}: {
+  initialStatus?: OnboardingStatus | null;
+  needsSessionSync?: boolean;
+}) {
+  const bootstrap = useOnboardingStatus();
+  const serverStatus = initialStatus ?? bootstrap?.status ?? null;
+  const shouldSyncSession =
+    needsSessionSync ?? bootstrap?.needsSessionSync ?? false;
+  const [status, setStatus] = useState<OnboardingStatus | null>(serverStatus);
+  const [loading, setLoading] = useState(!serverStatus?.configured);
   const [invitePending, setInvitePending] = useState(false);
   const [finishing, setFinishing] = useState(false);
-  const [path, setPath] = useState<Path | null>(null);
-  const [connectInProgress, setConnectInProgress] = useState(false);
-  const [prefetchedCredentials, setPrefetchedCredentials] =
-    useState<DeviceConnectEnrollmentCredentials | null>(null);
+  const [finishError, setFinishError] = useState<string | null>(null);
+  const [path, setPath] = useState<Path | null>(() => initialPath(serverStatus));
 
   const refresh = useCallback(async (mode: "bootstrap" | "poll" = "poll") => {
     const response =
@@ -214,33 +202,45 @@ export function OnboardingExperience() {
         if (current) return current;
         return canChooseOnboardingPath(role) ? "choose" : "connect";
       });
-      if (!hasReadyDevice(next)) {
-        void fetchEnrollmentCredentials().then((credentials) => {
-          if (credentials) setPrefetchedCredentials(credentials);
-        });
-      }
     }
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    if (sessionStatus === "loading") return;
-    const needsProvision = !session?.user?.orgId;
-    void refresh(needsProvision ? "bootstrap" : "poll");
-  }, [refresh, session?.user?.orgId, sessionStatus]);
+    if (!serverStatus?.configured) {
+      void refresh("bootstrap");
+      return;
+    }
+    if (shouldSyncSession) {
+      // The workspace is already rendered from the server result. Refresh in
+      // the background only to stamp the workspace onto an older JWT.
+      void refresh("bootstrap");
+    }
+  }, [refresh, serverStatus?.configured, shouldSyncSession]);
 
   async function finish(action: "complete" | "skip" = "complete") {
     setFinishing(true);
-    await fetch("/api/onboarding", {
-      method: "PATCH",
-      credentials: "same-origin",
-      headers: {
-        "content-type": "application/json",
-        "x-requested-with": "usejunction-web",
-      },
-      body: JSON.stringify({ action }),
-    });
-    window.location.href = "/dashboard";
+    setFinishError(null);
+    try {
+      const response = await fetch("/api/onboarding", {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: {
+          "content-type": "application/json",
+          "x-requested-with": "usejunction-web",
+        },
+        body: JSON.stringify({ action }),
+      });
+      if (!response.ok) {
+        setFinishError("Unable to finish onboarding. Check your connection and try again.");
+        return;
+      }
+      window.location.href = "/dashboard";
+    } catch {
+      setFinishError("Unable to finish onboarding. Check your connection and try again.");
+    } finally {
+      setFinishing(false);
+    }
   }
 
   if (invitePending) {
@@ -260,7 +260,7 @@ export function OnboardingExperience() {
     );
   }
 
-  if (sessionStatus === "loading" || loading || !status || !path) {
+  if (loading || !status || !path) {
     return (
       <AuthShell
         size="md"
@@ -281,9 +281,7 @@ export function OnboardingExperience() {
   const role = status.role as OrganizationRole | null;
   const canChoose = canChooseOnboardingPath(role);
   const workspaceName = status.organization?.name ?? "your workspace";
-  const device = status.developer?.devices.find(
-    (item) => (item.toolInstallations?.length ?? 0) > 0,
-  );
+  const device = status.developer?.devices.find((item) => isReadyDevice(item));
   const connectedTools = device
     ? [...new Set(device.toolInstallations.map((tool) => canonicalToolKey(tool.toolName)).filter(hasToolBrandIcon))]
     : [];
@@ -315,6 +313,7 @@ export function OnboardingExperience() {
             Open dashboard
             <ArrowRight />
           </Button>
+          {finishError ? <p className="text-xs text-destructive">{finishError}</p> : null}
         </div>
       </AuthShell>
     );
@@ -337,10 +336,6 @@ export function OnboardingExperience() {
             compact
             skipInitialStatusFetch
             initialDevices={connectDevices}
-            initialCredentials={prefetchedCredentials}
-            onPollingStateChange={({ isPolling, waitingForTools, deviceEnrolled }) => {
-              setConnectInProgress(isPolling || (waitingForTools && !deviceEnrolled));
-            }}
             onConnected={() => {
               void refresh("poll");
             }}
@@ -356,13 +351,12 @@ export function OnboardingExperience() {
                 Back to options
               </button>
             ) : null}
-            {!connectInProgress ? (
-              <div>
-                <TextLink onClick={() => void finish("skip")} disabled={finishing}>
-                  {finishing ? "Skipping…" : "Skip this step"}
-                </TextLink>
-              </div>
-            ) : null}
+            <div>
+              <TextLink onClick={() => void finish("skip")} disabled={finishing}>
+                {finishing ? "Skipping…" : "Skip this step"}
+              </TextLink>
+            </div>
+            {finishError ? <p className="text-xs text-destructive">{finishError}</p> : null}
           </div>
         </div>
       </AuthShell>
@@ -395,6 +389,7 @@ export function OnboardingExperience() {
                 Open dashboard without inviting
               </TextLink>
             </div>
+            {finishError ? <p className="text-xs text-destructive">{finishError}</p> : null}
           </div>
         </div>
       </AuthShell>

@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
+import { AppPageSkeleton } from "@/components/app-data-state";
 import { prefetchNavPage } from "@/lib/app-pages/nav-prefetch";
 import {
   Activity,
@@ -89,17 +91,32 @@ function AppSidebar({
   active,
   role,
   billing,
+  onNavigateStart,
 }: {
   active: string;
   role: OrganizationRole | null;
   billing: OrgBillingStatus | null;
+  onNavigateStart: (href: string) => void;
 }) {
   const nav = navForRole(role);
   const { setOpenMobile } = useSidebar();
   const queryClient = useQueryClient();
+  const hoverTimers = useRef(new Map<string, number>());
+
+  useEffect(() => {
+    return () => {
+      for (const timer of hoverTimers.current.values()) window.clearTimeout(timer);
+      hoverTimers.current.clear();
+    };
+  }, []);
 
   function warmNavCache(href: string) {
-    prefetchNavPage(queryClient, href);
+    if (hoverTimers.current.has(href)) return;
+    const timer = window.setTimeout(() => {
+      hoverTimers.current.delete(href);
+      prefetchNavPage(queryClient, href);
+    }, 150);
+    hoverTimers.current.set(href, timer);
   }
 
   return (
@@ -107,6 +124,7 @@ function AppSidebar({
       <SidebarHeader className="h-14 justify-center border-b px-4 py-0">
         <Link
           href="/dashboard"
+          prefetch={false}
           className="flex h-full items-center gap-3 overflow-hidden"
           onClick={() => setOpenMobile(false)}
         >
@@ -127,10 +145,23 @@ function AppSidebar({
                   <SidebarMenuButton asChild isActive={isActive} tooltip={label}>
                     <Link
                       href={href}
+                      prefetch={false}
                       aria-current={isActive ? "page" : undefined}
-                      onClick={() => setOpenMobile(false)}
-                      onMouseEnter={() => warmNavCache(href)}
-                      onFocus={() => warmNavCache(href)}
+                      onClick={(event) => {
+                        setOpenMobile(false);
+                        if (
+                          event.defaultPrevented ||
+                          event.button !== 0 ||
+                          event.metaKey ||
+                          event.ctrlKey ||
+                          event.shiftKey ||
+                          event.altKey
+                        ) {
+                          return;
+                        }
+                        onNavigateStart(href);
+                      }}
+                      onPointerEnter={() => warmNavCache(href)}
                     >
                       <Icon aria-hidden="true" />
                       <span>{label}</span>
@@ -167,19 +198,44 @@ export function WorkspaceShell({
   children,
 }: WorkspaceShellProps) {
   const pathname = usePathname();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setPendingHref((current) => (current === pathname ? null : current));
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!pendingHref) return;
+    const timeout = window.setTimeout(() => setPendingHref(null), 30_000);
+    return () => window.clearTimeout(timeout);
+  }, [pendingHref]);
+
+  const activePath = pendingHref ?? pathname;
 
   return (
     <SidebarProvider
       defaultOpen
       className="h-dvh min-h-dvh overflow-hidden"
     >
-      <AppSidebar active={pathname} role={role} billing={billing} />
+      <AppSidebar
+        active={activePath}
+        role={role}
+        billing={billing}
+        onNavigateStart={(href) => {
+          if (href !== pathname) {
+            setPendingHref(href);
+            contentRef.current?.scrollTo?.({ top: 0 });
+          }
+        }}
+      />
       <SidebarInset className="h-dvh min-h-0 min-w-0 overflow-hidden">
         <header className="z-20 flex h-14 shrink-0 items-center justify-between gap-2 border-none bg-white px-3 backdrop-blur-sm sm:gap-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-3">
             <SidebarTrigger className="-ml-1 size-11 shrink-0 md:hidden" />
             <Link
               href="/dashboard"
+              prefetch={false}
               aria-label="UseJunction dashboard"
               className="flex shrink-0 items-center md:hidden"
             >
@@ -196,8 +252,13 @@ export function WorkspaceShell({
             <WorkspaceUserMenu name={name} email={email} image={image} role={role} />
           </div>
         </header>
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
-          <div className="mx-auto w-full max-w-[1440px]">{children}</div>
+        <div
+          ref={contentRef}
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none px-4 py-5 sm:px-6 sm:py-6 lg:px-8"
+        >
+          <div className="mx-auto w-full max-w-[1440px]">
+            {pendingHref ? <AppPageSkeleton /> : children}
+          </div>
         </div>
       </SidebarInset>
     </SidebarProvider>

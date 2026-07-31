@@ -579,15 +579,26 @@ State transitions are intentionally conservative:
 
 There are two different local loops. Do not confuse them.
 
+### Two agents on one machine
+
+| Profile | Home | CLI | Service |
+|---------|------|-----|---------|
+| `default` | `~/.usejunction` | `usejunction` | `com.usejunction.agent` |
+| `test` | `~/.usejunction-test` | `usejunction-test` | `com.usejunction.agent.test` |
+
+Loopback installs (`http://localhost:3001`) auto-select the **test** profile so local dev never overwrites production enrollment. Both agents can run concurrently (separate config, launchd job, and local-sync port `47833` for test).
+
+**Recovery:** If production stopped receiving heartbeats because you enrolled locally against the wrong home, re-enroll production from your hosted control plane into `~/.usejunction` while keeping the test agent in `~/.usejunction-test`.
+
 ### Agent feature work (hot reload)
 
 When you are changing agent behavior on your machine, swap the local binary directly. Do **not** use tagged releases for this loop.
 
 ```bash
-# enroll once (if needed)
+# enroll test agent once (if needed)
 ./install.sh --token <token> --url http://localhost:3001
 
-# one-shot rebuild into ~/.usejunction and restart the daemon
+# one-shot rebuild into ~/.usejunction-test and restart the daemon
 pnpm agent:reinstall
 
 # or watch agent/ and reinstall on each change
@@ -597,9 +608,11 @@ pnpm dev:agent
 Hot reload:
 
 - builds from this checkout with a `0.0.0-dev.<sha>.<unix>` version stamp
-- packages/swaps into `~/.usejunction` and restarts launchd/systemd
-- keeps the existing enrollment
+- packages/swaps into `~/.usejunction-test` and restarts launchd/systemd (`com.usejunction.agent.test`)
+- keeps the existing test enrollment
 - does **not** create a GitHub Release, promote a fleet rollout, or update `/api/agent-releases/latest`
+
+Set `USEJUNCTION_PROFILE=default` on `dev-agent-reinstall.sh` / `dev-agent-watch.sh` to target the production agent home instead.
 
 Scripts: [scripts/dev-agent-reinstall.sh](../scripts/dev-agent-reinstall.sh), [scripts/dev-agent-watch.sh](../scripts/dev-agent-watch.sh).
 

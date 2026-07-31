@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
-import { render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DeviceConnectCard } from "@/components/onboarding/device-connect-card";
 
 vi.mock("@/components/panel", () => ({
@@ -14,7 +14,11 @@ vi.mock("@/components/tools/tool-brand-icon", () => ({
 }));
 
 vi.mock("@/components/onboarding/platform-command", () => ({
-  PlatformCommand: () => <div data-testid="platform-command">command</div>,
+  PlatformCommand: ({ onCopied }: { onCopied?: () => void }) => (
+    <button type="button" data-testid="platform-command" onClick={onCopied}>
+      command
+    </button>
+  ),
 }));
 
 const enrolledDevice = {
@@ -48,6 +52,8 @@ function mockFetch(handlers: Record<string, () => Response | Promise<Response>>)
 }
 
 describe("DeviceConnectCard", () => {
+  afterEach(() => cleanup());
+
   beforeEach(() => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
@@ -72,9 +78,12 @@ describe("DeviceConnectCard", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/Device enrolled — waiting for tool detection/i)).toBeTruthy();
+      expect(screen.getByText(/Device enrolled — waiting for tool inventory/i)).toBeTruthy();
     });
+    expect(screen.getByText(/Having trouble\? Finish setup/i)).toBeTruthy();
     expect(screen.queryByTestId("platform-command")).toBeNull();
+    fireEvent.click(screen.getByText(/Having trouble\? Finish setup/i));
+    expect(screen.getByTestId("platform-command")).toBeTruthy();
 
     const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
     expect(
@@ -139,5 +148,53 @@ describe("DeviceConnectCard", () => {
         (call) => String(call[0]).includes("/api/onboarding") && call[1]?.method === "POST",
       ),
     ).toBe(false);
+  });
+
+  it("finishes exactly once when both server sync checkpoints arrive", async () => {
+    const readyDevice = {
+      ...enrolledDevice,
+      lastToolsSyncAt: "2026-01-01T00:01:00.000Z",
+      lastUsageSyncAt: "2026-01-01T00:02:00.000Z",
+    };
+    mockFetch({
+      "/api/onboarding?include=developer": () =>
+        new Response(JSON.stringify({ developer: { devices: [readyDevice] } }), { status: 200 }),
+    });
+    const onConnected = vi.fn();
+
+    render(
+      <DeviceConnectCard
+        skipInitialStatusFetch
+        initialDevices={[enrolledDevice]}
+        onConnected={onConnected}
+      />,
+    );
+
+    await waitFor(() => expect(onConnected).toHaveBeenCalledTimes(1));
+    expect(onConnected).toHaveBeenCalledWith(readyDevice);
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    expect(
+      fetchMock.mock.calls.some((call) => String(call[0]).includes("/api/onboarding/sync-status")),
+    ).toBe(false);
+  });
+
+  it("changes an old incomplete enrollment to a stalled recovery state", async () => {
+    const oldDevice = { ...enrolledDevice, createdAt: "2020-01-01T00:00:00.000Z" };
+    mockFetch({
+      "/api/onboarding?include=developer": () =>
+        new Response(JSON.stringify({ developer: { devices: [oldDevice] } }), { status: 200 }),
+    });
+
+    render(
+      <DeviceConnectCard
+        skipInitialStatusFetch
+        initialDevices={[oldDevice]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Setup has not reported successfully yet/i)).toBeTruthy();
+    });
+    expect(screen.getByText("Check again")).toBeTruthy();
   });
 });

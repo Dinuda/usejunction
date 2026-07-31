@@ -86,7 +86,7 @@ export function DashboardSetupPanel({ canInvite = true }: { canInvite?: boolean 
               compact
               pollAfterCopy
               hideInlineStatus
-              onPollingStateChange={({ isPolling, waitingForTools, deviceEnrolled: enrolled, syncTakingLong: takingLong }) => {
+              onPollingStateChange={({ isPolling, waitingForTools, deviceEnrolled: enrolled, syncTakingLong: takingLong, stage }) => {
                 setDeviceEnrolled(enrolled);
                 setSyncTakingLong(takingLong);
                 if (takingLong && waitingForTools) {
@@ -101,9 +101,9 @@ export function DashboardSetupPanel({ canInvite = true }: { canInvite?: boolean 
                 }
                 setEnrollStatus(
                   waitingForTools
-                    ? deviceEnrolled
-                      ? "Device enrolled — waiting for tool detection…"
-                      : "Waiting for enroll…"
+                    ? stage === "syncing"
+                      ? "Device enrolled — waiting for first usage sync…"
+                      : "Device enrolled — waiting for tool inventory…"
                     : "Waiting for enroll…",
                 );
               }}

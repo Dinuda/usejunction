@@ -28,7 +28,7 @@ import { ToolLogoTile } from "./tool-brand-icon";
 import { aggregateTeamQuotas, teamQuotaSummaryLabel } from "@/lib/quotas/display";
 import { canonicalToolKey, findCatalogTool, subscriptionToolKeys } from "@/lib/tools/catalog";
 import type { DashboardToolsData } from "@/lib/queries/dashboard/tools";
-import type { CycleView } from "@/lib/dashboard/cycle-view";
+import type { CycleView, CycleViewWindows } from "@/lib/dashboard/cycle-view";
 import { DEFAULT_ROLLING_PERIOD, type RollingPeriod } from "@/lib/dashboard/period-prefs";
 
 // API Credits UI intentionally omitted; ApiCreditPool + /api/tools/api-credit-pools remain frozen.
@@ -90,6 +90,7 @@ export function SubscriptionInventory({
   period = DEFAULT_ROLLING_PERIOD,
   periodSuffix = "current",
   periodBasePath = "/tools",
+  cycleWindows,
   children,
 }: {
   detected: DashboardToolsData | null;
@@ -103,6 +104,7 @@ export function SubscriptionInventory({
   period?: RollingPeriod;
   periodSuffix?: string;
   periodBasePath?: string;
+  cycleWindows?: CycleViewWindows;
   children?: ReactNode;
 }) {
   const [view, setView] = useState<ToolsView>(defaultTab);
@@ -243,6 +245,7 @@ export function SubscriptionInventory({
                     <li key={tool.key}>
                       <Link
                         href={`/tools/${tool.key}`}
+                        prefetch={false}
                         className="group grid w-full gap-5 py-5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/40 md:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)_auto] md:items-center"
                       >
                         <div className="flex min-w-0 items-center gap-3">
@@ -320,6 +323,7 @@ export function SubscriptionInventory({
           period={period}
           periodSuffix={periodSuffix}
           periodBasePath={periodBasePath}
+          cycleWindows={cycleWindows}
         />
       )}
 
@@ -358,12 +362,14 @@ function ActivityPanel({
   period,
   periodSuffix,
   periodBasePath,
+  cycleWindows,
 }: {
   data: DashboardToolsData | null;
   cycleView: CycleView;
   period: RollingPeriod;
   periodSuffix: string;
   periodBasePath: string;
+  cycleWindows?: CycleViewWindows;
 }) {
   const router = useRouter();
   const tools = data?.tools ?? [];
@@ -378,7 +384,12 @@ function ActivityPanel({
   return (
     <div className="space-y-10">
       <div className="flex justify-end">
-        <CycleViewPicker view={cycleView} period={period} basePath={periodBasePath} />
+        <CycleViewPicker
+          view={cycleView}
+          period={period}
+          basePath={periodBasePath}
+          cycleWindows={cycleWindows}
+        />
       </div>
 
       <div className="grid items-start gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
@@ -449,7 +460,7 @@ function ActivityPanel({
               return (
                 <MobileDataCard key={tool.toolName}>
                   {href ? (
-                    <Link href={href} className="block min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <Link href={href} prefetch={false} className="block min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       {content}
                       <span className="mt-4 inline-flex min-h-11 items-center gap-1 text-sm font-medium text-primary">
                         Open <ChevronRight className="size-4" />
@@ -521,7 +532,7 @@ function ActivityPanel({
                     >
                       {href ? (
                         <Button variant="outline" size="sm" className="rounded-none" asChild>
-                          <Link href={href}>
+                          <Link href={href} prefetch={false}>
                             Open
                             <ChevronRight />
                           </Link>

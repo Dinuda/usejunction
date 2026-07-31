@@ -49,6 +49,7 @@ export function HubNav({
           <Link
             key={matchPath}
             href={href}
+            prefetch={false}
             aria-current={active ? "page" : undefined}
             className={cn(
               "relative -mb-px min-h-11 shrink-0 px-3.5 py-2.5 text-sm transition-colors",

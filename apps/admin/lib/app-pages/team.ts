@@ -18,46 +18,16 @@ export type TeamSearch = {
 };
 
 export async function loadTeamPage(principal: AppPrincipal, search: TeamSearch = {}) {
-  const cycleView = parseCycleView(search.view ?? undefined);
-  const rollingPeriod = parseRollingPeriodFromSearch({
-    days: search.days ?? undefined,
-    from: search.from ?? undefined,
-    to: search.to ?? undefined,
-  });
-  const now = new Date();
-  const subscriptionsPromise = listSubscriptions(principal.orgId);
+  const { cycleView, rollingPeriod, now, subscriptions, reportWindow } =
+    await loadTeamReportContext(principal, search);
   const hasDevicePromise = prisma.device
     .findFirst({ where: activeDevicesForOrg(principal.orgId), select: { id: true } })
     .then((row) => Boolean(row))
     .catch(() => false);
-  const subscriptions = await subscriptionsPromise;
-  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
-  const pendingInvitesPromise = prisma.organizationInvite
-    .findMany({
-      where: {
-        orgId: principal.orgId,
-        acceptedAt: null,
-      },
-      select: { id: true, email: true, role: true, expiresAt: true, createdAt: true },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    })
-    .catch(() => [] as Array<{ id: string; email: string; role: string; expiresAt: Date; createdAt: Date }>);
-
-  const [hasDevice, roster, planUsage, pendingInvitesRaw, syncs] = await Promise.all([
+  const [hasDevice, roster] = await Promise.all([
     hasDevicePromise,
     getDeveloperRoster(principal.orgId, { reportWindow }),
-    getPlanUsage(
-      { orgId: principal.orgId, actorId: principal.userId, roles: [principal.role], now, timezone: UTC_TIMEZONE },
-      { reportWindow },
-      { subscriptions },
-    ),
-    pendingInvitesPromise,
-    getOrgDeviceSyncStatus(principal.orgId, now),
   ]);
-
-  const rosterEmails = new Set(roster.developers.map((developer) => developer.email.toLowerCase()));
-  const pendingInvites = pendingInvitesRaw.filter((invite) => !rosterEmails.has(invite.email.toLowerCase()));
 
   return jsonSafe({
     cycleView,
@@ -65,8 +35,73 @@ export async function loadTeamPage(principal: AppPrincipal, search: TeamSearch =
     empty: !hasDevice,
     developers: roster.developers,
     subscriptions,
+  });
+}
+
+export async function loadTeamUsagePage(principal: AppPrincipal, search: TeamSearch = {}) {
+  const { now, subscriptions, reportWindow } = await loadTeamReportContext(principal, search);
+  const planUsage = await getPlanUsage(
+    { orgId: principal.orgId, actorId: principal.userId, roles: [principal.role], now, timezone: UTC_TIMEZONE },
+    { reportWindow },
+    { subscriptions },
+  );
+
+  return jsonSafe({
     planUsage: planUsage.data.developers,
-    pendingInvites,
-    syncs,
+  });
+}
+
+async function loadTeamReportContext(principal: AppPrincipal, search: TeamSearch) {
+  const cycleView = parseCycleView(search.view ?? undefined);
+  const rollingPeriod = parseRollingPeriodFromSearch({
+    days: search.days ?? undefined,
+    from: search.from ?? undefined,
+    to: search.to ?? undefined,
+  });
+  const now = new Date();
+  const subscriptions = await listSubscriptions(principal.orgId);
+  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
+  return { cycleView, rollingPeriod, now, subscriptions, reportWindow };
+}
+
+export async function loadTeamInvitesPage(principal: AppPrincipal) {
+  const [pendingInvitesRaw, developers] = await Promise.all([
+    prisma.organizationInvite
+      .findMany({
+        where: {
+          orgId: principal.orgId,
+          acceptedAt: null,
+        },
+        select: { id: true, email: true, role: true, expiresAt: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      })
+      .catch(
+        () =>
+          [] as Array<{
+            id: string;
+            email: string;
+            role: string;
+            expiresAt: Date;
+            createdAt: Date;
+          }>,
+      ),
+    prisma.developer.findMany({
+      where: { orgId: principal.orgId, removedAt: null },
+      select: { email: true },
+    }),
+  ]);
+  const rosterEmails = new Set(developers.map((developer) => developer.email.toLowerCase()));
+
+  return jsonSafe({
+    pendingInvites: pendingInvitesRaw.filter(
+      (invite) => !rosterEmails.has(invite.email.toLowerCase()),
+    ),
+  });
+}
+
+export async function loadTeamSyncsPage(principal: AppPrincipal) {
+  return jsonSafe({
+    syncs: await getOrgDeviceSyncStatus(principal.orgId, new Date()),
   });
 }

@@ -21,6 +21,9 @@ import (
 
 const (
 	heartbeatInterval = 15 * time.Minute
+	// wakeCheckInterval polls wall clock so a heartbeat fires soon after sleep
+	// even when the steady-state ticker was paused by the OS.
+	wakeCheckInterval = 1 * time.Minute
 	// collectionInterval is the steady-state cadence between scheduled collects.
 	// The schedule is self-correcting: the next collect is scheduled relative to
 	// the previous one finishing, so it can never silently skip a slot.
@@ -135,6 +138,7 @@ var daemonCmd = &cobra.Command{
 
 		api := client.New(cfg)
 		collect := &collectStatus{}
+		remoteSyncSignals := make(chan struct{}, 1)
 
 		// doCollect runs one gated collect+report and returns the real error
 		// (including errUsageQueuePending) so callers can classify the outcome.
@@ -191,6 +195,7 @@ var daemonCmd = &cobra.Command{
 			}
 			return nil
 		}
+		signalRemoteSync(remoteSyncSignals)
 		// Windows v1 intentionally collects coding telemetry/work sessions only.
 		// Do not start the foreground-window sampler even when the org enables
 		// classic Signals.
@@ -205,10 +210,12 @@ var daemonCmd = &cobra.Command{
 		// and the next run is scheduled relative to completion (self-correcting),
 		// with backoff on failure — no ticker drift, no silently skipped slots.
 		go runCollectLoop(cmd.Context(), doCollect, collect)
+		go runRemoteSyncWorker(cmd.Context(), api, doCollect, remoteSyncSignals)
+		go runRemoteSyncRealtime(cmd.Context(), api, remoteSyncSignals)
 
 		// Heartbeats own the main goroutine: they are the lifeline for presence,
 		// update directives, and uninstall, so they must always fire on cadence.
-		return runHeartbeatLoop(cmd.Context(), cfg, api, collect)
+		return runHeartbeatLoop(cmd.Context(), cfg, api, collect, remoteSyncSignals)
 	},
 }
 
@@ -301,53 +308,80 @@ func runCollectLoop(
 // runHeartbeatLoop registers presence on cadence and applies update/uninstall
 // directives. It forwards the latest collect status to the control plane so the
 // server can alert on failures without a separate endpoint.
-func runHeartbeatLoop(ctx context.Context, cfg *config.Config, api *client.APIClient, collect *collectStatus) error {
-	ticker := time.NewTicker(heartbeatInterval)
-	defer ticker.Stop()
+func runHeartbeatLoop(ctx context.Context, cfg *config.Config, api *client.APIClient, collect *collectStatus, remoteSyncSignals chan<- struct{}) error {
+	heartbeatTicker := time.NewTicker(heartbeatInterval)
+	wakeCheckTicker := time.NewTicker(wakeCheckInterval)
+	defer heartbeatTicker.Stop()
+	defer wakeCheckTicker.Stop()
+
+	// Startup already sent one heartbeat before entering this loop.
+	lastSuccess := time.Now()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-ticker.C:
-			pending, gen := collect.pending()
-			response, err := heartbeatWithCollect(api, pending)
-			if errors.Is(err, client.ErrUnauthorized) {
-				fmt.Println("Device credentials revoked; uninstalling…")
-				return uninstall.Run(verbose)
-			}
-			if err != nil {
-				if verbose {
-					fmt.Printf("[daemon] heartbeat error: %v\n", err)
-				}
+		case <-heartbeatTicker.C:
+		case <-wakeCheckTicker.C:
+			if time.Since(lastSuccess) < heartbeatInterval {
 				continue
 			}
-			if pending != nil {
-				collect.markReported(gen)
-			}
-			if response.Uninstall {
-				fmt.Println("Control plane requested uninstall; removing agent…")
-				return uninstall.Run(verbose)
-			}
-			if handoffErr := updater.ConsumeHandoffResult(cfg, api, config.Version); handoffErr != nil {
-				fmt.Printf("[daemon] update handoff: %v\n", handoffErr)
-			}
-			if _, confirmErr := updater.ConfirmPending(cfg, api, config.Version); confirmErr != nil {
-				fmt.Printf("[daemon] update confirmation: %v\n", confirmErr)
-			}
-			updated, updateErr := applyUpdate(ctx, cfg, api, response.Update)
-			if updateErr != nil {
-				fmt.Printf("[daemon] automatic update: %v\n", updateErr)
-			}
-			if updated {
-				fmt.Printf("Updated UseJunction agent; restarting service…\n")
-				if restartErr := restartBackgroundAgent(); restartErr != nil {
-					fmt.Printf("[daemon] update installed; restart warning: %v\n", restartErr)
-				}
-				return nil
-			}
 		}
+
+		shouldExit, err := runHeartbeatCycle(ctx, cfg, api, collect, remoteSyncSignals)
+		if err != nil {
+			return err
+		}
+		if shouldExit {
+			return nil
+		}
+		lastSuccess = time.Now()
 	}
+}
+
+func runHeartbeatCycle(
+	ctx context.Context,
+	cfg *config.Config,
+	api *client.APIClient,
+	collect *collectStatus,
+	remoteSyncSignals chan<- struct{},
+) (shouldExit bool, err error) {
+	pending, gen := collect.pending()
+	response, err := heartbeatWithCollect(api, pending)
+	if errors.Is(err, client.ErrUnauthorized) {
+		fmt.Println("Device credentials revoked; uninstalling…")
+		return false, uninstall.Run(verbose)
+	}
+	if err != nil {
+		fmt.Printf("[daemon] heartbeat error: %v\n", err)
+		return false, nil
+	}
+	if pending != nil {
+		collect.markReported(gen)
+	}
+	signalRemoteSync(remoteSyncSignals)
+	if response.Uninstall {
+		fmt.Println("Control plane requested uninstall; removing agent…")
+		return false, uninstall.Run(verbose)
+	}
+	if handoffErr := updater.ConsumeHandoffResult(cfg, api, config.Version); handoffErr != nil {
+		fmt.Printf("[daemon] update handoff: %v\n", handoffErr)
+	}
+	if _, confirmErr := updater.ConfirmPending(cfg, api, config.Version); confirmErr != nil {
+		fmt.Printf("[daemon] update confirmation: %v\n", confirmErr)
+	}
+	updated, updateErr := applyUpdate(ctx, cfg, api, response.Update)
+	if updateErr != nil {
+		fmt.Printf("[daemon] automatic update: %v\n", updateErr)
+	}
+	if updated {
+		fmt.Printf("Updated UseJunction agent; restarting service…\n")
+		if restartErr := restartBackgroundAgent(); restartErr != nil {
+			fmt.Printf("[daemon] update installed; restart warning: %v\n", restartErr)
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func classicSignalsSupported(osName string) bool {
@@ -411,14 +445,15 @@ func heartbeatWithCollect(api *client.APIClient, collect *client.CollectStatus) 
 	}
 	osName, arch := platformInfo()
 	return api.Heartbeat(client.HeartbeatPayload{
-		Hostname:       hostname(),
-		OS:             osName,
-		Architecture:   arch,
-		AgentVersion:   config.Version,
-		LocalEndpoint:  cfg.LocalSyncURL(),
-		LocalSyncToken: cfg.LocalSyncToken,
-		TimeZone:       platformdirs.LocalIANATimeZone(),
-		LastCollect:    collect,
+		Hostname:           hostname(),
+		OS:                 osName,
+		Architecture:       arch,
+		AgentVersion:       config.Version,
+		LocalEndpoint:      cfg.LocalSyncURL(),
+		LocalSyncToken:     cfg.LocalSyncToken,
+		RemoteSyncProtocol: config.RemoteSyncProtocol,
+		TimeZone:           platformdirs.LocalIANATimeZone(),
+		LastCollect:        collect,
 	})
 }
 

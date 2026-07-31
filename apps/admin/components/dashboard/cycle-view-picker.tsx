@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type MouseEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, ListFilter, Trash2 } from "lucide-react";
+import { Check, Info, ListFilter, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -40,7 +40,10 @@ import {
 } from "@/lib/dashboard/period-prefs";
 import { copyAudienceScope } from "@/lib/audience-scope";
 import { prefetchDashboardMetrics } from "@/lib/app-pages/dashboard-prefetch";
+import type { CycleViewWindows } from "@/lib/dashboard/cycle-view";
+import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 function cycleViewHref(basePath: string, view: Exclude<CycleView, "last_30_days">) {
   const params = new URLSearchParams({ view });
@@ -60,6 +63,48 @@ const cycleViewLabels: Record<Exclude<CycleView, "last_30_days">, string> = {
   previous_cycles: "Previous cycles",
 };
 
+function cycleWindowTooltip(bounds: { from: string; to: string }) {
+  return `${formatShortDate(bounds.from)} – ${formatShortDate(bounds.to)}`;
+}
+
+function CycleWindowInfoIcon({
+  bounds,
+  label,
+  className,
+}: {
+  bounds: { from: string; to: string };
+  label: string;
+  className?: string;
+}) {
+  return (
+    <Tooltip delayDuration={200}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            className,
+          )}
+          aria-label={`${label} date range`}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+        >
+          <Info className="size-3" strokeWidth={2.25} aria-hidden />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-64 text-xs leading-relaxed">
+        {cycleWindowTooltip(bounds)}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -74,10 +119,12 @@ export function CycleViewPicker({
   view,
   period,
   basePath = "/dashboard",
+  cycleWindows,
 }: {
   view: CycleView;
   period: RollingPeriod;
   basePath?: string;
+  cycleWindows?: CycleViewWindows;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -239,7 +286,15 @@ export function CycleViewPicker({
                 className="rounded-none"
                 onSelect={() => router.push(cycleViewHref(basePath, value))}
               >
-                <span className="flex-1">{cycleViewLabels[value]}</span>
+                <span className="flex flex-1 items-center gap-1">
+                  {cycleViewLabels[value]}
+                  {cycleWindows ? (
+                    <CycleWindowInfoIcon
+                      bounds={cycleWindows[value === "current_cycles" ? "current" : "previous"]}
+                      label={cycleViewLabels[value]}
+                    />
+                  ) : null}
+                </span>
                 {view === value ? <Check className="size-3.5 text-foreground" aria-hidden /> : null}
               </DropdownMenuItem>
             ))}
@@ -257,13 +312,19 @@ export function CycleViewPicker({
               onMouseEnter={() => prefetchCycleView(value)}
               onFocus={() => prefetchCycleView(value)}
               className={cn(
-                "h-8 rounded-none px-3 text-xs font-semibold",
+                "inline-flex h-8 items-center gap-1 rounded-none px-3 text-xs font-semibold",
                 view === value
                   ? "!bg-secondary !text-foreground hover:!bg-secondary hover:!text-foreground"
                   : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
               )}
             >
               {cycleViewLabels[value]}
+              {cycleWindows ? (
+                <CycleWindowInfoIcon
+                  bounds={cycleWindows[value === "current_cycles" ? "current" : "previous"]}
+                  label={cycleViewLabels[value]}
+                />
+              ) : null}
             </Link>
           </Button>
         ))}

@@ -38,7 +38,7 @@ import {
 import { AddSubscriptionSheet } from "./add-subscription-sheet";
 import { ToolLogoTile } from "./tool-brand-icon";
 import type { ToolDetailData } from "@/lib/queries/dashboard/tool-detail";
-import type { CycleView } from "@/lib/dashboard/cycle-view";
+import type { CycleView, CycleViewWindows } from "@/lib/dashboard/cycle-view";
 import { DEFAULT_ROLLING_PERIOD, type RollingPeriod } from "@/lib/dashboard/period-prefs";
 import { formatMicrosAsCurrency, formatUsd } from "@/lib/format";
 import { useInvalidateAppData } from "@/lib/api/client";
@@ -48,6 +48,7 @@ import {
   quotaResetLabel,
   quotaWindowLabel,
 } from "@/lib/quotas/display";
+import { USAGE_WINDOW_PREFERENCES, usageWindowPreferenceLabel, type UsageWindowPreference } from "@/lib/quotas/usage-window";
 
 type PlanRow = ToolDetailData["plans"][number] & {
   cycleSeatMicros: string | bigint;
@@ -95,6 +96,7 @@ export function ToolProviderDetail({
   periodLabel = "current billing cycles",
   periodSuffix = "current",
   periodBasePath,
+  cycleWindows,
 }: {
   data: DetailProps;
   scope?: "org" | "self";
@@ -103,6 +105,7 @@ export function ToolProviderDetail({
   periodLabel?: string;
   periodSuffix?: string;
   periodBasePath?: string;
+  cycleWindows?: CycleViewWindows;
 }) {
   const router = useRouter();
   const invalidateAppData = useInvalidateAppData();
@@ -130,6 +133,20 @@ export function ToolProviderDetail({
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) setError(body.error ?? "Could not update seats");
+    else await refresh();
+    setSaving(false);
+  }
+
+  async function updateUsageWindow(plan: PlanRow, usageWindowPreference: UsageWindowPreference) {
+    setSaving(true);
+    setError(null);
+    const response = await fetch(`/api/tools/subscriptions/${plan.id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ usageWindowPreference }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) setError(body.error ?? "Could not update usage window");
     else await refresh();
     setSaving(false);
   }
@@ -224,7 +241,7 @@ export function ToolProviderDetail({
         <BreadcrumbList>
           <BreadcrumbItem>
             <BreadcrumbLink asChild>
-              <Link href="/tools">{isSelf ? "My tools" : "Tools"}</Link>
+              <Link href="/tools" prefetch={false}>{isSelf ? "My tools" : "Tools"}</Link>
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
@@ -246,7 +263,12 @@ export function ToolProviderDetail({
             </p>
           </div>
         </div>
-        <CycleViewPicker view={cycleView} period={period} basePath={basePath} />
+        <CycleViewPicker
+          view={cycleView}
+          period={period}
+          basePath={basePath}
+          cycleWindows={cycleWindows}
+        />
       </div>
       <div className="grid items-start gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
         <SignalsKpi
@@ -561,6 +583,24 @@ export function ToolProviderDetail({
                       {formatMicrosAsCurrency(plan.cycleSeatMicros)} per seat / cycle ·{" "}
                       <span className="capitalize">{plan.billingCadence}</span> billing
                     </p>
+                    <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                      Usage window
+                      <select
+                        value={plan.usageWindowPreference as UsageWindowPreference}
+                        disabled={saving}
+                        onChange={(event) => void updateUsageWindow(plan, event.target.value as UsageWindowPreference)}
+                        className="h-8 rounded-md border bg-background px-2 text-xs text-foreground"
+                      >
+                        {Array.from(new Set([
+                          ...USAGE_WINDOW_PREFERENCES,
+                          plan.usageWindowPreference,
+                        ])).map((preference) => (
+                          <option key={preference} value={preference}>
+                            {usageWindowPreferenceLabel(preference)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     {plan.priceSource === "detected" && (
                       <p className="mt-1 text-xs text-muted-foreground">
                         Auto-synced from device usage. Update when the vendor plan differs.

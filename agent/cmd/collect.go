@@ -190,8 +190,9 @@ func collectAndReportWithTools(
 	var uploadErr error
 	uploaded := 0
 	// Tools/accounts/quotas ride as sidecars on usage sync start. If there is no
-	// usage to upload, still open a sync session so inventory can land.
-	if len(usageReports) > 0 || len(toolReports) > 0 || len(accountReports) > 0 || len(quotaReports) > 0 {
+	// usage or detected inventory, still open a sync session. Empty authoritative
+	// sidecars are the server-visible checkpoint that the first scan completed.
+	{
 		daily := make([]types.DailyUsage, 0, len(usageReports))
 		for _, row := range usageReports {
 			daily = append(daily, aggregateToUsage(row))

@@ -14,6 +14,7 @@ import {
   mapQuotaSnapshots,
   selectPrimaryQuota,
   type QuotaSnapshotInput,
+  type QuotaHistorySample,
   type QuotaUtilization,
 } from "@/lib/quotas/plan-utilization-policy";
 import {
@@ -22,7 +23,7 @@ import {
   findCatalogTool,
   toolDisplayName,
 } from "@/lib/tools/catalog";
-import { mapVendorPlanToCatalog } from "@/lib/tools/sync-detected";
+import { mapVendorPlanToCatalog } from "@/lib/tools/detected-plan";
 
 export type PlanWindowKind = "plan" | "promo" | "credits" | "other";
 
@@ -45,6 +46,7 @@ export type MemberPlanBoardCard = {
   toolName: string;
   toolLabel: string;
   planName: string | null;
+  usageWindowPreference: string;
   accountEmail: string | null;
   pace: QuotaPace;
   primary: MemberPlanWindow | null;
@@ -56,6 +58,10 @@ export type MemberPlanBoardCard = {
   usage: {
     requests: number;
     tokens: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
     cost: number;
   } | null;
 };
@@ -138,11 +144,47 @@ export function buildMemberPlanBoard(input: {
   snapshots: QuotaSnapshotInput[];
   accounts?: Array<{ toolName: string; plan: string | null; email: string | null }>;
   vendorSeats?: Array<{ provider: string; product: string; plan: string | null }>;
-  toolsUsage?: Array<{ toolName: string; requests: number; tokens: number; cost: number }>;
+  toolsUsage?: Array<{
+    toolName: string;
+    requests: number;
+    tokens: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+    cost: number;
+  }>;
+  usageWindowPreferences?: Record<string, string | undefined>;
+  quotaHistory?: Array<{
+    deviceId: string;
+    toolName: string;
+    windowType: string;
+    usedPercent: number;
+    resetAt: Date | string;
+    observedAt: Date | string;
+  }>;
   now?: Date;
 }): MemberPlanBoardCard[] {
   const now = input.now ?? new Date();
   const rows = dedupeQuotaUtilizations(mapQuotaSnapshots(input.snapshots, now));
+  const historyByKey = new Map<string, QuotaHistorySample[]>();
+  for (const sample of input.quotaHistory ?? []) {
+    const resetAt = new Date(sample.resetAt).toISOString();
+    const key = `${sample.deviceId}:${sample.toolName}:${sample.windowType}:${resetAt}`;
+    const list = historyByKey.get(key) ?? [];
+    list.push({
+      usedPercent: sample.usedPercent,
+      observedAt: new Date(sample.observedAt).toISOString(),
+      resetAt,
+    });
+    historyByKey.set(key, list);
+  }
+  for (const row of rows) {
+    if (!row.deviceId || !row.resetsAt) continue;
+    row.history = historyByKey.get(
+      `${row.deviceId}:${row.observationToolName}:${row.windowType}:${row.resetsAt}`,
+    ) ?? [];
+  }
   const byTool = new Map<string, QuotaUtilization[]>();
   for (const row of rows) {
     const list = byTool.get(row.toolKey) ?? [];
@@ -152,17 +194,37 @@ export function buildMemberPlanBoard(input: {
 
   const usageByTool = new Map<
     string,
-    { toolName: string; requests: number; tokens: number; cost: number }
+    {
+      toolName: string;
+      requests: number;
+      tokens: number;
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens: number;
+      cacheWriteTokens: number;
+      cost: number;
+    }
   >();
   for (const tool of input.toolsUsage ?? []) {
     const key = canonicalToolKey(tool.toolName) || tool.toolName;
+    const normalized = {
+      ...tool,
+      inputTokens: tool.inputTokens ?? tool.tokens,
+      outputTokens: tool.outputTokens ?? 0,
+      cacheReadTokens: tool.cacheReadTokens ?? 0,
+      cacheWriteTokens: tool.cacheWriteTokens ?? 0,
+    };
     const existing = usageByTool.get(key);
     if (existing) {
-      existing.requests += tool.requests;
-      existing.tokens += tool.tokens;
-      existing.cost += tool.cost;
+      existing.requests += normalized.requests;
+      existing.tokens += normalized.tokens;
+      existing.inputTokens += normalized.inputTokens;
+      existing.outputTokens += normalized.outputTokens;
+      existing.cacheReadTokens += normalized.cacheReadTokens;
+      existing.cacheWriteTokens += normalized.cacheWriteTokens;
+      existing.cost += normalized.cost;
     } else {
-      usageByTool.set(key, { ...tool });
+      usageByTool.set(key, normalized);
     }
   }
 
@@ -179,6 +241,7 @@ export function buildMemberPlanBoard(input: {
     exhaustAt: null,
     resetsAt: null,
     summary: `${toolDisplayName(toolKey)} has no live plan window.`,
+    projectionState: "unavailable",
   });
 
   const cards: MemberPlanBoardCard[] = [];
@@ -186,7 +249,7 @@ export function buildMemberPlanBoard(input: {
 
   for (const [toolKey, toolRows] of byTool) {
     seen.add(toolKey);
-    const primary = selectPrimaryQuota(toolRows);
+    const primary = selectPrimaryQuota(toolRows, input.usageWindowPreferences?.[toolKey] ?? "auto");
     const pace = primary ? projectQuotaPace(primary, now) : emptyPace(toolKey);
 
     const primaryKey = primary?.quotaKey ?? null;
@@ -211,13 +274,22 @@ export function buildMemberPlanBoard(input: {
       toolName: usage?.toolName ?? primary?.toolKey ?? toolKey,
       toolLabel: toolDisplayName(toolKey),
       planName,
+      usageWindowPreference: input.usageWindowPreferences?.[toolKey] ?? "auto",
       accountEmail,
       pace,
       primary: primary ? toWindow(primary) : null,
       promotions,
       otherWindows,
       usage: usage
-        ? { requests: usage.requests, tokens: usage.tokens, cost: usage.cost }
+        ? {
+            requests: usage.requests,
+            tokens: usage.tokens,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            cacheReadTokens: usage.cacheReadTokens,
+            cacheWriteTokens: usage.cacheWriteTokens,
+            cost: usage.cost,
+          }
         : null,
     });
   }
@@ -235,12 +307,21 @@ export function buildMemberPlanBoard(input: {
       toolName: usage.toolName,
       toolLabel: toolDisplayName(toolKey),
       planName,
+      usageWindowPreference: input.usageWindowPreferences?.[toolKey] ?? "auto",
       accountEmail,
       pace: emptyPace(toolKey),
       primary: null,
       promotions: [],
       otherWindows: [],
-      usage: { requests: usage.requests, tokens: usage.tokens, cost: usage.cost },
+      usage: {
+        requests: usage.requests,
+        tokens: usage.tokens,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        cacheReadTokens: usage.cacheReadTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
+        cost: usage.cost,
+      },
     });
   }
 
@@ -249,12 +330,29 @@ export function buildMemberPlanBoard(input: {
   const active = cards.filter(
     (card) =>
       card.primary != null ||
-      (card.usage != null && (card.usage.tokens > 0 || card.usage.requests > 0)),
+      card.usageWindowPreference !== "auto" ||
+      (card.usage != null &&
+        (card.usage.tokens > 0 ||
+          card.usage.cacheReadTokens > 0 ||
+          card.usage.cacheWriteTokens > 0 ||
+          card.usage.requests > 0)),
   );
 
   return active.sort((a, b) => {
     const rank = (code: QuotaPaceCode) =>
-      code === "ALREADY_EXCEEDED" ? 0 : code === "EXCESS" ? 1 : code === "ON_TRACK" ? 2 : code === "UNDER" ? 3 : 4;
+      code === "ALREADY_EXCEEDED"
+        ? 0
+        : code === "EXCESS"
+          ? 1
+          : code === "FORMING"
+            ? 2
+            : code === "ON_TRACK"
+              ? 3
+              : code === "STABLE"
+                ? 4
+                : code === "UNDER"
+                  ? 5
+                  : 6;
     const rankDiff = rank(a.pace.code) - rank(b.pace.code);
     if (rankDiff !== 0) return rankDiff;
     const usageDiff = (b.usage?.cost ?? 0) - (a.usage?.cost ?? 0);
@@ -276,6 +374,7 @@ export function planBoardLeadLabel(cards: MemberPlanBoardCard[]): {
   const over = live.filter((c) => c.pace.code === "ALREADY_EXCEEDED").length;
   const excess = live.filter((c) => c.pace.code === "EXCESS").length;
   const onTrack = live.filter((c) => c.pace.code === "ON_TRACK").length;
+  const stable = live.filter((c) => c.pace.code === "STABLE").length;
   const under = live.filter((c) => c.pace.code === "UNDER").length;
   const unavailable = live.filter((c) => c.pace.code === "UNKNOWN").length;
   const countLabel = live.length === 1 ? "1 plan" : `${live.length} plans`;
@@ -283,6 +382,7 @@ export function planBoardLeadLabel(cards: MemberPlanBoardCard[]): {
     over > 0 ? `${over} over` : null,
     excess > 0 ? `${excess} above pace` : null,
     onTrack > 0 ? `${onTrack} on pace` : null,
+    stable > 0 ? `${stable} unchanged` : null,
     under > 0 ? `${under} under` : null,
     unavailable > 0 ? `${unavailable} unavailable` : null,
   ].filter((part): part is string => part != null);

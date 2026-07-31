@@ -1,5 +1,6 @@
 import { canonicalToolKey } from "@/lib/tools/catalog";
 import { isSecondaryQuotaWindow } from "@/lib/quotas/display";
+import { normalizeUsageWindowPreference, usageWindowPreferenceMatches } from "@/lib/quotas/usage-window";
 
 export const PLAN_UTILIZATION_POLICY_VERSION = "plan-utilization-v1" as const;
 
@@ -46,6 +47,15 @@ export type QuotaUtilization = {
   toolKey: string;
   windowType: string;
   developerId: string | null;
+  deviceId: string | null;
+  observationToolName: string;
+  history?: QuotaHistorySample[];
+};
+
+export type QuotaHistorySample = {
+  usedPercent: number;
+  observedAt: string;
+  resetAt: string;
 };
 
 export type PlanVerdictCode =
@@ -99,9 +109,16 @@ function windowRank(windowType: string): number {
  * pick the hottest used% first — a later unused family reset must not hide
  * the family that actually has pressure.
  */
-export function selectPrimaryQuota(rows: QuotaUtilization[]): QuotaUtilization | null {
-  const primaryCandidates = rows.filter((row) => !isSecondaryQuotaWindow(row.windowType));
-  const candidates = primaryCandidates.length > 0 ? primaryCandidates : rows;
+export function selectPrimaryQuota(
+  rows: QuotaUtilization[],
+  usageWindowPreference: string | null = "auto",
+): QuotaUtilization | null {
+  const preferred = normalizeUsageWindowPreference(usageWindowPreference) === "auto"
+    ? rows
+    : rows.filter((row) => usageWindowPreferenceMatches(usageWindowPreference, row.windowType));
+  if (!preferred.length) return null;
+  const primaryCandidates = preferred.filter((row) => !isSecondaryQuotaWindow(row.windowType));
+  const candidates = primaryCandidates.length > 0 ? primaryCandidates : preferred;
   const fresh = candidates.filter((row) => !row.stale);
   const pool = fresh.length > 0 ? fresh : candidates;
   if (!pool.length) return null;
@@ -155,6 +172,8 @@ export function mapQuotaSnapshots(
       toolKey,
       windowType: snapshot.windowType,
       developerId: snapshot.developerId ?? null,
+      deviceId: snapshot.deviceId ?? null,
+      observationToolName: snapshot.toolName,
     };
   });
 }
@@ -163,7 +182,9 @@ export function mapQuotaSnapshots(
 export function dedupeQuotaUtilizations(rows: QuotaUtilization[]): QuotaUtilization[] {
   const map = new Map<string, QuotaUtilization>();
   for (const row of rows) {
-    const key = `${row.toolKey}:${row.windowType}:${row.developerId ?? ""}`;
+    // Keep device streams separate so history cannot cross-contaminate two
+    // machines reporting the same provider window.
+    const key = `${row.toolKey}:${row.windowType}:${row.developerId ?? ""}:${row.deviceId ?? ""}`;
     const existing = map.get(key);
     if (!existing) {
       map.set(key, row);

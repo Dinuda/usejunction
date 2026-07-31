@@ -2,7 +2,7 @@ import type { AppPrincipal } from "@/lib/api/app-auth";
 import { jsonSafe } from "@/lib/api/app-response";
 import { parseAudienceScope } from "@/lib/audience-scope";
 import { getOrgActivitySettings } from "@/lib/activity/service";
-import { cycleViewPeriodLabel, parseCycleView, reportWindowForCycleView } from "@/lib/dashboard/cycle-view";
+import { cycleViewPeriodLabel, cycleViewWindows, parseCycleView, reportWindowForCycleView } from "@/lib/dashboard/cycle-view";
 import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
 import { getDeviceActivityFeed } from "@/lib/queries/activity/device-activity";
 import { getDashboardUsage } from "@/lib/queries/dashboard/usage";
@@ -10,7 +10,7 @@ import { getMeOverview } from "@/lib/queries/me/overview";
 import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
 import { getPersonalSignalsLedger } from "@/lib/signals/read";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
-import { canManageSettings } from "@/lib/rbac/permissions";
+import { canSeeOrgOverview } from "@/lib/rbac/permissions";
 
 export type ActivitySearch = {
   view?: string | null;
@@ -22,7 +22,7 @@ export type ActivitySearch = {
 
 export async function loadActivityPage(principal: AppPrincipal, search: ActivitySearch = {}) {
   const isDeveloper = principal.role === "user";
-  const canSwitchAudience = canManageSettings(principal.role);
+  const canSwitchAudience = canSeeOrgOverview(principal.role);
   const scope = canSwitchAudience ? parseAudienceScope(search.scope ?? null) : "team";
   const [settings, subscriptions] = await Promise.all([
     getOrgActivitySettings(principal.orgId),
@@ -36,6 +36,7 @@ export async function loadActivityPage(principal: AppPrincipal, search: Activity
   });
   const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, new Date());
   const periodLabel = cycleViewPeriodLabel(cycleView, rollingPeriod);
+  const cycleWindows = cycleViewWindows(subscriptions);
 
   if (isDeveloper) {
     const [personal, signalsLedger] = await Promise.all([
@@ -54,6 +55,7 @@ export async function loadActivityPage(principal: AppPrincipal, search: Activity
       cycleView,
       rollingPeriod,
       periodLabel,
+      cycleWindows,
       personal,
       signalsLedger,
       deviceFeed,
@@ -73,6 +75,7 @@ export async function loadActivityPage(principal: AppPrincipal, search: Activity
         cycleView,
         rollingPeriod,
         periodLabel,
+        cycleWindows,
         personal: null,
         signalsLedger: [],
         deviceFeed: { items: [], presenceFallback: false },
@@ -94,6 +97,7 @@ export async function loadActivityPage(principal: AppPrincipal, search: Activity
       cycleView,
       rollingPeriod,
       periodLabel,
+      cycleWindows,
       personal,
       signalsLedger,
       deviceFeed,
@@ -112,6 +116,7 @@ export async function loadActivityPage(principal: AppPrincipal, search: Activity
     cycleView,
     rollingPeriod,
     periodLabel,
+    cycleWindows,
     usage,
     deviceFeed,
   });

@@ -1,18 +1,44 @@
 #!/usr/bin/env bash
-# Rebuild the UseJunction agent from this checkout and reinstall it into ~/.usejunction.
+# Rebuild the UseJunction agent from this checkout and reinstall it into ~/.usejunction-test.
 # Dev-only: bypasses install.sh release/semver gates. Does not enroll or publish a release.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 AGENT_SRC="${ROOT}/agent"
-INSTALL_DIR="${HOME}/.usejunction/bin"
-APP_NAME="UseJunction"
-APP_DIR="${HOME}/.usejunction/${APP_NAME}.app"
-PREVIOUS_APP="${HOME}/.usejunction/${APP_NAME}.previous.app"
-LEGACY_APP_DIR="${HOME}/.usejunction/UseJunction Agent.app"
-CONFIG_PATH="${HOME}/.usejunction/config.json"
-PLIST="${HOME}/Library/LaunchAgents/com.usejunction.agent.plist"
-DEV_SOURCE_FILE="${HOME}/.usejunction/dev-source"
+AGENT_PROFILE="${USEJUNCTION_PROFILE:-test}"
+
+case "$AGENT_PROFILE" in
+  test)
+    HOME_DIR="${HOME}/.usejunction-test"
+    APP_NAME="UseJunctionTest"
+    CLI_NAME="usejunction-test"
+    LAUNCHD_LABEL="com.usejunction.agent.test"
+    LAUNCHD_PLIST="com.usejunction.agent.test.plist"
+    SYSTEMD_UNIT="usejunction-agent-test.service"
+    ;;
+  default)
+    HOME_DIR="${HOME}/.usejunction"
+    APP_NAME="UseJunction"
+    CLI_NAME="usejunction"
+    LAUNCHD_LABEL="com.usejunction.agent"
+    LAUNCHD_PLIST="com.usejunction.agent.plist"
+    SYSTEMD_UNIT="usejunction-agent.service"
+    ;;
+  *)
+    echo "Unknown USEJUNCTION_PROFILE=${AGENT_PROFILE} (expected test or default)" >&2
+    exit 1
+    ;;
+esac
+
+INSTALL_DIR="${HOME_DIR}/bin"
+APP_DIR="${HOME_DIR}/${APP_NAME}.app"
+PREVIOUS_APP="${HOME_DIR}/${APP_NAME}.previous.app"
+LEGACY_APP_DIR="${HOME_DIR}/UseJunction Agent.app"
+CONFIG_PATH="${HOME_DIR}/config.json"
+PLIST="${HOME}/Library/LaunchAgents/${LAUNCHD_PLIST}"
+DEV_SOURCE_FILE="${HOME_DIR}/dev-source"
+AGENT_LOG="${HOME_DIR}/agent.log"
+AGENT_ERR="${HOME_DIR}/agent.err"
 LOCK_FILE="${TMPDIR:-/tmp}/usejunction-dev-agent-reinstall.lock"
 LOCK_DIR="${LOCK_FILE}.d"
 PACKAGE_SCRIPT="${ROOT}/scripts/package-macos-app.sh"
@@ -22,11 +48,13 @@ lock_held=0
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 
 usage() {
-  cat <<'EOF'
+  cat <<EOF
 Usage: ./scripts/dev-agent-reinstall.sh
 
-Rebuilds the local agent from source, swaps it into ~/.usejunction, and restarts
+Rebuilds the local agent from source, swaps it into ${HOME_DIR}, and restarts
 the background daemon. Requires an existing enrollment (config.json).
+
+Set USEJUNCTION_PROFILE=default to rebuild the production agent home instead.
 
 Fails if the daemon cannot be restarted onto the new binary (so a stale process
 cannot keep running from UseJunction.previous.app).
@@ -61,9 +89,19 @@ fi
 if [[ ! -f "$CONFIG_PATH" ]]; then
   echo "No existing enrollment at ${CONFIG_PATH}." >&2
   echo "Enroll first, then re-run this script:" >&2
-  echo "  ./install.sh --token <token> --url http://localhost:3001" >&2
+  if [[ "$AGENT_PROFILE" == "test" ]]; then
+    echo "  ./install.sh --token <token> --url http://localhost:3001" >&2
+  else
+    echo "  ./install.sh --token <token> --url <control-plane>" >&2
+  fi
   exit 1
 fi
+
+agent_profile_args() {
+  if [[ "$AGENT_PROFILE" == "test" ]]; then
+    printf '%s\n' --profile test
+  fi
+}
 
 # Serialize overlapping watcher rebuilds so the app swap cannot race.
 # Prefer flock when available; fall back to a mkdir lock (portable on macOS).
@@ -109,7 +147,7 @@ darwin_domain() {
 }
 
 darwin_label() {
-  printf '%s/com.usejunction.agent' "$(darwin_domain)"
+  printf '%s/%s' "$(darwin_domain)" "$LAUNCHD_LABEL"
 }
 
 # Stop the launchd/systemd job before replacing binaries so the old process
@@ -125,12 +163,12 @@ stop_daemon() {
         launchctl unload "$PLIST" 2>/dev/null || true
       fi
       # Best-effort: kill any leftover daemon still mapped to previous/current app.
-      pkill -f "${HOME}/.usejunction/.*usejunction.*daemon" 2>/dev/null || true
+      pkill -f "${HOME_DIR}/.*usejunction.*daemon" 2>/dev/null || true
       sleep 0.3
       ;;
     linux)
       if command -v systemctl >/dev/null 2>&1; then
-        systemctl --user stop usejunction-agent.service 2>/dev/null || true
+        systemctl --user stop "${SYSTEMD_UNIT}" 2>/dev/null || true
       fi
       ;;
   esac
@@ -171,7 +209,7 @@ restart_daemon() {
         return 1
       fi
       systemctl --user daemon-reload 2>/dev/null || true
-      systemctl --user restart usejunction-agent.service
+      systemctl --user restart "${SYSTEMD_UNIT}"
       return 0
       ;;
     *)
@@ -189,13 +227,40 @@ ensure_launchd_plist() {
     return 0
   fi
   mkdir -p "$(dirname "$PLIST")"
-  cat > "$PLIST" <<EOF
+  if [[ "$AGENT_PROFILE" == "test" ]]; then
+    cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.usejunction.agent</string>
+  <string>${LAUNCHD_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${binary}</string>
+    <string>--profile</string>
+    <string>test</string>
+    <string>daemon</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${AGENT_LOG}</string>
+  <key>StandardErrorPath</key>
+  <string>${AGENT_ERR}</string>
+</dict>
+</plist>
+EOF
+  else
+    cat > "$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${LAUNCHD_LABEL}</string>
   <key>ProgramArguments</key>
   <array>
     <string>${binary}</string>
@@ -206,17 +271,18 @@ ensure_launchd_plist() {
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>${HOME}/.usejunction/agent.log</string>
+  <string>${AGENT_LOG}</string>
   <key>StandardErrorPath</key>
-  <string>${HOME}/.usejunction/agent.err</string>
+  <string>${AGENT_ERR}</string>
 </dict>
 </plist>
 EOF
+  fi
 }
 
 # Pin this checkout so curl|install.sh and OTA cannot silently replace 0.0.0-dev.
 write_dev_source_pin() {
-  mkdir -p "${HOME}/.usejunction"
+  mkdir -p "${HOME_DIR}"
   printf '%s\n' "$ROOT" > "$DEV_SOURCE_FILE"
   echo "Pinned local checkout at ${DEV_SOURCE_FILE} → ${ROOT}"
 }
@@ -246,8 +312,8 @@ verify_daemon() {
       ;;
     linux)
       if command -v systemctl >/dev/null 2>&1; then
-        if ! systemctl --user is-active --quiet usejunction-agent.service; then
-          echo "usejunction-agent.service is not active after restart." >&2
+        if ! systemctl --user is-active --quiet "${SYSTEMD_UNIT}"; then
+          echo "${SYSTEMD_UNIT} is not active after restart." >&2
           return 1
         fi
       fi
@@ -260,7 +326,7 @@ verify_daemon() {
   fi
 
   local status_json
-  if ! status_json="$("$binary" status --format json 2>/dev/null)"; then
+  if ! status_json="$("$binary" $(agent_profile_args) status --format json 2>/dev/null)"; then
     echo "Could not run status on installed binary: ${binary}" >&2
     return 1
   fi
@@ -277,7 +343,7 @@ install_macos() {
     echo "Missing packaging script: ${PACKAGE_SCRIPT}" >&2
     exit 1
   fi
-  local staged_app="${HOME}/.usejunction/${APP_NAME}.new.app"
+  local staged_app="${HOME_DIR}/${APP_NAME}.new.app"
   rm -rf "$staged_app" "$PREVIOUS_APP"
   bash "$PACKAGE_SCRIPT" "$tmp_binary" "$staged_app" "$VERSION"
   if [[ -d "$LEGACY_APP_DIR" && ! -d "$APP_DIR" ]]; then
@@ -294,12 +360,12 @@ install_macos() {
     exit 1
   fi
   mkdir -p "$INSTALL_DIR"
-  ln -sf "../${APP_NAME}.app/Contents/MacOS/usejunction" "${INSTALL_DIR}/usejunction"
+  ln -sf "../${APP_NAME}.app/Contents/MacOS/usejunction" "${INSTALL_DIR}/${CLI_NAME}"
 }
 
 install_linux() {
   mkdir -p "$INSTALL_DIR"
-  local destination="${INSTALL_DIR}/usejunction"
+  local destination="${INSTALL_DIR}/${CLI_NAME}"
   local staged="${destination}.new"
   local previous="${destination}.previous"
   cp "$tmp_binary" "$staged"
@@ -335,7 +401,7 @@ if ! restart_daemon; then
   exit 1
 fi
 
-binary="${INSTALL_DIR}/usejunction"
+binary="${INSTALL_DIR}/${CLI_NAME}"
 if [[ "$OS" == "darwin" ]]; then
   binary="${APP_DIR}/Contents/MacOS/usejunction"
 fi
@@ -346,9 +412,11 @@ if ! verify_daemon "$binary" "$VERSION"; then
 fi
 
 echo "Repairing legacy tool configs if needed…"
-if ! "$binary" doctor --format json >/dev/null 2>&1; then
-  echo "Warning: legacy config repair reported an issue (see usejunction doctor)." >&2
+# shellcheck disable=SC2046
+if ! "$binary" $(agent_profile_args) doctor --format json >/dev/null 2>&1; then
+  echo "Warning: legacy config repair reported an issue (see ${CLI_NAME} doctor)." >&2
 fi
 
-echo "Installed UseJunction agent v${VERSION}."
-"$binary" status || true
+echo "Installed UseJunction agent v${VERSION} (${AGENT_PROFILE} profile)."
+# shellcheck disable=SC2046
+"$binary" $(agent_profile_args) status || true

@@ -5,9 +5,7 @@
  * Usage:
  *   pnpm tsx scripts/reconcile-usage-history.ts --org <orgId> [--apply] [--since 2026-04-01]
  */
-import { PrismaClient } from "@usejunction/db";
-
-const prisma = new PrismaClient();
+import { prisma } from "../packages/db/src/index";
 
 type Args = { orgId: string; apply: boolean; since: Date };
 

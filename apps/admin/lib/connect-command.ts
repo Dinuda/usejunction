@@ -24,10 +24,28 @@ export function buildWindowsInstallCommand(token: string, controlPlaneUrl: strin
   return buildPowerShellInstallCommand(token, controlPlaneUrl);
 }
 
+export function buildResumeCommand(controlPlaneUrl: string) {
+  const base = controlPlaneUrl.replace(/\/$/, "");
+  return `curl -fsSL ${base}/install.sh | sh -s -- --resume --url ${base}`;
+}
+
+export function buildWindowsResumeCommand(controlPlaneUrl: string) {
+  const base = controlPlaneUrl.replace(/\/$/, "");
+  const scriptUrl = powerShellLiteral(`${base}/install.ps1`);
+  return `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((Invoke-RestMethod -UseBasicParsing ${scriptUrl}))) -Resume -Url ${powerShellLiteral(base)}"`;
+}
+
 export function buildPlatformInstallCommands(token: string, controlPlaneUrl: string): PlatformCommands {
   return {
     macosLinux: buildInstallCommand(token, controlPlaneUrl),
     windows: buildWindowsInstallCommand(token, controlPlaneUrl),
+  };
+}
+
+export function buildPlatformResumeCommands(controlPlaneUrl: string): PlatformCommands {
+  return {
+    macosLinux: buildResumeCommand(controlPlaneUrl),
+    windows: buildWindowsResumeCommand(controlPlaneUrl),
   };
 }
 

@@ -5,6 +5,7 @@ import { serializeBigInts } from "@/lib/billing/validation";
 import { cycleFromNextRenewal } from "@/lib/billing/cycles";
 import { catalogPrice, findCatalogPlan, type BillingCadence } from "@/lib/tools/catalog";
 import { subscriptionUpdateSchema } from "@/lib/tools/subscriptions";
+import { normalizeUsageWindowPreference } from "@/lib/quotas/usage-window";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireOrgRole(req, ["owner", "admin"]);
@@ -15,6 +16,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const existing = await prisma.billingPlanTemplate.findFirst({ where: { id, orgId: auth.orgId } });
   if (!existing) return NextResponse.json({ error: "subscription not found" }, { status: 404 });
   const { nextRenewalDate, ...data } = { ...parsed.data };
+  if (data.usageWindowPreference !== undefined) {
+    try {
+      data.usageWindowPreference = normalizeUsageWindowPreference(data.usageWindowPreference);
+    } catch {
+      return NextResponse.json({ error: "invalid usage window preference" }, { status: 400 });
+    }
+  }
   const nextCadence = (data.billingCadence ?? existing.billingCadence) as BillingCadence;
   if (nextCadence === "custom" && !data.billingCycleDays && !existing.billingCycleDays) {
     return NextResponse.json({ error: "custom billing cycles require a day count" }, { status: 400 });

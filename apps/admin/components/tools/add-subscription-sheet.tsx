@@ -18,6 +18,7 @@ import { ToolLogoTile } from "./tool-brand-icon";
 import { formatMicrosAsCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { serializeCatalog } from "@/lib/tools/catalog";
+import { USAGE_WINDOW_PREFERENCES, usageWindowPreferenceLabel } from "@/lib/quotas/usage-window";
 
 type Cadence = "weekly" | "monthly" | "annual" | "custom";
 type CatalogPlan = {
@@ -41,6 +42,7 @@ type CatalogTool = {
 };
 
 const dollarsToMicros = (value: string) => String(Math.round(Number(value || 0) * 1_000_000));
+const CUSTOM_PROVIDER_WINDOW = "__provider_window__";
 
 export type AddSubscriptionSheetProps = {
   open: boolean;
@@ -62,6 +64,8 @@ export function AddSubscriptionSheet({
   const [selectedToolKey, setSelectedToolKey] = useState<string | null>(null);
   const [selectedPlanKey, setSelectedPlanKey] = useState<string | null>(null);
   const [cadence, setCadence] = useState<Cadence>("monthly");
+  const [usageWindowPreference, setUsageWindowPreference] = useState<string>("auto");
+  const [providerWindowAlias, setProviderWindowAlias] = useState("");
   const [seats, setSeats] = useState(1);
   const [customPrice, setCustomPrice] = useState("");
   const [advanced, setAdvanced] = useState({
@@ -82,6 +86,8 @@ export function AddSubscriptionSheet({
     setSelectedToolKey(toolKey);
     setSelectedPlanKey(null);
     setCadence("monthly");
+    setUsageWindowPreference("auto");
+    setProviderWindowAlias("");
     setSeats(1);
     setCustomPrice("");
     setAdvanced({
@@ -144,6 +150,10 @@ export function AddSubscriptionSheet({
         toolKey: selectedTool.key,
         planKey: selectedPlan.key,
         billingCadence: cadence,
+        usageWindowPreference:
+          usageWindowPreference === CUSTOM_PROVIDER_WINDOW
+            ? `provider:${providerWindowAlias.trim()}`
+            : usageWindowPreference,
         seatCapacity: seats,
         ...(needsCustomPrice ? { cycleSeatMicros: dollarsToMicros(customPrice) } : {}),
         ...(advanced.included ? { includedCycleMicros: dollarsToMicros(advanced.included) } : {}),
@@ -346,6 +356,34 @@ export function AddSubscriptionSheet({
                     Optional rates and internal billing references.
                   </p>
                   <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label htmlFor="usage-window-preference" className="mb-2">
+                        Usage window
+                      </Label>
+                      <select
+                        id="usage-window-preference"
+                        value={usageWindowPreference}
+                        onChange={(event) => setUsageWindowPreference(event.target.value)}
+                        className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                      >
+                        {USAGE_WINDOW_PREFERENCES.map((preference) => (
+                          <option key={preference} value={preference}>
+                            {usageWindowPreferenceLabel(preference)}
+                          </option>
+                        ))}
+                        <option value={CUSTOM_PROVIDER_WINDOW}>Exact provider window…</option>
+                      </select>
+                      <p className="mt-1 text-xs text-muted-foreground">Auto uses the provider&apos;s reported quota window.</p>
+                      {usageWindowPreference === CUSTOM_PROVIDER_WINDOW ? (
+                        <Input
+                          className="mt-2"
+                          value={providerWindowAlias}
+                          onChange={(event) => setProviderWindowAlias(event.target.value)}
+                          placeholder="e.g. codex_weekly"
+                          aria-label="Exact provider usage window"
+                        />
+                      ) : null}
+                    </div>
                     <AdvancedField
                       label="Included cycle credits (USD)"
                       value={advanced.included}

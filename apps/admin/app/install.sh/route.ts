@@ -45,6 +45,7 @@ export async function GET(request: Request) {
     body = [
       "# Injected by local control plane — build agent from this checkout.",
       `export USEJUNCTION_ROOT=${shellSingleQuote(found.root)}`,
+      "export USEJUNCTION_PROFILE=test",
       "",
       found.body,
     ].join("\n");

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { reportWindowForCycleOffset, reportWindowForCycleView } from "../lib/dashboard/cycle-view";
+import { cycleViewWindows, reportWindowForCycleOffset, reportWindowForCycleView } from "../lib/dashboard/cycle-view";
 
 const monthlyPlan = {
   billingCadence: "monthly",
@@ -55,6 +55,16 @@ test("reportWindowForCycleOffset uses contiguous 30-day fallbacks without plans"
   assert.equal(previous.from.toISOString(), "2026-05-20T00:00:00.000Z");
   assert.equal(previous.to.toISOString(), "2026-06-18T00:00:00.000Z");
   assert.equal(twoBack.to.toISOString(), "2026-05-19T00:00:00.000Z");
+});
+
+test("cycleViewWindows returns current and previous bounds", () => {
+  const now = new Date("2026-07-18T12:00:00.000Z");
+  const windows = cycleViewWindows([monthlyPlan], now);
+
+  assert.equal(windows.current.from, "2026-07-18");
+  assert.equal(windows.current.to, "2026-08-17");
+  assert.equal(windows.previous.from, "2026-06-18");
+  assert.equal(windows.previous.to, "2026-07-17");
 });
 
 test("reportWindowForCycleView maps views onto cycle offsets", () => {

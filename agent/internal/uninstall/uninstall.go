@@ -30,7 +30,7 @@ func Run(verbose bool) error {
 		return nil
 	}
 
-	fmt.Println("Removing ~/.usejunction…")
+	fmt.Printf("Removing %s…\n", config.ConfigDir())
 	_ = os.RemoveAll(config.ConfigDir())
 
 	fmt.Println("UseJunction agent uninstalled.")
@@ -39,15 +39,16 @@ func Run(verbose bool) error {
 
 func stopServices() {
 	home, _ := os.UserHomeDir()
+	id := config.CurrentServiceIdentity()
 	switch runtime.GOOS {
 	case "darwin":
-		plist := filepath.Join(home, "Library", "LaunchAgents", "com.usejunction.agent.plist")
+		plist := id.LaunchdPlistPath(home)
 		_ = exec.Command("launchctl", "unload", plist).Run()
 		_ = os.Remove(plist)
 		fmt.Println("Removed launchd plist.")
 	case "linux":
-		unitFile := filepath.Join(home, ".config", "systemd", "user", "usejunction-agent.service")
-		_ = exec.Command("systemctl", "--user", "disable", "--now", "usejunction-agent.service").Run()
+		unitFile := filepath.Join(home, ".config", "systemd", "user", id.SystemdUnit)
+		_ = exec.Command("systemctl", "--user", "disable", "--now", id.SystemdUnit).Run()
 		_ = os.Remove(unitFile)
 		fmt.Println("Removed systemd user service.")
 	}

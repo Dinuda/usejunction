@@ -22,7 +22,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       }),
   );
   return (
-    <SessionProvider refetchInterval={0} refetchOnWindowFocus>
+    <SessionProvider refetchInterval={0} refetchOnWindowFocus={false}>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           {children}

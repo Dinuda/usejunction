@@ -95,34 +95,36 @@ var updateCmd = &cobra.Command{
 // cannot leave a stale process running from a renamed previous path.
 func stopBackgroundAgent() {
 	home, _ := os.UserHomeDir()
+	id := config.CurrentServiceIdentity()
 	switch runtime.GOOS {
 	case "darwin":
 		domain := fmt.Sprintf("gui/%d", os.Getuid())
-		plist := filepath.Join(home, "Library", "LaunchAgents", "com.usejunction.agent.plist")
+		plist := id.LaunchdPlistPath(home)
 		if err := exec.Command("launchctl", "bootout", domain, plist).Run(); err != nil {
 			_ = exec.Command("launchctl", "unload", plist).Run()
 		}
 	case "linux":
-		_ = exec.Command("systemctl", "--user", "stop", "usejunction-agent.service").Run()
+		_ = exec.Command("systemctl", "--user", "stop", id.SystemdUnit).Run()
 	case "windows":
-		_ = exec.Command("powershell.exe", "-NoProfile", "-Command", "Stop-ScheduledTask -TaskName 'UseJunction Agent' -ErrorAction SilentlyContinue").Run()
+		_ = exec.Command("powershell.exe", "-NoProfile", "-Command", fmt.Sprintf("Stop-ScheduledTask -TaskName '%s' -ErrorAction SilentlyContinue", id.WindowsTaskName)).Run()
 	}
 }
 
 // startBackgroundAgent reloads the service after a failed update/rollback attempt.
 func startBackgroundAgent() {
 	home, _ := os.UserHomeDir()
+	id := config.CurrentServiceIdentity()
 	switch runtime.GOOS {
 	case "darwin":
 		domain := fmt.Sprintf("gui/%d", os.Getuid())
-		plist := filepath.Join(home, "Library", "LaunchAgents", "com.usejunction.agent.plist")
+		plist := id.LaunchdPlistPath(home)
 		if err := exec.Command("launchctl", "bootstrap", domain, plist).Run(); err != nil {
 			_ = exec.Command("launchctl", "load", plist).Run()
 		}
 	case "linux":
-		_ = exec.Command("systemctl", "--user", "start", "usejunction-agent.service").Run()
+		_ = exec.Command("systemctl", "--user", "start", id.SystemdUnit).Run()
 	case "windows":
-		_ = exec.Command("powershell.exe", "-NoProfile", "-Command", "Start-ScheduledTask -TaskName 'UseJunction Agent' -ErrorAction SilentlyContinue").Run()
+		_ = exec.Command("powershell.exe", "-NoProfile", "-Command", fmt.Sprintf("Start-ScheduledTask -TaskName '%s' -ErrorAction SilentlyContinue", id.WindowsTaskName)).Run()
 	}
 }
 
@@ -140,7 +142,8 @@ func restartBackgroundAgent() error {
 		}
 		return verifyDarwinDaemonExecutable(home)
 	case "linux":
-		if err := exec.CommandContext(context.Background(), "systemctl", "--user", "restart", "usejunction-agent.service").Run(); err != nil {
+		id := config.CurrentServiceIdentity()
+		if err := exec.CommandContext(context.Background(), "systemctl", "--user", "restart", id.SystemdUnit).Run(); err != nil {
 			return err
 		}
 		return nil
@@ -165,8 +168,9 @@ func isDaemonProcess() bool {
 func restartDarwinLaunchAgent(home string) error {
 	uid := os.Getuid()
 	domain := fmt.Sprintf("gui/%d", uid)
-	label := domain + "/com.usejunction.agent"
-	plist := filepath.Join(home, "Library", "LaunchAgents", "com.usejunction.agent.plist")
+	id := config.CurrentServiceIdentity()
+	label := domain + "/" + id.LaunchdLabel
+	plist := id.LaunchdPlistPath(home)
 	if _, err := os.Stat(plist); err != nil {
 		return fmt.Errorf("launchd plist not found at %s", plist)
 	}
@@ -189,9 +193,11 @@ func restartDarwinLaunchAgent(home string) error {
 
 func verifyDarwinDaemonExecutable(home string) error {
 	deadline := time.Now().Add(5 * time.Second)
-	appBinary := filepath.Join(home, ".usejunction", "UseJunction.app", "Contents", "MacOS", "usejunction")
-	previousMarker := filepath.Join(home, ".usejunction", "UseJunction.previous.app")
-	legacyPrevious := filepath.Join(home, ".usejunction", "UseJunction.app.previous")
+	id := config.CurrentServiceIdentity()
+	configDir := config.ConfigDir()
+	appBinary := id.DaemonBinaryPath(configDir)
+	previousMarker := id.PreviousAppBundlePath(configDir)
+	legacyPrevious := filepath.Join(configDir, id.AppName+".app.previous")
 
 	for time.Now().Before(deadline) {
 		out, err := exec.Command("ps", "-ax", "-o", "command=").Output()
@@ -206,16 +212,16 @@ func verifyDarwinDaemonExecutable(home string) error {
 			if !strings.Contains(line, "usejunction") || !strings.Contains(line, "daemon") {
 				continue
 			}
-			if strings.Contains(line, previousMarker) || strings.Contains(line, legacyPrevious) || strings.Contains(line, "UseJunction.previous.app") || strings.Contains(line, "UseJunction.app.previous") {
+			if strings.Contains(line, previousMarker) || strings.Contains(line, legacyPrevious) || strings.Contains(line, id.AppName+".previous.app") || strings.Contains(line, id.AppName+".app.previous") {
 				stalePrevious = true
 				continue
 			}
-			if strings.Contains(line, appBinary) || strings.Contains(line, "UseJunction.app/Contents/MacOS/usejunction") {
+			if strings.Contains(line, appBinary) || strings.Contains(line, id.AppName+".app/Contents/MacOS/usejunction") {
 				runningApp = true
 			}
 		}
 		if stalePrevious {
-			return fmt.Errorf("stale agent still running from UseJunction.previous.app; kickstart failed to replace the process")
+			return fmt.Errorf("stale agent still running from %s.previous.app; kickstart failed to replace the process", id.AppName)
 		}
 		if runningApp {
 			return nil

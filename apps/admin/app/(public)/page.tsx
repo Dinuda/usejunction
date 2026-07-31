@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import { UseJunctionHomeContent } from "@/components/public/use-junction-home-content";
 import { siteConfig } from "@/lib/public/config";
 import { siteOgImage } from "@/lib/public/seo-metadata";
@@ -27,6 +29,10 @@ export const metadata: Metadata = {
   },
 };
 
-export default function HomePage() {
+export default async function HomePage() {
+  if ((await auth())?.user?.id) {
+    redirect("/dashboard");
+  }
+
   return <UseJunctionHomeContent />;
 }

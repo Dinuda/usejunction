@@ -22,7 +22,7 @@ import { UsageBreakdownList } from "@/components/activity/usage-breakdown-list";
 import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
 import { CycleViewPicker } from "@/components/dashboard/cycle-view-picker";
 import { FlowPath, SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-ui";
-import { type CycleView } from "@/lib/dashboard/cycle-view";
+import { type CycleView, type CycleViewWindows } from "@/lib/dashboard/cycle-view";
 import { type RollingPeriod } from "@/lib/dashboard/period-prefs";
 import type { AudienceScope } from "@/lib/audience-scope";
 import type { getDeviceActivityFeed } from "@/lib/queries/activity/device-activity";
@@ -227,11 +227,14 @@ function SharedActivityView({ view }: { view: ActivityViewModel }) {
       {isYou && view.sync ? (
         <div className="mb-10">
           <LocalSyncPanel
+            scope="you"
             lastSeenAt={view.sync.lastSeenAt}
             lastUsageSyncAt={view.sync.lastUsageSyncAt}
             lastAccountSyncAt={view.sync.lastAccountSyncAt}
             dashboardReady={view.sync.dashboardReady}
             dirtyDayCount={view.sync.dirtyDayCount}
+            staleDeviceCount={view.sync.staleDeviceCount}
+            recoveryDevices={view.sync.recoveryDevices}
           />
         </div>
       ) : null}
@@ -341,6 +344,7 @@ type ActivityPayload =
       cycleView: CycleView;
       rollingPeriod: RollingPeriod;
       periodLabel: string;
+      cycleWindows?: CycleViewWindows;
       personal: MeOverview | null;
       signalsLedger: SignalsLedger;
       deviceFeed: DeviceFeed;
@@ -353,6 +357,7 @@ type ActivityPayload =
       cycleView: CycleView;
       rollingPeriod: RollingPeriod;
       periodLabel: string;
+      cycleWindows?: CycleViewWindows;
       usage: OrgUsage;
       deviceFeed: DeviceFeed;
     };
@@ -387,7 +392,7 @@ export default function ActivityClientScreen() {
   if (!payload) return <AppPageSkeleton />;
 
   const isYou = payload.kind === "personal";
-  const { allowPeriodControls: allowDeveloperPeriodControls, cycleView, rollingPeriod } = payload;
+  const { allowPeriodControls: allowDeveloperPeriodControls, cycleView, rollingPeriod, cycleWindows } = payload;
   const switcher = payload.canSwitchAudience ? <AudienceScopeSwitcher /> : null;
 
   return (
@@ -401,7 +406,12 @@ export default function ActivityClientScreen() {
         }
         actions={
           allowDeveloperPeriodControls ? (
-            <CycleViewPicker view={cycleView} period={rollingPeriod} basePath="/activity" />
+            <CycleViewPicker
+              view={cycleView}
+              period={rollingPeriod}
+              basePath="/activity"
+              cycleWindows={cycleWindows}
+            />
           ) : undefined
         }
       />

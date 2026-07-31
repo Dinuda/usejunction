@@ -89,12 +89,13 @@ func (c *APIClient) postJSON(ctx context.Context, path string, body any, out any
 // --- Payload types ----------------------------------------------------------
 
 type HeartbeatPayload struct {
-	Hostname       string `json:"hostname"`
-	OS             string `json:"os"`
-	Architecture   string `json:"architecture"`
-	AgentVersion   string `json:"agentVersion"`
-	LocalEndpoint  string `json:"localEndpoint,omitempty"`
-	LocalSyncToken string `json:"localSyncToken,omitempty"`
+	Hostname           string `json:"hostname"`
+	OS                 string `json:"os"`
+	Architecture       string `json:"architecture"`
+	AgentVersion       string `json:"agentVersion"`
+	LocalEndpoint      string `json:"localEndpoint,omitempty"`
+	LocalSyncToken     string `json:"localSyncToken,omitempty"`
+	RemoteSyncProtocol int    `json:"remoteSyncProtocol,omitempty"`
 	// TimeZone is the machine IANA timezone when known (e.g. Asia/Colombo).
 	TimeZone string `json:"timeZone,omitempty"`
 	// LastCollect carries the outcome of the most recent scheduled collect so the
@@ -152,6 +153,57 @@ type HeartbeatResponse struct {
 	// cron. Agents run one full local usage rescan when this exceeds their
 	// persisted lastFullUsageRescanDay.
 	FullUsageRescanDay string `json:"fullUsageRescanDay,omitempty"`
+}
+
+type AblyTokenRequest struct {
+	KeyName    string `json:"keyName,omitempty"`
+	TTL        int64  `json:"ttl,omitempty"`
+	Capability string `json:"capability,omitempty"`
+	ClientID   string `json:"clientId,omitempty"`
+	Timestamp  int64  `json:"timestamp,omitempty"`
+	Nonce      string `json:"nonce,omitempty"`
+	MAC        string `json:"mac,omitempty"`
+}
+
+type RemoteSyncBootstrapResponse struct {
+	OK       bool `json:"ok"`
+	Realtime struct {
+		Provider     string           `json:"provider"`
+		Protocol     int              `json:"protocol"`
+		Channels     []string         `json:"channels"`
+		TokenRequest AblyTokenRequest `json:"tokenRequest"`
+	} `json:"realtime"`
+}
+
+type RemoteSyncTarget struct {
+	ID        string `json:"id"`
+	RequestID string `json:"requestId"`
+	Scope     string `json:"scope"`
+	ExpiresAt string `json:"expiresAt"`
+}
+
+type RemoteSyncClaimResponse struct {
+	OK             bool               `json:"ok"`
+	LeaseToken     string             `json:"leaseToken"`
+	LeaseExpiresAt string             `json:"leaseExpiresAt"`
+	Targets        []RemoteSyncTarget `json:"targets"`
+}
+
+type RemoteSyncReport struct {
+	LeaseToken   string   `json:"leaseToken"`
+	TargetIDs    []string `json:"targetIds"`
+	Status       string   `json:"status"`
+	Tools        int      `json:"tools,omitempty"`
+	Accounts     int      `json:"accounts,omitempty"`
+	Quotas       int      `json:"quotas,omitempty"`
+	UsageRows    int      `json:"usageRows,omitempty"`
+	Warnings     []string `json:"warnings,omitempty"`
+	ErrorMessage string   `json:"errorMessage,omitempty"`
+}
+
+type RemoteSyncReportResponse struct {
+	OK      bool `json:"ok"`
+	Updated int  `json:"updated"`
 }
 
 type AgentUpdateEvent struct {
@@ -457,6 +509,30 @@ func (c *APIClient) Heartbeat(p HeartbeatPayload) (*HeartbeatResponse, error) {
 	return &out, nil
 }
 
+func (c *APIClient) BootstrapRemoteSync(ctx context.Context) (*RemoteSyncBootstrapResponse, error) {
+	var out RemoteSyncBootstrapResponse
+	if err := c.postJSON(ctx, "/api/devices/sync/bootstrap", map[string]any{}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *APIClient) ClaimRemoteSync(ctx context.Context) (*RemoteSyncClaimResponse, error) {
+	var out RemoteSyncClaimResponse
+	if err := c.postJSON(ctx, "/api/devices/sync/claim", map[string]any{}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *APIClient) ReportRemoteSync(ctx context.Context, report RemoteSyncReport) (*RemoteSyncReportResponse, error) {
+	var out RemoteSyncReportResponse
+	if err := c.postJSON(ctx, "/api/devices/sync/report", report, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *APIClient) ReportAgentUpdate(event AgentUpdateEvent) error {
 	return c.post("/api/devices/agent-update", event)
 }
@@ -493,16 +569,16 @@ type SyncManifestPartition struct {
 }
 
 type StartUsageSyncResponse struct {
-	SyncRunID         string   `json:"syncRunId"`
-	DeltaPartitions   []string `json:"deltaPartitions"`
-	ExpectedRows      int      `json:"expectedRows"`
-	Status            string   `json:"status"`
-	ToolsApplied      string   `json:"toolsApplied,omitempty"`
-	ToolsWarning      string   `json:"toolsWarning,omitempty"`
-	AccountsApplied   string   `json:"accountsApplied,omitempty"`
-	AccountsWarning   string   `json:"accountsWarning,omitempty"`
-	QuotasApplied     string   `json:"quotasApplied,omitempty"`
-	QuotasWarning     string   `json:"quotasWarning,omitempty"`
+	SyncRunID       string   `json:"syncRunId"`
+	DeltaPartitions []string `json:"deltaPartitions"`
+	ExpectedRows    int      `json:"expectedRows"`
+	Status          string   `json:"status"`
+	ToolsApplied    string   `json:"toolsApplied,omitempty"`
+	ToolsWarning    string   `json:"toolsWarning,omitempty"`
+	AccountsApplied string   `json:"accountsApplied,omitempty"`
+	AccountsWarning string   `json:"accountsWarning,omitempty"`
+	QuotasApplied   string   `json:"quotasApplied,omitempty"`
+	QuotasWarning   string   `json:"quotasWarning,omitempty"`
 }
 
 type ToolsSyncSidecar struct {

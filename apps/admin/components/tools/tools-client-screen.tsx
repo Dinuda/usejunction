@@ -15,10 +15,11 @@ import { SignalsKpi, SignalsSectionHeader } from "@/components/signals/signals-u
 import {
   cycleViewShortSuffix,
   type CycleView,
+  type CycleViewWindows,
 } from "@/lib/dashboard/cycle-view";
 import type { RollingPeriod } from "@/lib/dashboard/period-prefs";
 import type { getDashboardTools } from "@/lib/queries/dashboard/tools";
-import type { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
+import type { RemoteSyncPanelContext } from "@/lib/sync/remote-sync";
 import type { getMeOverview } from "@/lib/queries/me/overview";
 import type { listSubscriptions } from "@/lib/tools/subscriptions";
 import { canonicalToolKey, serializeCatalog, toolDisplayName } from "@/lib/tools/catalog";
@@ -133,7 +134,7 @@ function PersonalTools({
   canBrowseTools,
 }: {
   data: Awaited<ReturnType<typeof getMeOverview>>;
-  sync: NonNullable<Awaited<ReturnType<typeof getLocalSyncContext>>>;
+  sync: RemoteSyncPanelContext;
   canBrowseTools: boolean;
 }) {
   const rows = useMemo(() => buildPersonalToolRows(data), [data]);
@@ -147,13 +148,16 @@ function PersonalTools({
         title="Your tools, usage, spend."
         description="Tools on your connected computers, with your requests, tokens, and live quota windows."
       >
-        {sync.hasLocalEndpoint ? (
+        {sync.deviceCount > 0 ? (
           <LocalSyncPanel
+            scope="you"
             lastSeenAt={sync.lastSeenAt}
             lastUsageSyncAt={sync.lastUsageSyncAt}
             lastAccountSyncAt={sync.lastAccountSyncAt}
             dashboardReady={sync.dashboardReady}
             dirtyDayCount={sync.dirtyDayCount}
+            staleDeviceCount={sync.staleDeviceCount}
+            recoveryDevices={sync.recoveryDevices}
           />
         ) : null}
       </PageHeader>
@@ -269,6 +273,7 @@ function PersonalTools({
                     {canBrowseTools ? (
                       <Link
                         href={`/tools/${tool.toolKey}`}
+                        prefetch={false}
                         className="group grid w-full gap-5 py-5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/40 md:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)_auto] md:items-center"
                       >
                         {body}
@@ -313,17 +318,18 @@ type ToolsPayload =
   | {
       kind: "personal";
       personal: Awaited<ReturnType<typeof getMeOverview>>;
-      syncContext: Awaited<ReturnType<typeof getLocalSyncContext>>;
+      syncContext: RemoteSyncPanelContext | null;
       canBrowseTools: boolean;
     }
   | {
       kind: "organization";
       cycleView: CycleView;
       rollingPeriod: RollingPeriod;
+      cycleWindows?: CycleViewWindows;
       detected: Awaited<ReturnType<typeof getDashboardTools>> | null;
       subscriptions: Awaited<ReturnType<typeof listSubscriptions>>;
       error: string | null;
-      syncContext: Awaited<ReturnType<typeof getLocalSyncContext>>;
+      syncContext: RemoteSyncPanelContext | null;
       defaultTab: "activity" | "subscriptions";
     };
 
@@ -350,7 +356,9 @@ export default function ToolsClientScreen() {
             lastAccountSyncAt: personal.sync.lastAccountSyncAt,
             hasLocalEndpoint: personal.sync.hasLocalEndpoint,
             needsPlanSync: personal.sync.needsPlanSync,
+            scope: "you",
             deviceCount: personal.developer.devices.length,
+            remoteCapableDeviceCount: 0,
             dashboardReady: personal.sync.dashboardReady ?? true,
             dirtyDayCount: personal.sync.dirtyDayCount ?? 0,
             snapshotLagSeconds: personal.sync.snapshotLagSeconds ?? null,
@@ -360,7 +368,7 @@ export default function ToolsClientScreen() {
     }
     return <PersonalTools data={personal} sync={syncContext} canBrowseTools={Boolean(canBrowseTools)} />;
   }
-  const { cycleView, rollingPeriod, detected: data, error: err, syncContext, defaultTab } = query.data;
+  const { cycleView, rollingPeriod, cycleWindows, detected: data, error: err, syncContext, defaultTab } = query.data;
   const periodSuffix = cycleViewShortSuffix(cycleView, rollingPeriod);
 
   return (
@@ -376,19 +384,23 @@ export default function ToolsClientScreen() {
         initialCatalog={serializedCatalog}
         initialSubscriptions={query.data.subscriptions}
         defaultTab={defaultTab}
-        hasLocalSync={Boolean(syncContext?.hasLocalEndpoint)}
+        hasLocalSync={Boolean(syncContext?.deviceCount)}
         cycleView={cycleView}
         period={rollingPeriod}
         periodSuffix={periodSuffix}
         periodBasePath="/tools"
+        cycleWindows={cycleWindows}
       >
-        {syncContext?.hasLocalEndpoint ? (
+        {syncContext?.deviceCount ? (
           <LocalSyncPanel
+            scope="team"
             lastSeenAt={syncContext.lastSeenAt}
             lastUsageSyncAt={syncContext.lastUsageSyncAt}
             lastAccountSyncAt={syncContext.lastAccountSyncAt}
             dashboardReady={syncContext.dashboardReady}
             dirtyDayCount={syncContext.dirtyDayCount}
+            staleDeviceCount={syncContext.staleDeviceCount}
+            recoveryDevices={syncContext.recoveryDevices}
           />
         ) : null}
       </SubscriptionInventory>

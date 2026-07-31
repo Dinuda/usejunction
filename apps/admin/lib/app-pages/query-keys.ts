@@ -1,4 +1,4 @@
-/** Canonical React Query keys for workspace page data. Keep in sync with RSC prefetch. */
+/** Canonical React Query keys shared by destination screens and navigation prefetch. */
 
 export const workspaceContextKey = ["app", "workspace-context"] as const;
 
@@ -15,6 +15,13 @@ export function dashboardMetricsKey(queryString = "") {
 export function teamKey(queryString = "") {
   return ["app", "team", queryString] as const;
 }
+
+export function teamUsageKey(queryString = "") {
+  return ["app", "team", "usage", queryString] as const;
+}
+
+export const teamInvitesKey = ["app", "team", "invites"] as const;
+export const teamSyncsKey = ["app", "team", "syncs"] as const;
 
 export function teamMemberHubKey(developerId: string, periodQuery = "") {
   return ["app", "team", developerId, "hub", periodQuery] as const;

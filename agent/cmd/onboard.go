@@ -177,6 +177,9 @@ func runOnboard() error {
 	}
 
 	ui.StatusSummary(res.cfg.DeviceID, res.cfg.OrgID, config.Version, len(tools))
+	if reportErr != nil && !errors.Is(reportErr, errUsageQueuePending) {
+		return fmt.Errorf("initial sync incomplete: %w", reportErr)
+	}
 	return nil
 }
 

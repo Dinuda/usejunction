@@ -6,6 +6,8 @@ import {
 } from "@/lib/billing/plan-utilization-policy";
 import { readQuotas } from "@/lib/insights/readers/quotas";
 import { buildMemberPlanBoard } from "@/lib/quotas/plan-board";
+import { attachQuotaHistory } from "@/lib/quotas/history";
+import { mapQuotaSnapshots } from "@/lib/quotas/plan-utilization-policy";
 import type { QuotaPaceCode } from "@/lib/quotas/pace";
 import {
   addLocalDays,
@@ -201,6 +203,11 @@ function paceToPlanVerdictCode(code: QuotaPaceCode, usedPercent: number | null):
   if (code === "EXCESS") return "NEAR_LIMIT";
   if (code === "ON_TRACK") return "HEALTHY";
   if (code === "UNDER") return "LIGHT_USE";
+  if (code === "STABLE" && usedPercent != null) {
+    if (usedPercent >= 90) return "NEAR_LIMIT";
+    if (usedPercent <= 25) return "LIGHT_USE";
+    return "HEALTHY";
+  }
   return "UNKNOWN";
 }
 
@@ -246,6 +253,24 @@ async function readPlanStatus(input: {
     developerId: input.developerId ?? undefined,
   });
   if (quotaRows.length === 0) return null;
+  const mappedQuotaRows = mapQuotaSnapshots(
+    quotaRows.map((row) => ({
+      toolName: row.toolName,
+      windowType: row.windowType,
+      usedPercent: row.usedPercent,
+      creditsRemaining: row.creditsRemaining,
+      resetAt: row.resetAt,
+      source: row.source,
+      updatedAt: row.updatedAt,
+      developerId: row.developerId,
+      deviceId: row.deviceId,
+    })),
+    now,
+  );
+  const quotaRowsWithHistory = await attachQuotaHistory(input.orgId, mappedQuotaRows, {
+    developerId: input.developerId ?? undefined,
+    now,
+  });
 
   const cards = buildMemberPlanBoard({
     snapshots: quotaRows.map((row) => ({
@@ -259,6 +284,16 @@ async function readPlanStatus(input: {
       developerId: row.developerId,
       deviceId: row.deviceId,
     })),
+    quotaHistory: quotaRowsWithHistory.flatMap((row) =>
+      (row.history ?? []).map((sample) => ({
+        deviceId: row.deviceId ?? "",
+        toolName: row.observationToolName,
+        windowType: row.windowType,
+        usedPercent: sample.usedPercent,
+        resetAt: sample.resetAt,
+        observedAt: sample.observedAt,
+      })),
+    ),
     now,
   });
   if (cards.length === 0) return null;

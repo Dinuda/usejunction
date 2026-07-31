@@ -4,6 +4,7 @@ import { limitedJson } from "@/lib/security/http";
 import { logServerError } from "@/lib/errors/public";
 import {
   applyDeviceQuotaInventory,
+  recordQuotaObservations,
   quotasInventoryContentHash,
   type QuotaInventoryItem,
 } from "@/lib/sync/quotas-inventory";
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
     const contentHash = quotasInventoryContentHash(items);
 
     if (device.quotasContentHash && device.quotasContentHash === contentHash) {
+      await recordQuotaObservations({ deviceId: device.id, items });
       return NextResponse.json({ upserted: 0, unchanged: true });
     }
 

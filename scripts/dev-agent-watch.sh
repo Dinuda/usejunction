@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Watch agent sources and rebuild/reinstall into ~/.usejunction on change.
+# Watch agent sources and rebuild/reinstall into ~/.usejunction-test on change.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -16,7 +16,8 @@ Watches agent/ for Go and macOS bundle changes, then runs
 scripts/dev-agent-reinstall.sh after a short debounce.
 
 Uses fswatch when available; otherwise polls with find.
-Requires an existing local enrollment (see README).
+Requires an existing local enrollment under ~/.usejunction-test (see README).
+Set USEJUNCTION_PROFILE=default to watch the production agent home instead.
 EOF
 }
 

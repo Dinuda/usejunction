@@ -3,8 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   listSubscriptions: vi.fn(),
   getMeOverview: vi.fn(),
-  getLocalSyncContext: vi.fn(),
-  getLocalSyncPanelContext: vi.fn(),
+  getRemoteSyncPanelContext: vi.fn(),
   resolveLinkedDeveloperId: vi.fn(),
   getOrgOverview: vi.fn(),
   getOrgOverviewShell: vi.fn(),
@@ -20,9 +19,8 @@ vi.mock("@/lib/queries/me/overview", () => ({
   getMeOverview: mocks.getMeOverview,
 }));
 
-vi.mock("@/lib/queries/me/local-sync-context", () => ({
-  getLocalSyncContext: mocks.getLocalSyncContext,
-  getLocalSyncPanelContext: mocks.getLocalSyncPanelContext,
+vi.mock("@/lib/sync/remote-sync", () => ({
+  getRemoteSyncPanelContext: mocks.getRemoteSyncPanelContext,
 }));
 
 vi.mock("@/lib/queries/me/resolve-developer", () => ({
@@ -48,20 +46,15 @@ beforeEach(() => {
     developer: { id: "dev-1", name: "Ada Lovelace", devices: [{ id: "d1" }] },
     usage30d: { requests: 10 },
   });
-  mocks.getLocalSyncContext.mockResolvedValue({
+  mocks.getRemoteSyncPanelContext.mockResolvedValue({
+    scope: "team",
     lastSeenAt: null,
     lastUsageSyncAt: null,
     lastAccountSyncAt: null,
+    hasLocalEndpoint: false,
+    needsPlanSync: false,
     deviceCount: 1,
-    dashboardReady: true,
-    dirtyDayCount: 0,
-    snapshotLagSeconds: null,
-  });
-  mocks.getLocalSyncPanelContext.mockResolvedValue({
-    lastSeenAt: null,
-    lastUsageSyncAt: null,
-    lastAccountSyncAt: null,
-    deviceCount: 1,
+    remoteCapableDeviceCount: 1,
     dashboardReady: true,
     dirtyDayCount: 0,
     snapshotLagSeconds: null,
@@ -172,7 +165,7 @@ describe("loadDashboardPage personal period window", () => {
 });
 
 describe("loadDashboardPage manager org overview", () => {
-  it("loads organization overview for manager with team scope and no audience switcher", async () => {
+  it("loads organization overview for manager with team scope and an audience switcher", async () => {
     const { loadDashboardPage } = await import("@/lib/app-pages/dashboard");
     const data = await loadDashboardPage(
       {
@@ -188,7 +181,7 @@ describe("loadDashboardPage manager org overview", () => {
       kind: "organization",
       slice: "full",
       scope: "team",
-      canSwitchAudience: false,
+      canSwitchAudience: true,
       error: null,
       overview: { hasActivity: true },
     });
@@ -200,8 +193,7 @@ describe("loadDashboardPage manager org overview", () => {
       }),
       expect.any(Object),
     );
-    expect(mocks.getLocalSyncPanelContext).toHaveBeenCalledWith("org-1", "user-mgr");
-    expect(mocks.getLocalSyncContext).not.toHaveBeenCalled();
+    expect(mocks.getRemoteSyncPanelContext).toHaveBeenCalledWith("org-1", "user-mgr", "team");
     expect(mocks.getMeOverview).not.toHaveBeenCalled();
   });
 
@@ -247,8 +239,7 @@ describe("loadDashboardPage manager org overview", () => {
     expect(mocks.getOrgOverviewShell).toHaveBeenCalledWith("org-1");
     expect(mocks.getOrgOverviewMetrics).not.toHaveBeenCalled();
     expect(mocks.getOrgOverview).not.toHaveBeenCalled();
-    expect(mocks.getLocalSyncPanelContext).toHaveBeenCalled();
-    expect(mocks.getLocalSyncContext).not.toHaveBeenCalled();
+    expect(mocks.getRemoteSyncPanelContext).toHaveBeenCalledWith("org-1", "user-mgr", "team");
   });
 
   it("loads metrics slice without shell or sync context", async () => {
@@ -276,7 +267,6 @@ describe("loadDashboardPage manager org overview", () => {
       expect.objectContaining({ subscriptions: [] }),
     );
     expect(mocks.getOrgOverviewShell).not.toHaveBeenCalled();
-    expect(mocks.getLocalSyncPanelContext).not.toHaveBeenCalled();
-    expect(mocks.getLocalSyncContext).not.toHaveBeenCalled();
+    expect(mocks.getRemoteSyncPanelContext).not.toHaveBeenCalled();
   });
 });

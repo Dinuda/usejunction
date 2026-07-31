@@ -12,6 +12,7 @@ export {
   verdictToneClass,
   type QuotaSnapshotInput,
   type QuotaUtilization,
+  type QuotaHistorySample,
   type PlanVerdictCode,
   type PlanVerdict,
   type IncludedAllowanceUtilization,

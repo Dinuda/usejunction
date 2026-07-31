@@ -79,6 +79,7 @@ export function assertSecureProductionEnv(env = process.env) {
     secretProblem("INGEST_SECRET", env.INGEST_SECRET),
     secretProblem("CRON_SECRET", env.CRON_SECRET),
     secretProblem("AGENT_RELEASE_OPERATIONS_TOKEN", env.AGENT_RELEASE_OPERATIONS_TOKEN),
+    secretProblem("ABLY_API_KEY", env.ABLY_API_KEY),
     env.LITELLM_MASTER_KEY ? secretProblem("LITELLM_MASTER_KEY", env.LITELLM_MASTER_KEY) : null,
     env.ADMIN_PASSWORD ? secretProblem("ADMIN_PASSWORD", env.ADMIN_PASSWORD, 12) : null,
     env.DEMO_ENROLLMENT_TOKEN ? secretProblem("DEMO_ENROLLMENT_TOKEN", env.DEMO_ENROLLMENT_TOKEN, 24) : null,

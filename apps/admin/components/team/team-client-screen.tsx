@@ -19,7 +19,7 @@ import type { OrgDeviceSyncStatus } from "@/lib/queries/team/device-syncs";
 import type { getDeveloperRoster } from "@/lib/read-models/developers";
 import type { listSubscriptions } from "@/lib/tools/subscriptions";
 import { useAppPageQuery } from "@/lib/api/client";
-import { teamKey } from "@/lib/app-pages/query-keys";
+import { teamInvitesKey, teamKey, teamSyncsKey, teamUsageKey } from "@/lib/app-pages/query-keys";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
 
 type TeamView = "active" | "invited" | "syncs";
@@ -36,8 +36,19 @@ type TeamPayload = {
   empty: boolean;
   developers: Awaited<ReturnType<typeof getDeveloperRoster>>["developers"];
   subscriptions: Awaited<ReturnType<typeof listSubscriptions>>;
+};
+
+type TeamUsagePayload = {
   planUsage: Awaited<ReturnType<typeof getPlanUsage>>["data"]["developers"];
+};
+
+const EMPTY_PLAN_USAGE: TeamUsagePayload["planUsage"] = [];
+
+type TeamInvitesPayload = {
   pendingInvites: PendingInvite[];
+};
+
+type TeamSyncsPayload = {
   syncs: OrgDeviceSyncStatus;
 };
 
@@ -49,6 +60,21 @@ export default function TeamClientScreen() {
     teamKey(queryString),
     `/api/app/team${queryString ? `?${queryString}` : ""}`,
   );
+  const usageQuery = useAppPageQuery<TeamUsagePayload>(
+    teamUsageKey(queryString),
+    `/api/app/team/usage${queryString ? `?${queryString}` : ""}`,
+    { enabled: view === "active" },
+  );
+  const invitesQuery = useAppPageQuery<TeamInvitesPayload>(
+    teamInvitesKey,
+    "/api/app/team/invites",
+    { enabled: view === "invited" },
+  );
+  const syncsQuery = useAppPageQuery<TeamSyncsPayload>(
+    teamSyncsKey,
+    "/api/app/team/syncs",
+    { enabled: view === "syncs" },
+  );
   if (query.isPending) return <AppPageSkeleton />;
   if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
   const {
@@ -56,18 +82,14 @@ export default function TeamClientScreen() {
     rollingPeriod,
     empty,
     subscriptions,
-    pendingInvites = [],
-    syncs = { devices: [], totals: { total: 0, online: 0, stale: 0, neverSynced: 0 } },
   } = query.data;
   const periodSuffix = cycleViewShortSuffix(cycleView, rollingPeriod);
   const initial = serializeBigInts({
     developers: query.data.developers,
     subscriptions,
-    planUsage: query.data.planUsage,
   }) as unknown as {
     developers: Parameters<typeof DeveloperToolInventory>[0]["initialDevelopers"];
     subscriptions: Parameters<typeof DeveloperToolInventory>[0]["initialSubscriptions"];
-    planUsage: Parameters<typeof DeveloperToolInventory>[0]["initialPlanUsage"];
   };
 
   return (
@@ -107,13 +129,31 @@ export default function TeamClientScreen() {
         <DeveloperToolInventory
           initialDevelopers={initial.developers}
           initialSubscriptions={initial.subscriptions}
-          initialPlanUsage={initial.planUsage}
+          initialPlanUsage={usageQuery.data?.planUsage ?? EMPTY_PLAN_USAGE}
+          planUsageLoading={usageQuery.isPending}
+          planUsageError={usageQuery.error?.message ?? null}
+          retryPlanUsage={() => void usageQuery.refetch()}
           periodSuffix={periodSuffix}
         />
       ) : view === "invited" ? (
-        <TeamInvitedPanel initialInvites={pendingInvites} />
+        invitesQuery.isPending ? (
+          <AppPageSkeleton />
+        ) : invitesQuery.error ? (
+          <AppPageError
+            error={invitesQuery.error}
+            retry={() => void invitesQuery.refetch()}
+          />
+        ) : (
+          <TeamInvitedPanel initialInvites={invitesQuery.data.pendingInvites} />
+        )
       ) : (
-        <TeamSyncsPanel syncs={syncs} />
+        syncsQuery.isPending ? (
+          <AppPageSkeleton />
+        ) : syncsQuery.error ? (
+          <AppPageError error={syncsQuery.error} retry={() => void syncsQuery.refetch()} />
+        ) : (
+          <TeamSyncsPanel syncs={syncsQuery.data.syncs} />
+        )
       )}
     </>
   );

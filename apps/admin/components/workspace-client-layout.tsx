@@ -10,7 +10,7 @@ import { TimezoneReporter } from "@/components/timezone-reporter";
 import { activateWorkspace, AppApiError, useAppQuery } from "@/lib/api/client";
 import { workspaceContextKey } from "@/lib/app-pages/query-keys";
 import type { OrgBillingStatus } from "@/lib/saas-billing/status";
-import type { OrganizationRole } from "@/lib/rbac/permissions";
+import { canSeeOrgOverview, type OrganizationRole } from "@/lib/rbac/permissions";
 
 type WorkspaceSyncState = {
   deviceCount: number;
@@ -18,7 +18,10 @@ type WorkspaceSyncState = {
   lastSeenAt: string | null;
   lastUsageSyncAt: string | null;
   lastAccountSyncAt: string | null;
-  watermark: string;
+  lastToolsSyncAt: string | null;
+  lastQuotasSyncAt: string | null;
+  dataWatermark: string;
+  presenceWatermark: string;
   dashboardReady?: boolean;
   dirtyDayCount?: number;
 };
@@ -43,7 +46,8 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
   const { data: session, status: sessionStatus, update: updateSession } = useSession();
   const pathname = usePathname();
   const queryString = useSearchParams().toString();
-  const lastWatermark = useRef<string | null>(null);
+  const lastDataWatermark = useRef<string | null>(null);
+  const lastPresenceWatermark = useRef<string | null>(null);
   const contextQuery = useAppQuery<WorkspaceContext>(
     workspaceContextKey,
     "/api/app/workspace-context",
@@ -84,6 +88,19 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
   }, [contextQuery.data, router]);
 
   useEffect(() => {
+    const current = contextQuery.data?.current;
+    if (!current || canSeeOrgOverview(current.role)) return;
+    if (
+      pathname === "/team" ||
+      pathname.startsWith("/team/") ||
+      pathname === "/signals" ||
+      pathname.startsWith("/signals/")
+    ) {
+      router.replace("/dashboard");
+    }
+  }, [contextQuery.data?.current, pathname, router]);
+
+  useEffect(() => {
     const context = contextQuery.data;
     if (!context?.sessionWorkspaceSyncRequired || !context.current || syncStarted.current) return;
     const orgId = context.current.id;
@@ -107,23 +124,43 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
     const syncState = contextQuery.data?.sync;
     if (!syncState) return;
 
-    if (lastWatermark.current === null) {
-      lastWatermark.current = syncState.watermark;
+    if (lastDataWatermark.current === null) {
+      lastDataWatermark.current = syncState.dataWatermark;
+      lastPresenceWatermark.current = syncState.presenceWatermark;
       return;
     }
-    if (lastWatermark.current === syncState.watermark) return;
-    lastWatermark.current = syncState.watermark;
-    // Agent ingest advanced — drop stale Team/Tools/Activity empties.
-    // Skip workspace-context (already fresh) and do not cancel in-flight
-    // fetches — cancelRefetch aborts produce AbortError overlays in Next/Turbopack.
-    void queryClient.invalidateQueries(
-      {
-        predicate: (query) =>
-          query.queryKey[0] === "app" && query.queryKey[1] !== "workspace-context",
-      },
-      { cancelRefetch: false },
-    );
-  }, [contextQuery.data?.sync, queryClient]);
+    if (lastDataWatermark.current !== syncState.dataWatermark) {
+      lastDataWatermark.current = syncState.dataWatermark;
+      // Agent data ingest advanced — expire data-backed pages, but keep
+      // workspace-context (already fresh). Do not cancel in-flight prefetches.
+      void queryClient.invalidateQueries(
+        {
+          predicate: (query) =>
+            query.queryKey[0] === "app" && query.queryKey[1] !== "workspace-context",
+        },
+        { cancelRefetch: false },
+      );
+    }
+    if (lastPresenceWatermark.current !== syncState.presenceWatermark) {
+      lastPresenceWatermark.current = syncState.presenceWatermark;
+      // Heartbeats affect liveness surfaces only; analytics caches remain warm.
+      void queryClient.invalidateQueries(
+        {
+          predicate: (query) =>
+            query.queryKey[0] === "app" &&
+            (
+              query.queryKey[1] === "activity" ||
+              (query.queryKey[1] === "team" && query.queryKey[2] === "syncs")
+            ),
+        },
+        { cancelRefetch: false },
+      );
+    }
+  }, [
+    contextQuery.data?.sync?.dataWatermark,
+    contextQuery.data?.sync?.presenceWatermark,
+    queryClient,
+  ]);
 
   const context = contextQuery.data;
   const current = context?.current ?? null;

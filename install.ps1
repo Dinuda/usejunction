@@ -2,35 +2,72 @@
 param(
   [string]$Token = "",
   [string]$Url = "",
-  [switch]$Upgrade
+  [string]$Profile = "",
+  [switch]$Upgrade,
+  [switch]$Resume
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$TaskName = "UseJunction Agent"
-$Version = "0.1.0"
 if ([string]::IsNullOrWhiteSpace($Url)) {
   $Url = if ($env:USEJUNCTION_URL) { $env:USEJUNCTION_URL } else { "http://localhost:3001" }
 }
 $Url = $Url.TrimEnd("/")
-$RootDir = Join-Path $HOME ".usejunction"
+
+function Test-LoopbackControlPlane([string]$ControlPlaneUrl) {
+  try {
+    $uri = [Uri]$ControlPlaneUrl
+    return @("localhost", "127.0.0.1", "::1") -contains $uri.Host.ToLowerInvariant()
+  } catch {
+    return $false
+  }
+}
+
+if ([string]::IsNullOrWhiteSpace($Profile)) {
+  $Profile = if ($env:USEJUNCTION_PROFILE) { $env:USEJUNCTION_PROFILE } else { "default" }
+}
+if ($Profile -eq "default" -and (Test-LoopbackControlPlane $Url)) {
+  $Profile = "test"
+}
+
+switch ($Profile) {
+  "test" {
+    $RootDir = Join-Path $HOME ".usejunction-test"
+    $CliName = "usejunction-test.exe"
+    $TaskName = "UseJunction Agent Test"
+  }
+  "default" {
+    $RootDir = Join-Path $HOME ".usejunction"
+    $CliName = "usejunction.exe"
+    $TaskName = "UseJunction Agent"
+  }
+  default { throw "Unknown agent profile: $Profile (expected default or test)" }
+}
+
 $InstallDir = Join-Path $RootDir "bin"
-$Binary = Join-Path $InstallDir "usejunction.exe"
+$Binary = Join-Path $InstallDir $CliName
 $ConfigPath = Join-Path $RootDir "config.json"
 $RunnerPath = Join-Path $RootDir "run-agent.ps1"
 $LogPath = Join-Path $RootDir "agent.log"
+$ProfileArgs = if ($Profile -eq "test") { @("--profile", "test") } else { @() }
 
 function Show-Usage {
-  throw "Usage: install.ps1 [-Token <token> | -Upgrade] [-Url <control-plane>]"
+  throw "Usage: install.ps1 [-Token <token> | -Upgrade | -Resume] [-Url <control-plane>]"
 }
 
-if (-not $Upgrade -and [string]::IsNullOrWhiteSpace($Token)) {
+if ($Upgrade -and $Resume) {
+  throw "-Upgrade and -Resume cannot be used together."
+}
+if (-not $Upgrade -and -not $Resume -and [string]::IsNullOrWhiteSpace($Token)) {
   Show-Usage
 }
 if ($Upgrade -and -not (Test-Path $ConfigPath)) {
   throw "No existing UseJunction enrollment found at $ConfigPath"
+}
+if ($Resume -and -not (Test-Path $ConfigPath)) {
+  throw "Existing UseJunction enrollment not found at $ConfigPath; resume cannot safely re-enroll this device."
 }
 
 function Get-AgentArchitecture {
@@ -122,21 +159,26 @@ function Add-AgentToPath {
 
 function Show-CliInstructions {
   Write-Host ""
-  Write-Host "UseJunction installed. Admin panel: $Url"
+  if ($Profile -eq "test") {
+    Write-Host "UseJunction test agent installed. Admin panel: $Url"
+  } else {
+    Write-Host "UseJunction installed. Admin panel: $Url"
+  }
   Write-Host "CLI: $Binary"
   Write-Host "Next: open a new terminal, or run: `$env:Path = `"`$env:Path;$InstallDir`""
-  Write-Host "Then: usejunction status"
+  Write-Host "Then: $($CliName -replace '\.exe$','') status"
   Write-Host "The agent will also start automatically when you sign in to Windows."
-  Write-Host "Rollback an update: usejunction update --rollback"
+  Write-Host "Rollback an update: $($CliName -replace '\.exe$','') update --rollback"
 }
 
 function Register-AgentTask {
   New-Item -ItemType Directory -Force -Path $RootDir | Out-Null
   $escapedBinary = $Binary.Replace("'", "''")
   $escapedLog = $LogPath.Replace("'", "''")
+  $profileArg = if ($Profile -eq "test") { " --profile test" } else { "" }
   @"
 `$ErrorActionPreference = "Continue"
-& '$escapedBinary' daemon *>> '$escapedLog'
+& '$escapedBinary'$profileArg daemon *>> '$escapedLog'
 exit `$LASTEXITCODE
 "@ | Set-Content -Encoding UTF8 -Path $RunnerPath
 
@@ -148,12 +190,14 @@ exit `$LASTEXITCODE
   Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description "UseJunction coding telemetry agent" -Force | Out-Null
 }
 
+$Version = "0.1.0"
 $Version = Get-LatestVersion
 $Architecture = Get-AgentArchitecture
 $Artifact = "usejunction-windows-$Architecture.exe"
 
 if ($Upgrade -and (Test-Path $Binary)) {
-  $statusText = & $Binary status --format json 2>$null
+  $statusArgs = @("status", "--format", "json") + $ProfileArgs
+  $statusText = & $Binary @statusArgs 2>$null
   try { $current = ($statusText | ConvertFrom-Json).agentVersion } catch { $current = "" }
   if (-not $current) { throw "Could not determine the installed agent version; refusing an unverified upgrade." }
   $order = Compare-SemVer $Version $current
@@ -161,50 +205,94 @@ if ($Upgrade -and (Test-Path $Binary)) {
   if ($order -eq 0) { Write-Host "UseJunction agent v$current is already installed."; exit 0 }
 }
 
-$TempDir = Join-Path ([IO.Path]::GetTempPath()) ("usejunction-" + [Guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
-try {
-  $downloadPath = Join-Path $TempDir $Artifact
-  $bases = @()
-  if ($env:USEJUNCTION_DOWNLOAD_BASE) { $bases += $env:USEJUNCTION_DOWNLOAD_BASE.TrimEnd('/') }
-  $bases += "$Url/releases/download/v$Version"
-  $bases += "https://github.com/Dinuda/usejunction/releases/download/agent-v$Version"
-  $downloaded = $false
-  foreach ($base in $bases) {
-    try {
-      Write-Host "Downloading UseJunction agent $Version for windows/$Architecture from $base..."
-      Download-Agent $base $Artifact $downloadPath $TempDir
-      $downloaded = $true
-      break
-    } catch {
-      Write-Warning "Download from $base failed: $($_.Exception.Message)"
-    }
+$repairInstall = (-not $Resume -or -not (Test-Path $Binary))
+if ($Resume -and (Test-Path $Binary)) {
+  $statusArgs = @("status", "--format", "json") + $ProfileArgs
+  $statusText = & $Binary @statusArgs 2>$null
+  try { $current = ($statusText | ConvertFrom-Json).agentVersion } catch { $current = "" }
+  if (-not $current) {
+    $repairInstall = $true
+  } elseif ($current -notmatch '^0\.0\.0-dev\.' -and (Compare-SemVer $Version $current) -gt 0) {
+    Write-Host "Refreshing the outdated agent from v$current to v$Version for setup recovery."
+    $repairInstall = $true
   }
-  if (-not $downloaded) { throw "Could not download a verified UseJunction Windows agent." }
+}
 
-  Stop-AgentTask
-  Install-AgentBinary $downloadPath
+if ($repairInstall) {
+  $TempDir = Join-Path ([IO.Path]::GetTempPath()) ("usejunction-" + [Guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+  try {
+    $downloadPath = Join-Path $TempDir $Artifact
+    $bases = @()
+    if ($env:USEJUNCTION_DOWNLOAD_BASE) { $bases += $env:USEJUNCTION_DOWNLOAD_BASE.TrimEnd('/') }
+    $bases += "$Url/releases/download/v$Version"
+    $bases += "https://github.com/Dinuda/usejunction/releases/download/agent-v$Version"
+    $downloaded = $false
+    foreach ($base in $bases) {
+      try {
+        Write-Host "Downloading UseJunction agent $Version for windows/$Architecture from $base..."
+        Download-Agent $base $Artifact $downloadPath $TempDir
+        $downloaded = $true
+        break
+      } catch {
+        Write-Warning "Download from $base failed: $($_.Exception.Message)"
+      }
+    }
+    if (-not $downloaded) { throw "Could not download a verified UseJunction Windows agent." }
+
+    Stop-AgentTask
+    Install-AgentBinary $downloadPath
+    Add-AgentToPath
+  } finally {
+    Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue
+  }
+} else {
+  Write-Host "Using existing UseJunction agent for setup recovery."
   Add-AgentToPath
-} finally {
-  Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue
 }
 
 if ($Upgrade) {
   Register-AgentTask
   Start-ScheduledTask -TaskName $TaskName
   Start-Sleep -Seconds 2
-  & $Binary status
+  & $Binary @($ProfileArgs + @("status"))
   Write-Host "UseJunction agent upgraded to v$Version."
   Write-Host "CLI: $Binary"
   Write-Host "Next: open a new terminal, or run: `$env:Path = `"`$env:Path;$InstallDir`""
   exit 0
 }
 
-& $Binary onboard --token $Token --url $Url
-if ($LASTEXITCODE -ne 0) { throw "Device onboarding failed." }
+if ($Resume) {
+  Write-Host "Resuming UseJunction setup from the existing enrollment..."
+  & $Binary @($ProfileArgs + @("setup"))
+  $resumeFailed = $LASTEXITCODE -ne 0
+  if ($resumeFailed) {
+    Write-Warning "Initial sync is still incomplete; the background agent will keep retrying."
+  }
+  Register-AgentTask
+  Start-ScheduledTask -TaskName $TaskName
+  Start-Sleep -Seconds 2
+  & $Binary @($ProfileArgs + @("status"))
+  if ($resumeFailed) {
+    throw "UseJunction setup recovery did not complete. Re-run this resume command after checking your network."
+  }
+  Write-Host "UseJunction setup resumed successfully."
+  exit 0
+}
+
+$onboardFailed = $false
+& $Binary @($ProfileArgs + @("onboard", "--token", $Token, "--url", $Url))
+if ($LASTEXITCODE -ne 0) {
+  if (-not (Test-Path $ConfigPath)) { throw "Device onboarding failed before enrollment completed." }
+  $onboardFailed = $true
+  Write-Warning "Device enrolled, but the first sync did not complete. The background agent will keep retrying."
+}
 
 Register-AgentTask
 Start-ScheduledTask -TaskName $TaskName
 Start-Sleep -Seconds 2
-& $Binary onboard --complete
+if ($onboardFailed) {
+  throw "UseJunction was installed, but setup is incomplete. Re-run this installer with -Resume -Url '$Url'."
+}
+& $Binary @($ProfileArgs + @("onboard", "--complete"))
 if ($LASTEXITCODE -ne 0) { Write-Warning "Could not print install summary." }

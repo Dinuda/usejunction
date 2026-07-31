@@ -1,6 +1,6 @@
-export { loadWorkspaceContextPage, loadWorkspaceContextForSession } from "./workspace-context";
+export { loadWorkspaceContextPage } from "./workspace-context";
 export { loadDashboardPage } from "./dashboard";
-export { loadTeamPage } from "./team";
+export { loadTeamPage, loadTeamUsagePage } from "./team";
 export { loadTeamMemberPage, loadTeamMemberHubPage, loadTeamMemberWorkPage } from "./team-member";
 export { loadToolsPage } from "./tools";
 export { loadToolDetailPage } from "./tool-detail";

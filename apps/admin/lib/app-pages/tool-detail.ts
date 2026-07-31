@@ -1,10 +1,10 @@
 import type { AppPrincipal } from "@/lib/api/app-auth";
 import { jsonSafe } from "@/lib/api/app-response";
 import { getOrgActivitySettings } from "@/lib/activity/service";
-import { parseCycleView, reportWindowForCycleView } from "@/lib/dashboard/cycle-view";
+import { parseCycleView, cycleViewWindows, reportWindowForCycleView } from "@/lib/dashboard/cycle-view";
 import { parseRollingPeriodFromSearch } from "@/lib/dashboard/period-prefs";
 import { getToolDetail } from "@/lib/queries/dashboard/tool-detail";
-import { getLocalSyncPanelContext } from "@/lib/queries/me/local-sync-context";
+import { getRemoteSyncPanelContext } from "@/lib/sync/remote-sync";
 import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { canonicalToolKey, findCatalogTool, subscriptionToolKeys } from "@/lib/tools/catalog";
@@ -70,12 +70,13 @@ export async function loadToolDetailPage(
     toolPlans.length ? toolPlans : subscriptions,
     new Date(),
   );
+  const cycleWindows = cycleViewWindows(subscriptions);
   const [detail, syncContext] = await Promise.all([
     getToolDetail(principal.orgId, toolKey, reportWindow, {
       developerId: access.scope === "personal" ? access.developerId : undefined,
       subscriptions,
     }),
-    getLocalSyncPanelContext(principal.orgId, principal.userId),
+    getRemoteSyncPanelContext(principal.orgId, principal.userId, access.scope === "personal" ? "you" : "team"),
   ]);
   if (!detail) return null;
   return jsonSafe({
@@ -84,6 +85,7 @@ export async function loadToolDetailPage(
     toolKey,
     cycleView,
     rollingPeriod,
+    cycleWindows,
     detail,
     syncContext,
   });

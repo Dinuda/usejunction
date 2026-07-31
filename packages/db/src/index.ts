@@ -1,18 +1,38 @@
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
+import { Pool } from "pg";
 
 /**
  * Bump when Device (or other hot models) gain fields so a long-lived Next.js
  * process drops a stale PrismaClient after `prisma generate`.
  */
-const PRISMA_SCHEMA_REV = "schema-cleanup-full-pass-v1";
+const PRISMA_SCHEMA_REV = "instant-fleet-sync-v1";
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
   prismaSchemaRev?: string;
 };
 
+function databasePoolMax() {
+  const configured = Number.parseInt(process.env.DATABASE_POOL_MAX ?? "", 10);
+  return Number.isFinite(configured) && configured > 0 ? configured : 5;
+}
+
 function createPrismaClient() {
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: databasePoolMax(),
+    idleTimeoutMillis: 10_000,
+    connectionTimeoutMillis: 10_000,
+    allowExitOnIdle: true,
+    // Prisma's adapter decodes PostgreSQL timestamps as UTC. Pinning the
+    // session timezone prevents a database-local offset from being applied
+    // twice when deployed outside UTC.
+    options: "-c timezone=UTC",
+  });
+  const adapter = new PrismaPg(pool, { disposeExternalPool: true });
   return new PrismaClient({
+    adapter,
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
 }
@@ -25,10 +45,11 @@ function getPrisma(): PrismaClient {
     void globalForPrisma.prisma.$disconnect().catch(() => undefined);
   }
   const client = createPrismaClient();
-  if (process.env.NODE_ENV !== "production") {
-    globalForPrisma.prisma = client;
-    globalForPrisma.prismaSchemaRev = PRISMA_SCHEMA_REV;
-  }
+  // Next.js can evaluate the database package from several server chunks in one
+  // process. Keep exactly one adapter-backed pool for development and deployed
+  // functions alike.
+  globalForPrisma.prisma = client;
+  globalForPrisma.prismaSchemaRev = PRISMA_SCHEMA_REV;
   return client;
 }
 
@@ -57,6 +78,7 @@ export type {
   DeveloperToolClaim,
   Device,
   DeviceActivityEvent,
+  DeviceSyncRequestTarget,
   EnrollmentToken,
   ExternalIdentity,
   LocalModel,
@@ -78,6 +100,7 @@ export type {
   SignalsActivityEvent,
   SignalsPolicy,
   SignalsSession,
+  SyncRequest,
   TeamInviteAllowlist,
   TeamInviteLink,
   TelemetryEndpoint,

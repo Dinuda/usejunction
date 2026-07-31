@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   invalidateQueries: vi.fn(),
   updateSession: vi.fn(async () => ({})),
   activateWorkspace: vi.fn(async () => undefined),
+  pathname: "/dashboard",
 }));
 
 vi.mock("next-auth/react", () => ({
@@ -25,7 +26,7 @@ vi.mock("next-auth/react", () => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mocks.replace }),
-  usePathname: () => "/dashboard",
+  usePathname: () => mocks.pathname,
   useSearchParams: () => new URLSearchParams(),
 }));
 
@@ -67,7 +68,10 @@ type WorkspaceContextData = {
     lastSeenAt: string | null;
     lastUsageSyncAt: string | null;
     lastAccountSyncAt: string | null;
-    watermark: string;
+    lastToolsSyncAt: string | null;
+    lastQuotasSyncAt: string | null;
+    dataWatermark: string;
+    presenceWatermark: string;
     dashboardReady?: boolean;
     dirtyDayCount?: number;
   };
@@ -94,7 +98,7 @@ async function renderLayout() {
   );
 }
 
-const readyContext = (watermark: string, overrides: Partial<WorkspaceContextData["sync"]> = {}): WorkspaceContextData => ({
+const readyContext = (dataWatermark: string, overrides: Partial<WorkspaceContextData["sync"]> = {}): WorkspaceContextData => ({
   organizations: [{ id: "org-1", name: "Org", color: null, role: "owner" }],
   current: {
     id: "org-1",
@@ -110,7 +114,10 @@ const readyContext = (watermark: string, overrides: Partial<WorkspaceContextData
     lastSeenAt: "2026-07-21T12:00:00.000Z",
     lastUsageSyncAt: "2026-07-21T12:05:00.000Z",
     lastAccountSyncAt: null,
-    watermark,
+    lastToolsSyncAt: null,
+    lastQuotasSyncAt: null,
+    dataWatermark,
+    presenceWatermark: "1|2026-07-21T12:00:00.000Z",
     ...overrides,
   },
   sessionWorkspaceSyncRequired: false,
@@ -122,6 +129,7 @@ describe("WorkspaceClientLayout", () => {
     vi.resetModules();
     mocks.updateSession.mockResolvedValue({});
     mocks.activateWorkspace.mockResolvedValue(undefined);
+    mocks.pathname = "/dashboard";
     mockWorkspaceContext(undefined);
   });
 
@@ -152,7 +160,10 @@ describe("WorkspaceClientLayout", () => {
         lastSeenAt: null,
         lastUsageSyncAt: null,
         lastAccountSyncAt: null,
-        watermark: "0|0|||",
+        lastToolsSyncAt: null,
+        lastQuotasSyncAt: null,
+        dataWatermark: "0|0|||||0|1",
+        presenceWatermark: "0|",
       },
       sessionWorkspaceSyncRequired: false,
     });
@@ -182,7 +193,10 @@ describe("WorkspaceClientLayout", () => {
         lastSeenAt: null,
         lastUsageSyncAt: null,
         lastAccountSyncAt: null,
-        watermark: "0|0|||",
+        lastToolsSyncAt: null,
+        lastQuotasSyncAt: null,
+        dataWatermark: "0|0|||||0|1",
+        presenceWatermark: "0|",
       },
       sessionWorkspaceSyncRequired: false,
     });
@@ -193,6 +207,21 @@ describe("WorkspaceClientLayout", () => {
       expect(mocks.replace).toHaveBeenCalledWith("/onboarding");
     });
     expect(mocks.useAppQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("redirects direct Team access when the workspace role cannot view org data", async () => {
+    mocks.pathname = "/team";
+    const context = readyContext("1|2|usage|accounts|||0|1");
+    mockWorkspaceContext({
+      ...context,
+      current: { ...context.current!, role: "user" },
+    });
+
+    await renderLayout();
+
+    await waitFor(() => {
+      expect(mocks.replace).toHaveBeenCalledWith("/dashboard");
+    });
   });
 
   it("syncs the session without a full page reload when JWT orgId is stale", async () => {
@@ -254,7 +283,7 @@ describe("WorkspaceClientLayout", () => {
     expect(noDeviceInterval).toBe(false);
   });
 
-  it("invalidates app queries when the sync watermark advances", async () => {
+  it("invalidates page models when the data watermark advances", async () => {
     let sync = readyContext("1|0|seen||", {
       toolCount: 0,
       lastUsageSyncAt: null,
@@ -299,5 +328,53 @@ describe("WorkspaceClientLayout", () => {
     expect(predicate({ queryKey: ["app", "workspace-context"] })).toBe(false);
     expect(predicate({ queryKey: ["app", "dashboard", ""] })).toBe(true);
     expect(predicate({ queryKey: ["other"] })).toBe(false);
+  });
+
+  it("keeps dashboard data cached when only presence advances", async () => {
+    let context = readyContext("1|0|||||0|1", {
+      toolCount: 0,
+      lastUsageSyncAt: null,
+      presenceWatermark: "1|2026-07-21T12:00:00.000Z",
+    });
+    mocks.useAppQuery.mockImplementation((queryKey: readonly unknown[]) => {
+      if (queryKey[0] === "app" && queryKey[1] === "workspace-context") {
+        return { data: context, error: null, refetch: vi.fn() };
+      }
+      return { data: undefined, error: null, refetch: vi.fn() };
+    });
+
+    const { WorkspaceClientLayout } = await import("@/components/workspace-client-layout");
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(
+      <QueryClientProvider client={queryClient}>
+        <WorkspaceClientLayout><div>Dashboard screen</div></WorkspaceClientLayout>
+      </QueryClientProvider>,
+    );
+
+    context = readyContext("1|0|||||0|1", {
+      toolCount: 0,
+      lastUsageSyncAt: null,
+      lastSeenAt: "2026-07-21T12:15:00.000Z",
+      presenceWatermark: "1|2026-07-21T12:15:00.000Z",
+    });
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <WorkspaceClientLayout><div>Dashboard screen</div></WorkspaceClientLayout>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(mocks.invalidateQueries).toHaveBeenCalledWith(
+        { predicate: expect.any(Function) },
+        { cancelRefetch: false },
+      );
+    });
+    const { predicate } = mocks.invalidateQueries.mock.calls[0]![0] as {
+      predicate: (query: { queryKey: readonly unknown[] }) => boolean;
+    };
+    expect(predicate({ queryKey: ["app", "dashboard", ""] })).toBe(false);
+    expect(predicate({ queryKey: ["app", "team", ""] })).toBe(false);
+    expect(predicate({ queryKey: ["app", "team", "syncs"] })).toBe(true);
+    expect(predicate({ queryKey: ["app", "activity", ""] })).toBe(true);
   });
 });

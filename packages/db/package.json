@@ -12,12 +12,15 @@
     "push": "dotenv -e ../../.env -- prisma db push"
   },
   "dependencies": {
-    "@prisma/client": "^6.5.0",
-    "bcryptjs": "^3.0.3"
+    "@prisma/adapter-pg": "^6.19.3",
+    "@prisma/client": "^6.19.3",
+    "bcryptjs": "^3.0.3",
+    "pg": "^8.16.3"
   },
   "devDependencies": {
+    "@types/pg": "^8.15.5",
     "dotenv-cli": "^8.0.0",
-    "prisma": "^6.5.0",
+    "prisma": "^6.19.3",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"
   }

@@ -24,6 +24,7 @@ import {
 } from "@/lib/sync/accounts-inventory";
 import {
   applyDeviceQuotaInventory,
+  recordQuotaObservations,
   quotasInventoryContentHash,
   type QuotaInventoryItem,
 } from "@/lib/sync/quotas-inventory";
@@ -278,9 +279,13 @@ export async function startUsageSync(params: {
     try {
       const device = await prisma.device.findFirst({
         where: { id: params.deviceId, orgId: params.orgId },
-        select: { toolsContentHash: true },
+        select: { toolsContentHash: true, lastToolsSyncAt: true },
       });
       if (device?.toolsContentHash && device.toolsContentHash === contentHash) {
+        await prisma.device.update({
+          where: { id: params.deviceId },
+          data: { lastToolsSyncAt: new Date(), lastSeenAt: new Date() },
+        });
         toolsApplied = "unchanged";
       } else {
         await applyDeviceToolInventory({
@@ -355,6 +360,7 @@ export async function startUsageSync(params: {
       });
       if (device?.quotasContentHash && device.quotasContentHash === contentHash) {
         quotasApplied = "unchanged";
+        await recordQuotaObservations({ deviceId: params.deviceId, items });
       } else {
         await applyDeviceQuotaInventory({
           orgId: params.orgId,
@@ -448,6 +454,10 @@ export async function startUsageSync(params: {
   }
 
   if (!delta.length) {
+    await prisma.device.update({
+      where: { id: params.deviceId },
+      data: { lastUsageSyncAt: new Date(), lastSeenAt: new Date() },
+    });
     const emptyDeltaSettle = {
       orgId: params.orgId,
       deviceId: params.deviceId,

@@ -13,6 +13,7 @@ function inputError(error: unknown) {
     CUSTOM_PRICE_REQUIRED: "enter a cycle seat price for this custom plan",
     CUSTOM_CYCLE_DAYS_REQUIRED: "enter the number of days in this custom billing cycle",
     CYCLE_ANCHOR_MISMATCH: "cycle start and next renewal do not describe the same billing cycle",
+    INVALID_USAGE_WINDOW_PREFERENCE: "invalid usage window preference",
   };
   return NextResponse.json({ error: labels[message] ?? "invalid subscription" }, { status: 400 });
 }

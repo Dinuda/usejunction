@@ -1,12 +1,14 @@
 import { cookies } from "next/headers";
-import { auth } from "@/auth";
 import { prisma } from "@usejunction/db";
 import { jsonSafe } from "@/lib/api/app-response";
 import { getWorkspaceSyncReadiness } from "@/lib/analytics/snapshots/readiness";
 import { ACTIVE_ORG_COOKIE } from "@/lib/require-organization";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
 import { computeOrgBillingStatus } from "@/lib/saas-billing/status";
-import { buildSyncWatermark } from "@/lib/workspace-sync-watermark";
+import {
+  buildDataSyncWatermark,
+  buildPresenceSyncWatermark,
+} from "@/lib/workspace-sync-watermark";
 
 function latestIso(...values: Array<Date | null | undefined>): string | null {
   let latest: Date | null = null;
@@ -33,7 +35,10 @@ export type WorkspaceContextPayload = {
     lastSeenAt: string | null;
     lastUsageSyncAt: string | null;
     lastAccountSyncAt: string | null;
-    watermark: string;
+    lastToolsSyncAt: string | null;
+    lastQuotasSyncAt: string | null;
+    dataWatermark: string;
+    presenceWatermark: string;
     dashboardReady: boolean;
     dirtyDayCount: number;
     snapshotLagSeconds: number | null;
@@ -42,8 +47,8 @@ export type WorkspaceContextPayload = {
 };
 
 /**
- * Full client workspace-context payload (billing + sync watermark).
- * Used by both `/api/app/workspace-context` and RSC layout prefetch.
+ * Full client workspace-context payload (billing + split sync watermarks).
+ * Loaded only through `/api/app/workspace-context`; workspace layouts stay synchronous.
  */
 export async function loadWorkspaceContextPage(userId: string, sessionOrgId: string | null | undefined) {
   const legacyOrgId = (await cookies()).get(ACTIVE_ORG_COOKIE)?.value ?? null;
@@ -103,7 +108,10 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
     lastSeenAt: null as string | null,
     lastUsageSyncAt: null as string | null,
     lastAccountSyncAt: null as string | null,
-    watermark: "0|0||||0|1",
+    lastToolsSyncAt: null as string | null,
+    lastQuotasSyncAt: null as string | null,
+    dataWatermark: "0|0|||||0|1",
+    presenceWatermark: "0|",
     dashboardReady: true,
     dirtyDayCount: 0,
     snapshotLagSeconds: null as number | null,
@@ -123,6 +131,8 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
             lastSeenAt: true,
             lastUsageSyncAt: true,
             lastAccountSyncAt: true,
+            lastToolsSyncAt: true,
+            lastQuotasSyncAt: true,
           },
         }),
         prisma.toolInstallation.count({
@@ -133,20 +143,29 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
       const lastSeenAt = latestIso(deviceAgg._max.lastSeenAt);
       const lastUsageSyncAt = latestIso(deviceAgg._max.lastUsageSyncAt);
       const lastAccountSyncAt = latestIso(deviceAgg._max.lastAccountSyncAt);
+      const lastToolsSyncAt = latestIso(deviceAgg._max.lastToolsSyncAt);
+      const lastQuotasSyncAt = latestIso(deviceAgg._max.lastQuotasSyncAt);
       sync = {
         deviceCount: deviceAgg._count.id,
         toolCount,
         lastSeenAt,
         lastUsageSyncAt,
         lastAccountSyncAt,
-        watermark: buildSyncWatermark({
+        lastToolsSyncAt,
+        lastQuotasSyncAt,
+        dataWatermark: buildDataSyncWatermark({
           deviceCount: deviceAgg._count.id,
           toolCount,
-          lastSeenAt,
           lastUsageSyncAt,
           lastAccountSyncAt,
+          lastToolsSyncAt,
+          lastQuotasSyncAt,
           dirtyDayCount: readiness.dirtyDayCount,
           dashboardReady: readiness.dashboardReady,
+        }),
+        presenceWatermark: buildPresenceSyncWatermark({
+          deviceCount: deviceAgg._count.id,
+          lastSeenAt,
         }),
         dashboardReady: readiness.dashboardReady,
         dirtyDayCount: readiness.dirtyDayCount,
@@ -177,11 +196,4 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
       current && (current.orgId !== sessionOrgId || legacyOrgId !== null),
     ),
   } satisfies WorkspaceContextPayload);
-}
-
-/** Convenience for RSC: auth + load in one call. Returns null if unauthenticated. */
-export async function loadWorkspaceContextForSession() {
-  const session = await auth();
-  if (!session?.user?.id) return null;
-  return loadWorkspaceContextPage(session.user.id, session.user.orgId);
 }

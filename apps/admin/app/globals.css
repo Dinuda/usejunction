@@ -256,6 +256,15 @@ a {
   padding-inline: 1.5rem;
 }
 
+.marketing-nav-surface {
+  border: 1px solid rgb(255 255 255 / 0.1);
+  background:
+    linear-gradient(115deg, rgb(5 53 70 / 0.97), rgb(4 61 79 / 0.94)),
+    var(--primary-dark);
+  box-shadow: 0 18px 48px -28px rgb(1 24 34 / 0.7);
+  backdrop-filter: blur(14px);
+}
+
 @media (max-width: 767px) {
   .public-container {
     padding-inline: 1rem;

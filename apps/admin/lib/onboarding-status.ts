@@ -12,7 +12,9 @@ export type OnboardingDeveloper = {
     os: string;
     architecture: string;
     agentVersion: string;
+    createdAt: Date;
     lastSeenAt: Date;
+    lastToolsSyncAt: Date | null;
     lastUsageSyncAt: Date | null;
     toolInstallations: Array<{
       toolName: string;
@@ -122,7 +124,9 @@ async function loadDeveloper(userId: string, orgId: string): Promise<OnboardingD
           os: true,
           architecture: true,
           agentVersion: true,
+          createdAt: true,
           lastSeenAt: true,
+          lastToolsSyncAt: true,
           lastUsageSyncAt: true,
           toolInstallations: {
             where: { detected: true },
@@ -139,7 +143,9 @@ function statusFromMembershipFull(
   developer: OnboardingDeveloper | null | undefined,
   includeDeveloper: boolean,
 ): OnboardingStatusPayload {
-  const deviceConnected = Boolean(developer?.devices.length);
+  const deviceConnected = Boolean(
+    developer?.devices.some((device) => device.lastToolsSyncAt && device.lastUsageSyncAt),
+  );
   const teamInvited =
     membership.organization._count.invites > 0 || membership.organization._count.developers > 1;
 
@@ -167,7 +173,9 @@ function statusFromMembershipPoll(
   developer: OnboardingDeveloper | null | undefined,
   includeDeveloper: boolean,
 ): OnboardingStatusPayload {
-  const deviceConnected = Boolean(developer?.devices.length);
+  const deviceConnected = Boolean(
+    developer?.devices.some((device) => device.lastToolsSyncAt && device.lastUsageSyncAt),
+  );
 
   return {
     configured: true,
@@ -205,26 +213,30 @@ export async function buildOnboardingStatusForOrg(
   const mode = options?.mode ?? "full";
 
   if (mode === "poll") {
-    const membership = await prisma.organizationMembership.findUnique({
-      where: { userId_orgId: { userId, orgId } },
-      select: membershipSelectPoll,
-    });
+    const [membership, developer] = await Promise.all([
+      prisma.organizationMembership.findUnique({
+        where: { userId_orgId: { userId, orgId } },
+        select: membershipSelectPoll,
+      }),
+      includeDeveloper ? loadDeveloper(userId, orgId) : Promise.resolve(undefined),
+    ]);
     if (!membership) {
       return { configured: false, role: null, currentStep: "install" };
     }
-    const developer = includeDeveloper ? await loadDeveloper(userId, orgId) : undefined;
     return statusFromMembershipPoll(membership, developer, includeDeveloper);
   }
 
-  const membership = await prisma.organizationMembership.findUnique({
-    where: { userId_orgId: { userId, orgId } },
-    select: membershipSelectFull,
-  });
+  const [membership, developer] = await Promise.all([
+    prisma.organizationMembership.findUnique({
+      where: { userId_orgId: { userId, orgId } },
+      select: membershipSelectFull,
+    }),
+    includeDeveloper ? loadDeveloper(userId, orgId) : Promise.resolve(undefined),
+  ]);
   if (!membership) {
     return { configured: false, role: null, currentStep: "install" };
   }
 
-  const developer = includeDeveloper ? await loadDeveloper(userId, orgId) : undefined;
   return statusFromMembershipFull(membership, developer, includeDeveloper);
 }
 
@@ -258,10 +270,10 @@ export async function buildOnboardingStatus(
   return statusFromMembershipFull(membership, developer, includeDeveloper);
 }
 
-/** True when this user has an enrolled device that has reported at least one tool. */
+/** True when this user has completed the first inventory and usage sync. */
 export async function hasPersonalDeviceReady(userId: string, orgId: string): Promise<boolean> {
   const developer = await loadDeveloper(userId, orgId);
   return Boolean(
-    developer?.devices.some((device) => (device.toolInstallations?.length ?? 0) > 0),
+    developer?.devices.some((device) => device.lastToolsSyncAt && device.lastUsageSyncAt),
   );
 }

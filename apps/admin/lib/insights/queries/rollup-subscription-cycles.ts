@@ -1,6 +1,8 @@
 import type { PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
-import type { BillingCycleInfo, PlanUsageSubscriptionRow } from "@/lib/insights/contracts/plan-usage.v1";
+import type { BillingCycleInfo, PlanUsageSubscriptionRow, UsageWindowMetadata } from "@/lib/insights/contracts/plan-usage.v1";
 import { projectQuotaPace } from "@/lib/quotas/pace";
+import { quotaWindowLabel } from "@/lib/quotas/display";
+import { usageWindowPreferenceLabel } from "@/lib/quotas/usage-window";
 
 export type SubscriptionCycleSliceRow = {
   id: string;
@@ -36,6 +38,8 @@ export type ToolSubscriptionCycleRow = {
   /** Earliest projected allowance exhaustion among near-limit plans. */
   expectedEndAt: string | null;
   billingCycle: BillingCycleInfo;
+  usageWindow: UsageWindowMetadata | null;
+  projectionState: "forming" | "reliable" | "unavailable";
 };
 
 const VERDICT_RANK: Record<PlanVerdictCode, number> = {
@@ -99,6 +103,8 @@ function aggregateUtilization(
       utilizationDisplayPercent,
       verdictCode: null,
       expectedEndAt: null,
+      usageWindow: null,
+      projectionState: "unavailable" as const,
     };
   }
 
@@ -115,11 +121,47 @@ function aggregateUtilization(
     if (expectedEndAt == null || at < expectedEndAt) expectedEndAt = at;
   }
 
+  const liveWindows = plans
+    .filter((plan) => plan.primaryQuota?.resetsAt)
+    .map((plan) => ({
+      label: quotaWindowLabel(plan.primaryQuota!.windowType),
+      windowType: plan.primaryQuota!.windowType,
+      resetAt: plan.primaryQuota!.resetsAt!,
+      preference: plan.usageWindowPreference,
+      selectionSource: plan.usageWindowPreference === "auto" ? "auto" as const : "override" as const,
+    }));
+  const awaitingWindow = plans.find(
+    (plan) => !plan.primaryQuota && plan.usageWindowPreference !== "auto",
+  );
+  const firstWindow = liveWindows[0] ?? null;
+  const sameWindow = firstWindow && liveWindows.every(
+    (window) => window.windowType === firstWindow.windowType && window.resetAt === firstWindow.resetAt,
+  );
+  const projectionState: "forming" | "reliable" | "unavailable" = plans.some((plan) => plan.projectionState === "reliable")
+    ? "reliable"
+    : plans.some((plan) => plan.projectionState === "forming")
+      ? "forming"
+      : "unavailable";
+
   return {
     utilizationPercent,
     utilizationDisplayPercent,
     verdictCode: verdict?.code ?? null,
     expectedEndAt,
+    usageWindow: sameWindow ? firstWindow : liveWindows.length ? {
+      label: "Mixed usage windows",
+      windowType: "mixed",
+      resetAt: liveWindows.map((window) => window.resetAt).sort()[0]!,
+      preference: "mixed",
+      selectionSource: "mixed" as const,
+    } : awaitingWindow ? {
+      label: `Awaiting ${usageWindowPreferenceLabel(awaitingWindow.usageWindowPreference)} window`,
+      windowType: "unavailable",
+      resetAt: "",
+      preference: awaitingWindow.usageWindowPreference,
+      selectionSource: "unavailable" as const,
+    } : null,
+    projectionState,
   };
 }
 
@@ -240,6 +282,8 @@ export function rollupSubscriptionCyclesByTool(slices: SubscriptionCycleSliceRow
         verdictCode: null,
         expectedEndAt: null,
         billingCycle: row.billingCycle,
+        usageWindow: null,
+        projectionState: "unavailable" as const,
       };
     })
     .sort((a, b) => b.cycleSpend - a.cycleSpend || a.toolName.localeCompare(b.toolName));

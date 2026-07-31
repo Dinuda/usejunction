@@ -477,6 +477,7 @@ test("usage sync start applies tools sidecar once then short-circuits on hash", 
     const deviceRow = await prisma.device.findUniqueOrThrow({ where: { id: device.id } });
     assert.equal(deviceRow.toolsContentHash, tools.contentHash);
     assert.ok(deviceRow.lastToolsSyncAt);
+    assert.ok(deviceRow.lastUsageSyncAt, "zero-row committed sync should mark usage readiness");
 
     const again = await startUsageSync({
       orgId: org.id,

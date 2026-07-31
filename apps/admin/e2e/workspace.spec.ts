@@ -43,7 +43,7 @@ test("workspace startup has no bootstrap gate or duplicate page-data request", a
   await expect(page.getByRole("heading", { name: "Spend, traffic, coverage." })).toBeVisible();
 
   expect(appRequests).not.toContain("/api/app/bootstrap");
-  // RSC prefetch hydrates React Query — client may skip these, or refetch at most once.
+  // The client workspace context and destination page model each load at most once.
   expect(appRequests.filter((path) => path === "/api/app/workspace-context").length).toBeLessThanOrEqual(1);
   expect(appRequests.filter((path) => path === "/api/app/dashboard").length).toBeLessThanOrEqual(1);
   expect(failedAppRequests).toEqual([]);

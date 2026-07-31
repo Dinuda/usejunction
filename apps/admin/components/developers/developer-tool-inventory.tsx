@@ -88,12 +88,18 @@ export function DeveloperToolInventory({
   initialDevelopers,
   initialSubscriptions,
   initialPlanUsage,
+  planUsageLoading = false,
+  planUsageError = null,
+  retryPlanUsage,
   periodSuffix = "30d",
 }: {
   showSummary?: boolean;
   initialDevelopers: Developer[];
   initialSubscriptions: Subscription[];
-  initialPlanUsage: PlanUsageDeveloperRow[];
+  initialPlanUsage?: PlanUsageDeveloperRow[];
+  planUsageLoading?: boolean;
+  planUsageError?: string | null;
+  retryPlanUsage?: () => void;
   periodSuffix?: string;
 }) {
   const router = useRouter();
@@ -107,12 +113,12 @@ export function DeveloperToolInventory({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [addSubscriptionOpen, setAddSubscriptionOpen] = useState(false);
-  const [planUsageByDeveloper, setPlanUsageByDeveloper] = useState(() => planUsageMap(initialPlanUsage));
+  const [planUsageByDeveloper, setPlanUsageByDeveloper] = useState(() => planUsageMap(initialPlanUsage ?? []));
 
   useEffect(() => {
     setDevelopers(initialDevelopers);
     setSubscriptions(initialSubscriptions);
-    setPlanUsageByDeveloper(planUsageMap(initialPlanUsage));
+    setPlanUsageByDeveloper(planUsageMap(initialPlanUsage ?? []));
   }, [initialDevelopers, initialSubscriptions, initialPlanUsage]);
 
   const canBulkAssign = developers.length > 1 && subscriptions.some((subscription) => subscription.availableSeats > 0);
@@ -238,12 +244,18 @@ export function DeveloperToolInventory({
             compactMobile
             className="border-l-2 border-border-strong pl-3 pr-2 sm:pl-4 sm:pr-3"
             value={
-              summary.memberCount > 0
+              planUsageLoading
+                ? "…"
+                : summary.memberCount > 0
                 ? `${summary.peopleWithPlans}/${summary.memberCount}`
                 : "0"
             }
             sub={
-              summary.planCoveragePercent != null
+              planUsageLoading
+                ? "loading plan usage"
+                : planUsageError
+                  ? "plan usage unavailable"
+                  : summary.planCoveragePercent != null
                 ? `${summary.planCoveragePercent}% with an assigned plan`
                 : "invite people, then assign plans"
             }
@@ -252,21 +264,27 @@ export function DeveloperToolInventory({
             label="Team usage"
             compactMobile
             className="border-l-2 border-border-strong pl-3 pr-2 sm:pl-4 sm:pr-3"
-            value={summary.avgPercent != null ? `${summary.avgPercent.toFixed(0)}%` : "—"}
+            value={planUsageLoading ? "…" : summary.avgPercent != null ? `${summary.avgPercent.toFixed(0)}%` : "—"}
             sub={
-              summary.teamUsage.withSignal.length > 0
+              planUsageLoading
+                ? "loading plan usage"
+                : planUsageError
+                  ? "plan usage unavailable"
+                  : summary.teamUsage.withSignal.length > 0
                 ? `avg across ${summary.teamUsage.withSignal.length} ${
                     summary.teamUsage.withSignal.length === 1 ? "plan" : "plans"
                   }`
                 : "waiting for quota signal"
             }
             footer={
-              <CycleUtilizationBar
-                percent={summary.avgPercent}
-                displayPercent={summary.avgPercent}
-                verdictCode={summary.teamUsage.verdict?.code ?? null}
-                label="Team"
-              />
+              !planUsageLoading && !planUsageError ? (
+                <CycleUtilizationBar
+                  percent={summary.avgPercent}
+                  displayPercent={summary.avgPercent}
+                  verdictCode={summary.teamUsage.verdict?.code ?? null}
+                  label="Team"
+                />
+              ) : null
             }
           />
         </div>
@@ -275,6 +293,19 @@ export function DeveloperToolInventory({
       {error ? (
         <Alert variant="destructive" className="rounded-none">
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {planUsageError ? (
+        <Alert variant="destructive" className="rounded-none">
+          <AlertDescription className="flex flex-wrap items-center gap-3">
+            <span className="flex-1">Could not load plan usage.</span>
+            {retryPlanUsage ? (
+              <Button size="sm" variant="outline" onClick={retryPlanUsage}>
+                Retry
+              </Button>
+            ) : null}
+          </AlertDescription>
         </Alert>
       ) : null}
 
@@ -369,6 +400,7 @@ export function DeveloperToolInventory({
                       ) : null}
                       <Link
                         href={`/team/${developer.id}`}
+                        prefetch={false}
                         className="grid min-w-0 flex-1 gap-4 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/40 focus-visible:ring-offset-2 lg:grid-cols-[minmax(18rem,1fr)_auto] lg:items-start"
                       >
                         <div className="min-w-0">
@@ -422,7 +454,7 @@ export function DeveloperToolInventory({
                         className="shrink-0 self-start rounded-none px-2.5"
                         asChild
                       >
-                        <Link href={`/team/${developer.id}`} aria-label={`Edit ${developer.name}`}>
+                        <Link href={`/team/${developer.id}`} prefetch={false} aria-label={`Edit ${developer.name}`}>
                           <SquarePen className="size-4" />
                         </Link>
                       </Button>

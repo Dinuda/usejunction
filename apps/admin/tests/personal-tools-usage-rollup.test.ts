@@ -7,7 +7,16 @@ test("merges codex and codex-work usage into one ChatGPT row", () => {
     [
       { toolName: "codex", requests: 5000, tokens: 585_300_000, cost: 392.99 },
       { toolName: "cursor", requests: 910, tokens: 47_200_000, cost: 190.72 },
-      { toolName: "codex-work", requests: 527, tokens: 54_200_000, cost: 27.21 },
+      {
+        toolName: "codex-work",
+        requests: 527,
+        tokens: 54_200_000,
+        inputTokens: 50_000_000,
+        outputTokens: 4_200_000,
+        cacheReadTokens: 12_000_000,
+        cacheWriteTokens: 3_000_000,
+        cost: 27.21,
+      },
     ],
     ["codex", "cursor", "claude", "copilot", "opencode"],
   );
@@ -19,6 +28,8 @@ test("merges codex and codex-work usage into one ChatGPT row", () => {
   );
   assert.equal(rows[0]?.requests, 5527);
   assert.equal(rows[0]?.tokens, 639_500_000);
+  assert.equal(rows[0]?.cacheReadTokens, 12_000_000);
+  assert.equal(rows[0]?.cacheWriteTokens, 3_000_000);
   assert.equal(rows[0]?.cost, 420.2);
 });
 

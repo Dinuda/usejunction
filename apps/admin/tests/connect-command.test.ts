@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 import {
   buildPlatformInstallCommands,
+  buildPlatformResumeCommands,
   buildWindowsInstallCommand,
 } from "../lib/connect-command";
 
@@ -18,6 +19,16 @@ test("platform install commands preserve Unix and add PowerShell onboarding", ()
   assert.match(commands.windows, /install\.ps1/);
   assert.match(commands.windows, /-Token 'uj_enroll_token'/);
   assert.match(commands.windows, /-Url 'https:\/\/usejunction\.dev'/);
+});
+
+test("platform resume commands retry setup without an enrollment token", () => {
+  const commands = buildPlatformResumeCommands("https://usejunction.dev/");
+  assert.match(commands.macosLinux, /install\.sh/);
+  assert.match(commands.macosLinux, /--resume/);
+  assert.doesNotMatch(commands.macosLinux, /--token/);
+  assert.match(commands.windows, /install\.ps1/);
+  assert.match(commands.windows, /-Resume/);
+  assert.doesNotMatch(commands.windows, /-Token/);
 });
 
 test("PowerShell command literals escape single quotes", () => {

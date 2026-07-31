@@ -9,6 +9,7 @@ import {
   type PlanVerdict,
   type PlanVerdictCode,
   type QuotaSnapshotInput,
+  type QuotaHistorySample,
   type QuotaUtilization,
 } from "@/lib/quotas/plan-utilization-policy";
 import { toolDisplayName } from "@/lib/tools/catalog";
@@ -26,7 +27,9 @@ export type QuotaPaceCode =
   | "EXCESS"
   | "ON_TRACK"
   | "UNDER"
+  | "STABLE"
   | "ALREADY_EXCEEDED"
+  | "FORMING"
   | "UNKNOWN";
 
 export type QuotaPace = {
@@ -46,6 +49,7 @@ export type QuotaPace = {
   resetsAt: string | null;
   /** One-line manager summary. */
   summary: string;
+  projectionState: "forming" | "reliable" | "unavailable";
 };
 
 /** Infer billing-window length when providers omit periodStartsAt. */
@@ -54,6 +58,7 @@ export function inferQuotaWindowMs(windowType: string): number | null {
   if (/week|seven_day/i.test(windowType)) return 7 * DAY_MS;
   if (/day|daily/i.test(windowType)) return DAY_MS;
   if (/month|^plan$|^api$|^auto$|^copilot_/i.test(windowType)) return 30 * DAY_MS;
+  if (/year|annual/i.test(windowType)) return 365 * DAY_MS;
   return null;
 }
 
@@ -62,6 +67,10 @@ function formatDuration(days: number): string {
   if (days < 1) return `${Math.max(1, Math.round(days * 24))}h`;
   if (days < 1.5) return "about a day";
   return `${Math.round(days)} days`;
+}
+
+function ratioToPercent(ratio: number): number {
+  return Math.round(ratio * 10_000) / 100;
 }
 
 /**
@@ -77,12 +86,13 @@ export function projectQuotaPace(
     toolLabel: toolDisplayName(quota.toolKey),
     windowType: quota.windowType,
     windowLabel: quotaWindowLabel(quota.windowType),
-    usedPercent: quota.rawRatio == null ? null : quota.rawRatio * 100,
+    usedPercent: quota.rawRatio == null ? null : ratioToPercent(quota.rawRatio),
     expectedPercent: null as number | null,
     daysToExhaust: null as number | null,
     daysToReset: null as number | null,
     exhaustAt: null as string | null,
     resetsAt: quota.resetsAt,
+    projectionState: "unavailable" as const,
   };
 
   if (quota.rawRatio == null) {
@@ -138,20 +148,87 @@ export function projectQuotaPace(
   const remainingMs = resetMs - nowMs;
   const expectedRatio = elapsedMs / windowMs;
   const usedRatio = quota.rawRatio;
-  const burnPerMs = usedRatio / elapsedMs;
-  const msToExhaust = burnPerMs > 0 ? (1 - usedRatio) / burnPerMs : Number.POSITIVE_INFINITY;
-  const daysToExhaust = Number.isFinite(msToExhaust) ? msToExhaust / DAY_MS : null;
   const daysToReset = remainingMs / DAY_MS;
-  const exhaustAt =
-    daysToExhaust != null && Number.isFinite(msToExhaust)
-      ? new Date(nowMs + msToExhaust).toISOString()
-      : null;
 
-  const expectedPercent = expectedRatio * 100;
-  const usedPercent = usedRatio * 100;
+  const expectedPercent = ratioToPercent(expectedRatio);
+  const usedPercent = ratioToPercent(usedRatio);
+
+  const linearProjection = () => {
+    const burnPerMs = usedRatio / elapsedMs;
+    const msToExhaust = burnPerMs > 0 ? (1 - usedRatio) / burnPerMs : Number.POSITIVE_INFINITY;
+    const daysToExhaust = Number.isFinite(msToExhaust) ? msToExhaust / DAY_MS : null;
+    const exhaustAt = daysToExhaust != null ? new Date(nowMs + msToExhaust).toISOString() : null;
+    const code: QuotaPaceCode = msToExhaust < remainingMs
+      ? "EXCESS"
+      : usedRatio <= expectedRatio * 0.75
+        ? "UNDER"
+        : "ON_TRACK";
+    const summary = code === "EXCESS" && daysToExhaust != null
+      ? `${base.toolLabel} is above pace and reaches its limit in ~${formatDuration(daysToExhaust)} — before reset (${formatDuration(daysToReset)} left).`
+      : code === "UNDER"
+        ? `${base.toolLabel} is underutilized (${Math.round(usedPercent)}% used vs ~${Math.round(expectedPercent)}% expected).`
+        : `${base.toolLabel} · ${Math.round(usedPercent)}% of ${base.windowLabel.toLowerCase()} window.`;
+    return {
+      ...base,
+      code,
+      expectedPercent,
+      usedPercent,
+      daysToExhaust,
+      daysToReset,
+      exhaustAt,
+      summary,
+      projectionState: "reliable" as const,
+    };
+  };
+
+  const history = (quota.history ?? [])
+    .filter((sample): sample is QuotaHistorySample => sample.resetAt === quota.resetsAt)
+    .sort((a, b) => new Date(a.observedAt).getTime() - new Date(b.observedAt).getTime());
+  // Callers that do not provide history are legacy/estimated contexts. Keep
+  // their prior static projection behavior; live quota cards always attach an
+  // array (including an empty one), which makes the forming state explicit.
+  if (quota.history === undefined) return linearProjection();
+  let first = history[0];
+  const last = history[history.length - 1];
+  for (let index = 1; index < history.length; index += 1) {
+    if (history[index]!.usedPercent < history[index - 1]!.usedPercent) first = history[index];
+  }
+  const historySpanMs = first && last
+    ? new Date(last.observedAt).getTime() - new Date(first.observedAt).getTime()
+    : 0;
+  if (!first || !last || history.length < 2 || historySpanMs < 30 * 60 * 1000) {
+    return {
+      ...base,
+      code: "FORMING",
+      expectedPercent,
+      usedPercent,
+      daysToReset,
+      summary: `${base.toolLabel} is awaiting the next quota sync.`,
+      projectionState: "forming" as const,
+    };
+  }
+
+  const deltaRatio = last.usedPercent / 100 - first.usedPercent / 100;
+  if (deltaRatio <= 0) {
+    return {
+      ...base,
+      code: "STABLE",
+      expectedPercent,
+      usedPercent,
+      daysToReset,
+      summary: `${base.toolLabel} has no usage increase across the observed interval.`,
+      projectionState: "reliable" as const,
+    };
+  }
+  const historyBurnPerMs = deltaRatio > 0 ? deltaRatio / historySpanMs : 0;
+  const historyMsToExhaust = historyBurnPerMs > 0 ? (1 - usedRatio) / historyBurnPerMs : Number.POSITIVE_INFINITY;
+  const historyDaysToExhaust = Number.isFinite(historyMsToExhaust) ? historyMsToExhaust / DAY_MS : null;
+  const historyExhaustAt = historyDaysToExhaust != null
+    ? new Date(nowMs + historyMsToExhaust).toISOString()
+    : null;
 
   let code: QuotaPaceCode;
-  if (msToExhaust < remainingMs) {
+  if (historyMsToExhaust < remainingMs) {
     code = "EXCESS";
   } else if (usedRatio <= expectedRatio * 0.75) {
     code = "UNDER";
@@ -160,12 +237,12 @@ export function projectQuotaPace(
   }
 
   let summary: string;
-  if (code === "EXCESS" && daysToExhaust != null) {
-    summary = `${base.toolLabel} is above pace and burns out in ~${formatDuration(daysToExhaust)} — before reset (${formatDuration(daysToReset)} left).`;
+  if (code === "EXCESS" && historyDaysToExhaust != null) {
+    summary = `${base.toolLabel} is above pace and reaches its limit in ~${formatDuration(historyDaysToExhaust)} — before reset (${formatDuration(daysToReset)} left).`;
   } else if (code === "UNDER") {
     summary = `${base.toolLabel} is underutilized (${Math.round(usedPercent)}% used vs ~${Math.round(expectedPercent)}% expected).`;
-  } else if (code === "ON_TRACK" && daysToExhaust != null) {
-    summary = `${base.toolLabel} is on pace — ~${formatDuration(daysToExhaust)} of runway left; resets in ${formatDuration(daysToReset)}.`;
+  } else if (code === "ON_TRACK" && historyDaysToExhaust != null) {
+    summary = `${base.toolLabel} is on pace; resets in ${formatDuration(daysToReset)}.`;
   } else {
     summary = `${base.toolLabel} · ${Math.round(usedPercent)}% of ${base.windowLabel.toLowerCase()} window.`;
   }
@@ -175,10 +252,11 @@ export function projectQuotaPace(
     code,
     usedPercent,
     expectedPercent,
-    daysToExhaust,
+    daysToExhaust: historyDaysToExhaust,
     daysToReset,
-    exhaustAt,
+    exhaustAt: historyExhaustAt,
     summary,
+    projectionState: "reliable",
   };
 }
 
@@ -204,7 +282,19 @@ export function projectMemberQuotaPaces(
 
   return paces.sort((a, b) => {
     const rank = (code: QuotaPaceCode) =>
-      code === "ALREADY_EXCEEDED" ? 0 : code === "EXCESS" ? 1 : code === "ON_TRACK" ? 2 : code === "UNDER" ? 3 : 4;
+      code === "ALREADY_EXCEEDED"
+        ? 0
+        : code === "EXCESS"
+          ? 1
+          : code === "FORMING"
+            ? 2
+            : code === "ON_TRACK"
+              ? 3
+              : code === "STABLE"
+                ? 4
+                : code === "UNDER"
+                  ? 5
+                  : 6;
     const rankDiff = rank(a.code) - rank(b.code);
     if (rankDiff !== 0) return rankDiff;
     return (b.usedPercent ?? -1) - (a.usedPercent ?? -1);
@@ -221,6 +311,10 @@ export function paceVerdictLabel(code: QuotaPaceCode): string {
       return "On pace";
     case "UNDER":
       return "Underutilized";
+    case "STABLE":
+      return "No recent change";
+    case "FORMING":
+      return "Awaiting next sync";
     default:
       return "Offline";
   }
@@ -236,6 +330,9 @@ export function paceToPlanVerdictCode(code: QuotaPaceCode): PlanVerdictCode | nu
       return "HEALTHY";
     case "UNDER":
       return "LIGHT_USE";
+    case "STABLE":
+    case "FORMING":
+      return null;
     default:
       return null;
   }
@@ -264,6 +361,8 @@ function synthesizeIncludedQuota(
     toolKey: "included",
     windowType: "month",
     developerId: null,
+    deviceId: null,
+    observationToolName: "included",
   };
 }
 
@@ -293,6 +392,13 @@ export function paceAwarePlanVerdict(input: {
   if (!quotaForPace) return base;
 
   const pace = projectQuotaPace(quotaForPace, now);
+  if (pace.code === "FORMING" && (base.code === "LIGHT_USE" || base.code === "HEALTHY")) {
+    return {
+      ...base,
+      code: "UNKNOWN",
+      reasons: [...base.reasons, "pace_forming"],
+    };
+  }
   const code = paceToPlanVerdictCode(pace.code);
   if (!code) return base;
 

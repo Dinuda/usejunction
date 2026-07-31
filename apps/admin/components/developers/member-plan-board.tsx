@@ -60,6 +60,31 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function TokenBreakdown({
+  input,
+  output,
+  cache,
+}: {
+  input: number;
+  output: number;
+  cache: number;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[0.65rem] uppercase tracking-[0.08em] text-muted-foreground/80">
+        Tokens
+      </p>
+      <p className="mt-0.5 text-sm tabular-nums text-foreground">
+        {formatCompactNumber(input + output)}
+      </p>
+      <p className="mt-1 text-xs tabular-nums text-muted-foreground">
+        in {formatCompactNumber(input)} · out {formatCompactNumber(output)} · cache{" "}
+        {formatCompactNumber(cache)}
+      </p>
+    </div>
+  );
+}
+
 function WindowMeter({
   window,
   code,
@@ -103,6 +128,7 @@ function PlanCardButton({
   const mark = expected == null ? null : Math.min(100, Math.max(0, expected));
   const reset = card.primary ? resetLabel(card.primary) : null;
   const tokens = card.usage?.tokens ?? 0;
+  const cacheTokens = (card.usage?.cacheReadTokens ?? 0) + (card.usage?.cacheWriteTokens ?? 0);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -148,7 +174,13 @@ function PlanCardButton({
         ) : null}
 
         <div className="mt-4 flex flex-wrap gap-x-6 gap-y-3">
-          {tokens > 0 ? <Stat label="Tokens" value={formatCompactNumber(tokens)} /> : null}
+          {card.usage && (tokens > 0 || cacheTokens > 0) ? (
+            <TokenBreakdown
+              input={card.usage.inputTokens}
+              output={card.usage.outputTokens}
+              cache={cacheTokens}
+            />
+          ) : null}
           {card.usage && card.usage.cost > 0 ? (
             <Stat label="Usage" value={formatUsd(card.usage.cost)} />
           ) : null}
@@ -192,7 +224,13 @@ function PlanCardButton({
           </section>
 
           <section className="flex flex-wrap gap-x-8 gap-y-4">
-            {tokens > 0 ? <Stat label="Tokens" value={formatCompactNumber(tokens)} /> : null}
+            {card.usage && (tokens > 0 || cacheTokens > 0) ? (
+              <TokenBreakdown
+                input={card.usage.inputTokens}
+                output={card.usage.outputTokens}
+                cache={cacheTokens}
+              />
+            ) : null}
             {card.usage && card.usage.cost > 0 ? (
               <Stat label="Usage" value={formatUsd(card.usage.cost)} />
             ) : null}

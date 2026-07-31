@@ -22,6 +22,10 @@ vi.mock("@/components/signals/signals-ui", () => ({
   ),
 }));
 
+vi.mock("@/components/dashboard/local-sync-panel", () => ({
+  LocalSyncPanel: ({ scope }: { scope: "team" | "you" }) => <div>sync panel {scope}</div>,
+}));
+
 vi.mock("next/link", () => ({
   default: ({
     href,
@@ -56,7 +60,9 @@ const syncs: OrgDeviceSyncStatus = {
       lastToolsSyncAt: "2026-07-25T11:40:00.000Z",
       lastQuotasSyncAt: null,
       hasLocalEndpoint: true,
+      remoteSyncProtocol: 1,
       status: "online",
+      latestRequest: { id: "req-1", status: "succeeded", createdAt: "2026-07-25T11:45:00.000Z", completedAt: "2026-07-25T11:46:00.000Z" },
       developer: { id: "dev-1", name: "Ada Lovelace", email: "ada@example.test" },
     },
     {
@@ -71,7 +77,9 @@ const syncs: OrgDeviceSyncStatus = {
       lastToolsSyncAt: null,
       lastQuotasSyncAt: null,
       hasLocalEndpoint: false,
+      remoteSyncProtocol: 0,
       status: "stale",
+      latestRequest: { id: "req-1", status: "queued", createdAt: "2026-07-25T11:45:00.000Z", completedAt: null },
       developer: { id: "dev-2", name: "Bob Builder", email: "bob@example.test" },
     },
   ],

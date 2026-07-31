@@ -4,7 +4,35 @@ import { rollingPeriodLabel, type RollingPeriod } from "@/lib/dashboard/period-p
 
 export type CycleView = "current_cycles" | "previous_cycles" | "last_30_days";
 
+export type CycleWindowBounds = {
+  from: string;
+  to: string;
+};
+
+export type CycleViewWindows = {
+  current: CycleWindowBounds;
+  previous: CycleWindowBounds;
+};
+
 type CyclePlan = Parameters<typeof resolveBillingCycleOffset>[0];
+
+function metricWindowToBounds(window: MetricWindow): CycleWindowBounds {
+  return {
+    from: window.from.toISOString().slice(0, 10),
+    to: window.to.toISOString().slice(0, 10),
+  };
+}
+
+/** Union billing-cycle windows for current and previous offsets across active plans. */
+export function cycleViewWindows(
+  plans: CyclePlan[],
+  now: Date = new Date(),
+): CycleViewWindows {
+  return {
+    current: metricWindowToBounds(reportWindowForCycleOffset(plans, 0, now)),
+    previous: metricWindowToBounds(reportWindowForCycleOffset(plans, -1, now)),
+  };
+}
 
 export function parseCycleView(value: string | undefined): CycleView {
   if (value === "previous_cycles" || value === "last_30_days") return value;

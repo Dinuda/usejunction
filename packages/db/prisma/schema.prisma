@@ -1,6 +1,6 @@
 generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+  provider   = "prisma-client-js"
+  engineType = "client"
 }
 
 datasource db {
@@ -32,6 +32,7 @@ model Organization {
   enrollmentTokens       EnrollmentToken[]
   toolAccounts           ToolAccount[]
   quotaSnapshots         QuotaSnapshot[]
+  quotaObservations      QuotaObservation[]
   planInterests          PlanInterest[]
   domains                OrganizationDomain[]
   invites                OrganizationInvite[]
@@ -48,6 +49,8 @@ model Organization {
   analyticsDirtyDays     AnalyticsDirtyDay[]
   analyticsWatermarks    AnalyticsWatermark[]
   syncRuns               SyncRun[]
+  syncRequests           SyncRequest[]
+  deviceSyncRequestTargets DeviceSyncRequestTarget[]
   deviceUsageFingerprints DeviceUsageFingerprint[]
   toolClaims             DeveloperToolClaim[]
   billingPlanTemplates   BillingPlanTemplate[]
@@ -65,6 +68,7 @@ model Organization {
   notificationPreferences UserNotificationPreference[]
   dailyReportDeliveries      DailyReportDelivery[]
   dailyReportUsageSnapshots  DailyReportUsageSnapshot[]
+  deviceRecoveryNotices      DeviceRecoveryNotice[]
 
   @@map("organizations")
 }
@@ -97,6 +101,7 @@ model Developer {
   signalsSessions       SignalsSession[]
   localWorkSessions     LocalWorkSession[]
   deviceActivityEvents  DeviceActivityEvent[]
+  syncRequests          SyncRequest[]
 
   @@unique([orgId, email])
   @@unique([orgId, authUserId])
@@ -118,6 +123,7 @@ model Device {
   localEndpoint      String?   @map("local_endpoint")
   localSyncTokenHash String?   @map("local_sync_token_hash")
   localSyncTokenEnc  String?   @map("local_sync_token_enc")
+  remoteSyncProtocol Int       @default(0) @map("remote_sync_protocol")
   lastUsageSyncAt    DateTime? @map("last_usage_sync_at")
   lastAccountSyncAt  DateTime? @map("last_account_sync_at")
   lastToolsSyncAt    DateTime? @map("last_tools_sync_at")
@@ -135,6 +141,7 @@ model Device {
   requestMetadata        RequestMetadata[]
   toolAccounts           ToolAccount[]
   quotaSnapshots         QuotaSnapshot[]
+  quotaObservations      QuotaObservation[]
   usageDaily             UsageDaily[]
   syncRuns               SyncRun[]
   syncChunks             SyncChunk[]
@@ -145,8 +152,93 @@ model Device {
   agentUpdateDeployments AgentUpdateDeployment[]
   agentUpdateEvents      AgentUpdateEvent[]
   deviceActivityEvents   DeviceActivityEvent[]
+  syncRequestTargets     DeviceSyncRequestTarget[]
+  recoveryNotices        DeviceRecoveryNotice[]
 
   @@map("devices")
+}
+
+model SyncRequest {
+  id                  String   @id @default(cuid())
+  orgId               String   @map("org_id")
+  requesterUserId     String?  @map("requester_user_id")
+  scope               String
+  trigger             String   @default("manual")
+  automationKey       String?  @unique @map("automation_key")
+  developerId         String?  @map("developer_id")
+  idempotencyKey      String?  @map("idempotency_key")
+  realtimeChannel     String?  @map("realtime_channel")
+  dispatchStatus      String   @default("pending") @map("dispatch_status")
+  dispatchError       String?  @map("dispatch_error") @db.Text
+  publishedAt         DateTime? @map("published_at")
+  expiresAt           DateTime @map("expires_at")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  organization Organization              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  developer    Developer?                @relation(fields: [developerId], references: [id], onDelete: SetNull)
+  targets      DeviceSyncRequestTarget[]
+
+  @@index([orgId, createdAt])
+  @@index([orgId, requesterUserId, idempotencyKey, createdAt])
+  @@index([orgId, scope, createdAt])
+  @@index([expiresAt])
+  @@map("sync_requests")
+}
+
+model DeviceRecoveryNotice {
+  id                 String    @id @default(cuid())
+  orgId              String    @map("org_id")
+  deviceId           String    @map("device_id")
+  lastSeenAtSnapshot DateTime  @map("last_seen_at_snapshot")
+  status             String    @default("pending")
+  attemptCount       Int       @default(0) @map("attempt_count")
+  sentAt             DateTime? @map("sent_at")
+  recoveredAt        DateTime? @map("recovered_at")
+  lastError          String?   @map("last_error") @db.Text
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, lastSeenAtSnapshot])
+  @@index([orgId, status, createdAt])
+  @@index([deviceId, recoveredAt])
+  @@map("device_recovery_notices")
+}
+
+model DeviceSyncRequestTarget {
+  id              String    @id @default(cuid())
+  requestId       String    @map("request_id")
+  orgId           String    @map("org_id")
+  deviceId        String    @map("device_id")
+  status          String    @default("queued")
+  leaseToken      String?   @map("lease_token")
+  leaseExpiresAt  DateTime? @map("lease_expires_at")
+  attemptCount    Int       @default(0) @map("attempt_count")
+  claimedAt       DateTime? @map("claimed_at")
+  runningAt       DateTime? @map("running_at")
+  completedAt     DateTime? @map("completed_at")
+  toolsCount      Int?      @map("tools_count")
+  accountsCount   Int?      @map("accounts_count")
+  quotasCount     Int?      @map("quotas_count")
+  usageRowsCount  Int?      @map("usage_rows_count")
+  warnings        Json?
+  errorCode       String?   @map("error_code")
+  errorMessage    String?   @map("error_message") @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  syncRequest  SyncRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, deviceId])
+  @@index([deviceId, status, leaseExpiresAt])
+  @@index([orgId, status, createdAt])
+  @@index([requestId, status])
+  @@map("device_sync_request_targets")
 }
 
 model RateLimitBucket {
@@ -363,6 +455,26 @@ model QuotaSnapshot {
 
   @@index([deviceId, toolName, windowType])
   @@map("quota_snapshots")
+}
+
+model QuotaObservation {
+  id           String   @id @default(cuid())
+  orgId        String   @map("org_id")
+  deviceId     String   @map("device_id")
+  toolName     String   @map("tool_name")
+  windowType   String   @map("window_type")
+  resetAt      DateTime @map("reset_at")
+  usedPercent  Float    @map("used_percent")
+  observedAt   DateTime @default(now()) @map("observed_at")
+  sampleBucket DateTime @map("sample_bucket")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, toolName, windowType, resetAt, sampleBucket])
+  @@index([orgId, toolName, windowType, resetAt, observedAt])
+  @@index([deviceId, observedAt])
+  @@map("quota_observations")
 }
 
 model User {
@@ -1085,6 +1197,7 @@ model LocalWorkSession {
   device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@unique([deviceId, localId])
+  @@index([orgId, observedAt])
   @@index([orgId, developerId, observedAt])
   @@index([orgId, toolName, observedAt])
   @@map("local_work_sessions")
@@ -1101,6 +1214,7 @@ model BillingPlanTemplate {
   toolKey                    String?   @map("tool_key")
   catalogPlanKey             String?   @map("catalog_plan_key")
   billingCadence             String    @default("monthly") @map("billing_cadence")
+  usageWindowPreference      String    @default("auto") @map("usage_window_preference")
   billingCycleAnchorDate     DateTime? @map("billing_cycle_anchor_date") @db.Date
   billingCycleDays           Int?      @map("billing_cycle_days")
   billingProfile             String    @default("business") @map("billing_profile")

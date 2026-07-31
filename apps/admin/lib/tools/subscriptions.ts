@@ -3,11 +3,13 @@ import { z } from "zod";
 import { cycleFromNextRenewal, resolveBillingCycle } from "@/lib/billing/cycles";
 import { dateOnlyInput, microsInput } from "@/lib/billing/validation";
 import { catalogPrice, findCatalogPlan, findCatalogTool, type BillingCadence } from "./catalog";
+import { normalizeUsageWindowPreference } from "@/lib/quotas/usage-window";
 
 export const subscriptionInputSchema = z.object({
   toolKey: z.string().trim().min(1),
   planKey: z.string().trim().min(1),
   billingCadence: z.enum(["weekly", "monthly", "annual", "custom"]).default("monthly"),
+  usageWindowPreference: z.string().trim().min(1).max(120).default("auto"),
   billingCycleAnchorDate: dateOnlyInput.optional().nullable(),
   nextRenewalDate: dateOnlyInput.optional().nullable(),
   billingCycleDays: z.number().int().positive().optional().nullable(),
@@ -31,6 +33,7 @@ export function deriveSubscription(input: z.infer<typeof subscriptionInputSchema
   const plan = findCatalogPlan(tool?.key ?? input.toolKey, input.planKey);
   if (!tool || !plan) throw new Error("CATALOG_PLAN_NOT_FOUND");
   const cadence = input.billingCadence as BillingCadence;
+  const usageWindowPreference = normalizeUsageWindowPreference(input.usageWindowPreference);
   const catalogMicros = catalogPrice(plan, cadence);
   const customPrice = Boolean(plan.customPrice || cadence === "custom");
   // Allow explicit micros when catalog has no price for this cadence (e.g. ChatGPT weekly
@@ -66,6 +69,7 @@ export function deriveSubscription(input: z.infer<typeof subscriptionInputSchema
     tier: plan.tier,
     currency: "USD",
     billingCadence: cadence,
+    usageWindowPreference,
     billingCycleAnchorDate,
     billingCycleDays: cadence === "custom" ? input.billingCycleDays! : null,
     seatCapacity: input.seatCapacity,

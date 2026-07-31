@@ -20,12 +20,22 @@ const NAV_PREFETCH_TARGETS: Record<string, { queryKey: readonly unknown[]; url: 
   "/signals": { queryKey: signalsOverviewKey(), url: "/api/app/signals/overview" },
 };
 
-/** Warm the React Query cache for a primary nav destination on hover/focus. */
+const NAV_PREFETCH_STALE_TIME = 5 * 60 * 1000;
+
+/** Warm the React Query cache for a primary nav destination after a deliberate hover. */
 export function prefetchNavPage(queryClient: QueryClient, href: string) {
   const target = NAV_PREFETCH_TARGETS[href];
   if (!target) return;
+
+  const state = queryClient.getQueryState(target.queryKey);
+  const isFresh = state?.dataUpdatedAt
+    ? Date.now() - state.dataUpdatedAt < NAV_PREFETCH_STALE_TIME
+    : false;
+  if (isFresh || state?.fetchStatus === "fetching") return;
+
   void queryClient.prefetchQuery({
     queryKey: target.queryKey,
     queryFn: () => appFetch(target.url),
+    staleTime: NAV_PREFETCH_STALE_TIME,
   });
 }

@@ -104,6 +104,7 @@ Hobby Vercel only allows **once-per-day** native crons. The hourly report fan-ou
 | `GET/POST /api/cron/usage-daily-refresh` | Seal UTC day for agent full usage rescans + invalidate analytics caches | Vercel (`apps/admin/vercel.json`) | `15 0 * * *` |
 | `GET/POST /api/cron/materialize-org-day-snapshots` | Materialize org day analytics snapshots | Vercel (`apps/admin/vercel.json`) | `45 0 * * *` |
 | `POST /api/cron/daily-report-send` | Email daily report teasers at 19:00 in each user’s timezone | GitHub Actions | `5 * * * *` |
+| `POST /api/cron/device-health` | Queue silent stale-device resyncs and send one 48-hour repair notice per outage | GitHub Actions | `*/15 * * * *` |
 
 ### GitHub Environment `agent-production` (required for hourly report send)
 

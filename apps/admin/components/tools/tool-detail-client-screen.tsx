@@ -8,10 +8,11 @@ import {
   cycleViewPeriodLabel,
   cycleViewShortSuffix,
   type CycleView,
+  type CycleViewWindows,
 } from "@/lib/dashboard/cycle-view";
 import type { RollingPeriod } from "@/lib/dashboard/period-prefs";
 import type { getToolDetail } from "@/lib/queries/dashboard/tool-detail";
-import type { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
+import type { RemoteSyncPanelContext } from "@/lib/sync/remote-sync";
 import { useAppPageQuery } from "@/lib/api/client";
 import { toolDetailKey } from "@/lib/app-pages/query-keys";
 import { AppPageError, AppPageSkeleton } from "@/components/app-data-state";
@@ -22,6 +23,7 @@ type ToolPayload = {
   toolKey: string;
   cycleView: CycleView;
   rollingPeriod: RollingPeriod;
+  cycleWindows?: CycleViewWindows;
   detail: NonNullable<Awaited<ReturnType<typeof getToolDetail>>> & {
     plans: Array<
       NonNullable<Awaited<ReturnType<typeof getToolDetail>>>["plans"][number] & {
@@ -30,7 +32,7 @@ type ToolPayload = {
       }
     >;
   };
-  syncContext: Awaited<ReturnType<typeof getLocalSyncContext>>;
+  syncContext: RemoteSyncPanelContext | null;
 };
 
 export default function ToolDetailClientScreen() {
@@ -52,19 +54,22 @@ export default function ToolDetailClientScreen() {
 
   if (query.isPending) return <AppPageSkeleton />;
   if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
-  const { kind, toolKey, cycleView, rollingPeriod, detail: serialized, syncContext } = query.data;
+  const { kind, toolKey, cycleView, rollingPeriod, cycleWindows, detail: serialized, syncContext } = query.data;
   const scope = kind === "personal" ? "self" : "org";
 
   return (
     <>
-      {syncContext?.hasLocalEndpoint ? (
+      {syncContext?.deviceCount ? (
         <div className="mb-8">
           <LocalSyncPanel
+            scope={kind === "personal" ? "you" : "team"}
             lastSeenAt={syncContext.lastSeenAt}
             lastUsageSyncAt={syncContext.lastUsageSyncAt}
             lastAccountSyncAt={syncContext.lastAccountSyncAt}
             dashboardReady={syncContext.dashboardReady}
             dirtyDayCount={syncContext.dirtyDayCount}
+            staleDeviceCount={syncContext.staleDeviceCount}
+            recoveryDevices={syncContext.recoveryDevices}
           />
         </div>
       ) : null}
@@ -76,6 +81,7 @@ export default function ToolDetailClientScreen() {
         periodLabel={cycleViewPeriodLabel(cycleView, rollingPeriod)}
         periodSuffix={cycleViewShortSuffix(cycleView, rollingPeriod)}
         periodBasePath={`/tools/${toolKey}`}
+        cycleWindows={cycleWindows}
       />
     </>
   );

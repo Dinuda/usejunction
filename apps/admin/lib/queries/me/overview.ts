@@ -3,6 +3,7 @@ import { inclusiveDayCount, usageWindowDays } from "@/lib/metrics/date-range";
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import { readDeveloperUsageFromSnapshots } from "@/lib/analytics/snapshots";
 import { getWorkspaceSyncReadiness } from "@/lib/analytics/snapshots/readiness";
+import { deviceHealthState } from "@/lib/devices/health";
 import { orgNeedsPlanSync } from "@/lib/queries/me/local-sync-context";
 import { canonicalToolKey, findCatalogTool, isCodingTool } from "@/lib/tools/catalog";
 import type { OrganizationRole } from "@/lib/workspace-context";
@@ -75,6 +76,7 @@ export interface MeOverviewData {
         updatedAt: Date;
       }>;
       quotas: Array<{
+        deviceId: string;
         toolName: string;
         windowType: string;
         usedPercent: number | null;
@@ -83,6 +85,14 @@ export interface MeOverviewData {
         source: string;
         updatedAt: Date;
       }>;
+    }>;
+    quotaHistory: Array<{
+      deviceId: string;
+      toolName: string;
+      windowType: string;
+      usedPercent: number;
+      resetAt: Date;
+      observedAt: Date;
     }>;
     vendorSeats: Array<{
       provider: string;
@@ -94,12 +104,15 @@ export interface MeOverviewData {
       observedAt: Date;
     }>;
     reportedTools: Array<{ toolName: string; source: string; observedAt: Date }>;
+    usageWindowPreferences: Record<string, string>;
   };
   usage30d: {
     requests: number;
     sessions: number;
     inputTokens: string;
     outputTokens: string;
+    cacheReadTokens: string;
+    cacheWriteTokens: string;
     costMicros: string;
     /** Vendor-verified usage dollars for the selected window. */
     verifiedUsageCost: number;
@@ -120,6 +133,10 @@ export interface MeOverviewData {
     toolName: string;
     requests: number;
     tokens: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
     cost: number;
   }>;
   aiCoding30d: AiCodingMetrics;
@@ -133,6 +150,18 @@ export interface MeOverviewData {
     dashboardReady: boolean;
     dirtyDayCount: number;
     snapshotLagSeconds: number | null;
+    staleDeviceCount: number;
+    recoveryDevices: Array<{
+      id: string;
+      hostname: string;
+      os: string;
+      architecture: string;
+      lastSeenAt: string;
+      state: "repair_required";
+      remoteSyncProtocol: number;
+      owner: { id: string; name: string; email: string };
+      isCurrentUser: boolean;
+    }>;
   };
 }
 
@@ -244,7 +273,7 @@ async function buildMeOverview(
     grain: "day",
   };
   // All usage KPIs, productivity, and model breakdowns come from sealed snapshots.
-  const [snapshotUsage, planAssignments] = await Promise.all([
+  const [snapshotUsage, planAssignments, quotaObservations] = await Promise.all([
     readDeveloperUsageFromSnapshots(orgId, developer.id, snapshotWindow, {
       includeTools: true,
       includeModels: true,
@@ -267,7 +296,13 @@ async function buildMeOverview(
         seatCount: true,
         startDate: true,
         endDate: true,
+        template: { select: { toolKey: true, usageWindowPreference: true } },
       },
+    }),
+    prisma.quotaObservation.findMany({
+      where: { orgId, deviceId: { in: developer.devices.map((device) => device.id) }, observedAt: { gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) } },
+      select: { deviceId: true, toolName: true, windowType: true, usedPercent: true, resetAt: true, observedAt: true },
+      orderBy: { observedAt: "asc" },
     }),
   ]);
 
@@ -305,6 +340,10 @@ async function buildMeOverview(
       toolName: row.toolName || "unknown",
       requests: row.requests,
       tokens: row.tokens,
+      inputTokens: row.inputTokens,
+      outputTokens: row.outputTokens,
+      cacheReadTokens: row.cacheReadTokens,
+      cacheWriteTokens: row.cacheWriteTokens,
       cost: row.cost,
     })),
     detectedToolNames,
@@ -412,6 +451,19 @@ async function buildMeOverview(
     personalNeedsPlanSync ||
     (options.includeOrgPlanSync === false ? false : await orgNeedsPlanSync(orgId));
   const readiness = await getWorkspaceSyncReadiness(orgId);
+  const recoveryDevices = developer.devices
+    .filter((device) => deviceHealthState(device.lastSeenAt) === "repair_required")
+    .map((device) => ({
+      id: device.id,
+      hostname: device.hostname,
+      os: device.os,
+      architecture: device.architecture,
+      lastSeenAt: device.lastSeenAt.toISOString(),
+      state: "repair_required" as const,
+      remoteSyncProtocol: device.remoteSyncProtocol,
+      owner: { id: developer.id, name: developer.name, email: developer.email },
+      isCurrentUser: true,
+    }));
 
   return {
     developer: {
@@ -432,8 +484,14 @@ async function buildMeOverview(
         localEndpoint: device.localEndpoint ?? null,
         tools: device.toolInstallations,
         accounts: device.toolAccounts,
-        quotas: device.quotaSnapshots,
+        quotas: device.quotaSnapshots.map((quota) => ({ ...quota, deviceId: device.id })),
       })),
+      quotaHistory: quotaObservations,
+      usageWindowPreferences: Object.fromEntries(
+        planAssignments
+          .filter((row) => row.template?.toolKey)
+          .map((row) => [row.template!.toolKey!, row.template!.usageWindowPreference]),
+      ),
       vendorSeats: developer.seatAssignments,
       reportedTools: developer.toolClaims,
     },
@@ -442,6 +500,8 @@ async function buildMeOverview(
       sessions: snapshotUsage.kpis.sessions,
       inputTokens: String(inputTokens),
       outputTokens: String(outputTokens),
+      cacheReadTokens: String(snapshotUsage.kpis.cacheReadTokens),
+      cacheWriteTokens: String(snapshotUsage.kpis.cacheWriteTokens),
       costMicros: String(Math.round((verifiedUsageCost + estimatedApiCost) * 1_000_000)),
       verifiedUsageCost,
       estimatedApiCost,
@@ -467,6 +527,8 @@ async function buildMeOverview(
       dashboardReady: readiness.dashboardReady,
       dirtyDayCount: readiness.dirtyDayCount,
       snapshotLagSeconds: readiness.snapshotLagSeconds,
+      staleDeviceCount: developer.devices.filter((device) => deviceHealthState(device.lastSeenAt) !== "online").length,
+      recoveryDevices,
     },
   };
 }

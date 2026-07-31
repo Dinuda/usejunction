@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SignalsKpi } from "@/components/signals/signals-ui";
+import { LocalSyncPanel } from "@/components/dashboard/local-sync-panel";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { formatRelativeTime } from "@/lib/format";
 import type { DeviceSyncStatus, OrgDeviceSyncRow, OrgDeviceSyncStatus } from "@/lib/queries/team/device-syncs";
@@ -23,7 +24,17 @@ import { cn } from "@/lib/utils";
 const STATUS_LABEL: Record<DeviceSyncStatus, string> = {
   online: "Online",
   stale: "Stale",
+  repair_required: "Needs repair",
   never_synced: "Never synced",
+};
+
+const REQUEST_STATUS_LABEL: Record<string, string> = {
+  queued: "Waiting",
+  claimed: "Accepted",
+  running: "Running",
+  succeeded: "Synced",
+  failed: "Failed",
+  expired: "Expired",
 };
 
 function statusBadgeVariant(status: DeviceSyncStatus): "default" | "outline" | "secondary" {
@@ -35,6 +46,10 @@ function statusBadgeVariant(status: DeviceSyncStatus): "default" | "outline" | "
 export function TeamSyncsPanel({ syncs }: { syncs: OrgDeviceSyncStatus }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"all" | DeviceSyncStatus>("all");
+  const latestSeen = latest(syncs.devices.map((row) => row.lastSeenAt));
+  const latestUsage = latest(syncs.devices.map((row) => row.lastUsageSyncAt));
+  const latestAccount = latest(syncs.devices.map((row) => row.lastAccountSyncAt));
+  const repairRequired = syncs.totals.repairRequired ?? 0;
 
   const rows = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -57,10 +72,27 @@ export function TeamSyncsPanel({ syncs }: { syncs: OrgDeviceSyncStatus }) {
 
   return (
     <div>
+      <div className="mb-8">
+        <LocalSyncPanel
+          scope="team"
+          lastSeenAt={latestSeen}
+          lastUsageSyncAt={latestUsage}
+          lastAccountSyncAt={latestAccount}
+          dashboardReady
+          dirtyDayCount={0}
+          staleDeviceCount={syncs.totals.stale + repairRequired}
+        />
+      </div>
+
       <div className="mb-6 grid items-start gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
         <SignalsKpi label="Machines" className="pl-5" value={syncs.totals.total} sub="Active enrollments" />
         <SignalsKpi label="Online" className="sm:pl-8" value={syncs.totals.online} sub="Heartbeat within 45m" />
-        <SignalsKpi label="Stale" className="xl:pl-8" value={syncs.totals.stale} sub="Synced before, quiet now" />
+        <SignalsKpi
+          label="Stale"
+          className="xl:pl-8"
+          value={syncs.totals.stale + repairRequired}
+          sub={`${repairRequired} needs repair`}
+        />
         <SignalsKpi
           label="Never synced"
           className="sm:pl-8"
@@ -85,6 +117,7 @@ export function TeamSyncsPanel({ syncs }: { syncs: OrgDeviceSyncStatus }) {
             <SelectItem value="all">All statuses</SelectItem>
             <SelectItem value="online">Online</SelectItem>
             <SelectItem value="stale">Stale</SelectItem>
+            <SelectItem value="repair_required">Needs repair</SelectItem>
             <SelectItem value="never_synced">Never synced</SelectItem>
           </SelectContent>
         </Select>
@@ -93,7 +126,7 @@ export function TeamSyncsPanel({ syncs }: { syncs: OrgDeviceSyncStatus }) {
       <MobileDataList>
         {rows.map((row) => (
           <MobileDataCard key={row.id} className="transition-colors hover:bg-muted/30">
-            <Link href={`/team/${row.developer.id}`} className="block min-w-0">
+            <Link href={`/team/${row.developer.id}`} prefetch={false} className="block min-w-0">
               <div className="flex min-w-0 items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium hover:underline">{row.hostname}</p>
@@ -112,6 +145,10 @@ export function TeamSyncsPanel({ syncs }: { syncs: OrgDeviceSyncStatus }) {
                 <MobileDataField label="Usage sync" value={formatRelativeTime(row.lastUsageSyncAt)} />
                 <MobileDataField label="Accounts" value={formatRelativeTime(row.lastAccountSyncAt)} />
                 <MobileDataField label="Tools" value={formatRelativeTime(row.lastToolsSyncAt)} />
+                <MobileDataField
+                  label="Latest request"
+                  value={row.latestRequest ? REQUEST_STATUS_LABEL[row.latestRequest.status] ?? row.latestRequest.status : "—"}
+                />
               </dl>
             </Link>
           </MobileDataCard>
@@ -131,6 +168,7 @@ export function TeamSyncsPanel({ syncs }: { syncs: OrgDeviceSyncStatus }) {
             <TableHead className="pb-3 pr-4 pt-1 font-medium">Usage</TableHead>
             <TableHead className="pb-3 pr-4 pt-1 font-medium">Accounts</TableHead>
             <TableHead className="pb-3 pr-4 pt-1 font-medium">Tools</TableHead>
+            <TableHead className="pb-3 pr-4 pt-1 font-medium">Request</TableHead>
             <TableHead className="pb-3 pr-4 pt-1 font-medium">Agent</TableHead>
           </TableRow>
         </TableHeader>
@@ -140,7 +178,7 @@ export function TeamSyncsPanel({ syncs }: { syncs: OrgDeviceSyncStatus }) {
           ))}
           {!rows.length ? (
             <TableRow>
-              <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+              <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
                 No machines match this filter.
               </TableCell>
             </TableRow>
@@ -151,11 +189,25 @@ export function TeamSyncsPanel({ syncs }: { syncs: OrgDeviceSyncStatus }) {
   );
 }
 
+function latest(values: Array<string | null>) {
+  let winner: string | null = null;
+  let winnerMs = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (!value) continue;
+    const ms = Date.parse(value);
+    if (Number.isFinite(ms) && ms > winnerMs) {
+      winner = value;
+      winnerMs = ms;
+    }
+  }
+  return winner;
+}
+
 function SyncTableRow({ row }: { row: OrgDeviceSyncRow }) {
   return (
     <TableRow className="transition-colors hover:bg-muted/30">
       <TableCell className="py-5 pr-4">
-        <Link href={`/team/${row.developer.id}`} className="group block min-w-0">
+        <Link href={`/team/${row.developer.id}`} prefetch={false} className="group block min-w-0">
           <p className="font-medium group-hover:underline">{row.hostname}</p>
           <p className="text-xs text-muted-foreground">
             {row.os}/{row.architecture}
@@ -164,7 +216,7 @@ function SyncTableRow({ row }: { row: OrgDeviceSyncRow }) {
         </Link>
       </TableCell>
       <TableCell className="py-5 pr-4">
-        <Link href={`/team/${row.developer.id}`} className="group block min-w-0">
+        <Link href={`/team/${row.developer.id}`} prefetch={false} className="group block min-w-0">
           <p className="font-medium group-hover:underline">{row.developer.name}</p>
           <p className="truncate text-xs text-muted-foreground">{row.developer.email}</p>
         </Link>
@@ -186,7 +238,20 @@ function SyncTableRow({ row }: { row: OrgDeviceSyncRow }) {
       <TableCell className="py-5 pr-4 tabular-nums text-muted-foreground">
         {formatRelativeTime(row.lastToolsSyncAt)}
       </TableCell>
-      <TableCell className="py-5 pr-4 text-muted-foreground">{row.agentVersion || "—"}</TableCell>
+      <TableCell className="py-5 pr-4 text-muted-foreground">
+        {row.latestRequest ? (
+          <span className="tabular-nums">
+            {REQUEST_STATUS_LABEL[row.latestRequest.status] ?? row.latestRequest.status}
+            {row.latestRequest.completedAt ? ` · ${formatRelativeTime(row.latestRequest.completedAt)}` : ""}
+          </span>
+        ) : (
+          "—"
+        )}
+      </TableCell>
+      <TableCell className="py-5 pr-4 text-muted-foreground">
+        {row.agentVersion || "—"}
+        {row.remoteSyncProtocol < 1 ? " · update needed" : ""}
+      </TableCell>
     </TableRow>
   );
 }

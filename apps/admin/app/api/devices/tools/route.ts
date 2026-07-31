@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@usejunction/db";
 import { findDeviceByBearerToken } from "@/lib/auth";
 import { limitedJson } from "@/lib/security/http";
 import { logServerError } from "@/lib/errors/public";
@@ -47,6 +48,10 @@ export async function POST(req: NextRequest) {
     const contentHash = toolsInventoryContentHash(items);
 
     if (device.toolsContentHash && device.toolsContentHash === contentHash) {
+      await prisma.device.update({
+        where: { id: device.id },
+        data: { lastToolsSyncAt: new Date(), lastSeenAt: new Date() },
+      });
       return NextResponse.json({ upserted: 0, unchanged: true });
     }
 

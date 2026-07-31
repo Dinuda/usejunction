@@ -1,7 +1,7 @@
 import type { AppPrincipal } from "@/lib/api/app-auth";
 import { jsonSafe } from "@/lib/api/app-response";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
-import { cycleViewPeriodLabel, reportWindowForCycleView } from "@/lib/dashboard/cycle-view";
+import { cycleViewPeriodLabel, cycleViewWindows, reportWindowForCycleView, type CycleViewWindows } from "@/lib/dashboard/cycle-view";
 import { parseMemberCycleSearch, workFiltersFromWindow } from "@/lib/developers/member-page-context";
 import { getDeveloperOverview } from "@/lib/queries/me/overview";
 import { getWorkActivity } from "@/lib/signals/queries/get-work-activity";
@@ -28,6 +28,7 @@ export type TeamMemberHubPayload = {
   cycleView: ReturnType<typeof parseMemberCycleSearch>["cycleView"];
   rollingPeriod: ReturnType<typeof parseMemberCycleSearch>["rollingPeriod"];
   selectedPeriodLabel: string;
+  cycleWindows: CycleViewWindows;
 };
 
 export type TeamMemberWorkPayload = {
@@ -53,6 +54,7 @@ export async function loadTeamMemberHubPage(
   const { cycleView, rollingPeriod } = parseMemberSearch(search);
   const subscriptions = await listSubscriptions(principal.orgId);
   const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions);
+  const cycleWindows = cycleViewWindows(subscriptions);
   const personal = await getDeveloperOverview(principal.orgId, developerId, {
     reportWindow,
     cycleView,
@@ -73,6 +75,7 @@ export async function loadTeamMemberHubPage(
     cycleView,
     rollingPeriod,
     selectedPeriodLabel: cycleViewPeriodLabel(cycleView, rollingPeriod),
+    cycleWindows,
   });
 }
 

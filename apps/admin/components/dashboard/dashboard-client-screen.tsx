@@ -36,21 +36,23 @@ import {
   cycleViewPeriodLabel,
   cycleViewShortSuffix,
   type CycleView,
+  type CycleViewWindows,
 } from "@/lib/dashboard/cycle-view";
 import { buildMemberPlanBoard, type MemberPlanBoardCard } from "@/lib/quotas/plan-board";
 import { paceVerdictLabel, type QuotaPaceCode } from "@/lib/quotas/pace";
+import { usageWindowFamily, usageWindowPreferenceLabel } from "@/lib/quotas/usage-window";
 import { canonicalToolKey, findCatalogTool, toolDisplayName } from "@/lib/tools/catalog";
 import { formatCompactNumber, formatShortDate, formatUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { OrgOverviewV1 } from "@/lib/insights";
+import { billingSeatLabel, estimatedUsageLabel, estimatedUsageWindowTooltip } from "@/lib/insights/billing-copy";
 import type { getMeOverview } from "@/lib/queries/me/overview";
-import type { getLocalSyncContext } from "@/lib/queries/me/local-sync-context";
+import type { RemoteSyncPanelContext } from "@/lib/sync/remote-sync";
 import { useAppPageQuery, useAppQuery } from "@/lib/api/client";
 import { dashboardKey, dashboardMetricsKey, dashboardShellKey, workspaceContextKey } from "@/lib/app-pages/query-keys";
 import type { WorkspaceContextPayload } from "@/lib/app-pages/workspace-context";
 import { mergeOrgOverviewShellMetrics } from "@/lib/app-pages/dashboard-merge";
 import type { OrgOverviewMetricsData, OrgOverviewShellData } from "@/lib/insights";
-import type { getLocalSyncPanelContext } from "@/lib/queries/me/local-sync-context";
 import { AppPageError } from "@/components/app-data-state";
 import {
   DashboardPageLoading,
@@ -113,8 +115,38 @@ function KpiInfoTooltip({ content }: { content: string }) {
   );
 }
 
+function EstimatedUsageInfoTooltip({
+  reportWindowLabel,
+  usageWindow,
+}: {
+  reportWindowLabel: string;
+  usageWindow: NonNullable<OrgOverviewV1["subscriptionCycles"][number]["usageWindow"]>;
+}) {
+  return (
+    <Tooltip delayDuration={200}>
+      <TooltipTrigger asChild>
+        <span
+          className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 hover:text-muted-foreground"
+          aria-label={estimatedUsageLabel()}
+        >
+          <Info className="size-3" strokeWidth={2.25} aria-hidden />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" align="end" className="max-w-64 text-xs leading-relaxed">
+        {estimatedUsageWindowTooltip(usageWindow.label, reportWindowLabel)}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function usageCostBreakdownSub(verified: number, estimated: number) {
   return `${formatUsd(verified)} verified · ${formatUsd(estimated)} estimated`;
+}
+
+function hasDifferentUsageWindow(row: OrgOverviewV1["subscriptionCycles"][number], view: CycleView) {
+  if (!row.usageWindow || view === "previous_cycles") return false;
+  if (view === "last_30_days") return true;
+  return usageWindowFamily(row.usageWindow.windowType) !== "monthly";
 }
 
 function verifiedEstimatedWindowSub(view: CycleView) {
@@ -271,37 +303,24 @@ function formatPaceDays(days: number | null | undefined): string | null {
   return `${Math.round(days)}d`;
 }
 
-function runwayLabel(
-  daysToExhaust?: number | null,
-  expectedEndDate?: string | null,
-): string | null {
-  let days = daysToExhaust;
-  if (days == null && expectedEndDate) {
-    const end = new Date(expectedEndDate).getTime();
-    if (!Number.isNaN(end)) {
-      days = (end - Date.now()) / 86_400_000;
-    }
-  }
-  const runway = formatPaceDays(days);
-  return runway ? `~${runway} runway` : null;
-}
-
 function CycleStatus({
   code,
   expectedEndDate,
-  daysToExhaust,
+  projectionState,
 }: {
   code: PlanVerdictCode;
   /** Projected date the plan allowance runs out at current burn. */
   expectedEndDate?: string | null;
-  daysToExhaust?: number | null;
+  projectionState?: "forming" | "reliable" | "unavailable";
 }) {
   const expectedEndDateLabel = expectedEndDate ? formatShortDate(expectedEndDate) : null;
+  if (projectionState === "forming") {
+    return null;
+  }
   const hint = code === "NEAR_LIMIT" ? null : verdictHint(code, { expectedEndDateLabel });
-  const runway = runwayLabel(daysToExhaust, expectedEndDate);
   const statusLabel =
     code === "NEAR_LIMIT"
-      ? [verdictLabel(code), expectedEndDateLabel, runway].filter(Boolean).join(" · ")
+      ? [verdictLabel(code), expectedEndDateLabel ? `Projected limit ${expectedEndDateLabel}` : null].filter(Boolean).join(" · ")
       : verdictLabel(code);
   return (
     <div className="mt-1.5">
@@ -312,13 +331,21 @@ function CycleStatus({
 }
 
 function cycleWindowLabel(row: OrgOverviewV1["subscriptionCycles"][number], view: CycleView) {
-  if (view === "current_cycles") {
-    const renew = `Renews ${formatShortDate(row.billingCycle.nextRenewalDate)}`;
-    if (row.planCount > 1) return `${row.planCount} plans · next ${formatShortDate(row.billingCycle.nextRenewalDate)}`;
-    if (row.planNames[0]) return `${row.planNames[0]} · ${renew}`;
-    return renew;
-  }
-  if (view === "last_30_days") {
+  if (view === "current_cycles" || view === "last_30_days") {
+    if (row.usageWindow) {
+      const plan = row.planCount > 1 ? `${row.planCount} plans` : row.planNames[0] ?? "Plan";
+      if (row.usageWindow.windowType === "unavailable") {
+        return `${plan} · ${row.usageWindow.label}`;
+      }
+      if (!row.usageWindow.resetAt) {
+        return `${plan} · ${row.usageWindow.label} usage window`;
+      }
+      const reset = row.usageWindow.windowType === "mixed"
+        ? `next reset ${formatShortDate(row.usageWindow.resetAt)}`
+        : `Resets ${formatShortDate(row.usageWindow.resetAt)}`;
+      return `${plan} · ${row.usageWindow.label} usage window · ${reset}`;
+    }
+    if (view === "current_cycles") return row.planCount > 1 ? `${row.planCount} plans · billing cycle` : `${row.planNames[0] ?? "Plan"} · billing cycle`;
     return `${formatShortDate(row.windowFrom)} – ${formatShortDate(row.windowTo)}`;
   }
   return `${formatShortDate(row.billingCycle.cycleStart)} – ${formatShortDate(row.billingCycle.cycleEnd)}`;
@@ -329,15 +356,24 @@ function paceToVerdictCode(code: QuotaPaceCode, usedPercent: number | null): Pla
   if (code === "EXCESS") return "NEAR_LIMIT";
   if (code === "ON_TRACK") return "HEALTHY";
   if (code === "UNDER") return "LIGHT_USE";
+  if (code === "STABLE" && usedPercent != null) {
+    if (usedPercent >= 90) return "NEAR_LIMIT";
+    if (usedPercent <= 25) return "LIGHT_USE";
+    return "HEALTHY";
+  }
   return "UNKNOWN";
 }
 
 function personalPlanWindowLabel(card: MemberPlanBoardCard) {
   const plan = card.planName || card.primary?.windowLabel || "Plan";
-  if (!card.primary?.resetsAt) return plan;
+  if (!card.primary?.resetsAt) {
+    return card.usageWindowPreference !== "auto"
+      ? `${plan} · Awaiting ${usageWindowPreferenceLabel(card.usageWindowPreference)} usage window`
+      : plan;
+  }
   const reset = new Date(card.primary.resetsAt);
   if (Number.isNaN(reset.getTime())) return plan;
-  return `${plan} · Renews ${formatShortDate(reset.toISOString())}`;
+  return `${plan} · ${card.primary.windowLabel} usage window · Resets ${formatShortDate(reset.toISOString())}`;
 }
 
 function hasNoQuotaSignal(
@@ -352,11 +388,11 @@ function showNoPlanMeterBar(toolKey: string, noQuota: boolean) {
   return noQuota && (key === "opencode" || key === "github-copilot");
 }
 
-function openCodeFreePlanNote(usageCost: number) {
+function openCodeFreePlanNote(usageCost: number, reportWindowLabel = "this cycle") {
   return (
     <p className="mt-1.5 text-xs text-muted-foreground">
       Free plan · {formatUsd(0)}/mo
-      {usageCost > 0 ? ` · Token cost this cycle ${formatUsd(usageCost)}` : null}
+      {usageCost > 0 ? ` · Token cost in ${reportWindowLabel.toLowerCase()} · ${formatUsd(usageCost)}` : null}
     </p>
   );
 }
@@ -377,25 +413,23 @@ function noPlanMeterProps(
   };
 }
 
-/** Tertiary stats under the meter: usage $ + runway/reset (not the hero). */
+/** Tertiary stats under the meter: usage $ + vendor reset (not the hero). */
 function personalPlanMeta(
   card: MemberPlanBoardCard,
-  options: { isOpenCodeFreePlan?: boolean } = {},
+  options: { isOpenCodeFreePlan?: boolean; reportWindowLabel?: string } = {},
 ): string | null {
   if (options.isOpenCodeFreePlan) {
     const parts = [`Free plan · ${formatUsd(0)}/mo`];
     if (card.usage && card.usage.cost > 0) {
-      parts.push(`Token cost this cycle ${formatUsd(card.usage.cost)}`);
+      parts.push(
+        `Token cost in ${(options.reportWindowLabel ?? "this cycle").toLowerCase()} · ${formatUsd(card.usage.cost)}`,
+      );
     }
     return parts.join(" · ");
   }
   const parts: string[] = [];
   if (card.usage && card.usage.cost > 0) {
     parts.push(`Usage ${formatUsd(card.usage.cost)}`);
-  }
-  if (card.pace.code === "ALREADY_EXCEEDED") {
-    const runway = formatPaceDays(card.pace.daysToExhaust);
-    if (runway) parts.push(`~${runway} runway`);
   }
   const reset = formatPaceDays(card.pace.daysToReset);
   if (reset) parts.push(`resets in ${reset}`);
@@ -414,12 +448,13 @@ function personalCycleSummary(cards: MemberPlanBoardCard[]) {
     withSignal.length > 0
       ? withSignal.reduce((sum, card) => sum + (card.pace.usedPercent ?? 0), 0) / withSignal.length
       : null;
-  const nearLimit = cards.filter((card) => card.pace.code === "EXCESS").length;
-  const overQuota = cards.filter(
-    (card) => card.pace.code === "ALREADY_EXCEEDED" || (card.pace.usedPercent ?? 0) >= 100,
-  ).length;
-  const withinAllowance = cards.filter(
-    (card) => card.pace.code === "UNDER" || card.pace.code === "ON_TRACK",
+  const verdicts = withSignal.map((card) =>
+    paceToVerdictCode(card.pace.code, card.pace.usedPercent),
+  );
+  const nearLimit = verdicts.filter((code) => code === "NEAR_LIMIT").length;
+  const overQuota = verdicts.filter((code) => code === "LIMIT_EXCEEDED").length;
+  const withinAllowance = verdicts.filter(
+    (code) => code === "LIGHT_USE" || code === "HEALTHY",
   ).length;
   return { avgUtilization, nearLimit, overQuota, withinAllowance, withSignal: withSignal.length };
 }
@@ -473,6 +508,7 @@ function PersonalHome({
   allowPeriodControls,
   cycleView,
   rollingPeriod,
+  cycleWindows,
   refreshing = false,
 }: {
   data: Awaited<ReturnType<typeof getMeOverview>>;
@@ -480,6 +516,7 @@ function PersonalHome({
   allowPeriodControls: boolean;
   cycleView: CycleView;
   rollingPeriod: RollingPeriod;
+  cycleWindows?: CycleViewWindows;
   refreshing?: boolean;
 }) {
   const usage = data.usage30d;
@@ -489,6 +526,7 @@ function PersonalHome({
   const quotaSnapshots = data.developer.devices.flatMap((device) =>
     device.quotas.map((quota) => ({
       toolName: quota.toolName,
+      deviceId: quota.deviceId,
       windowType: quota.windowType,
       usedPercent: quota.usedPercent,
       creditsRemaining: quota.creditsRemaining,
@@ -503,6 +541,8 @@ function PersonalHome({
     accounts,
     vendorSeats: data.developer.vendorSeats,
     toolsUsage: data.toolsUsage30d,
+    usageWindowPreferences: data.developer.usageWindowPreferences,
+    quotaHistory: data.developer.quotaHistory,
   });
   const { avgUtilization } = personalCycleSummary(planCards);
 
@@ -518,7 +558,12 @@ function PersonalHome({
         }
         actions={
           !empty && allowPeriodControls ? (
-            <CycleViewPicker view={cycleView} period={rollingPeriod} basePath="/dashboard" />
+            <CycleViewPicker
+              view={cycleView}
+              period={rollingPeriod}
+              basePath="/dashboard"
+              cycleWindows={cycleWindows}
+            />
           ) : null
         }
         mobileActionsInline
@@ -532,11 +577,14 @@ function PersonalHome({
         <>
           <div className="mb-8">
             <LocalSyncPanel
+              scope="you"
               lastSeenAt={data.sync.lastSeenAt}
               lastUsageSyncAt={data.sync.lastUsageSyncAt}
               lastAccountSyncAt={data.sync.lastAccountSyncAt}
               dashboardReady={data.sync.dashboardReady}
               dirtyDayCount={data.sync.dirtyDayCount}
+              staleDeviceCount={data.sync.staleDeviceCount}
+              recoveryDevices={data.sync.recoveryDevices}
             />
           </div>
           <DashboardPeriodRefreshing refreshing={refreshing}>
@@ -612,7 +660,8 @@ function PersonalHome({
                     verdictCode,
                   });
                   const used = meter.percent;
-                  const meta = personalPlanMeta(card, { isOpenCodeFreePlan });
+                  const reportWindowLabel = cycleViewPeriodLabel(cycleView, rollingPeriod);
+                  const meta = personalPlanMeta(card, { isOpenCodeFreePlan, reportWindowLabel });
                   const showStatus =
                     verdictCode === "NEAR_LIMIT" || verdictCode === "LIMIT_EXCEEDED";
                   const body = (
@@ -665,10 +714,15 @@ function PersonalHome({
                           }
                           expectedPercent={isOpenCodeFreePlan ? null : card.pace.expectedPercent}
                           verdictCode={meter.verdictCode}
-                          label={card.toolLabel}
+                          label={`${card.toolLabel} · ${card.primary?.windowLabel ?? "usage"} limit`}
                           showPercent={false}
                         />
                       </div>
+                      {used != null && card.primary ? (
+                        <p className="mt-1.5 text-xs text-muted-foreground">
+                          {Math.round(used)}% of {card.primary.windowLabel.toLowerCase()} limit
+                        </p>
+                      ) : null}
                       {meta ? (
                         <p className="mt-2 text-xs text-muted-foreground">{meta}</p>
                       ) : null}
@@ -676,7 +730,7 @@ function PersonalHome({
                         <CycleStatus
                           code={verdictCode}
                           expectedEndDate={card.pace.exhaustAt}
-                          daysToExhaust={card.pace.daysToExhaust}
+                          projectionState={card.pace.projectionState}
                         />
                       ) : null}
                     </>
@@ -687,6 +741,7 @@ function PersonalHome({
                       {href ? (
                         <Link
                           href={href}
+                          prefetch={false}
                           className="block py-5 transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
                         >
                           {body}
@@ -785,9 +840,10 @@ type PersonalDashboardPayload = {
   cycleView: CycleView;
   rollingPeriod: RollingPeriod;
   periodLabel: string;
+  cycleWindows?: CycleViewWindows;
   personal: Awaited<ReturnType<typeof getMeOverview>> | null;
   needsPersonalConnect?: boolean;
-  syncContext?: Awaited<ReturnType<typeof getLocalSyncContext>>;
+  syncContext?: RemoteSyncPanelContext | null;
 };
 
 type OrgDashboardShellPayload = {
@@ -797,7 +853,7 @@ type OrgDashboardShellPayload = {
   canSwitchAudience: boolean;
   shell: OrgOverviewShellData;
   needsPersonalConnect: boolean;
-  syncPanel: Awaited<ReturnType<typeof getLocalSyncPanelContext>>;
+  syncPanel: RemoteSyncPanelContext | null;
 };
 
 type OrgDashboardMetricsPayload = {
@@ -807,6 +863,7 @@ type OrgDashboardMetricsPayload = {
   canSwitchAudience: boolean;
   cycleView: CycleView;
   rollingPeriod: RollingPeriod;
+  cycleWindows?: CycleViewWindows;
   overview: OrgOverviewMetricsData | null;
   error: string | null;
 };
@@ -879,11 +936,14 @@ export default function DashboardPage() {
           {query.data.syncContext ? (
             <div className="mb-8">
               <LocalSyncPanel
+                scope="you"
                 lastSeenAt={query.data.syncContext.lastSeenAt}
                 lastUsageSyncAt={query.data.syncContext.lastUsageSyncAt}
                 lastAccountSyncAt={query.data.syncContext.lastAccountSyncAt}
                 dashboardReady={query.data.syncContext.dashboardReady}
                 dirtyDayCount={query.data.syncContext.dirtyDayCount}
+                staleDeviceCount={query.data.syncContext.staleDeviceCount}
+                recoveryDevices={query.data.syncContext.recoveryDevices}
               />
             </div>
           ) : null}
@@ -899,6 +959,7 @@ export default function DashboardPage() {
         allowPeriodControls={query.data.allowPeriodControls}
         cycleView={query.data.cycleView}
         rollingPeriod={query.data.rollingPeriod}
+        cycleWindows={query.data.cycleWindows}
         refreshing={personalQuery.isFetching && personalQuery.isPlaceholderData}
       />
     );
@@ -935,6 +996,7 @@ export default function DashboardPage() {
   const { needsPersonalConnect, syncPanel, shell } = shellQuery.data;
   const cycleView = metricsQuery.data?.cycleView ?? "last_30_days";
   const rollingPeriod = metricsQuery.data?.rollingPeriod ?? DEFAULT_ROLLING_PERIOD;
+  const cycleWindows = metricsQuery.data?.cycleWindows;
   const error = metricsQuery.data?.error ?? null;
   const metricsOverview = metricsQuery.data?.overview ?? null;
   const data =
@@ -957,7 +1019,11 @@ export default function DashboardPage() {
         }
         actions={
           !empty && (data || metricsRefreshing) ? (
-            <CycleViewPicker view={cycleView} period={rollingPeriod} />
+            <CycleViewPicker
+              view={cycleView}
+              period={rollingPeriod}
+              cycleWindows={cycleWindows}
+            />
           ) : null
         }
         mobileActionsInline
@@ -968,11 +1034,14 @@ export default function DashboardPage() {
       {syncPanel ? (
         <div className="mb-8">
           <LocalSyncPanel
+            scope="team"
             lastSeenAt={syncPanel.lastSeenAt}
             lastUsageSyncAt={syncPanel.lastUsageSyncAt}
             lastAccountSyncAt={syncPanel.lastAccountSyncAt}
             dashboardReady={syncPanel.dashboardReady}
             dirtyDayCount={syncPanel.dirtyDayCount}
+            staleDeviceCount={syncPanel.staleDeviceCount}
+            recoveryDevices={syncPanel.recoveryDevices}
           />
         </div>
       ) : null}
@@ -1063,6 +1132,8 @@ export default function DashboardPage() {
                     displayPercent: row.utilizationDisplayPercent,
                     verdictCode: row.verdictCode,
                   });
+                  const reportWindowLabel = cycleViewPeriodLabel(data.cycleView, rollingPeriod);
+                  const showEstimatedUsageInfo = hasDifferentUsageWindow(row, data.cycleView);
                   const body = (
                     <>
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1074,14 +1145,27 @@ export default function DashboardPage() {
                             </p>
                             <p className="mt-1 text-xs text-muted-foreground">
                               {cycleWindowLabel(row, data.cycleView)}
-                              {row.cycleSpend > 0 ? ` · Seat ${formatUsd(row.cycleSpend)}` : null}
+                              {row.cycleSpend > 0 ? ` · ${billingSeatLabel(row.cycleSpend)}` : null}
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-start gap-2">
-                          <p className="text-sm font-semibold tabular-nums">
-                            {usageCost > 0 ? formatUsd(usageCost) : "—"}
-                          </p>
+                        <div className="flex flex-col items-end gap-0.5">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <p className="text-sm font-semibold tabular-nums">
+                              {usageCost > 0 ? formatUsd(usageCost) : "—"}
+                            </p>
+                            {showEstimatedUsageInfo && row.usageWindow ? (
+                              <EstimatedUsageInfoTooltip
+                                reportWindowLabel={reportWindowLabel}
+                                usageWindow={row.usageWindow}
+                              />
+                            ) : null}
+                          </div>
+                          {row.projectionState === "forming" ? (
+                            <p className="text-[0.65rem] font-medium text-muted-foreground">
+                              {paceVerdictLabel("FORMING")}
+                            </p>
+                          ) : null}
                           {href ? (
                             <ArrowUpRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
                           ) : null}
@@ -1092,28 +1176,35 @@ export default function DashboardPage() {
                           percent={meter.percent}
                           displayPercent={meter.displayPercent}
                           verdictCode={meter.verdictCode}
-                          label={toolDisplayName(row.toolKey ?? row.toolName)}
+                          label={`${toolDisplayName(row.toolKey ?? row.toolName)} · ${row.usageWindow?.label ?? "usage"} limit`}
                           showPercent={!showNoPlanMeterBar(toolKey, noQuota)}
                         />
                       </div>
+                      {row.utilizationPercent != null && row.usageWindow ? (
+                        <p className="mt-1.5 text-xs text-muted-foreground">
+                          {Math.round(row.utilizationPercent)}% of {row.usageWindow.label.toLowerCase()} limit
+                        </p>
+                      ) : null}
                       {isOpenCodeFreePlan ? (
-                        openCodeFreePlanNote(usageCost)
+                        openCodeFreePlanNote(usageCost, reportWindowLabel)
                       ) : row.verdictCode && row.verdictCode !== "UNKNOWN" ? (
                         <CycleStatus
                           code={row.verdictCode}
                           expectedEndDate={row.expectedEndAt}
+                          projectionState={row.projectionState}
                         />
-                      ) : usageCost > 0 ? (
+                      ) : usageCost > 0 && !row.usageWindow ? (
                         <div className="mt-1.5">
                           <p className="text-xs font-medium text-muted-foreground">Estimated usage</p>
                           <p className="mt-0.5 text-xs text-muted-foreground">
-                            Token cost this cycle · plan seat is {formatUsd(row.cycleSpend)}/mo
+                            Token cost in {reportWindowLabel.toLowerCase()} · plan seat is {formatUsd(row.cycleSpend)}/mo
                           </p>
                         </div>
                       ) : row.verdictCode ? (
                         <CycleStatus
                           code={row.verdictCode}
                           expectedEndDate={row.expectedEndAt}
+                          projectionState={row.projectionState}
                         />
                       ) : null}
                     </>
@@ -1124,6 +1215,7 @@ export default function DashboardPage() {
                       {href ? (
                         <Link
                           href={href}
+                          prefetch={false}
                           className="block py-5 transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
                         >
                           {body}

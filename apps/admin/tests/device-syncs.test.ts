@@ -72,7 +72,7 @@ describe("getOrgDeviceSyncStatus", () => {
         orderBy: { lastSeenAt: "desc" },
       }),
     );
-    expect(result.totals).toEqual({ total: 3, online: 1, stale: 1, neverSynced: 1 });
+    expect(result.totals).toEqual({ total: 3, online: 1, stale: 1, neverSynced: 1, repairRequired: 0 });
     expect(result.devices.map((row) => ({ id: row.id, status: row.status }))).toEqual([
       { id: "d-online", status: "online" },
       { id: "d-stale", status: "stale" },

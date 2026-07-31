@@ -41,6 +41,8 @@ export type SnapshotToolTotals = {
   actualSpendCost: number;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
   activeDevelopers: number;
 };
 
@@ -330,6 +332,8 @@ function foldSnapshotRows(
         actualSpendCost: 0,
         inputTokens: 0,
         outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
         activeDevelopers: 0,
       };
       const inputTokens = Number(row.inputTokens);
@@ -337,6 +341,8 @@ function foldSnapshotRows(
       existing.requests += row.requests;
       existing.inputTokens += inputTokens;
       existing.outputTokens += outputTokens;
+      existing.cacheReadTokens += Number(row.cacheReadTokens);
+      existing.cacheWriteTokens += Number(row.cacheWriteTokens);
       existing.tokens += inputTokens + outputTokens;
       existing.verifiedUsageCost += verified;
       existing.estimatedApiCost += estimated;

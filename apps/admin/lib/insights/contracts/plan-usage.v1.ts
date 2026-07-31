@@ -19,6 +19,14 @@ export type BillingCycleInfo = {
   totalDays: number;
 };
 
+export type UsageWindowMetadata = {
+  windowType: string;
+  label: string;
+  resetAt: string | null;
+  preference: string;
+  selectionSource: "auto" | "override" | "mixed" | "unavailable";
+};
+
 export type PlanUsageSubscriptionRow = {
   planTemplateId: string;
   toolKey: string | null;
@@ -29,6 +37,8 @@ export type PlanUsageSubscriptionRow = {
   assignedSeats: number;
   availableSeats: number;
   billingCadence: string;
+  usageWindowPreference: string;
+  usageWindow: UsageWindowMetadata | null;
   billingCycle: BillingCycleInfo;
   cycleSeatMicros: string;
   includedCycleMicros: string;
@@ -36,6 +46,7 @@ export type PlanUsageSubscriptionRow = {
   quotas: QuotaUtilization[];
   included: IncludedAllowanceUtilization | null;
   primaryRatio: number | null;
+  projectionState: "forming" | "reliable" | "unavailable";
   verdict: PlanVerdict;
   billing: {
     grossSeatMicros: string;
@@ -53,6 +64,8 @@ export type PlanUsageDeveloperPlanRow = {
   planName: string;
   seatCount: number;
   billingCadence: string;
+  usageWindowPreference: string;
+  usageWindow: UsageWindowMetadata | null;
   billingCycle: BillingCycleInfo;
   cycleSeatMicros: string;
   includedCycleMicros: string;
@@ -60,6 +73,7 @@ export type PlanUsageDeveloperPlanRow = {
   quotas: QuotaUtilization[];
   included: IncludedAllowanceUtilization | null;
   primaryRatio: number | null;
+  projectionState: "forming" | "reliable" | "unavailable";
   verdict: PlanVerdict;
   billing: {
     cycleStart: string;

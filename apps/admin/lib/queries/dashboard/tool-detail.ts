@@ -72,6 +72,7 @@ export type ToolDetailData = {
     name: string;
     tier: string | null;
     billingCadence: string;
+    usageWindowPreference: string;
     seatCapacity: number;
     cycleSeatMicros: bigint;
     estimatedCycleMicros: bigint;
@@ -194,6 +195,7 @@ export async function getToolDetail(
           name: subscription.name,
           tier: subscription.tier,
           billingCadence: subscription.billingCadence,
+          usageWindowPreference: subscription.usageWindowPreference,
           seatCapacity: subscription.seatCapacity,
           cycleSeatMicros: subscription.cycleSeatMicros,
           estimatedCycleMicros: subscription.estimatedCycleMicros,

@@ -17,13 +17,16 @@ var Version = "0.3.4"
 // LocalSyncProtocol identifies the background-job localhost sync contract.
 const LocalSyncProtocol = 2
 
+// RemoteSyncProtocol identifies the durable control-plane sync request contract.
+const RemoteSyncProtocol = 1
+
 // Config holds the persisted enrollment state.
 type Config struct {
-	ControlPlaneURL         string `json:"controlPlaneUrl"`
-	DeviceToken             string `json:"deviceToken"`
-	DeviceID                string `json:"deviceId"`
-	UserID                  string `json:"userId"`
-	OrgID                   string `json:"orgId"`
+	ControlPlaneURL string `json:"controlPlaneUrl"`
+	DeviceToken     string `json:"deviceToken"`
+	DeviceID        string `json:"deviceId"`
+	UserID          string `json:"userId"`
+	OrgID           string `json:"orgId"`
 	// GatewayURL is legacy. Observability-only agents must leave vendor tool
 	// configs alone and must not route traffic through a gateway.
 	GatewayURL              string `json:"gatewayUrl,omitempty"`
@@ -52,7 +55,7 @@ const DefaultLocalSyncPort = 47832
 func (c *Config) LocalSyncURL() string {
 	port := c.LocalSyncPort
 	if port <= 0 {
-		port = DefaultLocalSyncPort
+		port = DefaultLocalSyncPortForProfile()
 	}
 	return fmt.Sprintf("http://127.0.0.1:%d", port)
 }
@@ -61,7 +64,7 @@ func (c *Config) LocalSyncURL() string {
 func (c *Config) EnsureLocalSyncCredentials() (bool, error) {
 	changed := false
 	if c.LocalSyncPort <= 0 {
-		c.LocalSyncPort = DefaultLocalSyncPort
+		c.LocalSyncPort = DefaultLocalSyncPortForProfile()
 		changed = true
 	}
 	if strings.TrimSpace(c.LocalSyncToken) == "" {
@@ -75,10 +78,19 @@ func (c *Config) EnsureLocalSyncCredentials() (bool, error) {
 	return changed, nil
 }
 
-// ConfigDir returns ~/.usejunction.
+// ConfigDir returns the agent data directory (~/.usejunction by default).
 func ConfigDir() string {
+	if configuredHome != "" {
+		return configuredHome
+	}
+	if h := strings.TrimSpace(os.Getenv(homeEnv)); h != "" {
+		return filepath.Clean(h)
+	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".usejunction")
+	if profile := strings.TrimSpace(os.Getenv(profileEnv)); profile == "test" {
+		return filepath.Join(home, TestHomeDirName)
+	}
+	return filepath.Join(home, DefaultHomeDirName)
 }
 
 // ConfigPath returns ~/.usejunction/config.json.

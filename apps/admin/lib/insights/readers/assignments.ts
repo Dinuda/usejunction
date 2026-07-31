@@ -12,7 +12,7 @@ export async function readAssignments(
     },
     include: {
       developer: { select: { id: true, name: true, email: true } },
-      template: { select: { id: true, toolKey: true, catalogPlanKey: true, name: true } },
+      template: { select: { id: true, toolKey: true, catalogPlanKey: true, name: true, usageWindowPreference: true } },
     },
     orderBy: [{ developerId: "asc" }, { startDate: "desc" }],
   });

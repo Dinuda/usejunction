@@ -28,6 +28,7 @@ import type {
   PlanUsageSubscriptionRow,
   PlanUsageSummary,
   PlanUsageV1,
+  UsageWindowMetadata,
 } from "@/lib/insights/contracts/plan-usage.v1";
 import { readAssignments } from "@/lib/insights/readers/assignments";
 import { readQuotas } from "@/lib/insights/readers/quotas";
@@ -35,6 +36,10 @@ import { readSubscriptions } from "@/lib/insights/readers/subscriptions";
 import { paceAwarePlanVerdict } from "@/lib/quotas/pace";
 import { rolesFor } from "@/lib/rbac/permissions";
 import { canonicalToolKey, findCatalogTool } from "@/lib/tools/catalog";
+import { attachQuotaHistory } from "@/lib/quotas/history";
+import { projectQuotaPace } from "@/lib/quotas/pace";
+import { quotaWindowLabel } from "@/lib/quotas/display";
+import { usageWindowPreferenceLabel } from "@/lib/quotas/usage-window";
 
 function emptyVerdict(): PlanVerdict {
   return evaluatePlanUtilization({ primaryQuota: null, included: null });
@@ -45,6 +50,31 @@ function cycleWindowFromBilling(cycle: { cycleStart: Date; cycleEnd: Date }) {
     startsAt: cycle.cycleStart.toISOString(),
     endsAt: cycle.cycleEnd.toISOString(),
   };
+}
+
+function usageWindowMetadata(
+  primaryQuota: { windowType: string; resetsAt: string | null } | null,
+  preference: string,
+): UsageWindowMetadata | null {
+  if (primaryQuota?.resetsAt) {
+    return {
+      windowType: primaryQuota.windowType,
+      label: quotaWindowLabel(primaryQuota.windowType),
+      resetAt: primaryQuota.resetsAt,
+      preference,
+      selectionSource: preference === "auto" ? "auto" : "override",
+    };
+  }
+  if (preference !== "auto") {
+    return {
+      windowType: "unavailable",
+      label: `Awaiting ${usageWindowPreferenceLabel(preference)} window`,
+      resetAt: null,
+      preference,
+      selectionSource: "unavailable",
+    };
+  }
+  return null;
 }
 
 function summarize(rows: Array<{ primaryRatio: number | null; verdict: PlanVerdict }>, seat: {
@@ -220,7 +250,11 @@ export async function getPlanUsage(
     }
   }
 
-  const allQuotas = dedupeQuotaUtilizations(mapQuotaSnapshots(quotaRows, context.now));
+  const allQuotas = await attachQuotaHistory(
+    context.orgId,
+    dedupeQuotaUtilizations(mapQuotaSnapshots(quotaRows, context.now)),
+    { developerId: input.developerId, now: context.now },
+  );
 
   const subscriptionRows: PlanUsageSubscriptionRow[] = subscriptions.map((subscription) => {
     const toolKey = subscription.toolKey ?? canonicalToolKey(subscription.toolName);
@@ -245,7 +279,7 @@ export async function getPlanUsage(
       includedCycleMicros: subscription.includedCycleMicros * BigInt(Math.max(1, subscription.assignedSeats || 1)),
       grossUsageMicros: grossUsage,
     });
-    const primaryQuota = selectPrimaryQuota(quotas);
+    const primaryQuota = selectPrimaryQuota(quotas, subscription.usageWindowPreference);
     const primaryRatio = primaryUtilizationRatio({ primaryQuota, included });
     const verdict = paceAwarePlanVerdict({
       primaryQuota,
@@ -253,6 +287,9 @@ export async function getPlanUsage(
       cycleWindow: cycleWindowFromBilling(billingCycle),
       now: context.now,
     });
+    const projectionState = primaryQuota?.rawRatio != null
+      ? projectQuotaPace(primaryQuota, context.now).projectionState
+      : "unavailable" as const;
     return {
       planTemplateId: subscription.id,
       toolKey: subscription.toolKey,
@@ -263,6 +300,8 @@ export async function getPlanUsage(
       assignedSeats: subscription.assignedSeats,
       availableSeats: subscription.availableSeats,
       billingCadence: subscription.billingCadence,
+      usageWindowPreference: subscription.usageWindowPreference,
+      usageWindow: usageWindowMetadata(primaryQuota, subscription.usageWindowPreference),
       billingCycle: cycleToJson(billingCycle),
       cycleSeatMicros: subscription.cycleSeatMicros.toString(),
       includedCycleMicros: subscription.includedCycleMicros.toString(),
@@ -270,6 +309,7 @@ export async function getPlanUsage(
       quotas,
       included,
       primaryRatio,
+      projectionState,
       verdict,
       billing:
         templateAssignments.length > 0
@@ -306,7 +346,7 @@ export async function getPlanUsage(
       includedCycleMicros: assignment.includedCycleMicros,
       grossUsageMicros: line?.grossUsageMicros ?? BigInt(0),
     });
-    const primaryQuota = selectPrimaryQuota(quotas);
+    const primaryQuota = selectPrimaryQuota(quotas, assignment.template.usageWindowPreference);
     const primaryRatio = primaryUtilizationRatio({ primaryQuota, included });
     const assignmentCycle = resolveBillingCycle(assignment, input.reportWindow.to);
     const verdict = paceAwarePlanVerdict({
@@ -315,6 +355,9 @@ export async function getPlanUsage(
       cycleWindow: cycleWindowFromBilling(assignmentCycle),
       now: context.now,
     });
+    const projectionState = primaryQuota?.rawRatio != null
+      ? projectQuotaPace(primaryQuota, context.now).projectionState
+      : "unavailable" as const;
     const serialized = line ? serializeBillingLine(line) : null;
 
     existing.plans.push({
@@ -325,6 +368,8 @@ export async function getPlanUsage(
       planName: assignment.planName,
       seatCount: assignment.seatCount,
       billingCadence: assignment.billingCadence,
+      usageWindowPreference: assignment.template.usageWindowPreference,
+      usageWindow: usageWindowMetadata(primaryQuota, assignment.template.usageWindowPreference),
       billingCycle: cycleToJson(assignmentCycle),
       cycleSeatMicros: assignment.cycleSeatMicros.toString(),
       includedCycleMicros: assignment.includedCycleMicros.toString(),
@@ -332,6 +377,7 @@ export async function getPlanUsage(
       quotas,
       included,
       primaryRatio,
+      projectionState,
       verdict,
       billing: serialized
         ? {

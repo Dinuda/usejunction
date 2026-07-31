@@ -71,6 +71,6 @@ func removePathBlock(path string) (bool, error) {
 
 func isUseJunctionPathLine(line string) bool {
 	trimmed := strings.TrimSpace(line)
-	return strings.Contains(trimmed, ".usejunction/bin") &&
+	return (strings.Contains(trimmed, ".usejunction/bin") || strings.Contains(trimmed, ".usejunction-test/bin")) &&
 		(strings.Contains(trimmed, "PATH") || strings.Contains(trimmed, "fish_add_path"))
 }

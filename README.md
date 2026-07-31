@@ -146,9 +146,23 @@ cd agent && go build -o usejunction .
 ./usejunction report
 ```
 
+### Two agents on one Mac (production + local dev)
+
+UseJunction supports running **production** and **local dev** agents side by side:
+
+| Profile | Home | CLI | launchd label | Local sync port |
+|---------|------|-----|---------------|-----------------|
+| Production (default) | `~/.usejunction` | `usejunction` | `com.usejunction.agent` | `47832` |
+| Test (local dev) | `~/.usejunction-test` | `usejunction-test` | `com.usejunction.agent.test` | `47833` |
+
+- Enroll **production** from your hosted control plane (e.g. `https://usejunction.dev`).
+- Enroll **local dev** from `http://localhost:3001` — the installer auto-selects the test profile for loopback URLs.
+
+Both daemons can run at the same time without clobbering each other's enrollment.
+
 ### Hot-reload the local agent (development)
 
-After the agent is enrolled once, rebuild and reinstall into `~/.usejunction` whenever `agent/` changes:
+After the test agent is enrolled once, rebuild and reinstall into `~/.usejunction-test` whenever `agent/` changes:
 
 ```bash
 # admin + agent watcher (rebuilds agent on start and on agent/ changes)
@@ -167,11 +181,13 @@ pnpm dev:agent
 # or: ./scripts/dev-agent-watch.sh
 ```
 
-Requires an existing `~/.usejunction/config.json` (from `./install.sh --token …` or the connect curl). This path stamps a `0.0.0-dev.<sha>.<unix>` version, swaps the local binary/app bundle, and restarts launchd/systemd. It does **not** publish a control-plane release or enroll a new device.
+Requires an existing `~/.usejunction-test/config.json` (from `./install.sh --token … --url http://localhost:3001` or the connect curl). This path stamps a `0.0.0-dev.<sha>.<unix>` version, swaps the local binary/app bundle, and restarts launchd/systemd. It does **not** publish a control-plane release or enroll a new device.
 
-When you enroll against a **local** control plane (`http://localhost:3001`), `/install.sh` injects `USEJUNCTION_ROOT` so `curl | sh` builds the agent from this checkout as `0.0.0-dev.*` instead of downloading a published release. Production hosts still serve the plain customer installer (published releases only).
+Set `USEJUNCTION_PROFILE=default` to rebuild the production agent home (`~/.usejunction`) instead.
 
-**Install gotchas:** A prior `pnpm agent:reinstall` writes `~/.usejunction/dev-source`, so later `curl | sh` against prod may still build `0.0.0-dev.*`. Production customer installs also require a **promoted** release (`GET /api/agent-releases/latest` must return 200); a GitHub `agent-v*` tag alone is not enough. See [Install script behavior (prod vs dev)](docs/agent-releases.md#install-script-behavior-prod-vs-dev).
+When you enroll against a **local** control plane (`http://localhost:3001`), `/install.sh` injects `USEJUNCTION_ROOT` and `USEJUNCTION_PROFILE=test` so `curl | sh` builds the agent from this checkout as `0.0.0-dev.*` into `~/.usejunction-test` instead of downloading a published release or touching production enrollment. Production hosts still serve the plain customer installer (published releases only).
+
+**Install gotchas:** A prior `pnpm agent:reinstall` writes `~/.usejunction-test/dev-source`, so later `curl | sh` against prod may still build `0.0.0-dev.*` if a dev pin exists under the target profile home. Production customer installs also require a **promoted** release (`GET /api/agent-releases/latest` must return 200); a GitHub `agent-v*` tag alone is not enough. See [Install script behavior (prod vs dev)](docs/agent-releases.md#install-script-behavior-prod-vs-dev).
 
 For faster change detection, install `fswatch` (`brew install fswatch`). Without it, the watcher polls every ~750ms.
 

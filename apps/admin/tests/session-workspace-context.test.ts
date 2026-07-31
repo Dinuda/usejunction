@@ -62,7 +62,13 @@ beforeEach(() => {
   mocks.deviceCount.mockResolvedValue(0);
   mocks.deviceAggregate.mockResolvedValue({
     _count: { id: 0 },
-    _max: { lastSeenAt: null, lastUsageSyncAt: null, lastAccountSyncAt: null },
+    _max: {
+      lastSeenAt: null,
+      lastUsageSyncAt: null,
+      lastAccountSyncAt: null,
+      lastToolsSyncAt: null,
+      lastQuotasSyncAt: null,
+    },
   });
   mocks.toolInstallationCount.mockResolvedValue(0);
   mocks.analyticsDirtyDayCount.mockResolvedValue(0);
@@ -153,7 +159,8 @@ describe("workspace context API", () => {
     expect(payload.data.sync).toMatchObject({
       deviceCount: 0,
       toolCount: 0,
-      watermark: "0|0||||0|1",
+      dataWatermark: "0|0|||||0|1",
+      presenceWatermark: "0|",
       dashboardReady: true,
       dirtyDayCount: 0,
     });
@@ -174,6 +181,8 @@ describe("workspace context API", () => {
         lastSeenAt: new Date("2026-07-21T12:00:00.000Z"),
         lastUsageSyncAt: new Date("2026-07-21T12:05:00.000Z"),
         lastAccountSyncAt: null,
+        lastToolsSyncAt: new Date("2026-07-21T12:06:00.000Z"),
+        lastQuotasSyncAt: new Date("2026-07-21T12:07:00.000Z"),
       },
     });
     mocks.toolInstallationCount.mockResolvedValue(3);
@@ -187,7 +196,10 @@ describe("workspace context API", () => {
       lastSeenAt: "2026-07-21T12:00:00.000Z",
       lastUsageSyncAt: "2026-07-21T12:05:00.000Z",
       lastAccountSyncAt: null,
-      watermark: "1|3|2026-07-21T12:00:00.000Z|2026-07-21T12:05:00.000Z||0|1",
+      lastToolsSyncAt: "2026-07-21T12:06:00.000Z",
+      lastQuotasSyncAt: "2026-07-21T12:07:00.000Z",
+      dataWatermark: "1|3|2026-07-21T12:05:00.000Z||2026-07-21T12:06:00.000Z|2026-07-21T12:07:00.000Z|0|1",
+      presenceWatermark: "1|2026-07-21T12:00:00.000Z",
       dashboardReady: true,
       dirtyDayCount: 0,
       snapshotLagSeconds: null,

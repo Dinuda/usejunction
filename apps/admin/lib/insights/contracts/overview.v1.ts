@@ -1,7 +1,7 @@
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import type { PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
 import type { AttentionItem } from "@/lib/insights/policies/attention";
-import type { BillingCycleInfo } from "@/lib/insights/contracts/plan-usage.v1";
+import type { BillingCycleInfo, UsageWindowMetadata } from "@/lib/insights/contracts/plan-usage.v1";
 
 type CycleOverviewInput = {
   cycleView: "current_cycles" | "previous_cycles";
@@ -62,6 +62,8 @@ export type OrgOverviewV1 = {
     expectedEndAt: string | null;
     /** Soonest renewal among plans under this tool. */
     billingCycle: BillingCycleInfo;
+    usageWindow: UsageWindowMetadata | null;
+    projectionState: "forming" | "reliable" | "unavailable";
   }>;
   renewals: Array<{
     id: string;

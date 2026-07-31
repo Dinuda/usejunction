@@ -392,3 +392,95 @@ test("paceAwarePlanVerdict keeps DATA_STALE and falls back when pace timing is u
     "LIGHT_USE",
   );
 });
+
+test("projectQuotaPace forms a baseline instead of extrapolating one early reading", () => {
+  const now = new Date("2026-07-26T14:00:00.000Z");
+  const [quota] = mapQuotaSnapshots(
+    [
+      {
+        toolName: "codex",
+        windowType: "weekly",
+        usedPercent: 14,
+        creditsRemaining: null,
+        resetAt: new Date("2026-08-02T10:09:00.000Z"),
+        source: "oauth_api",
+        updatedAt: now,
+        deviceId: "device-1",
+      },
+    ],
+    now,
+  );
+  quota!.history = [];
+
+  const pace = projectQuotaPace(quota!, now);
+  assert.equal(pace.code, "FORMING");
+  assert.equal(pace.projectionState, "forming");
+  assert.equal(pace.daysToExhaust, null);
+  assert.equal(paceVerdictLabel(pace.code), "Awaiting next sync");
+});
+
+test("projectQuotaPace stops forming after a mature unchanged baseline", () => {
+  const now = new Date("2026-07-26T14:30:00.000Z");
+  const resetAt = "2026-08-02T10:09:00.000Z";
+  const [quota] = mapQuotaSnapshots(
+    [
+      {
+        toolName: "codex",
+        windowType: "weekly",
+        usedPercent: 98,
+        creditsRemaining: null,
+        resetAt: new Date(resetAt),
+        source: "oauth_api",
+        updatedAt: now,
+        deviceId: "device-1",
+      },
+    ],
+    now,
+  );
+  quota!.history = [
+    { usedPercent: 98, observedAt: "2026-07-26T14:00:00.000Z", resetAt },
+    { usedPercent: 98, observedAt: "2026-07-26T14:30:00.000Z", resetAt },
+  ];
+
+  const pace = projectQuotaPace(quota!, now);
+  assert.equal(pace.code, "STABLE");
+  assert.equal(pace.projectionState, "reliable");
+  assert.equal(pace.daysToExhaust, null);
+  assert.equal(pace.exhaustAt, null);
+  assert.equal(paceVerdictLabel(pace.code), "No recent change");
+  assert.equal(
+    paceAwarePlanVerdict({ primaryQuota: quota!, included: null, now }).code,
+    "NEAR_LIMIT",
+  );
+});
+
+test("projectQuotaPace uses observed deltas and restarts after a counter decrease", () => {
+  const now = new Date("2026-07-30T12:00:00.000Z");
+  const [quota] = mapQuotaSnapshots(
+    [
+      {
+        toolName: "codex",
+        windowType: "weekly",
+        usedPercent: 70,
+        creditsRemaining: null,
+        resetAt: new Date("2026-08-02T10:09:00.000Z"),
+        source: "oauth_api",
+        updatedAt: now,
+        deviceId: "device-1",
+      },
+    ],
+    now,
+  );
+  quota!.history = [
+    { usedPercent: 40, observedAt: "2026-07-29T12:00:00.000Z", resetAt: "2026-08-02T10:09:00.000Z" },
+    { usedPercent: 20, observedAt: "2026-07-29T18:00:00.000Z", resetAt: "2026-08-02T10:09:00.000Z" },
+    { usedPercent: 50, observedAt: "2026-07-30T00:00:00.000Z", resetAt: "2026-08-02T10:09:00.000Z" },
+    { usedPercent: 70, observedAt: "2026-07-30T12:00:00.000Z", resetAt: "2026-08-02T10:09:00.000Z" },
+  ];
+
+  const pace = projectQuotaPace(quota!, now);
+  assert.equal(pace.code, "EXCESS");
+  assert.equal(pace.projectionState, "reliable");
+  assert.ok(pace.exhaustAt);
+  assert.match(pace.summary, /reaches its limit/i);
+});

@@ -12,6 +12,7 @@ import { WorkCsvExportButton } from "@/components/signals/work-csv-export-button
 import type { AudienceScope } from "@/lib/audience-scope";
 import {
   type CycleView,
+  type CycleViewWindows,
 } from "@/lib/dashboard/cycle-view";
 import type { RollingPeriod } from "@/lib/dashboard/period-prefs";
 import type { getWorkActivity, readSignalsFilterOptions } from "@/lib/signals";
@@ -26,6 +27,7 @@ type SignalsActivityPayload = {
   youUnlinked?: boolean;
   cycleView: CycleView;
   rollingPeriod: RollingPeriod;
+  cycleWindows?: CycleViewWindows;
   developerId?: string;
   tool?: string;
   options: Awaited<ReturnType<typeof readSignalsFilterOptions>>;
@@ -41,7 +43,7 @@ export default function SignalsActivityClientScreen() {
   );
   if (query.isPending) return <AppPageSkeleton />;
   if (query.error) return <AppPageError error={query.error} retry={() => void query.refetch()} />;
-  const { scope, cycleView, rollingPeriod, developerId, tool, options, work, youUnlinked } = query.data;
+  const { scope, cycleView, rollingPeriod, cycleWindows, developerId, tool, options, work, youUnlinked } = query.data;
   const isYou = scope === "you";
 
   return (
@@ -55,7 +57,12 @@ export default function SignalsActivityClientScreen() {
         }
       >
         <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-end sm:gap-6">
-          <CycleViewPicker view={cycleView} period={rollingPeriod} basePath="/signals/activity" />
+          <CycleViewPicker
+            view={cycleView}
+            period={rollingPeriod}
+            basePath="/signals/activity"
+            cycleWindows={cycleWindows}
+          />
           <AudienceScopeSwitcher className="sm:w-auto" />
         </div>
       </SignalsPageHeader>

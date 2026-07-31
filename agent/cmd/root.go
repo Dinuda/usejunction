@@ -12,9 +12,11 @@ import (
 )
 
 var (
-	format  string
-	verbose bool
-	noColor bool
+	format      string
+	verbose     bool
+	noColor     bool
+	profileFlag string
+	homeFlag    string
 )
 
 var rootCmd = &cobra.Command{
@@ -33,8 +35,14 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&format, "format", "text", "Output format: text|json")
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "Verbose output")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable color output")
-	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+	rootCmd.PersistentFlags().StringVar(&profileFlag, "profile", "", "Agent profile: default|test")
+	rootCmd.PersistentFlags().StringVar(&homeFlag, "home", "", "Agent data directory (overrides profile)")
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if err := config.ApplyRuntimeProfile(homeFlag, profileFlag); err != nil {
+			return err
+		}
 		ui.SetNoColor(noColor)
+		return nil
 	}
 }
 

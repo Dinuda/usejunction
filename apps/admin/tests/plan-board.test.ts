@@ -102,6 +102,59 @@ test("buildMemberPlanBoard groups primary pace and promo/credit windows per tool
   assert.equal(chatgpt.usage?.cost, 18.5);
 });
 
+test("buildMemberPlanBoard honors a weekly usage-window override over a shorter window", () => {
+  const now = new Date("2026-07-26T14:00:00.000Z");
+  const cards = buildMemberPlanBoard({
+    now,
+    usageWindowPreferences: { "chatgpt-codex": "weekly" },
+    snapshots: [
+      {
+        toolName: "codex",
+        deviceId: "device-1",
+        windowType: "session_5h",
+        usedPercent: 90,
+        creditsRemaining: null,
+        resetAt: new Date("2026-07-26T19:00:00.000Z"),
+        source: "cli_rpc",
+        updatedAt: now,
+      },
+      {
+        toolName: "codex",
+        deviceId: "device-1",
+        windowType: "weekly",
+        usedPercent: 14,
+        creditsRemaining: null,
+        resetAt: new Date("2026-08-02T10:00:00.000Z"),
+        source: "cli_rpc",
+        updatedAt: now,
+      },
+    ],
+  });
+  assert.equal(cards[0]?.primary?.windowType, "weekly");
+  assert.equal(cards[0]?.pace.usedPercent, 14);
+});
+
+test("buildMemberPlanBoard does not silently fall back when an override is unavailable", () => {
+  const cards = buildMemberPlanBoard({
+    usageWindowPreferences: { cursor: "weekly" },
+    accounts: [{ toolName: "cursor", plan: "Pro", email: null }],
+    snapshots: [
+      {
+        toolName: "cursor",
+        deviceId: "device-1",
+        windowType: "monthly",
+        usedPercent: 30,
+        creditsRemaining: null,
+        resetAt: new Date("2026-08-01T00:00:00.000Z"),
+        source: "cli_rpc",
+        updatedAt: new Date("2026-07-26T14:00:00.000Z"),
+      },
+    ],
+  });
+  assert.equal(cards[0]?.primary, null);
+  assert.equal(cards[0]?.usageWindowPreference, "weekly");
+});
+
 test("planBoardLeadLabel reports status distribution with attention priority", () => {
   const now = new Date("2026-07-17T00:00:00.000Z");
   const cards = buildMemberPlanBoard({

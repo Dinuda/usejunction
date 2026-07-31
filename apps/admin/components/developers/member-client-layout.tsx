@@ -77,11 +77,16 @@ export function MemberClientLayout({ children }: { children: React.ReactNode }) 
       <PageHeader
         className="mb-8"
         eyebrow={
-          <Breadcrumb><BreadcrumbList><BreadcrumbItem><BreadcrumbLink asChild><Link href="/team">Team</Link></BreadcrumbLink></BreadcrumbItem><BreadcrumbSeparator /><BreadcrumbItem><BreadcrumbPage>{developer.name}</BreadcrumbPage></BreadcrumbItem></BreadcrumbList></Breadcrumb>
+          <Breadcrumb><BreadcrumbList><BreadcrumbItem><BreadcrumbLink asChild><Link href="/team" prefetch={false}>Team</Link></BreadcrumbLink></BreadcrumbItem><BreadcrumbSeparator /><BreadcrumbItem><BreadcrumbPage>{developer.name}</BreadcrumbPage></BreadcrumbItem></BreadcrumbList></Breadcrumb>
         }
         title={`${developer.name}.`}
         description={`${developer.email} · work, tools, and plan pace.`}
-        actions={<MemberHubPeriodFilter className="shrink-0 self-start sm:self-end" />}
+        actions={
+          <MemberHubPeriodFilter
+            className="shrink-0 self-start sm:self-end"
+            cycleWindows={hubQuery.data.cycleWindows}
+          />
+        }
       >
         {canManageSettings(role) ? (
           <div className="flex items-center gap-4">

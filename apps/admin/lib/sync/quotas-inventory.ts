@@ -18,6 +18,67 @@ export type QuotaInventoryItem = {
   source?: string | null;
 };
 
+const QUOTA_OBSERVATION_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+const QUOTA_SAMPLE_BUCKET_MS = 30 * 60 * 1000;
+
+function quotaSampleBucket(now: Date): Date {
+  return new Date(Math.floor(now.getTime() / QUOTA_SAMPLE_BUCKET_MS) * QUOTA_SAMPLE_BUCKET_MS);
+}
+
+/** Persist a bounded history of percentage readings for pace projections. */
+export async function recordQuotaObservations(params: {
+  deviceId: string;
+  items: QuotaInventoryItem[];
+  observedAt?: Date;
+}): Promise<{ recorded: number }> {
+  const observedAt = params.observedAt ?? new Date();
+  const sampleBucket = quotaSampleBucket(observedAt);
+  const device = await prisma.device.findUnique({
+    where: { id: params.deviceId },
+    select: { orgId: true },
+  });
+  if (!device) return { recorded: 0 };
+  let recorded = 0;
+  for (const item of params.items) {
+    const toolName = String(item.toolName ?? "").trim();
+    const windowType = String(item.windowType ?? "").trim();
+    const resetAt = item.resetAt ? new Date(item.resetAt) : null;
+    const usedPercent =
+      typeof item.usedPercent === "number" && Number.isFinite(item.usedPercent)
+        ? item.usedPercent
+        : null;
+    if (!toolName || !windowType || !resetAt || Number.isNaN(resetAt.getTime()) || usedPercent == null) continue;
+    const existing = await prisma.quotaObservation.findFirst({
+      where: { deviceId: params.deviceId, toolName, windowType, resetAt, sampleBucket },
+      select: { id: true },
+    });
+    if (existing) {
+      await prisma.quotaObservation.update({
+        where: { id: existing.id },
+        data: { usedPercent, observedAt },
+      });
+    } else {
+      await prisma.quotaObservation.create({
+        data: {
+          orgId: device.orgId,
+          deviceId: params.deviceId,
+          toolName,
+          windowType,
+          resetAt,
+          usedPercent,
+          observedAt,
+          sampleBucket,
+        },
+      });
+    }
+    recorded += 1;
+  }
+  await prisma.quotaObservation.deleteMany({
+    where: { deviceId: params.deviceId, observedAt: { lt: new Date(observedAt.getTime() - QUOTA_OBSERVATION_RETENTION_MS) } },
+  });
+  return { recorded };
+}
+
 export function quotasInventoryCanonicalLine(item: QuotaInventoryItem): string {
   const toolName = String(item.toolName ?? "").trim();
   const windowType = String(item.windowType ?? "").trim();
@@ -106,6 +167,8 @@ export async function applyDeviceQuotaInventory(params: {
     }
     upserted += 1;
   }
+
+  await recordQuotaObservations({ deviceId: params.deviceId, items: params.items });
 
   const now = new Date();
   await prisma.device.update({

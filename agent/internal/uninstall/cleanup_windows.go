@@ -49,7 +49,7 @@ Remove-Item -Force $MyInvocation.MyCommand.Path
 	}
 	cmd := exec.Command("powershell.exe",
 		"-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", scriptPath,
-		"-ParentPid", strconv.Itoa(os.Getpid()), "-RootDir", config.ConfigDir(), "-TaskName", "UseJunction Agent",
+		"-ParentPid", strconv.Itoa(os.Getpid()), "-RootDir", config.ConfigDir(), "-TaskName", config.CurrentServiceIdentity().WindowsTaskName,
 	)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow:    true,

@@ -1,0 +1,48 @@
+# Vercel Hobby's native cron is daily-only, so liveness reconciliation runs
+# from the same protected production-cron environment as the report sender.
+name: Device health reconciliation
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-crons-device-health
+  cancel-in-progress: false
+
+jobs:
+  device-health:
+    name: Device health
+    runs-on: ubuntu-latest
+    environment: agent-production
+    timeout-minutes: 8
+    steps:
+      - name: Require environment secrets
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          CONTROL_PLANE_URL: ${{ secrets.CONTROL_PLANE_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ] || [ -z "$CONTROL_PLANE_URL" ]; then
+            echo "::error::Set agent-production environment secrets CRON_SECRET and CONTROL_PLANE_URL"
+            exit 1
+          fi
+      - name: POST /api/cron/device-health
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          CONTROL_PLANE_URL: ${{ secrets.CONTROL_PLANE_URL }}
+        run: |
+          set -euo pipefail
+          base="${CONTROL_PLANE_URL%/}"
+          code=$(curl -sS -o /tmp/device-health-body.json -w "%{http_code}" \
+            -X POST "$base/api/cron/device-health" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            --max-time 300)
+          echo "HTTP $code"
+          cat /tmp/device-health-body.json || true
+          echo
+          test "$code" = "200"

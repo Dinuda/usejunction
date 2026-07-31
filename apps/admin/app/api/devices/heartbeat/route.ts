@@ -13,6 +13,7 @@ import { getFullUsageRescanDay } from "@/lib/runtime-settings";
 import { applyUserTimeZone } from "@/lib/notifications/preferences";
 import { isValidIanaTimeZone } from "@/lib/timezone";
 import { notifyServerIssue } from "@/lib/notifications/slack";
+import { REMOTE_SYNC_PROTOCOL } from "@/lib/sync/protocol";
 
 type AgentCollectStatus = {
   status: string;
@@ -92,6 +93,10 @@ export async function POST(req: NextRequest) {
         : undefined;
     const reportedAgentVersion =
       typeof body.agentVersion === "string" ? normalizeAgentVersion(body.agentVersion) : undefined;
+    const remoteSyncProtocol =
+      typeof body.remoteSyncProtocol === "number" && Number.isFinite(body.remoteSyncProtocol)
+        ? Math.max(0, Math.min(REMOTE_SYNC_PROTOCOL, Math.floor(body.remoteSyncProtocol)))
+        : 0;
 
     await prisma.$transaction(async (tx) => {
       // Only one agent can own a loopback sync port — drop stale claims so the
@@ -115,6 +120,7 @@ export async function POST(req: NextRequest) {
         data: {
           lastSeenAt: new Date(),
           ...(reportedAgentVersion ? { agentVersion: reportedAgentVersion } : {}),
+          remoteSyncProtocol,
           ...(body.os ? { os: String(body.os).slice(0, 64) } : {}),
           ...(body.architecture ? { architecture: String(body.architecture).slice(0, 64) } : {}),
           ...(body.hostname ? { hostname: String(body.hostname).slice(0, 255) } : {}),
@@ -163,6 +169,7 @@ export async function POST(req: NextRequest) {
         architecture:
           typeof body.architecture === "string" ? body.architecture.slice(0, 64) : device.architecture,
         agentVersion,
+        remoteSyncProtocol,
         localEndpointPresent: Boolean(localEndpoint),
         localSyncTokenPresent: Boolean(localSyncToken),
       },

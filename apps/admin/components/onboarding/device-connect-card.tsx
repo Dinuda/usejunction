@@ -1,17 +1,18 @@
 "use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Check, Loader2 } from "lucide-react";
+import { AlertCircle, Check, Loader2 } from "lucide-react";
 import { hasToolBrandIcon, ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { Panel } from "@/components/panel";
 import { PlatformCommand } from "@/components/onboarding/platform-command";
-import { buildPlatformInstallCommands } from "@/lib/connect-command";
+import { buildPlatformInstallCommands, buildPlatformResumeCommands } from "@/lib/connect-command";
 import {
-  hasUsageReady,
+  getDeviceConnectStage,
   isEnrollmentTokenStale,
   isReadyDevice,
   shouldEnterSyncWait,
   shouldServeCachedEnrollmentToken,
+  type DeviceConnectStage,
   type DeviceConnectSnapshot,
 } from "@/lib/device-connect-state";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -22,7 +23,7 @@ import { cn } from "@/lib/utils";
 
 const POLL_INTERVAL_MS = 2500;
 const POLL_DURATION_MS = 60_000;
-/** After this long in post-enroll sync, show a reassurance message (polling continues). */
+/** After this long, stop presenting an endless spinner; background polling continues. */
 const SYNC_LONG_WAIT_MS = 120_000;
 
 type Device = DeviceConnectSnapshot;
@@ -57,6 +58,7 @@ type Props = {
     deviceEnrolled: boolean;
     /** Post-enroll sync is taking longer than usual (informational only). */
     syncTakingLong: boolean;
+    stage: DeviceConnectStage;
   }) => void;
   onConnected?: (device: Device) => void;
 };
@@ -64,16 +66,6 @@ type Props = {
 export type DeviceConnectCardHandle = {
   checkConnection: () => void;
 };
-
-function clearEnrollmentCredentials(
-  setToken: (value: string | null) => void,
-  setExpiresAt: (value: string | null) => void,
-  setControlPlaneUrl: (value: string) => void,
-) {
-  setToken(null);
-  setExpiresAt(null);
-  setControlPlaneUrl("");
-}
 
 export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(function DeviceConnectCard(
   {
@@ -103,6 +95,8 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
   const [pollSession, setPollSession] = useState(0);
   const [importProgress, setImportProgress] = useState<string | null>(null);
   const [syncTakingLong, setSyncTakingLong] = useState(false);
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [pollError, setPollError] = useState<string | null>(null);
   /** Device row exists — enrollment token must not be reused. */
   const [deviceEnrolled, setDeviceEnrolled] = useState(false);
   /** Only flip after onConnected — keeps loading UI until the parent can take over. */
@@ -115,17 +109,22 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
   const markEnrollmentConsumed = useCallback(() => {
     setDeviceEnrolled((current) => {
       if (current) return current;
-      clearEnrollmentCredentials(setToken, setExpiresAt, setControlPlaneUrl);
+      setToken(null);
+      setExpiresAt(null);
+      setIsPolling(false);
       return true;
     });
   }, []);
 
   const beginSyncWait = useCallback((candidate: Device, progress: string | null = null) => {
-    if (!waitingStartedAtRef.current) waitingStartedAtRef.current = Date.now();
+    if (!waitingStartedAtRef.current) {
+      const enrolledAt = candidate.createdAt ? Date.parse(candidate.createdAt) : Number.NaN;
+      waitingStartedAtRef.current = Number.isFinite(enrolledAt) ? enrolledAt : Date.now();
+      setSyncTakingLong(false);
+    }
     setWaitingForTools(true);
     setDevice(candidate);
     setImportProgress(progress);
-    setSyncTakingLong(false);
   }, []);
 
   const markConnected = useCallback(
@@ -145,13 +144,22 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
   );
 
   const refreshStatus = useCallback(async () => {
-    const response = await fetch("/api/onboarding?include=developer", { cache: "no-store" });
-    if (!response.ok) return null;
-    const data = await response.json();
-    const devices = (data.developer?.devices as Device[] | undefined) ?? [];
-    const next = devices[0] ?? null;
-    setDevice(next);
-    return { next, devices };
+    try {
+      const response = await fetch("/api/onboarding?include=developer", { cache: "no-store" });
+      if (!response.ok) {
+        setPollError("We couldn’t check setup status. Check your connection and try again.");
+        return null;
+      }
+      const data = await response.json();
+      const devices = (data.developer?.devices as Device[] | undefined) ?? [];
+      const next = devices[0] ?? null;
+      setDevice(next);
+      setPollError(null);
+      return { next, devices };
+    } catch {
+      setPollError("We couldn’t check setup status. Check your connection and try again.");
+      return null;
+    }
   }, []);
 
   const checkEnrollment = useCallback(async () => {
@@ -169,46 +177,17 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
     }
 
     if (candidate && !isReadyDevice(candidate)) {
-      beginSyncWait(candidate);
-      return;
-    }
-
-    if (candidate && isReadyDevice(candidate) && !hasUsageReady(candidate)) {
-      beginSyncWait(candidate, "Waiting for first usage upload…");
-      return;
-    }
-
-    if (candidate && isReadyDevice(candidate) && hasUsageReady(candidate)) {
-      setDevice(candidate);
-      try {
-        const syncRes = await fetch("/api/onboarding/sync-status", { cache: "no-store" });
-        if (syncRes.ok) {
-          const sync = (await syncRes.json()) as {
-            dashboardReady?: boolean;
-            dirtyDayCount?: number;
-          };
-          // Hot-window gate: only block while the visible window is still dirty.
-          // Older history may keep backfilling without blocking onboarding.
-          if (sync.dashboardReady === false) {
-            beginSyncWait(
-              candidate,
-              (sync.dirtyDayCount ?? 0) > 0
-                ? `Preparing dashboard… (${sync.dirtyDayCount} day${sync.dirtyDayCount === 1 ? "" : "s"} importing)`
-                : "Preparing dashboard…",
-            );
-            return;
-          }
-        }
-      } catch {
-        // Soft-fail: proceed with upload-ready if readiness probe fails.
-      }
-      markConnected(candidate);
+      beginSyncWait(
+        candidate,
+        candidate.lastToolsSyncAt ? "Waiting for first usage sync…" : null,
+      );
       return;
     }
 
     if (candidate && isReadyDevice(candidate)) {
       setDevice(candidate);
       markConnected(candidate);
+      return;
     }
   }, [beginSyncWait, device?.id, knownIds, markConnected, markEnrollmentConsumed, refreshStatus]);
 
@@ -389,19 +368,29 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
 
   useImperativeHandle(ref, () => ({ checkConnection }), [checkConnection]);
 
+  const connectionStage = getDeviceConnectStage(device, { stalled: syncTakingLong });
+
   useEffect(() => {
     onPollingStateChange?.({
       isPolling,
       waitingForTools,
       deviceEnrolled,
       syncTakingLong,
+      stage: connectionStage,
     });
-  }, [deviceEnrolled, isPolling, onPollingStateChange, syncTakingLong, waitingForTools]);
+  }, [connectionStage, deviceEnrolled, isPolling, onPollingStateChange, syncTakingLong, waitingForTools]);
 
   const commands = useMemo(() => {
     if (deviceEnrolled || !token || !controlPlaneUrl) return null;
     return buildPlatformInstallCommands(token, controlPlaneUrl);
   }, [controlPlaneUrl, deviceEnrolled, token]);
+  const resumeCommands = useMemo(
+    () =>
+      buildPlatformResumeCommands(
+        controlPlaneUrl || (typeof window !== "undefined" ? window.location.origin : ""),
+      ),
+    [controlPlaneUrl],
+  );
 
   if (loading) {
     return (
@@ -438,6 +427,7 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
   const showWaiting = pollAfterCopy ? isPolling && !deviceEnrolled : !deviceEnrolled;
   const showStatusRow = !hideInlineStatus && (showWaiting || expired);
   const enrolledAwaitingTools = waitingForTools && Boolean(device) && !fullyConnected;
+  const stage = connectionStage;
 
   return (
     <div className={cn(compact ? "space-y-0" : "space-y-4")}>
@@ -449,21 +439,61 @@ export const DeviceConnectCard = forwardRef<DeviceConnectCardHandle, Props>(func
       )}
       {enrolledAwaitingTools ? (
         <div className="space-y-3">
-          <div className="flex items-center gap-2 border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
-            <Check className="size-4 shrink-0" aria-hidden />
+          <div
+            className={cn(
+              "flex items-center gap-2 border px-4 py-3 text-sm",
+              syncTakingLong
+                ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                : "border-success/30 bg-success/10 text-success",
+            )}
+          >
+            {syncTakingLong ? (
+              <AlertCircle className="size-4 shrink-0" aria-hidden />
+            ) : (
+              <Check className="size-4 shrink-0" aria-hidden />
+            )}
             <span>
-              {importProgress ??
-                (hasUsageReady(device)
-                  ? "Device enrolled — preparing dashboard…"
-                  : "Device enrolled — waiting for tool detection…")}
+              {syncTakingLong
+                ? "Setup has not reported successfully yet."
+                : importProgress ??
+                  (stage === "syncing"
+                    ? "Device enrolled — waiting for first usage sync…"
+                    : "Device enrolled — waiting for tool inventory…")}
             </span>
-            <Loader2 className="size-4 shrink-0 animate-spin opacity-80" aria-hidden />
+            {!syncTakingLong ? (
+              <Loader2 className="size-4 shrink-0 animate-spin opacity-80" aria-hidden />
+            ) : null}
           </div>
-          {syncTakingLong ? (
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              Still working — your agent may be scanning local AI tools. First connect can take several minutes.
-              Leave this page open or check back shortly.
-            </p>
+          {pollError ? <p className="text-xs leading-relaxed text-destructive">{pollError}</p> : null}
+          <div className="space-y-3">
+            <button
+              type="button"
+              className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+              onClick={() => setShowRecovery((current) => !current)}
+            >
+              Having trouble? Finish setup
+            </button>
+            {showRecovery ? (
+              <div className="space-y-2">
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Copy this command into Terminal. It resumes from the existing enrollment and does not create another device.
+                </p>
+                <PlatformCommand
+                  commands={resumeCommands}
+                  onCopied={() => {
+                    waitingStartedAtRef.current = Date.now();
+                    setSyncTakingLong(false);
+                    setPollError(null);
+                    void checkEnrollment();
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
+          {syncTakingLong || pollError ? (
+            <Button type="button" variant="outline" size="sm" onClick={() => void checkEnrollment()}>
+              Check again
+            </Button>
           ) : null}
         </div>
       ) : (

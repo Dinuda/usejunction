@@ -3,12 +3,15 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/usejunction/agent/internal/client"
 	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/configure"
+	"github.com/usejunction/agent/internal/controlurl"
 	"github.com/usejunction/agent/internal/types"
 )
 
@@ -44,6 +47,9 @@ func doEnroll(opts enrollOptions) (*enrollResult, error) {
 	}
 	if url == "" {
 		url = "http://localhost:3001"
+	}
+	if err := warnEnrollmentTarget(url, opts); err != nil {
+		return nil, err
 	}
 
 	osName, arch := platformInfo()
@@ -110,6 +116,34 @@ func doEnroll(opts enrollOptions) (*enrollResult, error) {
 	}
 
 	return &enrollResult{cfg: cfg}, nil
+}
+
+func warnEnrollmentTarget(targetURL string, opts enrollOptions) error {
+	parsed, err := url.ParseRequestURI(targetURL)
+	if err != nil {
+		return fmt.Errorf("invalid control plane URL: %w", err)
+	}
+	if !controlurl.IsLoopbackHost(parsed.Hostname()) {
+		return nil
+	}
+	if envURL := strings.TrimSpace(os.Getenv("USEJUNCTION_URL")); envURL != "" {
+		envParsed, err := url.ParseRequestURI(envURL)
+		if err == nil && !controlurl.IsLoopbackHost(envParsed.Hostname()) {
+			return fmt.Errorf(
+				"USEJUNCTION_URL is %s but enrolling to %s; pass --url %s",
+				envURL,
+				targetURL,
+				envURL,
+			)
+		}
+	}
+	if !opts.Quiet && format != "json" {
+		fmt.Printf(
+			"WARNING: Enrolling to local dev (%s). Remote production dashboards will not receive device activity.\n",
+			targetURL,
+		)
+	}
+	return nil
 }
 
 type reportStats struct {
