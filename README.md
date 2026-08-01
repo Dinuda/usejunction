@@ -4,13 +4,16 @@ Open-source AI coding observability for teams. Track usage, cost, latency, plan/
 
 **Site:** [usejunction.dev](https://usejunction.dev) · **Guides:** [Plan usage & waste](https://usejunction.dev/guides/see-plan-usage-and-waste) · [Team AI coding insights](https://usejunction.dev/guides/see-team-ai-coding-usage) · [llms.txt](https://usejunction.dev/llms.txt)
 
+<!-- Architecture diagram: add PNG/SVG at docs/images/architecture.png -->
+![UseJunction architecture](docs/images/readme-image.png)
+
 ## Project status
 
 UseJunction is currently maintained by a single independent developer. The project is open for evaluation, feedback, and self-hosted use today, with a fuller community contribution setup coming soon.
 
 ## Tested & verified coverage
 
-UseJunction separates **verified usage** (vendor-reported charges, e.g. Cursor usage events) from **estimated usage** (local scans and pricing models). The combinations below have been tested on real machines and confirmed to surface verified usage correctly in the admin UI.
+UseJunction separates **verified usage** (vendor-reported charges when billable, e.g. Cursor `chargedCents > 0`) from **estimated usage** (local scans and rate-card pricing — including Cursor included/plan usage when `chargedCents = 0`). The combinations below have been tested on real machines and confirmed to surface usage correctly in the admin UI.
 
 | Tool | Platform | Verified usage |
 |------|----------|----------------|
@@ -194,20 +197,59 @@ For faster change detection, install `fswatch` (`brew install fswatch`). Without
 ## Architecture
 
 ```
-Coding tools → LiteLLM Proxy → Providers
-                    ↓
-              Langfuse (traces)
-                    ↓
-         UseJunction callback → Admin API → Postgres
-                    ↑
-         Go agent (heartbeat, tool detection, local log scans)
-                    ↑
-  Provider Admin APIs + Claude Code OTLP/HTTP JSON
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Developer machines                                                     │
+│                                                                         │
+│  Codex / Claude / Cursor / Copilot / OpenCode / Antigravity / …         │
+│       │                                                                 │
+│       ▼                                                                 │
+│  Go agent (profile-isolated: ~/.usejunction or ~/.usejunction-test)     │
+│    • heartbeat (15m) + OTA update directives                            │
+│    • local scans (JSONL / sqlite) → estimated_api                       │
+│    • Cursor usage events (chargedCents) → verified_usage                │
+│      or rate-card estimated_api when included usage is $0               │
+│    • quotas, accounts, tools inventory                                  │
+│    • optional Signals / work extraction                                 │
+│    • localhost sync endpoint (47832 default / 47833 test)               │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                │ UUS sync (start → chunk → commit)
+                                │ OTEL metrics (Claude)
+                                │ heartbeats / agent-update events
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Control plane (apps/admin · Next.js)                                   │
+│                                                                         │
+│  Ingest → UsageDaily (+ inventory / quotas)                             │
+│  Source priority: vendor_verified > otel > device_observed > estimated  │
+│  Cost kinds: actual_spend · verified_usage · estimated_api              │
+│                                                                         │
+│  Org-day snapshots → dashboard KPIs / tool detail / Models tables       │
+│  Sync team = wake agents to upload (does not install agent binaries)    │
+│  Agent OTA = tag agent-v* → promote → heartbeat directive               │
+│    normal = 24h staggered · critical = immediate                        │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                │
+                                ▼
+                         PostgreSQL
 ```
 
-Analytical reads are centralized through `UsageDaily`, the SQL query engine, and a PostgreSQL result cache. See [Central Analytics Engine](docs/central-analytics-engine.md), [Usage Accounting Contract](docs/usage-accounting.md), and [Subscription Cycle Utilization](docs/subscription-cycle-utilization.md).
+Optional gateway path (self-hosted Docker / LiteLLM) still exists for traced proxy traffic:
 
-Signals collection is documented in [docs/signals-collection.md](docs/signals-collection.md). It covers the optional activity-flow layer that collects AI-adjacent app/domain sessions from the enrolled desktop agent.
+```
+Coding tools → LiteLLM → Providers
+                  ↓
+            Langfuse traces
+                  ↓
+       UseJunction callback → Admin API
+```
+
+**Cost semantics (short):** dashboard Estimated Usage = `verified_usage + estimated_api`. Cursor plan/bonus rows with `chargedCents = 0` are estimated from the rate card after agent rematerialize — they are not labeled verified at $0. See [Usage Accounting](docs/usage-accounting.md).
+
+**Reads:** analytical queries go through `UsageDaily`, the SQL query engine, and org-day snapshots. See [Central Analytics Engine](docs/central-analytics-engine.md) and [Subscription Cycle Utilization](docs/subscription-cycle-utilization.md).
+
+**Sync paths:** device local sync, vendor admin APIs, Claude OTEL, and invoice import — overview in [Tool Sync Methodology](docs/tool-sync-methodology.md).
+
+**Agent OTA / dual profiles:** [Controlled Agent Releases](docs/agent-releases.md). Signals: [docs/signals-collection.md](docs/signals-collection.md).
 
 ## CLI commands
 
