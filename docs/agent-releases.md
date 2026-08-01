@@ -588,6 +588,10 @@ There are two different local loops. Do not confuse them.
 
 Loopback installs (`http://localhost:3001`) auto-select the **test** profile so local dev never overwrites production enrollment. Both agents can run concurrently (separate config, launchd job, and local-sync port `47833` for test).
 
+**Cursor usage-events cache:** Cursor billed-event aggregates are cached under each profile’s `cache/cost-usage/cursor-usage-events.json` (via `config.CacheDir()`). Test and default agents must **not** share a cache path — a stale shared file was a source of `$0 verified_usage` rows on sync.
+
+**Fleet rematerialize after pricing fixes:** When an agent release changes Cursor cost semantics (rate card / `chargedCents=0` → `estimated_api`), promote the release then bump `fullUsageRescanDay` on the control plane (daily cron [`usage-daily-refresh`](./usage-daily-refresh) or `setFullUsageRescanDay`) so enrolled devices run a forced full usage collect on the next heartbeat. Devices OTA to the new binary rebuild Cursor events and upload `estimated_api` rows; dashboards rematerialize from agent uploads (no per-machine reinstall required for fleet users).
+
 **Recovery:** If production stopped receiving heartbeats because you enrolled locally against the wrong home, re-enroll production from your hosted control plane into `~/.usejunction` while keeping the test agent in `~/.usejunction-test`.
 
 ### Agent feature work (hot reload)

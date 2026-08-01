@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/usejunction/agent/internal/config"
 	"github.com/usejunction/agent/internal/platformdirs"
 	"github.com/usejunction/agent/internal/scan"
 	"github.com/usejunction/agent/internal/sqlitedb"
@@ -501,28 +502,75 @@ type cursorUsageEventsResponse struct {
 type cursorEventsCache struct {
 	Version            string             `json:"version"`
 	CalculationVersion string             `json:"calculationVersion"`
+	PricingVersion     string             `json:"pricingVersion"`
 	LastEventTimestamp string             `json:"lastEventTimestamp,omitempty"`
 	Rows               []types.DailyUsage `json:"rows"`
 }
 
 const cursorEventsSourceKey = "cursor:usage-events"
 const cursorEventsSource = "cursor_usage_events"
+const cursorEventsCacheVersion = "3"
+const cursorEventsCalcVersion = "usage-v2"
+
+func cursorEventsCachePath() string {
+	return filepath.Join(config.CacheDir(), "cursor-usage-events.json")
+}
+
+func finalizeCursorEventRows(rows []types.DailyUsage) []types.DailyUsage {
+	out := make([]types.DailyUsage, 0, len(rows))
+	for _, row := range rows {
+		cp := row
+		finalizeCursorEventCost(&cp)
+		out = append(out, cp)
+	}
+	return out
+}
+
+func isPreFixStaleCursorRow(row types.DailyUsage) bool {
+	hasTokens := row.InputTokens > 0 || row.OutputTokens > 0 || row.CacheReadTokens > 0 || row.CacheWriteTokens > 0
+	if !hasTokens || row.EstimatedCost > 0 {
+		return false
+	}
+	if row.CostKind == types.CostKindEstimatedAPI {
+		return false
+	}
+	return row.CostKind == types.CostKindVerifiedUsage || row.CostKind == ""
+}
+
+func needsCursorEventsRebuild(snap scan.ScanSnapshot) bool {
+	for _, row := range scan.AggregatesForSource(snap, "cursor", cursorEventsSource) {
+		if isPreFixStaleCursorRow(row) {
+			return true
+		}
+	}
+	return false
+}
+
+func buildCursorEventsCache(lastEventTS string, rows []types.DailyUsage) cursorEventsCache {
+	return cursorEventsCache{
+		Version:            cursorEventsCacheVersion,
+		CalculationVersion: cursorEventsCalcVersion,
+		PricingVersion:     scan.PricingVersion,
+		LastEventTimestamp: lastEventTS,
+		Rows:               rows,
+	}
+}
 
 // ScanCursorUsageEvents fetches billed usage events using the local Cursor
 // session cookie. Incremental mode reuses the scan snapshot when the newest
 // event timestamp matches the stored watermark, and otherwise merges only newer
 // events into prior aggregates.
 func ScanCursorUsageEvents(ctx context.Context, forceFull bool) ([]types.DailyUsage, error) {
-	cachePath := filepath.Join(os.Getenv("HOME"), ".usejunction", "cache", "cursor-usage-events.json")
-	if home, err := os.UserHomeDir(); err == nil {
-		cachePath = filepath.Join(home, ".usejunction", "cache", "cursor-usage-events.json")
-	}
+	cachePath := cursorEventsCachePath()
 
 	snap, _ := scan.LoadScanSnapshot()
 	prevWM := snap.Sources[cursorEventsSourceKey]
+	if !forceFull && needsCursorEventsRebuild(snap) {
+		forceFull = true
+	}
 	if !forceFull {
 		if cached, err := loadCursorEventsCache(cachePath); err == nil {
-			return cached, nil
+			return finalizeCursorEventRows(cached), nil
 		}
 	}
 
@@ -612,7 +660,7 @@ func ScanCursorUsageEvents(ctx context.Context, forceFull bool) ([]types.DailyUs
 					Date: date, ToolName: "cursor", Model: model,
 					Source: cursorEventsSource,
 					MetricKind: types.MetricKindUsage,
-					TokenSemantics: types.TokenSemanticsVendor, CalculationVersion: "usage-v2",
+					TokenSemantics: types.TokenSemanticsVendor, CalculationVersion: cursorEventsCalcVersion,
 				}
 			}
 			b := buckets[key]
@@ -648,11 +696,18 @@ func ScanCursorUsageEvents(ctx context.Context, forceFull bool) ([]types.DailyUs
 	// already had aggregates — nothing new arrived.
 	if !forceFull && prevWM.Extra != "" && newestEventTS == prevWM.Extra && reachedPriorWatermark {
 		if rows := scan.AggregatesForSource(snap, "cursor", cursorEventsSource); len(rows) > 0 {
-			_ = saveCursorEventsCache(cachePath, cursorEventsCache{
-				Version: "2", CalculationVersion: "usage-v2",
-				LastEventTimestamp: newestEventTS, Rows: rows,
-			})
-			return rows, nil
+			finalized := finalizeCursorEventRows(rows)
+			_ = saveCursorEventsCache(cachePath, buildCursorEventsCache(newestEventTS, finalized))
+			snap.Aggregates = scan.ReplaceSourceAggregates(snap.Aggregates, "cursor", cursorEventsSource, finalized)
+			if snap.Sources == nil {
+				snap.Sources = map[string]scan.SourceWatermark{}
+			}
+			snap.Sources[cursorEventsSourceKey] = scan.SourceWatermark{
+				Path:  cursorEventsSourceKey,
+				Extra: newestEventTS,
+			}
+			_ = scan.SaveScanSnapshot(snap)
+			return finalized, nil
 		}
 	}
 
@@ -662,11 +717,7 @@ func ScanCursorUsageEvents(ctx context.Context, forceFull bool) ([]types.DailyUs
 		result = append(result, *b)
 	}
 	result = scan.PruneAggregatesLookback(result, time.Now().UTC())
-	cache := cursorEventsCache{
-		Version: "2", CalculationVersion: "usage-v2",
-		LastEventTimestamp: newestEventTS, Rows: result,
-	}
-	_ = saveCursorEventsCache(cachePath, cache)
+	_ = saveCursorEventsCache(cachePath, buildCursorEventsCache(newestEventTS, result))
 
 	snap.Aggregates = scan.ReplaceSourceAggregates(snap.Aggregates, "cursor", cursorEventsSource, result)
 	if snap.Sources == nil {
@@ -725,6 +776,9 @@ func loadCursorEventsCache(path string) ([]types.DailyUsage, error) {
 	}
 	var wrapped cursorEventsCache
 	if err := json.Unmarshal(data, &wrapped); err == nil && len(wrapped.Rows) > 0 {
+		if wrapped.Version != cursorEventsCacheVersion || wrapped.PricingVersion != scan.PricingVersion {
+			return nil, fmt.Errorf("cursor events cache version mismatch")
+		}
 		return wrapped.Rows, nil
 	}
 	var out []types.DailyUsage
