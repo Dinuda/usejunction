@@ -199,6 +199,8 @@ The `e2e` job in `.github/workflows/admin-tests.yml` runs after `e2e:seed`:
 
 On verification failure, CI uploads `apps/admin/scripts/calculation-verification-report.json` as an artifact.
 
+To run the **entire** admin CI pipeline locally (including type-check, coverage, integration, and prod build), see [Testing — Run the full CI suite locally](testing.md#run-the-full-ci-suite-locally).
+
 ## Pass criteria
 
 | Check class | Pass rule |

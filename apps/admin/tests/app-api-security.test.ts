@@ -55,10 +55,28 @@ describe("browser mutation guard", () => {
   it("rejects non-JSON cookie-authenticated mutations", () => {
     const request = new NextRequest("https://usejunction.dev/api/example", {
       method: "POST",
-      headers: { origin: "https://usejunction.dev", host: "usejunction.dev", "content-type": "text/plain", "sec-fetch-site": "same-origin" },
+      headers: {
+        origin: "https://usejunction.dev",
+        host: "usejunction.dev",
+        "content-type": "text/plain",
+        "content-length": "1",
+        "sec-fetch-site": "same-origin",
+      },
       body: "x",
     });
     expect(browserMutationGuard(request, production)?.status).toBe(415);
+  });
+
+  it("allows mutations without a request body", () => {
+    const request = new NextRequest("https://usejunction.dev/api/example", {
+      method: "DELETE",
+      headers: {
+        origin: "https://usejunction.dev",
+        host: "usejunction.dev",
+        "sec-fetch-site": "same-origin",
+      },
+    });
+    expect(browserMutationGuard(request, production)).toBeNull();
   });
 
   it("requires an explicit same-origin browser header", () => {

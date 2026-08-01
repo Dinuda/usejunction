@@ -7,6 +7,7 @@ import { getRemoteSyncPanelContext } from "@/lib/sync/remote-sync-context";
 import { getMeOverview } from "@/lib/queries/me/overview";
 import { getDashboardTools } from "@/lib/queries/dashboard/tools";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
+import { reportNow } from "@/lib/report-now";
 
 export type ToolsSearch = {
   view?: string | null;
@@ -41,8 +42,9 @@ export async function loadToolsPage(principal: AppPrincipal, search: ToolsSearch
   const subscriptionsPromise = listSubscriptions(principal.orgId);
   const syncPromise = getRemoteSyncPanelContext(principal.orgId, principal.userId, "team");
   const subscriptions = await subscriptionsPromise;
-  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, new Date());
-  const cycleWindows = cycleViewWindows(subscriptions);
+  const now = reportNow();
+  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
+  const cycleWindows = cycleViewWindows(subscriptions, now);
   const [result, syncContext] = await Promise.all([
     getDashboardTools(principal.orgId, reportWindow)
       .then((data) => ({ data, error: null as string | null }))

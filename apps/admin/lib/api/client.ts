@@ -64,16 +64,21 @@ export async function rawFetch<T>(url: string, signal?: AbortSignal): Promise<T>
   }
 }
 
-export async function activateWorkspace(orgId: string): Promise<void> {
-  const response = await fetch("/api/me/workspace", {
-    method: "POST",
+/** Request init for cookie-authenticated browser mutations (production browserMutationGuard). */
+export function browserMutationInit(method: string, body?: unknown): RequestInit {
+  return {
+    method,
     credentials: "same-origin",
     headers: {
       "content-type": "application/json",
       "x-requested-with": "usejunction-web",
     },
-    body: JSON.stringify({ orgId }),
-  });
+    body: body === undefined ? "{}" : JSON.stringify(body),
+  };
+}
+
+export async function activateWorkspace(orgId: string): Promise<void> {
+  const response = await fetch("/api/me/workspace", browserMutationInit("POST", { orgId }));
   const body = await response.json().catch(() => null) as { error?: string; orgId?: string } | null;
   if (!response.ok || body?.orgId !== orgId) {
     throw new AppApiError(

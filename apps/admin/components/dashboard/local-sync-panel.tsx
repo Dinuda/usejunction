@@ -6,7 +6,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatRelativeTime } from "@/lib/format";
 import { DEVICE_STALE_AFTER_MS } from "@/lib/devices/health";
-import { useInvalidateAppData } from "@/lib/api/client";
+import { browserMutationInit, useInvalidateAppData } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
 type SyncScope = "team" | "you";
@@ -71,11 +71,7 @@ async function refreshSnapshots(): Promise<
   { ok: true; result: SnapshotRefreshResult } | { ok: false; message: string }
 > {
   try {
-    const res = await fetch("/api/app/dashboard/refresh-snapshots", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "x-requested-with": "usejunction-web" },
-    });
+    const res = await fetch("/api/app/dashboard/refresh-snapshots", browserMutationInit("POST"));
     const body = (await res.json().catch(() => ({}))) as {
       data?: SnapshotRefreshResult;
       error?: { message?: string };

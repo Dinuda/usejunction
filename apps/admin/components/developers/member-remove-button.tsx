@@ -13,7 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { userFacingError } from "@/lib/errors/user-facing";
-import { useInvalidateAppData } from "@/lib/api/client";
+import { browserMutationInit, useInvalidateAppData } from "@/lib/api/client";
 
 export function MemberRemoveButton({
   developerId,
@@ -41,7 +41,7 @@ export function MemberRemoveButton({
   async function removeMember() {
     setSaving(true);
     setError(null);
-    const response = await fetch(`/api/developers/${developerId}`, { method: "DELETE" });
+    const response = await fetch(`/api/developers/${developerId}`, browserMutationInit("DELETE"));
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       setError(userFacingError(body.error, "Could not remove member."));

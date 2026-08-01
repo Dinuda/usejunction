@@ -11,7 +11,7 @@ import { ToolLogoTile } from "@/components/tools/tool-brand-icon";
 import { formatMicrosAsCurrency } from "@/lib/format";
 import { toolDisplayName } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
-import { useInvalidateAppData } from "@/lib/api/client";
+import { browserMutationInit, useInvalidateAppData } from "@/lib/api/client";
 
 type Subscription = {
   id: string;
@@ -121,9 +121,10 @@ export function MemberPlansPanel({
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ seatCount: seats - 1 }),
           })
-        : await fetch(`/api/developers/${developer.id}/billing-assignments/${assignment.id}`, {
-            method: "DELETE",
-          });
+        : await fetch(
+            `/api/developers/${developer.id}/billing-assignments/${assignment.id}`,
+            browserMutationInit("DELETE"),
+          );
     const body = await response.json().catch(() => ({}));
     if (!response.ok) setError(body.error ?? "Could not remove plan");
     else {

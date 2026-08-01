@@ -77,6 +77,29 @@ func TestEstimateCostUsesModelRates(t *testing.T) {
 	if cost < 2.9 || cost > 3.1 {
 		t.Fatalf("unexpected composer cost: %f", cost)
 	}
+	fast := EstimateCost("composer-2.5-fast", 1_000_000, 500_000, 0, 0)
+	if fast < 10.4 || fast > 10.6 {
+		t.Fatalf("unexpected composer fast cost: %f", fast)
+	}
+	grokFast := EstimateCost("cursor-grok-4.5-high-fast", 1_000_000, 1_000_000, 0, 0)
+	if grokFast < 21.9 || grokFast > 22.1 {
+		t.Fatalf("unexpected grok fast cost: %f", grokFast)
+	}
+	grok := EstimateCost("grok-4.5", 1_000_000, 1_000_000, 0, 0)
+	if grok < 7.9 || grok > 8.1 {
+		t.Fatalf("unexpected grok cost: %f", grok)
+	}
+	fastBeforeStandard := EstimateCost("composer-2.5-fast", 1_000_000, 0, 0, 0)
+	standard := EstimateCost("composer-2.5", 1_000_000, 0, 0, 0)
+	if fastBeforeStandard < 2.9 || fastBeforeStandard > 3.1 {
+		t.Fatalf("composer fast should be $3/M input: %f", fastBeforeStandard)
+	}
+	if standard < 0.4 || standard > 0.6 {
+		t.Fatalf("composer standard should be $0.50/M input: %f", standard)
+	}
+	if PricingVersion != "2026-08-01" {
+		t.Fatalf("unexpected pricing version: %s", PricingVersion)
+	}
 }
 
 func TestRepositoryForSessionFileUsesRemoteWithoutReturningLocalPath(t *testing.T) {

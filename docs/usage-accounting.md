@@ -30,7 +30,7 @@ Provider-native semantics are preserved:
 
 - **OpenAI/Codex**: `billable_input = max(input - cache_read, 0)`
 - **Anthropic/Claude**: bill uncached input, cache read, cache write, and output as separate additive buckets
-- **Cursor verified**: use `chargedCents` from vendor; do not re-price
+- **Cursor verified**: use `chargedCents` from vendor when billable; when included usage reports `chargedCents = 0`, rate-card estimate as `estimated_api` (do not label $0 included usage as `verified_usage`)
 
 ## Cost kinds
 

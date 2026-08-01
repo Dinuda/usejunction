@@ -21,6 +21,7 @@ const webServerEnv = definedEnv({
   NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET ?? "ci-test-secret",
   AUTH_SECRET: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? "ci-test-secret",
   AUTH_TRUST_HOST: process.env.AUTH_TRUST_HOST ?? "true",
+  E2E_AS_OF: process.env.E2E_AS_OF ?? "2026-07-16T12:00:00.000Z",
   E2E_OWNER_EMAIL: process.env.E2E_OWNER_EMAIL,
   E2E_OWNER_PASSWORD: process.env.E2E_OWNER_PASSWORD,
   E2E_DEVELOPER_EMAIL: process.env.E2E_DEVELOPER_EMAIL,

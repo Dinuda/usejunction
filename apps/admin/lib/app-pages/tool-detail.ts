@@ -9,6 +9,7 @@ import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { canonicalToolKey, findCatalogTool, subscriptionToolKeys } from "@/lib/tools/catalog";
 import { canSeeOrgOverview, isSelfScopedRole } from "@/lib/rbac/permissions";
+import { reportNow } from "@/lib/report-now";
 
 export type ToolDetailSearch = {
   view?: string | null;
@@ -64,13 +65,14 @@ export async function loadToolDetailPage(
     (plan) => plan.toolKey != null && (templateKeys as readonly string[]).includes(plan.toolKey),
   );
   // Personal scope still uses org plan cycles when present so windows match admin billing cycles.
+  const now = reportNow();
   const reportWindow = reportWindowForCycleView(
     cycleView,
     rollingPeriod,
     toolPlans.length ? toolPlans : subscriptions,
-    new Date(),
+    now,
   );
-  const cycleWindows = cycleViewWindows(subscriptions);
+  const cycleWindows = cycleViewWindows(subscriptions, now);
   const [detail, syncContext] = await Promise.all([
     getToolDetail(principal.orgId, toolKey, reportWindow, {
       developerId: access.scope === "personal" ? access.developerId : undefined,

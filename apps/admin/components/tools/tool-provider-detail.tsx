@@ -41,7 +41,7 @@ import type { ToolDetailData } from "@/lib/queries/dashboard/tool-detail";
 import type { CycleView, CycleViewWindows } from "@/lib/dashboard/cycle-view";
 import { DEFAULT_ROLLING_PERIOD, type RollingPeriod } from "@/lib/dashboard/period-prefs";
 import { formatMicrosAsCurrency, formatUsd } from "@/lib/format";
-import { useInvalidateAppData } from "@/lib/api/client";
+import { browserMutationInit, useInvalidateAppData } from "@/lib/api/client";
 import {
   isSecondaryQuotaWindow,
   quotaRemainingLabel,
@@ -155,7 +155,7 @@ export function ToolProviderDetail({
     if (!deleteTarget) return;
     setSaving(true);
     setError(null);
-    const response = await fetch(`/api/tools/subscriptions/${deleteTarget.id}`, { method: "DELETE" });
+    const response = await fetch(`/api/tools/subscriptions/${deleteTarget.id}`, browserMutationInit("DELETE"));
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       setError(body.error ?? "Could not remove plan");

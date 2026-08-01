@@ -9,6 +9,7 @@ import { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
 import { getOrgDeviceSyncStatus } from "@/lib/queries/team/device-syncs";
 import { getDeveloperRoster } from "@/lib/read-models/developers";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
+import { reportNow } from "@/lib/report-now";
 
 export type TeamSearch = {
   view?: string | null;
@@ -58,7 +59,7 @@ async function loadTeamReportContext(principal: AppPrincipal, search: TeamSearch
     from: search.from ?? undefined,
     to: search.to ?? undefined,
   });
-  const now = new Date();
+  const now = reportNow();
   const subscriptions = await listSubscriptions(principal.orgId);
   const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
   return { cycleView, rollingPeriod, now, subscriptions, reportWindow };
@@ -102,6 +103,6 @@ export async function loadTeamInvitesPage(principal: AppPrincipal) {
 
 export async function loadTeamSyncsPage(principal: AppPrincipal) {
   return jsonSafe({
-    syncs: await getOrgDeviceSyncStatus(principal.orgId, new Date()),
+    syncs: await getOrgDeviceSyncStatus(principal.orgId, reportNow()),
   });
 }

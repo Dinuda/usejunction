@@ -8,9 +8,13 @@ type ModelRate = {
 const defaultRates: ModelRate = { inputPer1M: 2.5, outputPer1M: 10, cacheReadPer1M: 0.25, cacheWritePer1M: 3.125 };
 
 const modelRates: Array<{ match: string; rate: ModelRate }> = [
+  { match: "composer-2.5-fast", rate: { inputPer1M: 3, outputPer1M: 15, cacheReadPer1M: 0.2, cacheWritePer1M: 0 } },
+  { match: "composer-2-fast", rate: { inputPer1M: 3, outputPer1M: 15, cacheReadPer1M: 0.2, cacheWritePer1M: 0 } },
   { match: "composer-2.5", rate: { inputPer1M: 0.5, outputPer1M: 2.5, cacheReadPer1M: 0.2, cacheWritePer1M: 0 } },
   { match: "composer-1", rate: { inputPer1M: 1.25, outputPer1M: 10, cacheReadPer1M: 0.125, cacheWritePer1M: 0 } },
   { match: "composer", rate: { inputPer1M: 0.5, outputPer1M: 2.5, cacheReadPer1M: 0.2, cacheWritePer1M: 0 } },
+  { match: "grok-4.5-high-fast", rate: { inputPer1M: 4, outputPer1M: 18, cacheReadPer1M: 0.5, cacheWritePer1M: 0 } },
+  { match: "grok-4.5-fast", rate: { inputPer1M: 4, outputPer1M: 18, cacheReadPer1M: 0.5, cacheWritePer1M: 0 } },
   { match: "grok-4.5", rate: { inputPer1M: 2, outputPer1M: 6, cacheReadPer1M: 0.5, cacheWritePer1M: 0 } },
   { match: "claude-opus-4", rate: { inputPer1M: 5, outputPer1M: 25, cacheReadPer1M: 0.5, cacheWritePer1M: 6.25 } },
   { match: "claude-sonnet-4", rate: { inputPer1M: 3, outputPer1M: 15, cacheReadPer1M: 0.3, cacheWritePer1M: 3.75 } },
@@ -48,7 +52,7 @@ function rateForModel(model: string): ModelRate {
   return defaultRates;
 }
 
-export const PRICING_VERSION = "2026-07-15";
+export const PRICING_VERSION = "2026-08-01";
 
 function billableInput(tool: string, input: number, cacheRead: number): number {
   if (tool === "claude" || tool.includes("claude") || tool === "anthropic") return input;

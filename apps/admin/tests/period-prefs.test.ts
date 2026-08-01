@@ -39,6 +39,17 @@ test("rollingPeriodHref omits days for the 30-day default", () => {
   );
 });
 
+test("rollingPeriodHref preserves audience scope", () => {
+  assert.equal(
+    rollingPeriodHref(DEFAULT_ROLLING_PERIOD, "/dashboard", "scope=you"),
+    "/dashboard?view=last_30_days&scope=you",
+  );
+  assert.equal(
+    rollingPeriodHref({ kind: "preset", days: 14 }, "/dashboard", "scope=you&view=current_cycles"),
+    "/dashboard?view=last_30_days&days=14&scope=you",
+  );
+});
+
 test("rollingPeriodLabel and equality helpers", () => {
   assert.equal(rollingPeriodLabel({ kind: "preset", days: 14 }), "Last 14 days");
   assert.equal(

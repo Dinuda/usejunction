@@ -1,3 +1,5 @@
+import { reportNow } from "@/lib/report-now";
+
 export const DAY_MS = 86_400_000;
 
 export function utcDateOnly(value: Date = new Date()): Date {
@@ -35,7 +37,7 @@ export type UsageWindow = {
  * date. Passing `lt: new Date()` (now) becomes `date < today` and drops today.
  * Always use {@link usageDayFilter} / exclusive tomorrow for open-ended "through today".
  */
-export function usageWindowDays(days: number, now: Date = new Date()): UsageWindow {
+export function usageWindowDays(days: number, now: Date = reportNow()): UsageWindow {
   const to = usageInclusiveEnd(now);
   const from = new Date(to.getTime() - (days - 1) * DAY_MS);
   const previousTo = new Date(from.getTime() - DAY_MS);

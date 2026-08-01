@@ -10,7 +10,7 @@ type ModelRate struct {
 	CacheWritePer1M float64
 }
 
-const PricingVersion = "2026-07-15"
+const PricingVersion = "2026-08-01"
 
 var defaultRates = ModelRate{InputPer1M: 2.5, OutputPer1M: 10.0, CacheReadPer1M: 0.25, CacheWritePer1M: 3.125}
 
@@ -19,9 +19,13 @@ var modelRates = []struct {
 	match string
 	rate  ModelRate
 }{
+	{"composer-2.5-fast", ModelRate{3, 15, 0.2, 0}},
+	{"composer-2-fast", ModelRate{3, 15, 0.2, 0}},
 	{"composer-2.5", ModelRate{0.5, 2.5, 0.2, 0}},
 	{"composer-1", ModelRate{1.25, 10, 0.125, 0}},
 	{"composer", ModelRate{0.5, 2.5, 0.2, 0}},
+	{"grok-4.5-high-fast", ModelRate{4, 18, 0.5, 0}},
+	{"grok-4.5-fast", ModelRate{4, 18, 0.5, 0}},
 	{"grok-4.5", ModelRate{2, 6, 0.5, 0}},
 	{"claude-opus-4.6", ModelRate{5, 25, 0.5, 6.25}},
 	{"claude-opus-4", ModelRate{5, 25, 0.5, 6.25}},

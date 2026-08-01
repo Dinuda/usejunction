@@ -26,8 +26,7 @@ export function parseMemberCycleSearch(params: SearchParams): {
   rollingPeriod: RollingPeriod;
 } {
   return {
-    // Member hub defaults to rolling periods (period cycler); billing cycles stay opt-in.
-    cycleView: params.view == null ? "last_30_days" : parseCycleView(params.view),
+    cycleView: parseCycleView(params.view ?? undefined),
     rollingPeriod: parseRollingPeriodFromSearch(params),
   };
 }

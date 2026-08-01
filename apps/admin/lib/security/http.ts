@@ -58,7 +58,11 @@ export function browserMutationGuard(req: NextRequest, env: NodeJS.ProcessEnv = 
   if (fetchSite !== "same-origin" && requestedWith !== "usejunction-web") {
     return NextResponse.json({ error: "same-origin request header required" }, { status: 403 });
   }
-  if (req.body && !req.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
+  const contentLength = Number(req.headers.get("content-length") ?? 0);
+  if (
+    contentLength > 0 &&
+    !req.headers.get("content-type")?.toLowerCase().startsWith("application/json")
+  ) {
     return NextResponse.json({ error: "content-type must be application/json" }, { status: 415 });
   }
   return null;

@@ -1,4 +1,4 @@
-export const PRICING_VERSION = "2026-07-15";
+export const PRICING_VERSION = "2026-08-01";
 export const CALCULATION_VERSION = "usage-v2";
 
 export const ACTIVITY_PRIORITY: Record<string, number> = {

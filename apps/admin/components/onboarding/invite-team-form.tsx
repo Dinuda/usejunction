@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { browserMutationInit } from "@/lib/api/client";
 import { ROLE_LABELS } from "@/components/developers/member-role-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -258,9 +259,10 @@ export function InviteTeamForm({
   }
 
   async function removeAllowlisted(email: string) {
-    const response = await fetch(`/api/team/invite-link?email=${encodeURIComponent(email)}`, {
-      method: "DELETE",
-    });
+    const response = await fetch(
+      `/api/team/invite-link?email=${encodeURIComponent(email)}`,
+      browserMutationInit("DELETE"),
+    );
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       toast.error(userFacingError(data.error, "Unable to remove email."));

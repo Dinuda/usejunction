@@ -28,9 +28,7 @@ export function MemberHubPeriodFilter({
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const rawView = searchParams.get("view");
-  const cycleView =
-    rawView == null ? "last_30_days" : parseCycleView(rawView);
+  const cycleView = parseCycleView(searchParams.get("view") ?? undefined);
   const period = parseRollingPeriodFromSearch({
     days: searchParams.get("days") ?? undefined,
     from: searchParams.get("from") ?? undefined,

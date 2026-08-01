@@ -246,6 +246,8 @@ pnpm test
 ./scripts/build-agent-releases.sh 0.2.0
 ```
 
+For the full admin CI suite (type-check, coverage, integration, prod build, E2E), run `pnpm verify:e2e` — see [Testing](docs/testing.md#run-the-full-ci-suite-locally).
+
 Then exercise the rollout path against a local or staging control plane:
 
 ```bash

@@ -610,8 +610,8 @@ func ScanCursorUsageEvents(ctx context.Context, forceFull bool) ([]types.DailyUs
 			if buckets[key] == nil {
 				buckets[key] = &types.DailyUsage{
 					Date: date, ToolName: "cursor", Model: model,
-					Source: cursorEventsSource, Verified: true,
-					MetricKind: types.MetricKindUsage, CostKind: types.CostKindVerifiedUsage,
+					Source: cursorEventsSource,
+					MetricKind: types.MetricKindUsage,
 					TokenSemantics: types.TokenSemanticsVendor, CalculationVersion: "usage-v2",
 				}
 			}
@@ -658,6 +658,7 @@ func ScanCursorUsageEvents(ctx context.Context, forceFull bool) ([]types.DailyUs
 
 	result := make([]types.DailyUsage, 0, len(buckets))
 	for _, b := range buckets {
+		finalizeCursorEventCost(b)
 		result = append(result, *b)
 	}
 	result = scan.PruneAggregatesLookback(result, time.Now().UTC())
@@ -677,6 +678,25 @@ func ScanCursorUsageEvents(ctx context.Context, forceFull bool) ([]types.DailyUs
 	}
 	_ = scan.SaveScanSnapshot(snap)
 	return result, nil
+}
+
+func finalizeCursorEventCost(b *types.DailyUsage) {
+	hasTokens := b.InputTokens > 0 || b.OutputTokens > 0 || b.CacheReadTokens > 0 || b.CacheWriteTokens > 0
+	if b.EstimatedCost > 0 {
+		b.CostKind = types.CostKindVerifiedUsage
+		b.Verified = true
+		return
+	}
+	if !hasTokens {
+		return
+	}
+	b.EstimatedCost = scan.EstimateCostForTool(
+		"cursor", b.Model, b.InputTokens, b.OutputTokens, b.CacheReadTokens, b.CacheWriteTokens,
+	)
+	if b.EstimatedCost > 0 {
+		b.CostKind = types.CostKindEstimatedAPI
+		b.Verified = false
+	}
 }
 
 func cursorEventDate(ts string) string {

@@ -23,11 +23,12 @@ import {
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { logServerError } from "@/lib/errors/public";
 import { canSeeOrgOverview } from "@/lib/rbac/permissions";
+import { reportNow } from "@/lib/report-now";
 
 function overviewInputForView(cycleView: CycleView, period: RollingPeriod) {
   if (cycleView !== "last_30_days") return { cycleView };
   if (period.kind === "custom") return overviewInputFromBounds(period.from, period.to);
-  return overviewInputFromRange(period.days, new Date());
+  return overviewInputFromRange(period.days, reportNow());
 }
 
 function insightContext(principal: AppPrincipal) {
@@ -35,7 +36,7 @@ function insightContext(principal: AppPrincipal) {
     orgId: principal.orgId,
     actorId: principal.userId,
     roles: [principal.role],
-    now: new Date(),
+    now: reportNow(),
     timezone: UTC_TIMEZONE,
   };
 }
@@ -66,9 +67,10 @@ export async function loadDashboardPage(
     from: search.from ?? undefined,
     to: search.to ?? undefined,
   });
-  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, new Date());
+  const now = reportNow();
+  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
   const periodLabel = cycleViewPeriodLabel(cycleView, rollingPeriod);
-  const cycleWindows = cycleViewWindows(subscriptions);
+  const cycleWindows = cycleViewWindows(subscriptions, now);
 
   if (isDeveloper) {
     const personal = await getMeOverview(principal.orgId, principal.userId, principal.role, {

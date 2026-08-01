@@ -123,6 +123,9 @@ test("current and offset billing cycles use the same elapsed and remaining-day s
 test("pricing estimation handles model precedence, cache semantics, and row aggregation", () => {
   assert.equal(estimateCost("default", 1_000_000, 2_000_000), 22.5);
   assert.equal(estimateCost("composer-2.5", 1_000_000, 500_000, 250_000, 1_000_000), 1.675);
+  assert.equal(estimateCost("composer-2.5-fast", 1_000_000, 500_000), 10.5);
+  assert.equal(estimateCost("cursor-grok-4.5-high-fast", 1_000_000, 1_000_000), 22);
+  assert.equal(estimateCost("grok-4.5", 1_000_000, 1_000_000), 8);
   assert.equal(estimateCost("claude-sonnet-4", 1_000_000, 500_000, 250_000, 1_000_000, "claude"), 14.325);
   assert.equal(estimateCost("unknown-model", 0, 0, 0, 0), 0);
   assert.equal(estimateCostFromRows([

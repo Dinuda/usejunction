@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type MouseEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Info, ListFilter, Trash2 } from "lucide-react";
@@ -45,15 +45,18 @@ import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-function cycleViewHref(basePath: string, view: Exclude<CycleView, "last_30_days">) {
+function cycleViewHref(
+  basePath: string,
+  view: Exclude<CycleView, "last_30_days">,
+  searchParams: URLSearchParams,
+) {
   const params = new URLSearchParams({ view });
-  if (typeof window !== "undefined") copyAudienceScope(params, window.location.search);
+  copyAudienceScope(params, searchParams);
   return `${basePath}?${params.toString()}`;
 }
 
-function periodHref(period: RollingPeriod, basePath: string) {
-  const preserve = typeof window !== "undefined" ? window.location.search : "";
-  return rollingPeriodHref(period, basePath, preserve);
+function periodHref(period: RollingPeriod, basePath: string, searchParams: URLSearchParams) {
+  return rollingPeriodHref(period, basePath, searchParams);
 }
 
 type CycleView = "current_cycles" | "previous_cycles" | "last_30_days";
@@ -127,6 +130,7 @@ export function CycleViewPicker({
   cycleWindows?: CycleViewWindows;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const [prefs, setPrefs] = useState<RollingPeriodPrefs>({
     active: period,
@@ -148,13 +152,12 @@ export function CycleViewPicker({
 
   useEffect(() => {
     if (view !== "last_30_days") return;
-    const params = new URLSearchParams(window.location.search);
-    const hasExplicitPeriod = params.has("days") || params.has("from") || params.has("to");
+    const hasExplicitPeriod = searchParams.has("days") || searchParams.has("from") || searchParams.has("to");
     if (hasExplicitPeriod) return;
     const stored = readRollingPeriodPrefs().active;
     if (periodsEqual(stored, DEFAULT_ROLLING_PERIOD)) return;
-    router.replace(periodHref(stored, basePath));
-  }, [basePath, router, view]);
+    router.replace(periodHref(stored, basePath, searchParams));
+  }, [basePath, router, searchParams, view]);
 
   const rollingLabel = rollingPeriodLabel(prefs.active);
 
@@ -166,7 +169,7 @@ export function CycleViewPicker({
   function applyPeriod(next: RollingPeriod) {
     const updated = setActiveRollingPeriod(next);
     setPrefs(updated);
-    router.push(periodHref(next, basePath));
+    router.push(periodHref(next, basePath, searchParams));
   }
 
   function deleteSaved(item: CustomRollingPeriod, event: MouseEvent) {
@@ -175,7 +178,7 @@ export function CycleViewPicker({
     const updated = removeSavedRollingPeriod(item.id);
     setPrefs(updated);
     if (periodsEqual(period, item)) {
-      router.push(periodHref(DEFAULT_ROLLING_PERIOD, basePath));
+      router.push(periodHref(DEFAULT_ROLLING_PERIOD, basePath, searchParams));
     }
   }
 
@@ -284,7 +287,7 @@ export function CycleViewPicker({
               <DropdownMenuItem
                 key={value}
                 className="rounded-none"
-                onSelect={() => router.push(cycleViewHref(basePath, value))}
+                onSelect={() => router.push(cycleViewHref(basePath, value, searchParams))}
               >
                 <span className="flex flex-1 items-center gap-1">
                   {cycleViewLabels[value]}
@@ -308,7 +311,7 @@ export function CycleViewPicker({
         {(["current_cycles", "previous_cycles"] as const).map((value) => (
           <Button key={value} asChild size="sm" variant="ghost" className="shrink-0">
             <Link
-              href={cycleViewHref(basePath, value)}
+              href={cycleViewHref(basePath, value, searchParams)}
               onMouseEnter={() => prefetchCycleView(value)}
               onFocus={() => prefetchCycleView(value)}
               className={cn(
@@ -358,7 +361,7 @@ export function CycleViewPicker({
 
           <Button asChild size="sm" variant="ghost" className="h-8 rounded-none px-0">
             <Link
-              href={rollingPeriodHref(prefs.active, basePath)}
+              href={rollingPeriodHref(prefs.active, basePath, searchParams)}
               className={cn(
                 "h-8 rounded-none px-3 text-xs font-semibold",
                 view === "last_30_days"

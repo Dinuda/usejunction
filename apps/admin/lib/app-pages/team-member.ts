@@ -7,6 +7,7 @@ import { getDeveloperOverview } from "@/lib/queries/me/overview";
 import { getWorkActivity } from "@/lib/signals/queries/get-work-activity";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
+import { reportNow } from "@/lib/report-now";
 
 export type TeamMemberSearch = {
   view?: string | null;
@@ -52,9 +53,10 @@ export async function loadTeamMemberHubPage(
   search: TeamMemberSearch = {},
 ): Promise<TeamMemberHubPayload | null> {
   const { cycleView, rollingPeriod } = parseMemberSearch(search);
+  const now = reportNow();
   const subscriptions = await listSubscriptions(principal.orgId);
-  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions);
-  const cycleWindows = cycleViewWindows(subscriptions);
+  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
+  const cycleWindows = cycleViewWindows(subscriptions, now);
   const personal = await getDeveloperOverview(principal.orgId, developerId, {
     reportWindow,
     cycleView,
@@ -86,8 +88,9 @@ export async function loadTeamMemberWorkPage(
   search: TeamMemberSearch & { limit?: number } = {},
 ): Promise<TeamMemberWorkPayload> {
   const { cycleView, rollingPeriod } = parseMemberSearch(search);
+  const now = reportNow();
   const subscriptions = await listSubscriptions(principal.orgId);
-  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions);
+  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
   const workFilters = workFiltersFromWindow(reportWindow);
   const limit = Math.min(Math.max(search.limit ?? 4, 1), 200);
 
@@ -96,7 +99,7 @@ export async function loadTeamMemberWorkPage(
       orgId: principal.orgId,
       actorId: principal.userId,
       roles: [principal.role],
-      now: new Date(),
+      now,
       timezone: UTC_TIMEZONE,
     },
     { developerId, ...workFilters, limit },

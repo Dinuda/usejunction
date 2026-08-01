@@ -38,6 +38,7 @@ import {
   type CycleView,
   type CycleViewWindows,
 } from "@/lib/dashboard/cycle-view";
+import { usageCostBreakdownSub } from "@/lib/dashboard/usage-cost-breakdown";
 import { buildMemberPlanBoard, type MemberPlanBoardCard } from "@/lib/quotas/plan-board";
 import { paceVerdictLabel, type QuotaPaceCode } from "@/lib/quotas/pace";
 import { usageWindowFamily, usageWindowPreferenceLabel } from "@/lib/quotas/usage-window";
@@ -142,10 +143,6 @@ function EstimatedUsageInfoTooltip({
       </TooltipContent>
     </Tooltip>
   );
-}
-
-function usageCostBreakdownSub(verified: number, estimated: number) {
-  return `${formatUsd(verified)} verified · ${formatUsd(estimated)} estimated`;
 }
 
 function hasDifferentUsageWindow(row: OrgOverviewV1["subscriptionCycles"][number], view: CycleView) {
@@ -415,8 +412,7 @@ function noPlanMeterProps(
   };
 }
 
-/** Tertiary stats under the meter: usage $ + vendor reset (not the hero). */
-function personalPlanMeta(
+function personalPlanMetaLeft(
   card: MemberPlanBoardCard,
   options: { isOpenCodeFreePlan?: boolean; reportWindowLabel?: string } = {},
 ): string | null {
@@ -441,6 +437,37 @@ function personalPlanMeta(
     if (reset) parts.push(`Resets in ${reset}`);
   }
   return parts.length ? parts.join(" · ") : null;
+}
+
+function PersonalPlanMetaRow({
+  card,
+  verdictCode,
+  options,
+}: {
+  card: MemberPlanBoardCard;
+  verdictCode: PlanVerdictCode | null;
+  options: { isOpenCodeFreePlan?: boolean; reportWindowLabel?: string };
+}) {
+  const left = personalPlanMetaLeft(card, options);
+  const showHint =
+    verdictCode === "NEAR_LIMIT" || verdictCode === "LIMIT_EXCEEDED";
+  const hint =
+    showHint && card.pace.projectionState !== "forming"
+      ? verdictHint(verdictCode!, {
+          expectedEndDateLabel: card.pace.exhaustAt
+            ? formatShortDate(card.pace.exhaustAt)
+            : null,
+        })
+      : null;
+
+  if (!left && !hint) return null;
+
+  return (
+    <div className="mt-2 flex items-baseline justify-between gap-3">
+      {left ? <p className="min-w-0 text-xs text-muted-foreground">{left}</p> : <span />}
+      {hint ? <p className="shrink-0 text-right text-xs text-muted-foreground">{hint}</p> : null}
+    </div>
+  );
 }
 
 function paceToneClass(code: QuotaPaceCode) {
@@ -668,9 +695,6 @@ function PersonalHome({
                   });
                   const used = meter.percent;
                   const reportWindowLabel = cycleViewPeriodLabel(cycleView, rollingPeriod);
-                  const meta = personalPlanMeta(card, { isOpenCodeFreePlan, reportWindowLabel });
-                  const showStatus =
-                    verdictCode === "NEAR_LIMIT" || verdictCode === "LIMIT_EXCEEDED";
                   const body = (
                     <>
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -725,16 +749,11 @@ function PersonalHome({
                           showPercent={false}
                         />
                       </div>
-                      {meta ? (
-                        <p className="mt-2 text-xs text-muted-foreground">{meta}</p>
-                      ) : null}
-                      {showStatus ? (
-                        <CycleStatus
-                          code={verdictCode}
-                          expectedEndDate={card.pace.exhaustAt}
-                          projectionState={card.pace.projectionState}
-                        />
-                      ) : null}
+                      <PersonalPlanMetaRow
+                        card={card}
+                        verdictCode={verdictCode}
+                        options={{ isOpenCodeFreePlan, reportWindowLabel }}
+                      />
                     </>
                   );
 

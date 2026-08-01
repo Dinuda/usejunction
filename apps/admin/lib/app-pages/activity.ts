@@ -11,6 +11,7 @@ import { resolveLinkedDeveloperId } from "@/lib/queries/me/resolve-developer";
 import { getPersonalSignalsLedger } from "@/lib/signals/read";
 import { listSubscriptions } from "@/lib/tools/subscriptions";
 import { canSeeOrgOverview } from "@/lib/rbac/permissions";
+import { reportNow } from "@/lib/report-now";
 
 export type ActivitySearch = {
   view?: string | null;
@@ -34,9 +35,10 @@ export async function loadActivityPage(principal: AppPrincipal, search: Activity
     from: search.from ?? undefined,
     to: search.to ?? undefined,
   });
-  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, new Date());
+  const now = reportNow();
+  const reportWindow = reportWindowForCycleView(cycleView, rollingPeriod, subscriptions, now);
   const periodLabel = cycleViewPeriodLabel(cycleView, rollingPeriod);
-  const cycleWindows = cycleViewWindows(subscriptions);
+  const cycleWindows = cycleViewWindows(subscriptions, now);
 
   if (isDeveloper) {
     const [personal, signalsLedger] = await Promise.all([

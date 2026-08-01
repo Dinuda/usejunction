@@ -1,6 +1,7 @@
 import { resolveReportWindow, UTC_TIMEZONE, type MetricWindow } from "@/lib/analytics/contracts/time-window";
 import { resolveBillingCycleOffset } from "@/lib/billing/cycles";
 import { rollingPeriodLabel, type RollingPeriod } from "@/lib/dashboard/period-prefs";
+import { reportNow } from "@/lib/report-now";
 
 export type CycleView = "current_cycles" | "previous_cycles" | "last_30_days";
 
@@ -26,7 +27,7 @@ function metricWindowToBounds(window: MetricWindow): CycleWindowBounds {
 /** Union billing-cycle windows for current and previous offsets across active plans. */
 export function cycleViewWindows(
   plans: CyclePlan[],
-  now: Date = new Date(),
+  now: Date = reportNow(),
 ): CycleViewWindows {
   return {
     current: metricWindowToBounds(reportWindowForCycleOffset(plans, 0, now)),
@@ -43,7 +44,7 @@ export function parseCycleView(value: string | undefined): CycleView {
 export function reportWindowForCycleOffset(
   plans: CyclePlan[],
   offset: number,
-  now: Date = new Date(),
+  now: Date = reportNow(),
 ): MetricWindow {
   if (!plans.length) {
     const shiftedNow = new Date(now.getTime() + offset * 30 * 86_400_000);
@@ -60,7 +61,7 @@ export function reportWindowForCycleView(
   view: CycleView,
   period: RollingPeriod,
   plans: CyclePlan[],
-  now: Date = new Date(),
+  now: Date = reportNow(),
 ): MetricWindow {
   if (view === "last_30_days") {
     return period.kind === "custom"

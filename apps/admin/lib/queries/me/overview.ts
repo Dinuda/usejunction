@@ -13,6 +13,7 @@ import {
   type SubscriptionSeatRow,
 } from "@/lib/billing/actual-spend";
 import type { CycleView } from "@/lib/dashboard/cycle-view";
+import { reportNow } from "@/lib/report-now";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 import { resolveModelUsageCostKind } from "@/lib/usage/classify";
 
@@ -300,7 +301,7 @@ async function buildMeOverview(
       },
     }),
     prisma.quotaObservation.findMany({
-      where: { orgId, deviceId: { in: developer.devices.map((device) => device.id) }, observedAt: { gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) } },
+      where: { orgId, deviceId: { in: developer.devices.map((device) => device.id) }, observedAt: { gte: new Date(reportNow().getTime() - 90 * 24 * 60 * 60 * 1000) } },
       select: { deviceId: true, toolName: true, windowType: true, usedPercent: true, resetAt: true, observedAt: true },
       orderBy: { observedAt: "asc" },
     }),

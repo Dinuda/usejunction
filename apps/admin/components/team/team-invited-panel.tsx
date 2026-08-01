@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Panel } from "@/components/panel";
-import { useInvalidateAppData } from "@/lib/api/client";
+import { browserMutationInit, useInvalidateAppData } from "@/lib/api/client";
 import { userFacingError } from "@/lib/errors/user-facing";
 import {
   ASSIGNABLE_ROLES,
@@ -87,9 +87,10 @@ export function TeamInvitedPanel({ initialInvites }: { initialInvites: PendingIn
 
   async function revoke(email: string) {
     setBusy(`revoke:${email}`);
-    const response = await fetch(`/api/team/invite-link?email=${encodeURIComponent(email)}`, {
-      method: "DELETE",
-    });
+    const response = await fetch(
+      `/api/team/invite-link?email=${encodeURIComponent(email)}`,
+      browserMutationInit("DELETE"),
+    );
     const data = await response.json().catch(() => ({}));
     setBusy(null);
     if (!response.ok) {
