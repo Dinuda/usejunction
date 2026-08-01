@@ -15,6 +15,9 @@ const prismaClientTraceIncludes = [
 ];
 
 const nextConfig: NextConfig = {
+  // Dev (Turbopack) and production builds must not share .next — concurrent writes
+  // produce broken artifacts (e.g. turbopack runtime refs in webpack _document.js).
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   poweredByHeader: false,
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../.."),

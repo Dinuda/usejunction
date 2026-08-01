@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/usejunction/agent/internal/config/configtest"
 	"github.com/usejunction/agent/internal/types"
 )
 
@@ -88,14 +89,8 @@ func TestJSONLSourcesUnchangedDetectsDeletedFile(t *testing.T) {
 }
 
 func TestScanSnapshotRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	prevHome := os.Getenv("HOME")
-	t.Setenv("HOME", dir)
-	defer t.Setenv("HOME", prevHome)
-
-	// CacheDir uses ~/.usejunction/cache/cost-usage
-	cache := filepath.Join(dir, ".usejunction", "cache", "cost-usage")
-	if err := os.MkdirAll(cache, 0700); err != nil {
+	configtest.WithIsolatedHome(t)
+	if err := os.MkdirAll(configtest.CacheDir(t), 0700); err != nil {
 		t.Fatal(err)
 	}
 

@@ -7,12 +7,12 @@ import (
 )
 
 func TestConfigDirRespectsUSEJUNCTION_HOME(t *testing.T) {
+	ResetRuntimeForTest()
 	t.Setenv(homeEnv, "")
 	t.Setenv(profileEnv, "")
-	configuredHome = ""
-
 	dir := t.TempDir()
 	t.Setenv(homeEnv, dir)
+	t.Cleanup(ResetRuntimeForTest)
 	got := ConfigDir()
 	if got != dir {
 		t.Fatalf("ConfigDir() = %q, want %q", got, dir)
@@ -20,9 +20,10 @@ func TestConfigDirRespectsUSEJUNCTION_HOME(t *testing.T) {
 }
 
 func TestDefaultLocalSyncPortForTestProfile(t *testing.T) {
+	ResetRuntimeForTest()
 	t.Setenv(homeEnv, "")
 	t.Setenv(profileEnv, "test")
-	configuredHome = ""
+	t.Cleanup(ResetRuntimeForTest)
 
 	if got := DefaultLocalSyncPortForProfile(); got != DefaultLocalSyncPortTest {
 		t.Fatalf("DefaultLocalSyncPortForProfile() = %d, want %d", got, DefaultLocalSyncPortTest)
@@ -30,9 +31,10 @@ func TestDefaultLocalSyncPortForTestProfile(t *testing.T) {
 }
 
 func TestApplyRuntimeProfileTest(t *testing.T) {
+	ResetRuntimeForTest()
 	t.Setenv(homeEnv, "")
 	t.Setenv(profileEnv, "")
-	configuredHome = ""
+	t.Cleanup(ResetRuntimeForTest)
 
 	if err := ApplyRuntimeProfile("", "test"); err != nil {
 		t.Fatal(err)
