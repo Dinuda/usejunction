@@ -114,14 +114,17 @@ function historyProgressLabel(days: number) {
   return `updating history (${days} day${days === 1 ? "" : "s"} remaining)`;
 }
 
+/** Avoid flashing history status for sub-second dirty spikes from in-flight agent sync. */
+const HISTORY_STATUS_DEBOUNCE_MS = 1_200;
+
 function requestIsActive(request: RemoteSyncRequest | null) {
   if (!request) return false;
   return request.totals.pending > 0 && Date.parse(request.expiresAt) > Date.now();
 }
 
-function syncDetail(request: RemoteSyncRequest | null, scope: SyncScope, pendingDays: number) {
+function syncDetail(request: RemoteSyncRequest | null, scope: SyncScope) {
   if (!request) {
-    return pendingDays > 0 ? `Uploaded - ${historyProgressLabel(pendingDays)}` : null;
+    return null;
   }
   const total = request.totals.total;
   const unsupported = request.targets.filter(
@@ -192,6 +195,7 @@ export function LocalSyncPanel({
   const [request, setRequest] = useState<RemoteSyncRequest | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
   const [pendingDays, setPendingDays] = useState(dirtyDayCount ?? 0);
+  const [historyStatusVisible, setHistoryStatusVisible] = useState(false);
   const lastSucceededRef = useRef(0);
   const drainingRef = useRef(false);
   const healthReconcileRef = useRef(false);
@@ -218,7 +222,6 @@ export function LocalSyncPanel({
         remaining = refresh.result.dirtyRemaining ?? 0;
         setPendingDays(remaining);
         if (remaining === 0) break;
-        setDetail(`Uploaded - ${historyProgressLabel(remaining)}`);
         await sleep(1_500);
       }
       await invalidateAppData();
@@ -243,18 +246,31 @@ export function LocalSyncPanel({
       } else {
         setStatus("ok");
       }
-      setDetail(syncDetail(next, scope, pendingDays));
+      setDetail(syncDetail(next, scope));
       if (!requestIsActive(next)) {
         localStorage.removeItem(storageKey);
       }
       return next;
     },
-    [pendingDays, refreshAppData, scope, storageKey],
+    [refreshAppData, scope, storageKey],
   );
 
   useEffect(() => {
     setPendingDays(dirtyDayCount ?? 0);
   }, [dirtyDayCount]);
+
+  // Keep "updating history" off the status line unless dirty days persist past a short debounce.
+  // Matches navigate-away behavior: remounts with clean server state show nothing.
+  useEffect(() => {
+    if (!historyPending) {
+      setHistoryStatusVisible(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setHistoryStatusVisible(true);
+    }, HISTORY_STATUS_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [historyPending]);
 
   useEffect(() => {
     if (staleCount <= 0 || healthReconcileRef.current) return;
@@ -309,7 +325,11 @@ export function LocalSyncPanel({
 
   useEffect(() => {
     if (!historyPending || status === "syncing" || drainingRef.current) return;
-    void refreshAppData();
+    // Same debounce as status visibility: settle often clears dirty days before we drain.
+    const timer = window.setTimeout(() => {
+      if (!drainingRef.current) void refreshAppData();
+    }, HISTORY_STATUS_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
   }, [historyPending, refreshAppData, status]);
 
   async function syncNow() {
@@ -325,7 +345,7 @@ export function LocalSyncPanel({
       });
       lastSucceededRef.current = created.totals.succeeded;
       setRequest(created);
-      setDetail(syncDetail(created, scope, pendingDays));
+      setDetail(syncDetail(created, scope));
       if (requestIsActive(created)) {
         localStorage.setItem(storageKey, created.id);
       } else {
@@ -338,12 +358,15 @@ export function LocalSyncPanel({
     }
   }
 
-  const statusLabel = !ready
-    ? `Uploaded ${formatRelativeTime(uploadedAt)} - updating dashboard`
-    : historyPending
-      ? `Uploaded ${formatRelativeTime(uploadedAt)} - ${historyProgressLabel(pendingDays)}`
+  // Prefer day-count while history is draining. Without this, dirtyDayCount > 0 always
+  // sets dashboardReady=false, so the "updating dashboard" branch hid progress forever and
+  // the only place the day count appeared was a stale detail line (the prod ghost).
+  const statusLabel = historyStatusVisible
+    ? `Uploaded ${formatRelativeTime(uploadedAt)} - ${historyProgressLabel(pendingDays)}`
+    : !ready
+      ? `Uploaded ${formatRelativeTime(uploadedAt)} - updating dashboard`
       : `Last synced ${formatRelativeTime(uploadedAt)}`;
-  const visibleDetail = detail ?? syncDetail(request, scope, pendingDays);
+  const visibleDetail = detail ?? syncDetail(request, scope);
   const buttonText = status === "syncing" ? "Syncing..." : scope === "team" ? "Sync team" : "Sync now";
 
   return (
