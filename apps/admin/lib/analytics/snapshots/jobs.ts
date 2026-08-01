@@ -15,7 +15,7 @@ export type MaterializeEntryPoint = "commit" | "poll" | "cron" | "sync_now" | "e
 
 export async function enqueueMaterializationJob(orgId: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
-    const existing = await tx.analyticsWatermark.findUnique({
+    const row = await tx.analyticsWatermark.upsert({
       where: {
         orgId_kind_metricVersion: {
           orgId,
@@ -23,29 +23,20 @@ export async function enqueueMaterializationJob(orgId: string): Promise<void> {
           metricVersion: ORG_DAY_SNAPSHOT_VERSION,
         },
       },
-      select: { id: true, status: true },
+      create: {
+        orgId,
+        kind: JOB_KIND,
+        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+        status: "pending",
+      },
+      update: {
+        lastError: null,
+      },
     });
-    if (!existing) {
-      await tx.analyticsWatermark.create({
-        data: {
-          orgId,
-          kind: JOB_KIND,
-          metricVersion: ORG_DAY_SNAPSHOT_VERSION,
-          status: "pending",
-        },
-      });
-      return;
-    }
     // Do not clobber an in-flight drain — it will re-check dirtyRemaining on exit.
-    if (existing.status === "running") {
-      await tx.analyticsWatermark.update({
-        where: { id: existing.id },
-        data: { lastError: null },
-      });
-      return;
-    }
+    if (row.status === "running") return;
     await tx.analyticsWatermark.update({
-      where: { id: existing.id },
+      where: { id: row.id },
       data: { status: "pending", lastError: null },
     });
   });

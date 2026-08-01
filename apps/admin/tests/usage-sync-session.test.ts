@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 import { prisma } from "@usejunction/db";
+import { buildUsageDedupeKey } from "@/lib/ingest/local-usage-batch";
 import {
   startUsageSync,
   commitUsageSync,
   ingestUsageSyncChunk,
+  reconcileDeviceDayPartitions,
   runDeferredUsageCommitWork,
   runDeferredUsageStartWork,
 } from "@/lib/sync/usage-sync";
@@ -766,6 +768,124 @@ test("usage sync start keeps usage delta when accounts apply fails", { skip: !ru
     assert.ok(start.deltaPartitions.includes("2026-07-21|codex|gpt-5|local_scan|"));
     assert.equal(start.accountsApplied, "updated");
   } finally {
+    await prisma.organization.delete({ where: { id: org.id } });
+  }
+});
+
+test("reconcileDeviceDayPartitions removes many orphan partitions in one pass", { skip: !runDb }, async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const org = await prisma.organization.create({
+    data: { name: `Reconcile Org ${suffix}`, slug: `reconcile-${suffix}` },
+  });
+  const user = await prisma.developer.create({
+    data: {
+      orgId: org.id,
+      email: `reconcile-${suffix}@example.com`,
+      name: "Reconcile Dev",
+      role: "owner",
+    },
+  });
+  const device = await prisma.device.create({
+    data: {
+      orgId: org.id,
+      userId: user.id,
+      hostname: "reconcile-host",
+      os: "darwin",
+      architecture: "arm64",
+      agentVersion: "test",
+      deviceToken: `reconcile-tok-${suffix}`,
+    },
+  });
+
+  const day = "2026-07-21";
+  const dayDate = new Date(`${day}T00:00:00.000Z`);
+  const keepKey = `${day}|codex|keep|local_scan|`;
+  const orphanCount = 150;
+
+  try {
+    await prisma.deviceUsageFingerprint.create({
+      data: {
+        orgId: org.id,
+        deviceId: device.id,
+        partitionKey: keepKey,
+        contentHash: "keep-hash",
+        date: dayDate,
+      },
+    });
+
+    const orphanKeys: string[] = [];
+    for (let i = 0; i < orphanCount; i++) {
+      const partitionKey = `${day}|codex|model-${i}|local_scan|`;
+      orphanKeys.push(partitionKey);
+      await prisma.deviceUsageFingerprint.create({
+        data: {
+          orgId: org.id,
+          deviceId: device.id,
+          partitionKey,
+          contentHash: `orphan-hash-${i}`,
+          date: dayDate,
+        },
+      });
+      await prisma.usageDaily.create({
+        data: {
+          orgId: org.id,
+          developerId: user.id,
+          deviceId: device.id,
+          date: dayDate,
+          provider: "openai",
+          product: "codex",
+          toolName: "codex",
+          model: `model-${i}`,
+          source: "local_scan",
+          requests: 1,
+          inputTokens: BigInt(10),
+          outputTokens: BigInt(2),
+          costMicros: BigInt(1000),
+          dedupeKey: buildUsageDedupeKey({
+            deviceId: device.id,
+            dateKey: day,
+            toolName: "codex",
+            model: `model-${i}`,
+            source: "local_scan",
+            repositoryId: null,
+          }),
+        },
+      });
+    }
+
+    const result = await reconcileDeviceDayPartitions({
+      orgId: org.id,
+      deviceId: device.id,
+      manifestPartitions: [
+        {
+          partitionKey: keepKey,
+          date: day,
+          tool: "codex",
+          model: "keep",
+          source: "local_scan",
+          contentHash: "keep-hash",
+        },
+      ],
+      windowFrom: dayDate,
+      windowTo: dayDate,
+    });
+    assert.equal(result.removed, orphanCount);
+
+    const remainingFingerprints = await prisma.deviceUsageFingerprint.count({
+      where: { deviceId: device.id },
+    });
+    assert.equal(remainingFingerprints, 1);
+
+    const remainingUsage = await prisma.usageDaily.count({
+      where: { deviceId: device.id },
+    });
+    assert.equal(remainingUsage, 0);
+  } finally {
+    await prisma.usageDaily.deleteMany({ where: { orgId: org.id } });
+    await prisma.deviceUsageFingerprint.deleteMany({ where: { orgId: org.id } });
+    await prisma.analyticsDirtyDay.deleteMany({ where: { orgId: org.id } });
+    await prisma.device.delete({ where: { id: device.id } });
+    await prisma.developer.delete({ where: { id: user.id } });
     await prisma.organization.delete({ where: { id: org.id } });
   }
 });

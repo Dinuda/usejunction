@@ -35,6 +35,39 @@ test("planMaterializeChunks is newest-first with escalating widths", () => {
   assert.ok(covered.has("2026-06-20"));
 });
 
+test("enqueueMaterializationJob tolerates concurrent enqueue", { skip: !runDb }, async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const org = await prisma.organization.create({
+    data: { name: `Enqueue Org ${suffix}`, slug: `enqueue-${suffix}` },
+  });
+  try {
+    await Promise.all([
+      enqueueMaterializationJob(org.id),
+      enqueueMaterializationJob(org.id),
+      enqueueMaterializationJob(org.id),
+    ]);
+    const rows = await prisma.analyticsWatermark.count({
+      where: {
+        orgId: org.id,
+        kind: "materialize_dirty",
+        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+      },
+    });
+    assert.equal(rows, 1);
+    const watermark = await prisma.analyticsWatermark.findFirst({
+      where: {
+        orgId: org.id,
+        kind: "materialize_dirty",
+        metricVersion: ORG_DAY_SNAPSHOT_VERSION,
+      },
+    });
+    assert.equal(watermark?.status, "pending");
+  } finally {
+    await prisma.analyticsWatermark.deleteMany({ where: { orgId: org.id } });
+    await prisma.organization.delete({ where: { id: org.id } });
+  }
+});
+
 test("claimMaterializationJob refuses a second concurrent claim", { skip: !runDb }, async () => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const org = await prisma.organization.create({

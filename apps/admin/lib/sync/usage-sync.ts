@@ -863,30 +863,29 @@ export async function reconcileDeviceDayPartitions(params: {
 
   if (!orphanKeys.length) return { removed: 0 };
 
+  const orphanUsageDailyOr = orphanKeys.map((key) => {
+    const [date = "", tool = "", model = "", source = "", ...repoParts] = key.split("|");
+    void source;
+    void repoParts;
+    return {
+      date: utcDate(date),
+      toolName: tool,
+      model,
+      dedupeKey: {
+        contains: `:${date}:${tool}:${model}:`,
+      },
+    };
+  });
+
   try {
-    await prisma.$transaction(async (tx) => {
-      await tx.deviceUsageFingerprint.deleteMany({
-        where: { deviceId: params.deviceId, partitionKey: { in: orphanKeys } },
-      });
-      // Soft-delete matching usage_daily by reconstructing dedupe dimensions is hard;
-      // delete usage_daily rows whose composite key matches orphan partitions.
-      for (const key of orphanKeys) {
-        const [date = "", tool = "", model = "", source = "", ...repoParts] = key.split("|");
-        void source;
-        void repoParts;
-        await tx.usageDaily.deleteMany({
-          where: {
-            deviceId: params.deviceId,
-            date: utcDate(date),
-            toolName: tool,
-            model,
-            // source on usage_daily is canonical; match via dedupeKey prefix when possible
-            dedupeKey: {
-              contains: `:${date}:${tool}:${model}:`,
-            },
-          },
-        });
-      }
+    await prisma.usageDaily.deleteMany({
+      where: {
+        deviceId: params.deviceId,
+        OR: orphanUsageDailyOr,
+      },
+    });
+    await prisma.deviceUsageFingerprint.deleteMany({
+      where: { deviceId: params.deviceId, partitionKey: { in: orphanKeys } },
     });
 
     if (orphanDays.size) {
