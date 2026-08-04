@@ -68,20 +68,20 @@ test("mobile dashboard uses the compact header, period picker, and KPI grid", as
   await expect(page.getByRole("menuitem", { name: "Previous cycles" })).toBeVisible();
   await page.keyboard.press("Escape");
 
-  const commitment = page.locator("p").filter({ hasText: /^Subscription commitment$/ }).first().locator("..");
+  const people = page.locator("p").filter({ hasText: /^People$/ }).first().locator("..");
   const usage = page.locator("p").filter({ hasText: /^Estimated usage$/ }).first().locator("..");
   const spendPerDay = page.locator("p").filter({ hasText: /^Est\. spend\/day$/ }).first().locator("..");
-  const [commitmentBox, usageBox, spendPerDayBox] = await Promise.all([
-    commitment.boundingBox(),
+  const [peopleBox, usageBox, spendPerDayBox] = await Promise.all([
+    people.boundingBox(),
     usage.boundingBox(),
     spendPerDay.boundingBox(),
   ]);
-  expect(commitmentBox).not.toBeNull();
+  expect(peopleBox).not.toBeNull();
   expect(usageBox).not.toBeNull();
   expect(spendPerDayBox).not.toBeNull();
-  expect(Math.abs(commitmentBox!.y - usageBox!.y)).toBeLessThan(4);
-  expect(usageBox!.x).toBeGreaterThan(commitmentBox!.x);
-  expect(spendPerDayBox!.y).toBeGreaterThan(commitmentBox!.y);
+  expect(Math.abs(peopleBox!.y - usageBox!.y)).toBeLessThan(4);
+  expect(usageBox!.x).toBeGreaterThan(peopleBox!.x);
+  expect(spendPerDayBox!.y).toBeGreaterThan(peopleBox!.y);
 
   const syncStatus = page.getByText(/^Last synced/);
   const syncButton = page.getByRole("button", { name: /Sync now|Syncing/ });
