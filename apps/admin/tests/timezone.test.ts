@@ -31,11 +31,24 @@ describe("timezone helpers", () => {
     assert.equal(isDueForDailyReport(now, "UTC"), false);
   });
 
-  test("weekly org report is due only on Sunday 19:00 local", () => {
+  test("allows late same-day report catch-up", () => {
+    // 2026-07-21 15:49 UTC = 21:19 in Asia/Colombo.
+    const lateRun = new Date("2026-07-21T15:49:00.000Z");
+    assert.equal(localHour(lateRun, "Asia/Colombo"), 21);
+    assert.equal(isDueForDailyReport(lateRun, "Asia/Colombo"), true);
+
+    const earlyRun = new Date("2026-07-21T12:30:00.000Z");
+    assert.equal(localHour(earlyRun, "Asia/Colombo"), 18);
+    assert.equal(isDueForDailyReport(earlyRun, "Asia/Colombo"), false);
+  });
+
+  test("weekly org report is due on Sunday from 19:00 local onward", () => {
     // 2026-07-19 is Sunday; 13:30 UTC = 19:00 Asia/Colombo
     const sunday = new Date("2026-07-19T13:30:00.000Z");
     assert.equal(localWeekday(sunday, "Asia/Colombo"), 0);
     assert.equal(isDueForWeeklyOrgReport(sunday, "Asia/Colombo"), true);
+    const lateSunday = new Date("2026-07-19T15:49:00.000Z");
+    assert.equal(isDueForWeeklyOrgReport(lateSunday, "Asia/Colombo"), true);
     // Tuesday 19:00 Colombo — daily yes, weekly no
     const tuesday = new Date("2026-07-21T13:30:00.000Z");
     assert.equal(localWeekday(tuesday, "Asia/Colombo"), 2);

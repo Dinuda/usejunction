@@ -114,7 +114,10 @@ export const DAILY_REPORT_SEND_HOUR = 19;
 export const WEEKLY_ORG_REPORT_WEEKDAY = 0;
 
 export function isDueForDailyReport(now: Date, timeZone: string): boolean {
-  return localHour(now, timeZone) === DAILY_REPORT_SEND_HOUR;
+  // Treat any later run on the same local day as a catch-up opportunity. The
+  // scheduler is hourly but can drift or skip a tick; idempotency in the send
+  // path prevents duplicate delivery once the report has been sent.
+  return localHour(now, timeZone) >= DAILY_REPORT_SEND_HOUR;
 }
 
 /**
@@ -184,7 +187,7 @@ export function weekRangeEndingOnOrBefore(localDate: string): { start: string; e
 export function isDueForWeeklyOrgReport(now: Date, timeZone: string): boolean {
   return (
     localWeekday(now, timeZone) === WEEKLY_ORG_REPORT_WEEKDAY &&
-    localHour(now, timeZone) === DAILY_REPORT_SEND_HOUR
+    localHour(now, timeZone) >= DAILY_REPORT_SEND_HOUR
   );
 }
 

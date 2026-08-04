@@ -17,8 +17,8 @@ Legacy `/reports/daily` URLs redirect to `/activity#reports`.
 
 | Kind | Who | Cadence | Numbers |
 |------|-----|---------|---------|
-| **You** (personal) | Every member with a linked developer (default on) | **Daily** at 19:00 local | That local day |
-| **Team** (org) | Owners/admins (default on) | **Weekly** Sundays at 19:00 local | Mon–Sun week vs prior week |
+| **You** (personal) | Every member with a linked developer (default on) | **Daily** from 19:00 local onward | That local day |
+| **Team** (org) | Owners/admins (default on) | **Weekly** Sundays from 19:00 local onward | Mon–Sun week vs prior week |
 
 - **Opt-out:** Settings → Email reports (`dailyPersonalEnabled` / `dailyOrgEnabled`)
 - **Timezone:** browser on login (`TimezoneReporter`) or agent heartbeat IANA; manual override in Settings locks auto-updates
@@ -107,7 +107,7 @@ Example response:
 
 ### 3. Why `due: 0` is common
 
-The job only sends when the user’s `time_zone` (fallback `UTC`) has **local hour === 19**. Outside that window you get `due: 0` and no emails.
+The job sends when the user’s `time_zone` (fallback `UTC`) has reached **19:00 local**. Before that, you get `due: 0` and no emails. If the scheduler runs late after 19:00, it catches up for that local day; delivery idempotency prevents duplicates.
 
 **Local testing options:**
 
