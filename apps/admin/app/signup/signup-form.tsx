@@ -12,7 +12,8 @@ import { userFacingError } from "@/lib/errors/user-facing";
 export function SignupForm() {
   const params = useSearchParams();
   const intent = params.get("intent") === "team" ? "team" : "community";
-  const from = params.get("from") || "/onboarding";
+  const soloMode = params.get("mode") === "solo";
+  const from = params.get("from") || (soloMode ? "/onboarding?mode=solo" : "/onboarding");
   const oauthCallbackUrl =
     from === "/dashboard" || from === "/" || from === "/onboarding"
       ? "/onboarding"
@@ -54,7 +55,9 @@ export function SignupForm() {
         <AlertDescription>
           {joiningInvite
             ? "Check your email for a verification link. After verifying, sign in — you'll return to your invite to install UseJunction."
-            : "Check your email for a verification link. Once verified, sign in to open your dashboard."}
+            : soloMode
+              ? "Check your email for a verification link. Once verified, sign in to analyze your own AI coding usage."
+              : "Check your email for a verification link. Once verified, sign in to open your dashboard."}
         </AlertDescription>
       </Alert>
     );

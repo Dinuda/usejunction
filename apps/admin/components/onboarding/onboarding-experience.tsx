@@ -133,8 +133,9 @@ function ChoiceCard({
   );
 }
 
-function initialPath(status: OnboardingStatus | null): Path | null {
+function initialPath(status: OnboardingStatus | null, soloMode: boolean): Path | null {
   if (!status?.configured) return null;
+  if (soloMode) return "connect";
   return canChooseOnboardingPath(status.role as OrganizationRole | null)
     ? "choose"
     : "connect";
@@ -143,9 +144,11 @@ function initialPath(status: OnboardingStatus | null): Path | null {
 export function OnboardingExperience({
   initialStatus,
   needsSessionSync,
+  soloMode = false,
 }: {
   initialStatus?: OnboardingStatus | null;
   needsSessionSync?: boolean;
+  soloMode?: boolean;
 }) {
   const bootstrap = useOnboardingStatus();
   const serverStatus = initialStatus ?? bootstrap?.status ?? null;
@@ -156,7 +159,8 @@ export function OnboardingExperience({
   const [invitePending, setInvitePending] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
-  const [path, setPath] = useState<Path | null>(() => initialPath(serverStatus));
+  const [path, setPath] = useState<Path | null>(() => initialPath(serverStatus, soloMode));
+  const onboardingPath = soloMode ? "/onboarding?mode=solo" : "/onboarding";
 
   const refresh = useCallback(async (mode: "bootstrap" | "poll" = "poll") => {
     const response =
@@ -174,7 +178,7 @@ export function OnboardingExperience({
         : await fetch("/api/onboarding?include=developer", { cache: "no-store" });
 
     if (response.status === 401) {
-      window.location.href = "/login?from=/onboarding";
+      window.location.href = `/login?from=${encodeURIComponent(onboardingPath)}`;
       return;
     }
     if (response.status === 409) {
@@ -200,11 +204,11 @@ export function OnboardingExperience({
       setStatus(next);
       setPath((current) => {
         if (current) return current;
-        return canChooseOnboardingPath(role) ? "choose" : "connect";
+        return initialPath(next, soloMode);
       });
     }
     setLoading(false);
-  }, []);
+  }, [onboardingPath, soloMode]);
 
   useEffect(() => {
     if (!serverStatus?.configured) {
@@ -292,9 +296,13 @@ export function OnboardingExperience({
         size="md"
         accent="cyan"
         contentAlign="top"
-        title={`${device.hostname} is live.`}
-        description={`Reporting to ${workspaceName}. Open the dashboard to see tools and spend.`}
-        statement="First signal. Then the rest."
+        title={soloMode ? "Your usage is ready to analyze." : `${device.hostname} is live.`}
+        description={
+          soloMode
+            ? "Your first usage signal is connected. See tools, plan pressure, and spend before you decide what to change."
+            : `Reporting to ${workspaceName}. Open the dashboard to see tools and spend.`
+        }
+        statement={soloMode ? "Start with your own signal." : "First signal. Then the rest."}
       >
         <div className="space-y-5">
           <div className="border border-border bg-card px-4 py-3">
@@ -310,7 +318,7 @@ export function OnboardingExperience({
           </div>
           <Button className="w-full" onClick={() => void finish()} disabled={finishing}>
             {finishing ? <Loader2 className="animate-spin" /> : null}
-            Open dashboard
+            {soloMode ? "Analyze my usage" : "Open dashboard"}
             <ArrowRight />
           </Button>
           {finishError ? <p className="text-xs text-destructive">{finishError}</p> : null}
@@ -327,9 +335,13 @@ export function OnboardingExperience({
         size="md"
         accent="cyan"
         contentAlign="top"
-        title="Connect this computer."
-        description="Copy the command and paste it in Terminal. We’ll detect the machine automatically."
-        statement="One command. Real data."
+        title={soloMode ? "Analyze your own usage first." : "Connect this computer."}
+        description={
+          soloMode
+            ? "Connect the computer where you use Cursor, Claude Code, or Codex. No teammates or team rollout are needed to start."
+            : "Copy the command and paste it in Terminal. We’ll detect the machine automatically."
+        }
+        statement={soloMode ? "One developer. Real data." : "One command. Real data."}
       >
         <div className="space-y-5">
           <DeviceConnectCard
@@ -353,7 +365,7 @@ export function OnboardingExperience({
             ) : null}
             <div>
               <TextLink onClick={() => void finish("skip")} disabled={finishing}>
-                {finishing ? "Skipping…" : "Skip this step"}
+                {finishing ? "Skipping…" : soloMode ? "Analyze without connecting" : "Skip this step"}
               </TextLink>
             </div>
             {finishError ? <p className="text-xs text-destructive">{finishError}</p> : null}

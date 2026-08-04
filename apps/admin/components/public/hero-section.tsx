@@ -67,24 +67,24 @@ export function HeroSection() {
             initial={reduceMotion ? false : "hidden"}
             animate="show"
           >
-            <motion.p variants={item} className="text-sm font-medium text-[#5c5e56]">
-            AI Spend Management
+            <motion.p variants={item} className="text-sm font-medium uppercase tracking-[0.18em] text-[#1688a1]">
+            For engineering and platform teams
             </motion.p>
 
             <motion.h1
               variants={item}
               className="mt-4 max-w-xl text-[2.5rem] font-bold leading-[1.05] tracking-[-0.03em] text-[var(--public-fg)] sm:text-5xl lg:text-[3.25rem] xl:text-[3.5rem]"
             >
-              AI coding spend management
+              Find wasted AI coding subscriptions
               <br />
-              <span className="font-semibold text-[#08a8c4]">for engineering teams.</span>
+              <span className="font-semibold text-[#08a8c4]">before your next renewal.</span>
             </motion.h1>
 
             <motion.p
               variants={item}
               className="mt-3 max-w-md text-base italic leading-relaxed text-[#6b6d66] sm:text-lg sm:leading-8"
             >
-              See who uses Cursor, Claude Code, Codex, Copilot, and more—along with cost, plan usage, seat utilization, and device health.
+              Connect Cursor, Claude Code, or Codex. See idle seats, plan-limit pressure, and tool overlap across your team.
             </motion.p>
 
             <motion.div variants={item} className="mt-8 flex w-full flex-col items-center lg:items-start">
@@ -94,15 +94,15 @@ export function HeroSection() {
                 className="inline-flex"
               >
                 <Link
-                  href={siteConfig.signupUrl}
+                  href={`${siteConfig.signupUrl}?from=${encodeURIComponent("/onboarding?mode=solo")}`}
                   className="public-btn public-btn-teal rounded-none px-8 py-3 text-base font-semibold"
                 >
-                  Get started for free
+                  Analyze my own usage
                   <ArrowRight className="h-5 w-5" />
                 </Link>
               </motion.div>
               <p className="mt-3 text-sm text-[#5c5e56]">
-                Open source · Your infrastructure · Your data
+                Start with one developer. Add your team when the signal is clear.
               </p>
             </motion.div>
 

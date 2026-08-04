@@ -36,10 +36,10 @@ test("landing page shows brand and primary CTA", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("link", { name: "UseJunction home" }).first()).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: /AI coding spend management/i, level: 1 }),
+    page.getByRole("heading", { name: /Find wasted AI coding subscriptions/i, level: 1 }),
   ).toBeVisible();
-  await expect(page.getByRole("link", { name: /Get started/i }).first()).toBeVisible();
-  await expect(page.getByText("Open source · Your infrastructure · Your data")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Analyze my own usage/i }).first()).toBeVisible();
+  await expect(page.getByText(/Start with one developer/i)).toBeVisible();
 });
 
 test("homepage product story exposes spend pace and plan runway", async ({ page }) => {

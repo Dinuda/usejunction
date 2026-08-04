@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { OnboardingExperience } from "@/components/onboarding/onboarding-experience";
 import { OnboardingStatusProvider } from "@/components/onboarding/onboarding-status-provider";
@@ -42,6 +42,7 @@ vi.mock("@/components/tools/tool-brand-icon", () => ({
 
 describe("OnboardingExperience", () => {
   beforeEach(() => {
+    cleanup();
     vi.stubGlobal("fetch", vi.fn());
   });
 
@@ -121,5 +122,23 @@ describe("OnboardingExperience", () => {
       "/api/onboarding",
       expect.objectContaining({ method: "PATCH" }),
     );
+  });
+
+  it("starts solo analysis on the connected computer without showing team setup", () => {
+    render(
+      <OnboardingExperience
+        soloMode
+        initialStatus={{
+          configured: true,
+          role: "owner",
+          onboardingCompletedAt: null,
+          organization: { name: "Dinu workspace", slug: "dinu-workspace" },
+          developer: { devices: [] },
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Analyze your own usage first." })).toBeTruthy();
+    expect(screen.queryByText(/I’m here to manage my team/i)).toBeNull();
   });
 });

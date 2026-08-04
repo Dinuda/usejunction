@@ -1,7 +1,10 @@
-"use client";
-
 import { OnboardingExperience } from "@/components/onboarding/onboarding-experience";
 
-export default function OnboardingPage() {
-  return <OnboardingExperience />;
+export default async function OnboardingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mode?: string }>;
+}) {
+  const params = await searchParams;
+  return <OnboardingExperience soloMode={params.mode === "solo"} />;
 }
