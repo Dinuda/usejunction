@@ -48,6 +48,7 @@ export function buildHomeJsonLd() {
       "@context": "https://schema.org",
       "@type": "WebSite",
       name: siteConfig.name,
+      alternateName: ["usejunction", "Use Junction", "usejunction.dev"],
       url: baseUrl,
       description: siteConfig.description,
       publisher: { "@id": `${baseUrl}/#organization` },
@@ -61,7 +62,7 @@ export function buildHomeJsonLd() {
       description: siteConfig.tagline,
       logo: absoluteUrl("/icons/icon-192.png"),
       email: "hello@usejunction.dev",
-      sameAs: [siteConfig.githubUrl, twitterUrl],
+      sameAs: [siteConfig.githubUrl, twitterUrl].filter(Boolean),
     },
     {
       "@context": "https://schema.org",

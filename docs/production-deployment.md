@@ -93,6 +93,9 @@ See [saas-billing-lemon.md](./saas-billing-lemon.md):
 - `SLACK_WEBHOOK_URL`, `SALES_NOTIFICATION_TO`
 - `INDEXNOW_KEY`, `GOOGLE_SITE_VERIFICATION`, `BING_SITE_VERIFICATION`, `NEXT_PUBLIC_TWITTER_HANDLE`
 - GitHub App: `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`
+- PostHog product analytics: set both `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` and
+  `NEXT_PUBLIC_POSTHOG_HOST` (for PostHog US Cloud, `https://us.i.posthog.com`);
+  omit both to keep analytics disabled
 
 After changing env vars, **redeploy** Production so the new values are picked up.
 

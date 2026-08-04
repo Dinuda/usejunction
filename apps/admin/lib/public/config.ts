@@ -3,6 +3,8 @@ import {
   TEAM_PRICE_PER_DEV_USD,
 } from "@/lib/saas-billing/entitlements";
 
+const configuredTwitterHandle = process.env.NEXT_PUBLIC_TWITTER_HANDLE?.trim();
+
 export const siteConfig = {
   name: "UseJunction",
   tagline: "Open-source AI coding observability for teams",
@@ -11,7 +13,7 @@ export const siteConfig = {
     "See AI coding tool usage, plan utilization, and team insights—before you try to control it.",
   description:
     "AI coding spend management for engineering teams. Track Cursor, Claude Code, Codex, and Copilot usage, cost, plan utilization, seat waste, and device health. Self-hosted.",
-  seoTitle: "AI Coding Spend Management for Teams — UseJunction",
+  seoTitle: "UseJunction — AI Coding Spend Management for Teams",
   url: process.env.NEXTAUTH_URL ?? "https://usejunction.dev",
   githubUrl: "https://github.com/Dinuda/usejunction",
   docsUrl: "https://github.com/Dinuda/usejunction#readme",
@@ -25,12 +27,16 @@ export const siteConfig = {
   calendlyUrl:
     process.env.NEXT_PUBLIC_CALENDLY_URL ??
     "https://calendly.com/y-dinuda/usejunction-for-teams",
-  /** X/Twitter handle (with @). Override via NEXT_PUBLIC_TWITTER_HANDLE. */
-  twitterHandle: process.env.NEXT_PUBLIC_TWITTER_HANDLE ?? "@usejunction",
+  /** X/Twitter handle (with @). Omitted until a verified product account is configured. */
+  twitterHandle: configuredTwitterHandle
+    ? `@${configuredTwitterHandle.replace(/^@/, "")}`
+    : undefined,
 } as const;
 
 /** X/Twitter profile URL derived from the handle, for sameAs. */
-export const twitterUrl = `https://x.com/${siteConfig.twitterHandle.replace(/^@/, "")}`;
+export const twitterUrl = siteConfig.twitterHandle
+  ? `https://x.com/${siteConfig.twitterHandle.replace(/^@/, "")}`
+  : undefined;
 
 export const navAnchors = [{ id: "pricing", label: "Pricing" }] as const;
 

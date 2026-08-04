@@ -8,6 +8,7 @@ import { OAuthProviderButtons, getEnabledOAuthProviders } from "@/components/aut
 import { Button } from "@/components/ui/button";
 import { userFacingError } from "@/lib/errors/user-facing";
 import { activateWorkspace } from "@/lib/api/client";
+import { resetPostHogIdentity } from "@/lib/posthog/client";
 
 type Props = {
   token: string;
@@ -131,6 +132,7 @@ export function TeamInviteClient({ token, organizationName, signedIn, sessionEma
         if (status === 401) {
           // Stale JWT / wiped DB — clear quietly. Do not claim the visitor is
           // "already signed in"; that reads as a false positive for new joiners.
+          resetPostHogIdentity();
           await signOut({ redirect: false });
           if (cancelled) return;
           setState({ kind: "idle" });

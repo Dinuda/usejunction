@@ -16,6 +16,7 @@ test("seo registry includes priority guides and compare pages", () => {
   assert.ok(paths.has("/compare/wakatime"));
   assert.ok(paths.has("/compare/codexbar"));
   assert.ok(paths.has("/compare/engineering-intelligence"));
+  assert.ok(paths.has("/solutions/ai-coding-observability-for-teams"));
   assert.ok(paths.has("/solutions/ai-coding-spend-management"));
   assert.ok(paths.has("/solutions/ai-coding-seat-utilization"));
   assert.ok(paths.has("/solutions/ai-coding-plan-usage"));
@@ -49,6 +50,7 @@ test("sitemap includes home and content hubs", () => {
   assert.ok(paths.includes("/blog/what-is-ai-coding-observability"));
   assert.ok(paths.includes("/blog/ai-coding-observability-vs-jellyfish-dx-linearb"));
   assert.ok(paths.includes("/compare/engineering-intelligence"));
+  assert.ok(paths.includes("/solutions/ai-coding-observability-for-teams"));
   assert.ok(paths.includes("/solutions/ai-coding-spend-management"));
   assert.ok(paths.includes("/compare/codexbar"));
   assert.ok(paths.includes("/authors/dinuda-yaggahavita"));
@@ -108,12 +110,16 @@ test("native blog exposes canonical founder-authored posts", () => {
   assert.ok(original);
 });
 
-test("home JSON-LD includes FAQPage and Organization", () => {
+test("home JSON-LD includes FAQPage and unambiguous brand identity", () => {
   const graph = buildHomeJsonLd();
   const types = graph.map((node) => node["@type"]);
+  const website = graph.find((node) => node["@type"] === "WebSite");
+  const organization = graph.find((node) => node["@type"] === "Organization");
   assert.ok(types.includes("FAQPage"));
   assert.ok(types.includes("Organization"));
   assert.ok(types.includes("SoftwareApplication"));
+  assert.deepEqual(website?.alternateName, ["usejunction", "Use Junction", "usejunction.dev"]);
+  assert.deepEqual(organization?.sameAs, ["https://github.com/Dinuda/usejunction"]);
   assert.equal(AEO_FACTS.privacyFirst, true);
   assert.equal(AEO_FACTS.workDetailOptional, true);
 });

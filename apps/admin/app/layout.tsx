@@ -53,8 +53,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    site: siteConfig.twitterHandle,
-    creator: siteConfig.twitterHandle,
+    ...(siteConfig.twitterHandle
+      ? { site: siteConfig.twitterHandle, creator: siteConfig.twitterHandle }
+      : {}),
     title: siteConfig.seoTitle,
     description: siteConfig.description,
     images: [siteOgImage.url],

@@ -86,6 +86,7 @@ export function buildSitemapEntries(): SitemapEntry[] {
 /** Priority cite URLs for answer engines */
 export const AEO_CITE_PATHS = [
   "/",
+  "/solutions/ai-coding-observability-for-teams",
   "/solutions/ai-coding-spend-management",
   "/solutions/ai-coding-seat-utilization",
   "/solutions/ai-coding-plan-usage",

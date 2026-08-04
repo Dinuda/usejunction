@@ -8,6 +8,129 @@ const dashboardImage = {
   caption: "A shared view of AI coding usage, spend, and operational signals.",
 };
 
+export const solutionAiCodingObservabilityForTeams: ContentPage = {
+  kind: "solution",
+  slug: "ai-coding-observability-for-teams",
+  path: "/solutions/ai-coding-observability-for-teams",
+  title: "AI Coding Observability for Teams",
+  description:
+    "AI coding observability for teams using Cursor, Claude Code, Codex, and Copilot. See adoption, cost, plan usage, reliability, and device health in one view.",
+  primaryKeyword: "AI coding observability for teams",
+  secondaryKeywords: [
+    "team AI coding observability",
+    "AI coding tool monitoring",
+    "AI coding usage analytics",
+    "AI coding dashboard for engineering teams",
+    "AI coding agent observability",
+  ],
+  updatedAt: "2026-08-04",
+  answer:
+    "UseJunction is open-source AI coding observability for teams. It gives engineering leaders one privacy-conscious view of Cursor, Claude Code, Codex, GitHub Copilot, and local AI tool usage—including adoption, estimated cost, models, latency, failures, plan utilization, seat waste, and device health.",
+  images: [dashboardImage],
+  sections: [
+    {
+      heading: "What is AI coding observability for teams?",
+      body: [
+        "AI coding observability is the practice of measuring how an engineering organization uses AI coding tools across people, teams, devices, models, and vendors. It answers operational questions that a single vendor dashboard cannot: which tools are actually used, what usage costs, where plan limits are approaching, and whether the telemetry itself is healthy.",
+        "UseJunction creates that shared operating view without turning AI adoption into employee surveillance. The focus is tool usage, spend, reliability, plan utilization, and device coverage—not keystrokes, screenshots, or hours in an editor.",
+      ],
+    },
+    {
+      heading: "One view across Cursor, Claude Code, Codex, and Copilot",
+      body: [
+        "Most engineering teams use more than one AI coding product. Some developers work in Cursor, others use Claude Code or Codex from the terminal, and company-provisioned Copilot may run alongside local models such as Ollama or LM Studio.",
+        "UseJunction brings those signals together so platform engineering, finance, and team leads can compare adoption, model activity, estimated cost, latency, failures, and plan pressure across the whole AI coding fleet.",
+      ],
+    },
+    {
+      heading: "What teams can observe",
+      body: [
+        "See active developers, last-seen activity, tools and models in use, token and cost estimates, response latency, failure rates, subscription-cycle progress, quota pressure, device enrollment, agent health, and personal-versus-company API key signals.",
+        "Every metric keeps its source and limitations visible. Vendor billing remains authoritative for invoiced charges; UseJunction adds the cross-tool operating context needed to understand those charges and act before renewals.",
+      ],
+    },
+    {
+      heading: "Find waste without blocking developers",
+      body: [
+        "AI coding observability helps teams distinguish an unused seat from a missing enrollment, a short usage spike from sustained quota pressure, and a costly model choice from a team-wide pattern. That makes renewal, rollout, and standardization decisions evidence-based.",
+        "UseJunction starts with visibility. It does not require teams to route every request through a gateway, replace developer tools, or impose model policies before they understand current usage.",
+      ],
+    },
+    {
+      heading: "Privacy-conscious and self-hostable",
+      body: [
+        "The lightweight local agent reports operational metadata without keystroke surveillance, browser capture, or full network interception. Optional Signals work detail can be configured or turned off when a team only needs usage and health signals.",
+        "Organizations that need infrastructure control can self-host UseJunction under the UseJunction Community License. Managed and Enterprise options are available for teams that want a hosted control plane or deployment support.",
+      ],
+    },
+    {
+      heading: "How this differs from adjacent observability tools",
+      body: [
+        "Application observability follows production systems. LLM observability traces prompts and model calls inside applications a company builds. Engineering intelligence measures delivery workflows, developer experience, or business outcomes. AI coding observability focuses on the assistants and agents developers use to create software.",
+        "UseJunction is deliberately narrow: cross-tool AI coding adoption, cost, plan utilization, reliability, and device health. Teams can use it alongside application observability, LLM tracing, and engineering intelligence platforms when they need those separate views.",
+      ],
+    },
+  ],
+  faq: [
+    {
+      question: "What is the best AI coding observability platform for teams?",
+      answer:
+        "The right platform depends on the job. UseJunction is designed for teams that need cross-tool usage, estimated cost, plan utilization, seat waste, reliability, and device health across Cursor, Claude Code, Codex, Copilot, and local runtimes—with a self-hostable option and privacy-conscious controls.",
+    },
+    {
+      question: "Can AI coding observability track multiple coding assistants?",
+      answer:
+        "Yes. UseJunction combines supported signals from Cursor, Claude Code, Codex, GitHub Copilot, Continue, Cline, Roo Code, OpenCode, Ollama, LM Studio, and related tools in one team view.",
+    },
+    {
+      question: "Does UseJunction monitor developer keystrokes or source code?",
+      answer:
+        "No. UseJunction does not capture keystrokes, screenshots, browser activity, or hours in an editor. Optional Signals work context can be configured or disabled; the core product focuses on AI tool usage and operational metadata.",
+    },
+    {
+      question: "Can we self-host AI coding observability?",
+      answer:
+        "Yes. UseJunction can be self-hosted on infrastructure your organization controls under the UseJunction Community License.",
+    },
+    {
+      question: "Is AI coding observability the same as LLM observability?",
+      answer:
+        "No. LLM observability usually traces model calls inside AI applications. AI coding observability measures how engineering teams use coding assistants and agents across vendors, plans, people, and devices.",
+    },
+  ],
+  howTo: {
+    name: "Set up AI coding observability for a team",
+    description:
+      "A practical rollout for creating a shared view of AI coding tools without changing developer workflows.",
+    steps: [
+      {
+        name: "Deploy UseJunction",
+        text: "Choose the self-hosted, Managed, or Enterprise control plane for your organization.",
+      },
+      {
+        name: "Enroll developer devices",
+        text: "Connect team devices with an enrollment token and verify agent health.",
+      },
+      {
+        name: "Connect supported tools",
+        text: "Collect available usage signals from Cursor, Claude Code, Codex, Copilot, and local runtimes.",
+      },
+      {
+        name: "Review the team baseline",
+        text: "Compare adoption, cost, plans, quotas, reliability, and coverage before setting policy.",
+      },
+    ],
+  },
+  relatedPaths: [
+    "/solutions/ai-coding-spend-management",
+    "/solutions/ai-coding-seat-utilization",
+    "/solutions/ai-coding-plan-usage",
+    "/guides/see-team-ai-coding-usage",
+    "/blog/what-is-ai-coding-observability",
+    "/compare/engineering-intelligence",
+  ],
+};
+
 export const solutionAiCodingSpend: ContentPage = {
   kind: "solution",
   slug: "ai-coding-spend-management",
@@ -74,6 +197,7 @@ export const solutionAiCodingSpend: ContentPage = {
     },
   ],
   relatedPaths: [
+    "/solutions/ai-coding-observability-for-teams",
     "/solutions/ai-coding-seat-utilization",
     "/solutions/ai-coding-plan-usage",
     "/guides/see-team-ai-coding-usage",
@@ -141,6 +265,7 @@ export const solutionSeatUtilization: ContentPage = {
     },
   ],
   relatedPaths: [
+    "/solutions/ai-coding-observability-for-teams",
     "/solutions/ai-coding-spend-management",
     "/solutions/ai-coding-plan-usage",
     "/guides/see-plan-usage-and-waste",
@@ -218,6 +343,7 @@ export const solutionPlanUsage: ContentPage = {
     ],
   },
   relatedPaths: [
+    "/solutions/ai-coding-observability-for-teams",
     "/solutions/ai-coding-spend-management",
     "/solutions/ai-coding-seat-utilization",
     "/guides/see-plan-usage-and-waste",
@@ -227,6 +353,7 @@ export const solutionPlanUsage: ContentPage = {
 };
 
 export const SOLUTIONS: ContentPage[] = [
+  solutionAiCodingObservabilityForTeams,
   solutionAiCodingSpend,
   solutionSeatUtilization,
   solutionPlanUsage,

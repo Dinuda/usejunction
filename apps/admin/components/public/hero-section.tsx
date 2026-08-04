@@ -84,7 +84,7 @@ export function HeroSection() {
               variants={item}
               className="mt-3 max-w-md text-base italic leading-relaxed text-[#6b6d66] sm:text-lg sm:leading-8"
             >
-              Connect Cursor, Claude Code, or Codex. See idle seats, plan-limit pressure, and tool overlap across your team.
+              UseJunction connects Cursor, Claude Code, and Codex usage so you can see idle seats, plan-limit pressure, and tool overlap across your team.
             </motion.p>
 
             <motion.div variants={item} className="mt-8 flex w-full flex-col items-center lg:items-start">

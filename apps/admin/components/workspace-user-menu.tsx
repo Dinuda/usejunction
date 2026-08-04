@@ -24,6 +24,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { roleDisplayLabel } from "@/components/developers/member-role-select";
+import { resetPostHogIdentity } from "@/lib/posthog/client";
 
 function initials(name?: string | null, email?: string | null) {
   if (name?.trim()) {
@@ -104,6 +105,7 @@ export function WorkspaceUserMenu({
               variant="destructive"
               onClick={() => {
                 queryClient.clear();
+                resetPostHogIdentity();
                 void signOut({ callbackUrl: "/login" });
               }}
             >

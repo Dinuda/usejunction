@@ -9,6 +9,7 @@ import {
   OAUTH_PROVIDER_LABELS,
   type OAuthProviderId,
 } from "@/lib/auth/oauth-account-conflict";
+import { resetPostHogIdentity } from "@/lib/posthog/client";
 
 type OAuthAccountConflictActionsProps = {
   callbackUrl: string;
@@ -30,6 +31,7 @@ export function OAuthAccountConflictActions({
     setError(null);
 
     try {
+      resetPostHogIdentity();
       await signOut({ redirect: false });
       if (provider) {
         const started = await startOAuthSignIn(provider, callbackUrl);

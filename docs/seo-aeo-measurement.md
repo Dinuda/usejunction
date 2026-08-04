@@ -4,10 +4,10 @@ Operational checklist after shipping the on-site SEO + AEO system. Not automated
 
 ## One-time setup
 
-1. Confirm canonical host is `https://usejunction.dev` (www / `.com` → `.dev` redirects live).
+1. Confirm canonical host is `https://usejunction.dev` (`www.usejunction.dev` redirects to the apex). The `.com` redirect only becomes active after that domain points to this deployment.
 2. Set env vars in production:
   - `GOOGLE_SITE_VERIFICATION` (from GSC), `BING_SITE_VERIFICATION` (from Bing) — rendered as meta tags
-  - `NEXT_PUBLIC_TWITTER_HANDLE` (defaults to `@usejunction`)
+  - `NEXT_PUBLIC_TWITTER_HANDLE` only when it points to a product account you control
   - `INDEXNOW_KEY` (any 8+ char string / UUID)
 3. Google Search Console — property for `usejunction.dev`
   - Submit `https://usejunction.dev/sitemap.xml`

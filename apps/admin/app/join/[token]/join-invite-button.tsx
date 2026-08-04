@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { userFacingError } from "@/lib/errors/user-facing";
 import { activateWorkspace } from "@/lib/api/client";
+import { resetPostHogIdentity } from "@/lib/posthog/client";
 
 export function JoinInviteButton({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +29,6 @@ export function JoinInviteButton({ token }: { token: string }) {
     void accept();
     return () => { active = false; };
   }, [token]);
-  if (error) return <div className="space-y-4"><Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert><Button variant="outline" onClick={() => signOut({ callbackUrl: `/join/${token}` })}>Use a different account</Button></div>;
+  if (error) return <div className="space-y-4"><Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert><Button variant="outline" onClick={() => { resetPostHogIdentity(); return signOut({ callbackUrl: `/join/${token}` }); }}>Use a different account</Button></div>;
   return <div className="flex items-center gap-3 text-sm text-muted-foreground" role="status"><Loader2 className="size-4 animate-spin text-primary" />Joining your workspace…</div>;
 }
