@@ -4,11 +4,12 @@ import { DashboardMeterBar } from "@/components/dashboard/dashboard-meter-bar";
 import type { PlanVerdictCode } from "@/lib/billing/plan-utilization-policy";
 import { cn } from "@/lib/utils";
 
-function barColorForVerdict(code: PlanVerdictCode | null) {
+/** Primary within allowance, warning near limit, destructive over quota. */
+export function barColorForVerdict(code: PlanVerdictCode | null) {
   if (code === "LIMIT_EXCEEDED") return "var(--destructive)";
-  if (code === "NEAR_LIMIT") return "var(--brand-yellow-dark)";
-  if (code === "LIGHT_USE") return "color-mix(in srgb, var(--muted-foreground) 35%, transparent)";
-  if (code == null) return "var(--muted)";
+  if (code === "NEAR_LIMIT") return "var(--warning)";
+  if (code === "LIGHT_USE" || code === "HEALTHY") return "var(--primary)";
+  if (code == null || code === "UNKNOWN" || code === "DATA_STALE") return "var(--muted-foreground)";
   return "var(--primary)";
 }
 
@@ -66,10 +67,10 @@ export function CycleUtilizationBar({
               "shrink-0 font-semibold tabular-nums",
               size === "lg" ? "text-lg" : "text-xs",
               verdictCode === "LIMIT_EXCEEDED" && "text-destructive",
-              verdictCode === "NEAR_LIMIT" && "text-brand-yellow-dark",
-              verdictCode === "LIGHT_USE" && "text-muted-foreground",
-              verdictCode === "HEALTHY" && "text-primary",
-              verdictCode == null && "text-muted-foreground",
+              verdictCode === "NEAR_LIMIT" && "text-warning",
+              (verdictCode === "LIGHT_USE" || verdictCode === "HEALTHY") && "text-primary",
+              (verdictCode == null || verdictCode === "UNKNOWN" || verdictCode === "DATA_STALE") &&
+                "text-muted-foreground",
             )}
           >
             {percent.toFixed(0)}%

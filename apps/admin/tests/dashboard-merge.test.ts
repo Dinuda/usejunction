@@ -29,6 +29,7 @@ const metrics = {
   },
   kpis: {
     actualSpend: { value: 0, previousValue: 0, deltaPercent: null, basis: "none" as const },
+    seats: { value: 0, previousValue: 0, deltaPercent: null },
     verifiedUsageCost: { value: 0, previousValue: 0, deltaPercent: null },
     estimatedApiCost: { value: 0, previousValue: 0, deltaPercent: null },
     tokens: { value: 0, previousValue: 0, deltaPercent: null },
@@ -38,6 +39,9 @@ const metrics = {
   trend: [],
   attention: [],
   tools: [],
+  models: [],
+  providerCards: [],
+  people: [],
   coverage: { activeDevelopers: 1 },
   failures: [],
 } satisfies OrgOverviewMetricsData;

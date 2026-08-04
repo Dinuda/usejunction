@@ -11,3 +11,20 @@ export {
   uusContentFingerprint,
   uusPartitionKey,
 } from "./uus.v1";
+
+export {
+  JUNCTION_EXTRACTION_SCHEMA_VERSION,
+  type ExtractionCapability,
+  type ExtractionCostKind,
+  type ExtractionEvidence,
+  type ExtractionIdentity,
+  type ExtractionMeasurement,
+  type ExtractionRecordKind,
+  type ExtractionSeat,
+  type ExtractionSource,
+  type ExtractionSubject,
+  type MeasurementTemporality,
+  type SanitizedSourceEnvelope,
+  extractionFingerprint,
+  sanitizeExtractionPayload,
+} from "./extraction.v2";

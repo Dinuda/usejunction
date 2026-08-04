@@ -3,9 +3,11 @@ import { COMPARE_PAGES } from "@/content/compare";
 import { FOR_PAGES } from "@/content/for";
 import { GUIDES } from "@/content/guides";
 import { LEGAL_PAGES } from "@/content/legal";
+import { SOLUTIONS } from "@/content/solutions";
 import type { ContentPage, SitemapEntry } from "@/content/types";
 
 export const ALL_CONTENT_PAGES: ContentPage[] = [
+  ...SOLUTIONS,
   ...GUIDES,
   ...COMPARE_PAGES,
   ...FOR_PAGES,
@@ -33,6 +35,7 @@ const HUB_BY_KIND: Record<ContentPage["kind"], { label: string; href: string } |
   guide: { label: "Guides", href: "/guides" },
   compare: { label: "Compare", href: "/compare" },
   for: { label: "For tools", href: "/for" },
+  solution: { label: "Solutions", href: "/solutions" },
   blog: { label: "Blog", href: "/blog" },
   legal: null,
 };
@@ -57,16 +60,17 @@ export function buildSitemapEntries(): SitemapEntry[] {
     { path: "/guides", lastModified: "2026-07-19", changeFrequency: "weekly", priority: 0.8 },
     { path: "/compare", lastModified: "2026-07-19", changeFrequency: "weekly", priority: 0.8 },
     { path: "/for", lastModified: "2026-07-19", changeFrequency: "weekly", priority: 0.8 },
+    { path: "/solutions", lastModified: "2026-08-04", changeFrequency: "weekly", priority: 0.9 },
     { path: "/blog", lastModified: "2026-07-19", changeFrequency: "weekly", priority: 0.7 },
     { path: "/contact", lastModified: "2026-07-19", changeFrequency: "monthly", priority: 0.5 },
     { path: "/authors/dinuda-yaggahavita", lastModified: "2026-07-22", changeFrequency: "monthly", priority: 0.5 },
   ];
 
-  const pages = ALL_CONTENT_PAGES.map((page) => ({
+  const pages = ALL_CONTENT_PAGES.filter((page) => page.indexable !== false).map((page) => ({
     path: page.path,
     lastModified: page.updatedAt,
     changeFrequency: (page.kind === "legal" ? "yearly" : "monthly") as SitemapEntry["changeFrequency"],
-    priority: page.kind === "legal" ? 0.3 : page.kind === "blog" ? 0.6 : 0.7,
+    priority: page.kind === "blog" ? 0.6 : 0.8,
   }));
 
   const blogPages = BLOG_POSTS.map((post) => ({
@@ -82,6 +86,9 @@ export function buildSitemapEntries(): SitemapEntry[] {
 /** Priority cite URLs for answer engines */
 export const AEO_CITE_PATHS = [
   "/",
+  "/solutions/ai-coding-spend-management",
+  "/solutions/ai-coding-seat-utilization",
+  "/solutions/ai-coding-plan-usage",
   "/guides/see-plan-usage-and-waste",
   "/guides/see-team-ai-coding-usage",
   "/guides/open-source-wakatime-alternative-for-ai-coding",
@@ -89,7 +96,7 @@ export const AEO_CITE_PATHS = [
   "/compare/engineering-intelligence",
   "/blog/what-is-ai-coding-observability",
   "/compare/wakatime",
+  "/compare/codexbar",
   "/for/cursor",
   "/for/claude-code",
-  "/privacy",
 ] as const;

@@ -156,9 +156,9 @@ function pctDelta(current: number, previous: number): number | null {
   return ((current - previous) / previous) * 100;
 }
 
-/** Yesterday-over-today delta: positive when yesterday was higher. */
-function priorDayDeltaPct(prior: number, current: number): number | null {
-  return pctDelta(prior, current);
+/** Day-over-day delta vs yesterday's send-time baseline: positive when today is higher. */
+export function priorDayDeltaPct(prior: number, current: number): number | null {
+  return pctDelta(current, prior);
 }
 
 async function readAcceptancePercent(input: {

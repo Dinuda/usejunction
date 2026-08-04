@@ -18,12 +18,24 @@ import {
   type QuotaUtilization,
 } from "@/lib/quotas/plan-utilization-policy";
 import {
+  cycleFromNextRenewal,
+  cycleToJson,
+  resolveBillingCycle,
+  resolveBillingCycleOffset,
+} from "@/lib/billing/cycles";
+import {
+  detectedCycleFromQuotas,
+  seatBillingCadenceForTool,
+  subscriptionBillingCadence,
+} from "@/lib/tools/detected-cycle";
+import {
   canonicalToolKey,
   findCatalogPlan,
   findCatalogTool,
   toolDisplayName,
 } from "@/lib/tools/catalog";
 import { mapVendorPlanToCatalog } from "@/lib/tools/detected-plan";
+import type { CycleView } from "@/lib/dashboard/cycle-view";
 
 export type PlanWindowKind = "plan" | "promo" | "credits" | "other";
 
@@ -39,6 +51,14 @@ export type MemberPlanWindow = {
   signal: string;
   stale: boolean;
   observedAt: string;
+};
+
+export type MemberPlanBillingCycle = {
+  cycleStart: string;
+  cycleEnd: string;
+  nextRenewalDate: string;
+  totalDays: number;
+  billingCadence: string;
 };
 
 export type MemberPlanBoardCard = {
@@ -57,6 +77,8 @@ export type MemberPlanBoardCard = {
   otherWindows: MemberPlanWindow[];
   /** Latest quota observation across this tool's windows. */
   quotaSyncedAt: string | null;
+  /** Seat billing cycle window for this subscription. */
+  billingCycle: MemberPlanBillingCycle | null;
   /** Period usage folded onto the product card. */
   usage: {
     requests: number;
@@ -66,7 +88,18 @@ export type MemberPlanBoardCard = {
     cacheReadTokens: number;
     cacheWriteTokens: number;
     cost: number;
+    verifiedUsageCost: number;
+    estimatedApiCost: number;
   } | null;
+};
+
+export type PlanSeatCycleInput = {
+  toolName: string;
+  billingCadence: string;
+  billingCycleAnchorDate: string | Date | null;
+  billingCycleDays?: number | null;
+  /** Optional full-cycle seat dollars (seatCount × cycle seat price). */
+  cycleSeatCost?: number;
 };
 
 function windowKind(windowType: string): PlanWindowKind {
@@ -155,6 +188,120 @@ function pickPlanName(
   };
 }
 
+function toBillingCycleCard(
+  cycle: ReturnType<typeof resolveBillingCycle>,
+  billingCadence: string,
+): MemberPlanBillingCycle {
+  const json = cycleToJson(cycle);
+  return {
+    cycleStart: json.cycleStart,
+    cycleEnd: json.cycleEnd,
+    nextRenewalDate: json.nextRenewalDate,
+    totalDays: json.totalDays,
+    billingCadence,
+  };
+}
+
+function resolveCardBillingCycle(input: {
+  toolKey: string;
+  toolRows: QuotaUtilization[];
+  seat: PlanSeatCycleInput | null;
+  cycleView: CycleView;
+  now: Date;
+}): MemberPlanBillingCycle | null {
+  const offset = input.cycleView === "previous_cycles" ? -1 : 0;
+
+  if (input.seat?.billingCycleAnchorDate) {
+    const cadence = seatBillingCadenceForTool(input.toolKey, input.seat.billingCadence);
+    const cycle = resolveBillingCycleOffset(
+      {
+        billingCadence: cadence,
+        billingCycleAnchorDate: new Date(input.seat.billingCycleAnchorDate),
+        billingCycleDays: input.seat.billingCycleDays,
+      },
+      input.now,
+      offset,
+    );
+    return toBillingCycleCard(cycle, cadence);
+  }
+
+  const hint = detectedCycleFromQuotas(
+    input.toolRows.map((row) => ({
+      toolName: row.observationToolName || row.toolKey,
+      windowType: row.windowType,
+      usedPercent: row.rawRatio == null ? null : row.rawRatio * 100,
+      resetAt: row.resetsAt ? new Date(row.resetsAt) : null,
+      updatedAt: new Date(row.observedAt),
+    })),
+    { toolKey: input.toolKey },
+  );
+
+  if (hint.nextRenewalDate) {
+    const cadence = hint.billingCadence;
+    const cycleStart = cycleFromNextRenewal({
+      nextRenewalDate: hint.nextRenewalDate,
+      billingCadence: cadence,
+    });
+    const cycle = resolveBillingCycleOffset(
+      {
+        billingCadence: cadence,
+        billingCycleAnchorDate: cycleStart,
+      },
+      input.now,
+      offset,
+    );
+    return toBillingCycleCard(cycle, cadence);
+  }
+
+  // Last resort: derive a seat cycle from the primary quota reset when billing-grade
+  // signals are missing (common for weekly usage caps on monthly-billed seats).
+  const withReset = input.toolRows
+    .filter((row) => row.resetsAt)
+    .sort((a, b) => (b.resetsAt ?? "").localeCompare(a.resetsAt ?? ""));
+  const fallback = withReset[0];
+  if (!fallback?.resetsAt) return null;
+
+  const cadence = subscriptionBillingCadence(input.toolKey, fallback.windowType);
+  const nextRenewal = new Date(fallback.resetsAt);
+  const cycleStart = cycleFromNextRenewal({
+    nextRenewalDate: nextRenewal,
+    billingCadence: cadence,
+  });
+  const cycle = resolveBillingCycleOffset(
+    {
+      billingCadence: cadence,
+      billingCycleAnchorDate: cycleStart,
+    },
+    input.now,
+    offset,
+  );
+  return toBillingCycleCard(cycle, cadence);
+}
+
+function toUsageCard(usage: {
+  requests: number;
+  tokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  cost: number;
+  verifiedUsageCost: number;
+  estimatedApiCost: number;
+}): NonNullable<MemberPlanBoardCard["usage"]> {
+  return {
+    requests: usage.requests,
+    tokens: usage.tokens,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens,
+    cacheWriteTokens: usage.cacheWriteTokens,
+    cost: usage.cost,
+    verifiedUsageCost: usage.verifiedUsageCost,
+    estimatedApiCost: usage.estimatedApiCost,
+  };
+}
+
 /**
  * Per-tool plan board: primary burn window + promotions/credits still available.
  */
@@ -171,7 +318,11 @@ export function buildMemberPlanBoard(input: {
     cacheReadTokens?: number;
     cacheWriteTokens?: number;
     cost: number;
+    verifiedUsageCost?: number;
+    estimatedApiCost?: number;
   }>;
+  planSeats?: PlanSeatCycleInput[];
+  cycleView?: CycleView;
   usageWindowPreferences?: Record<string, string | undefined>;
   quotaHistory?: Array<{
     deviceId: string;
@@ -184,6 +335,7 @@ export function buildMemberPlanBoard(input: {
   now?: Date;
 }): MemberPlanBoardCard[] {
   const now = input.now ?? new Date();
+  const cycleView = input.cycleView ?? "current_cycles";
   const rows = dedupeQuotaUtilizations(mapQuotaSnapshots(input.snapshots, now));
   const historyByKey = new Map<string, QuotaHistorySample[]>();
   for (const sample of input.quotaHistory ?? []) {
@@ -210,6 +362,16 @@ export function buildMemberPlanBoard(input: {
     byTool.set(row.toolKey, list);
   }
 
+  const seatByTool = new Map<string, PlanSeatCycleInput>();
+  for (const seat of input.planSeats ?? []) {
+    const key = canonicalToolKey(seat.toolName) || seat.toolName;
+    const existing = seatByTool.get(key);
+    // Prefer the seat with an explicit cycle anchor when multiple assignments exist.
+    if (!existing || (!existing.billingCycleAnchorDate && seat.billingCycleAnchorDate)) {
+      seatByTool.set(key, seat);
+    }
+  }
+
   const usageByTool = new Map<
     string,
     {
@@ -221,16 +383,23 @@ export function buildMemberPlanBoard(input: {
       cacheReadTokens: number;
       cacheWriteTokens: number;
       cost: number;
+      verifiedUsageCost: number;
+      estimatedApiCost: number;
     }
   >();
   for (const tool of input.toolsUsage ?? []) {
     const key = canonicalToolKey(tool.toolName) || tool.toolName;
+    const verifiedUsageCost = tool.verifiedUsageCost ?? 0;
+    const estimatedApiCost =
+      tool.estimatedApiCost ?? Math.max(0, tool.cost - verifiedUsageCost);
     const normalized = {
       ...tool,
       inputTokens: tool.inputTokens ?? tool.tokens,
       outputTokens: tool.outputTokens ?? 0,
       cacheReadTokens: tool.cacheReadTokens ?? 0,
       cacheWriteTokens: tool.cacheWriteTokens ?? 0,
+      verifiedUsageCost,
+      estimatedApiCost,
     };
     const existing = usageByTool.get(key);
     if (existing) {
@@ -241,6 +410,8 @@ export function buildMemberPlanBoard(input: {
       existing.cacheReadTokens += normalized.cacheReadTokens;
       existing.cacheWriteTokens += normalized.cacheWriteTokens;
       existing.cost += normalized.cost;
+      existing.verifiedUsageCost += normalized.verifiedUsageCost;
+      existing.estimatedApiCost += normalized.estimatedApiCost;
     } else {
       usageByTool.set(key, normalized);
     }
@@ -287,6 +458,13 @@ export function buildMemberPlanBoard(input: {
       input.vendorSeats ?? [],
     );
     const usage = usageByTool.get(toolKey) ?? null;
+    const billingCycle = resolveCardBillingCycle({
+      toolKey,
+      toolRows,
+      seat: seatByTool.get(toolKey) ?? null,
+      cycleView,
+      now,
+    });
 
     cards.push({
       toolKey,
@@ -300,17 +478,8 @@ export function buildMemberPlanBoard(input: {
       promotions,
       otherWindows,
       quotaSyncedAt: latestObservedAt(toolRows),
-      usage: usage
-        ? {
-            requests: usage.requests,
-            tokens: usage.tokens,
-            inputTokens: usage.inputTokens,
-            outputTokens: usage.outputTokens,
-            cacheReadTokens: usage.cacheReadTokens,
-            cacheWriteTokens: usage.cacheWriteTokens,
-            cost: usage.cost,
-          }
-        : null,
+      billingCycle,
+      usage: usage ? toUsageCard(usage) : null,
     });
   }
 
@@ -322,6 +491,13 @@ export function buildMemberPlanBoard(input: {
       input.accounts ?? [],
       input.vendorSeats ?? [],
     );
+    const billingCycle = resolveCardBillingCycle({
+      toolKey,
+      toolRows: [],
+      seat: seatByTool.get(toolKey) ?? null,
+      cycleView,
+      now,
+    });
     cards.push({
       toolKey,
       toolName: usage.toolName,
@@ -334,15 +510,8 @@ export function buildMemberPlanBoard(input: {
       promotions: [],
       otherWindows: [],
       quotaSyncedAt: null,
-      usage: {
-        requests: usage.requests,
-        tokens: usage.tokens,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        cacheReadTokens: usage.cacheReadTokens,
-        cacheWriteTokens: usage.cacheWriteTokens,
-        cost: usage.cost,
-      },
+      billingCycle,
+      usage: toUsageCard(usage),
     });
   }
 

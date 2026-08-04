@@ -349,11 +349,10 @@ export function verdictHint(
 export function verdictToneClass(code: PlanVerdictCode): string {
   switch (code) {
     case "LIGHT_USE":
-      return "text-muted-foreground";
     case "HEALTHY":
       return "text-primary";
     case "NEAR_LIMIT":
-      return "text-brand-yellow-dark";
+      return "text-warning";
     case "LIMIT_EXCEEDED":
       return "text-destructive";
     default:

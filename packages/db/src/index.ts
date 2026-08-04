@@ -90,6 +90,8 @@ export type {
   PlanInterest,
   ProviderConnection,
   ProviderApiKey,
+  ProviderConnectionCapability,
+  ProviderSourceRecord,
   ProviderSyncRun,
   QuotaSnapshot,
   RateLimitBucket,

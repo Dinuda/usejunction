@@ -31,7 +31,7 @@ func (p *ClaudeProvider) Detect(ctx context.Context) (*types.ToolStatus, error) 
 	creds := filepath.Join(dir, ".credentials.json")
 	detected := fileExists(creds) || dirExists(dir)
 	configured := false
-	if account, err := probe.ClaudeAccountFromCredentials(dir); err == nil && account != nil && account.AuthPresent {
+	if account, err := probe.ClaudeAccountIdentity(dir); err == nil && account != nil && account.AuthPresent {
 		detected = true
 		configured = true
 	}
@@ -44,7 +44,8 @@ func (p *ClaudeProvider) Detect(ctx context.Context) (*types.ToolStatus, error) 
 }
 
 func (p *ClaudeProvider) AccountIdentity(ctx context.Context) (*types.ToolAccount, error) {
-	account, err := probe.ClaudeAccountFromCredentials(claudeConfigDir())
+	dir := claudeConfigDir()
+	account, err := probe.ClaudeAccountIdentity(dir)
 	if err != nil {
 		return &types.ToolAccount{ToolName: p.ID(), LoginMethod: "unknown"}, nil
 	}

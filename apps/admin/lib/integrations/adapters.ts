@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { fetchJson, fetchNdjson } from "@/lib/integrations/http";
+import { sanitizeExtractionPayload } from "@usejunction/usage-schema";
 import type { AdapterContext, ProviderAdapter, ProviderApiKey, ProviderMember, ProviderSeat, ProviderUsage } from "@/lib/integrations/types";
 
 type Row = Record<string, any>;
@@ -74,7 +75,67 @@ const cursor: ProviderAdapter = {
       suggestedLines: bigint(row.totalLinesAdded), acceptedLines: bigint(row.acceptedLinesAdded),
       addedLines: bigint(row.totalLinesAdded), deletedLines: bigint(row.totalLinesDeleted),
       metadata: { active: Boolean(row.isActive), tabsShown: int(row.totalTabsShown), tabsAccepted: int(row.totalTabsAccepted), clientVersion: row.clientVersion ?? null },
+      sourceEndpoint: "/teams/daily-usage-data", sourceCapability: "daily_usage", surface: "cursor_editor",
     }));
+
+    // Event-level usage is optional on Cursor accounts. It is complementary
+    // to the daily feed: keep token/cost facts here and leave request counts
+    // to the daily report so the two feeds cannot double-count activity.
+    if (context.config.enableDetailedFeeds === true) try {
+      let eventPage = 1;
+      for (;;) {
+        const response = await fetchJson<Row>("https://api.cursor.com/teams/filtered-usage-events", {
+          method: "POST", headers,
+          body: JSON.stringify({ startDate: dates.start.getTime(), endDate: dates.end.getTime(), page: eventPage, pageSize: 100 }),
+        });
+        const events: Row[] = response.usageEvents ?? response.events ?? response.data ?? [];
+        for (const [index, event] of events.entries()) {
+          const timestamp = event.timestamp ?? event.createdAt ?? event.date;
+          const cents = Number(event.chargedCents ?? event.spendCents ?? event.costCents ?? 0);
+          usage.push({
+            externalKey: stableKey(`cursor-event:${timestamp ?? event.id ?? eventPage}`, event, index),
+            externalUserId: String(event.userId ?? event.email ?? "").toLowerCase() || null,
+            email: event.email?.toLowerCase(), date: day(timestamp), provider: "cursor", product: "teams", toolName: "cursor",
+            model: String(event.model ?? ""), inputTokens: bigint(event.inputTokens), outputTokens: bigint(event.outputTokens),
+            cacheReadTokens: bigint(event.cacheReadTokens), cacheWriteTokens: bigint(event.cacheWriteTokens), costMicros: BigInt(Math.max(0, Math.round(cents * 10_000))),
+            metadata: { usageKind: event.usageKind ?? null, isHeadless: Boolean(event.isHeadless), eventId: event.id ?? null },
+            sourceEndpoint: "/teams/filtered-usage-events", sourceCapability: "usage_events", surface: event.isHeadless ? "cursor_headless" : "cursor_editor",
+            costKind: cents > 0 ? "actual_spend" : null,
+          });
+        }
+        if (events.length < 100 || eventPage >= int(response.totalPages) || eventPage >= 50) break;
+        eventPage += 1;
+      }
+    } catch (error) {
+      if (!String(error).includes("403") && !String(error).includes("404")) throw error;
+    }
+
+    // Enterprise AI-code analytics supplies repository-aware productivity
+    // facts that the daily team report does not contain.
+    if (context.config.enableDetailedFeeds === true) try {
+      for (let page = 1; page <= 50; page += 1) {
+        const response = await fetchJson<Row>(`https://api.cursor.com/analytics/ai-code/commits?startDate=${encodeURIComponent(dates.start.toISOString())}&endDate=${encodeURIComponent(dates.end.toISOString())}&page=${page}&pageSize=100`, { headers });
+        const commits: Row[] = response.items ?? response.data ?? [];
+        for (const [index, commit] of commits.entries()) {
+          const repo = typeof commit.repoName === "string" && commit.repoName.includes("/")
+            ? { host: "unknown", owner: commit.repoName.split("/")[0], name: commit.repoName.split("/").slice(1).join("/") }
+            : null;
+          usage.push({
+            externalKey: stableKey(`cursor-commit:${commit.commitHash ?? commit.createdAt}`, commit, index),
+            externalUserId: String(commit.userId ?? commit.userEmail ?? "").toLowerCase() || null,
+            email: commit.userEmail?.toLowerCase(), date: day(commit.commitTs ?? commit.createdAt), provider: "cursor", product: "teams", toolName: "cursor",
+            addedLines: bigint(Number(commit.tabLinesAdded ?? 0) + Number(commit.composerLinesAdded ?? 0)),
+            deletedLines: bigint(Number(commit.tabLinesDeleted ?? 0) + Number(commit.composerLinesDeleted ?? 0)),
+            commits: 1, metricKind: "productivity", repository: repo,
+            metadata: { commitHash: commit.commitHash ?? null, branchName: commit.branchName ?? null, isPrimaryBranch: commit.isPrimaryBranch ?? null },
+            sourceEndpoint: "/analytics/ai-code/commits", sourceCapability: "ai_code_analytics", surface: "cursor_commit",
+          });
+        }
+        if (commits.length < 100) break;
+      }
+    } catch (error) {
+      if (!String(error).includes("403") && !String(error).includes("404")) throw error;
+    }
     let page = 1;
     do {
       const spend = await fetchJson<Row>("https://api.cursor.com/teams/spend", { method: "POST", headers, body: JSON.stringify({ page, pageSize: 100 }) });
@@ -82,6 +143,7 @@ const cursor: ProviderAdapter = {
         externalKey: stableKey(`cursor-spend:${spend.subscriptionCycleStart}`, row, index), externalUserId: String(row.userId ?? row.email).toLowerCase(),
         email: row.email?.toLowerCase(), date: day(spend.subscriptionCycleStart), provider: "cursor", product: "teams", toolName: "cursor",
         costMicros: BigInt(int(row.spendCents)) * BigInt(10_000), metadata: { currentSubscriptionCycle: true, fastPremiumRequests: int(row.fastPremiumRequests) },
+        sourceEndpoint: "/teams/spend", sourceCapability: "costs", costKind: "actual_spend", surface: "cursor_editor",
       });
       if (page >= int(spend.totalPages) || page >= 50) break;
       page += 1;
@@ -134,6 +196,7 @@ const github: ProviderAdapter = {
             date: day(reportDay), provider: "github", product: "copilot", toolName: "github-copilot", model: String(row.model ?? ""),
             requests: int(row.requests ?? row.total_engaged_users), suggestedLines: bigint(row.code_generation_activity_count ?? row.lines_suggested),
             acceptedLines: bigint(row.code_acceptance_activity_count ?? row.lines_accepted), metadata: row,
+            sourceEndpoint: "/copilot/metrics/reports/users-1-day", sourceCapability: "daily_usage", surface: "github_copilot",
           }));
         }
       } catch (error) {
@@ -150,13 +213,43 @@ function bearerHeaders(token: string) {
 
 const openai: ProviderAdapter = {
   provider: "openai",
-  products: ["api_platform"],
+  products: ["api_platform", "codex_enterprise"],
   async validate(context) {
+    if (String(context.config.product ?? "api_platform") === "codex_enterprise") {
+      const endpoint = String(context.config.analyticsEndpoint ?? "").trim();
+      if (!endpoint) throw new Error("Codex Analytics endpoint is required for this enterprise connection");
+      await fetchJson(endpoint, { headers: bearerHeaders(context.credential) });
+      return { permissions: ["codex_analytics:read"] };
+    }
     await fetchJson("https://api.openai.com/v1/organization/users?limit=1", { headers: bearerHeaders(context.credential) });
     return { permissions: ["organization_users:read", "organization_usage:read", "organization_costs:read"] };
   },
   async sync(context) {
     const headers = bearerHeaders(context.credential);
+    if (String(context.config.product ?? "api_platform") === "codex_enterprise") {
+      const endpoint = String(context.config.analyticsEndpoint ?? "").trim();
+      if (!endpoint) throw new Error("Codex Analytics endpoint is required for this enterprise connection");
+      const payload = await fetchJson<Row>(endpoint, { headers });
+      const rows: Row[] = payload.data ?? payload.results ?? payload.items ?? [];
+      const members: ProviderMember[] = [];
+      const usage: ProviderUsage[] = [];
+      for (const [index, row] of rows.entries()) {
+        const externalUserId = String(row.user_id ?? row.userId ?? row.account_id ?? row.email ?? "").trim();
+        const email = typeof row.email === "string" ? row.email.toLowerCase() : undefined;
+        if (externalUserId) members.push({ externalUserId, email, name: row.name, metadata: { source: "codex_analytics" } });
+        const dateValue = row.date ?? row.starting_at ?? row.timestamp ?? context.now;
+        usage.push({
+          externalKey: stableKey(`openai-codex:${dateValue}`, row, index), externalUserId: externalUserId || null, email,
+          date: day(dateValue), provider: "openai", product: "codex_enterprise", toolName: "codex", model: row.model ?? "",
+          requests: int(row.requests ?? row.message_runs ?? row.turns), sessions: int(row.sessions), inputTokens: bigint(row.input_tokens),
+          outputTokens: bigint(row.output_tokens), cacheReadTokens: bigint(row.cached_input_tokens ?? row.input_cached_tokens),
+          acceptedLines: bigint(row.accepted_lines ?? row.lines_of_code_written),
+          suggestedLines: bigint(row.suggested_lines ?? row.lines_of_code_generated), commits: int(row.commits),
+          metadata: sanitizeExtractionPayload(row), sourceEndpoint: endpoint, sourceCapability: "codex_analytics", surface: "codex",
+        });
+      }
+      return { permissions: ["codex_analytics:read"], members, seats: [], usage };
+    }
     const members: ProviderMember[] = [];
     let after = "";
     for (let pageNumber = 0; pageNumber < 50; pageNumber += 1) {
@@ -207,6 +300,7 @@ const openai: ProviderAdapter = {
         provider: "openai", product: "api_platform", toolName: "openai-api", model: row.model ?? "", requests: int(row.num_model_requests),
         inputTokens: bigint(row.input_tokens), outputTokens: bigint(row.output_tokens), cacheReadTokens: bigint(row.input_cached_tokens),
         metadata: { projectId: row.project_id ?? null, apiKeyId: row.api_key_id ?? null },
+        sourceEndpoint: "/v1/organization/usage/completions", sourceCapability: "usage", surface: "openai_api",
       });
       usagePage = String(response.next_page ?? "");
       if (!response.has_more || !usagePage) break;
@@ -224,6 +318,7 @@ const openai: ProviderAdapter = {
           externalKey: stableKey(`openai-cost:${bucket.start_time}`, row, index), externalProjectId: row.project_id ?? null,
           date: day(Number(bucket.start_time) * 1000), provider: "openai", product: "api_platform", toolName: "openai-api",
           costMicros: microsFromUsd(row.amount?.value ?? row.amount), metadata: { currency: row.amount?.currency ?? "usd", projectId: row.project_id ?? null, lineItem: row.line_item ?? null },
+          sourceEndpoint: "/v1/organization/costs", sourceCapability: "costs", costKind: "actual_spend", surface: "openai_api",
         });
         costPage = String(response.next_page ?? "");
         if (!response.has_more || !costPage) break;
@@ -304,6 +399,7 @@ const anthropic: ProviderAdapter = {
           cacheWriteTokens: bigint(Number(row.cache_creation_input_tokens ?? 0) + Number(row.cache_creation?.ephemeral_1h_input_tokens ?? 0) + Number(row.cache_creation?.ephemeral_5m_input_tokens ?? 0)),
           activeSeconds: bigint(row.active_time_seconds), addedLines: bigint(row.lines_of_code_added), deletedLines: bigint(row.lines_of_code_removed),
           commits: int(row.commit_count), pullRequests: int(row.pull_request_count), metadata: row,
+          sourceEndpoint: path, sourceCapability: product === "enterprise" ? "claude_code_analytics" : "messages_usage", surface: product === "enterprise" ? "claude_code" : "messages_api",
         });
         usagePage = String(response.next_page ?? "");
         if (!response.has_more || !usagePage) break;
@@ -322,6 +418,7 @@ const anthropic: ProviderAdapter = {
             date: day(bucket.starting_at), provider: "anthropic", product, toolName: "anthropic-api",
             costMicros: BigInt(Math.max(0, Math.round(Number(row.amount ?? 0) * 10_000))),
             metadata: { currency: row.currency ?? "USD", costType: row.cost_type ?? null, model: row.model ?? null, workspaceId: row.workspace_id ?? null, description: row.description ?? null },
+            sourceEndpoint: "/v1/organizations/cost_report", sourceCapability: "cost_report", costKind: "actual_spend", surface: "messages_api",
           });
           costPage = String(costs.next_page ?? "");
           if (!costs.has_more || !costPage) break;

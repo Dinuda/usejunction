@@ -7,6 +7,8 @@ import type { IntegrationConfig, ProviderApiKey, ProviderMember, ProviderUsage }
 import { decryptSecret } from "@/lib/security";
 import { invalidateAnalyticsCache } from "@/lib/analytics/query";
 import { syncTeamSeatQuantityBestEffort } from "@/lib/saas-billing/quantity";
+import { sanitizeExtractionPayload } from "@usejunction/usage-schema";
+import { extractionFingerprint, JUNCTION_EXTRACTION_SCHEMA_VERSION } from "@usejunction/usage-schema";
 
 function json(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
@@ -21,11 +23,6 @@ async function upsertMember(connection: ProviderConnection, member: ProviderMemb
   let developer = email
     ? await prisma.developer.findUnique({ where: { orgId_email: { orgId: connection.orgId, email } } })
     : null;
-  if (!developer && email) {
-    developer = await prisma.developer.create({
-      data: { orgId: connection.orgId, email, name: member.name?.trim() || email.split("@")[0], role: "user" },
-    });
-  }
   return prisma.externalIdentity.upsert({
     where: { orgId_provider_externalUserId: { orgId: connection.orgId, provider: connection.provider, externalUserId: member.externalUserId } },
     update: {
@@ -48,6 +45,67 @@ async function upsertMember(connection: ProviderConnection, member: ProviderMemb
       source: "vendor_verified",
       matchedBy: developer ? "email" : null,
       metadata: json(member.metadata),
+    },
+  });
+}
+
+async function recordCapability(input: {
+  connection: ProviderConnection;
+  capability: string;
+  endpoint?: string | null;
+  dataThrough?: Date | null;
+  status?: string;
+  error?: string | null;
+}) {
+  await prisma.providerConnectionCapability.upsert({
+    where: { connectionId_capability: { connectionId: input.connection.id, capability: input.capability } },
+    update: {
+      endpoint: input.endpoint ?? undefined,
+      status: input.status ?? "available",
+      dataThrough: input.dataThrough ?? undefined,
+      lastCheckedAt: new Date(),
+      lastSuccessAt: input.status === "available" ? new Date() : undefined,
+      lastError: input.error ?? null,
+      schemaVersion: JUNCTION_EXTRACTION_SCHEMA_VERSION,
+    },
+    create: {
+      orgId: input.connection.orgId, connectionId: input.connection.id, capability: input.capability,
+      endpoint: input.endpoint ?? null, status: input.status ?? "available", dataThrough: input.dataThrough ?? null,
+      lastCheckedAt: new Date(), lastSuccessAt: input.status === "available" ? new Date() : null,
+      lastError: input.error ?? null, schemaVersion: JUNCTION_EXTRACTION_SCHEMA_VERSION,
+    },
+  });
+}
+
+async function recordSourceEnvelope(input: {
+  connection: ProviderConnection;
+  runId: string;
+  row: ProviderUsage;
+}) {
+  const source = {
+    provider: input.row.provider,
+    product: input.row.product,
+    tenantId: input.connection.externalOrgId,
+    endpoint: input.row.sourceEndpoint ?? "provider-adapter",
+    capability: input.row.sourceCapability ?? "usage",
+  };
+  const payload = sanitizeExtractionPayload(input.row.metadata ?? {});
+  const fingerprint = extractionFingerprint({
+    source,
+    externalRecordId: input.row.sourceRecordId ?? input.row.externalKey,
+    subject: { externalUserId: input.row.externalUserId, userEmail: input.row.email, workspaceId: input.row.externalWorkspaceId, projectId: input.row.externalProjectId, apiKeyId: input.row.externalApiKeyId, repository: input.row.repository },
+    occurredAt: input.row.date.toISOString(),
+    payload,
+  });
+  const expiresAt = new Date(Date.now() + 30 * 86400_000);
+  await prisma.providerSourceRecord.upsert({
+    where: { connectionId_capability_fingerprint: { connectionId: input.connection.id, capability: source.capability, fingerprint } },
+    update: { payload: json(payload), occurredAt: input.row.date, expiresAt, syncRunId: input.runId },
+    create: {
+      orgId: input.connection.orgId, connectionId: input.connection.id, syncRunId: input.runId,
+      capability: source.capability, externalRecordId: input.row.sourceRecordId ?? input.row.externalKey,
+      fingerprint, schemaVersion: JUNCTION_EXTRACTION_SCHEMA_VERSION, occurredAt: input.row.date,
+      payload: json(payload), expiresAt,
     },
   });
 }
@@ -103,11 +161,26 @@ async function upsertApiKey(connection: ProviderConnection, key: ProviderApiKey)
 
 function usageMetadata(row: ProviderUsage) {
   return json({
-    ...(row.metadata ?? {}),
+    ...sanitizeExtractionPayload(row.metadata ?? {}),
     apiKeyId: row.externalApiKeyId ?? (row.metadata?.apiKeyId as string | undefined) ?? null,
     projectId: row.externalProjectId ?? (row.metadata?.projectId as string | undefined) ?? null,
     workspaceId: row.externalWorkspaceId ?? (row.metadata?.workspaceId as string | undefined) ?? null,
+    sourceEndpoint: row.sourceEndpoint ?? null,
+    sourceCapability: row.sourceCapability ?? "usage",
+    sourceRecordId: row.sourceRecordId ?? row.externalKey,
+    evidence: row.evidence ?? "vendor_verified",
+    metricKind: row.metricKind ?? "usage",
+    surface: row.surface ?? null,
+    repository: row.repository ?? null,
   });
+}
+
+function usageCostKind(row: ProviderUsage) {
+  if (!row.costMicros || row.costMicros <= BigInt(0)) return null;
+  if (row.costKind) return row.costKind;
+  return row.sourceCapability === "costs" || row.sourceCapability === "cost_report"
+    ? "actual_spend"
+    : "vendor_reported";
 }
 
 export async function validateConnection(connection: ProviderConnection) {
@@ -155,6 +228,7 @@ export async function syncConnection(connectionId: string) {
     }
 
     for (const row of data.usage) {
+      await recordSourceEnvelope({ connection, runId: run.id, row });
       const developerId = await developerForUsage(connection, row);
       const dedupeKey = `${connection.id}:${row.externalKey}`;
       await prisma.usageDaily.upsert({
@@ -165,7 +239,7 @@ export async function syncConnection(connectionId: string) {
           cacheReadTokens: row.cacheReadTokens ?? BigInt(0), cacheWriteTokens: row.cacheWriteTokens ?? BigInt(0), activeSeconds: row.activeSeconds ?? BigInt(0), suggestedLines: row.suggestedLines ?? BigInt(0),
           acceptedLines: row.acceptedLines ?? BigInt(0), addedLines: row.addedLines ?? BigInt(0), deletedLines: row.deletedLines ?? BigInt(0),
           commits: row.commits ?? 0, pullRequests: row.pullRequests ?? 0, costMicros: row.costMicros ?? BigInt(0),
-          costKind: row.costMicros && row.costMicros > BigInt(0) ? "verified_usage" : null, observedAt: new Date(), metadata: usageMetadata(row),
+          costKind: usageCostKind(row), metricKind: row.metricKind ?? "usage", observedAt: new Date(), metadata: usageMetadata(row),
         },
         create: {
           orgId: connection.orgId, developerId, connectionId: connection.id, date: row.date, provider: row.provider, product: row.product,
@@ -174,11 +248,26 @@ export async function syncConnection(connectionId: string) {
           cacheReadTokens: row.cacheReadTokens ?? BigInt(0), cacheWriteTokens: row.cacheWriteTokens ?? BigInt(0), activeSeconds: row.activeSeconds ?? BigInt(0), suggestedLines: row.suggestedLines ?? BigInt(0),
           acceptedLines: row.acceptedLines ?? BigInt(0), addedLines: row.addedLines ?? BigInt(0), deletedLines: row.deletedLines ?? BigInt(0),
           commits: row.commits ?? 0, pullRequests: row.pullRequests ?? 0, costMicros: row.costMicros ?? BigInt(0),
-          costKind: row.costMicros && row.costMicros > BigInt(0) ? "verified_usage" : null, dedupeKey, metadata: usageMetadata(row),
+          costKind: usageCostKind(row), metricKind: row.metricKind ?? "usage", dedupeKey, metadata: usageMetadata(row),
         },
       });
     }
     const counts = { members: identities.size, seats: data.seats.length, apiKeys: data.apiKeys?.length ?? 0, usage: data.usage.length };
+    const capabilityRows = new Map<string, { endpoint: string | null; dataThrough: Date | null }>();
+    for (const row of data.usage) {
+      const capability = row.sourceCapability ?? "usage";
+      const current = capabilityRows.get(capability);
+      const date = row.date;
+      capabilityRows.set(capability, {
+        endpoint: row.sourceEndpoint ?? current?.endpoint ?? null,
+        dataThrough: !current?.dataThrough || date > current.dataThrough ? date : current.dataThrough,
+      });
+    }
+    for (const [capability, details] of capabilityRows) {
+      await recordCapability({ connection, capability, endpoint: details.endpoint, dataThrough: details.dataThrough });
+    }
+    if (data.members.length > 0) await recordCapability({ connection, capability: "members", endpoint: "provider-members", dataThrough: new Date() });
+    if (data.seats.length > 0) await recordCapability({ connection, capability: "seats", endpoint: "provider-seats", dataThrough: new Date() });
     const now = new Date();
     await prisma.$transaction([
       prisma.providerConnection.update({ where: { id: connection.id }, data: {

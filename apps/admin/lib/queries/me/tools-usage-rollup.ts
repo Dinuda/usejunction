@@ -9,6 +9,10 @@ export type PersonalToolUsageRow = {
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
   cost: number;
+  /** Vendor-verified dollars for this tool in the selected window. */
+  verifiedUsageCost?: number;
+  /** Modeled API-equivalent dollars when vendor cost is missing. */
+  estimatedApiCost?: number;
 };
 
 type RolledUpPersonalToolUsageRow = Required<PersonalToolUsageRow>;
@@ -35,6 +39,9 @@ export function rollupPersonalToolsUsage(
     const outputTokens = row.outputTokens ?? 0;
     const cacheReadTokens = row.cacheReadTokens ?? 0;
     const cacheWriteTokens = row.cacheWriteTokens ?? 0;
+    const verifiedUsageCost = row.verifiedUsageCost ?? 0;
+    const estimatedApiCost =
+      row.estimatedApiCost ?? Math.max(0, row.cost - verifiedUsageCost);
     const existing = byKey.get(key);
     if (existing) {
       existing.requests += row.requests;
@@ -44,6 +51,8 @@ export function rollupPersonalToolsUsage(
       existing.cacheReadTokens += cacheReadTokens;
       existing.cacheWriteTokens += cacheWriteTokens;
       existing.cost += row.cost;
+      existing.verifiedUsageCost += verifiedUsageCost;
+      existing.estimatedApiCost += estimatedApiCost;
       continue;
     }
     byKey.set(key, {
@@ -55,6 +64,8 @@ export function rollupPersonalToolsUsage(
       cacheReadTokens,
       cacheWriteTokens,
       cost: row.cost,
+      verifiedUsageCost,
+      estimatedApiCost,
     });
   }
 
@@ -70,6 +81,8 @@ export function rollupPersonalToolsUsage(
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
       cost: 0,
+      verifiedUsageCost: 0,
+      estimatedApiCost: 0,
     });
   }
 

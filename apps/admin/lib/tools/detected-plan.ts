@@ -69,6 +69,7 @@ const VENDOR_PLAN_ALIASES: Record<string, Record<string, string>> = {
     "max-20x": "max-20x",
     team: "team-standard",
     "team-standard": "team-standard",
+    team_standard: "team-standard",
     "team-premium": "team-premium",
     enterprise: "enterprise",
   },

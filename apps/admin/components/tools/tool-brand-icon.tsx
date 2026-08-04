@@ -1,4 +1,4 @@
-import type { SVGProps } from "react";
+import type { SVGProps, ComponentType, CSSProperties } from "react";
 import { Wrench } from "lucide-react";
 import {
   ClaudeCode,
@@ -18,26 +18,60 @@ import {
 import { canonicalToolKey, toolDisplayName } from "@/lib/tools/catalog";
 import { cn } from "@/lib/utils";
 
-const icons = {
-  "chatgpt-codex": OpenAI,
-  claude: ClaudeCode,
-  cursor: Cursor,
-  antigravity: Gemini,
-  "github-copilot": GithubCopilot,
-  copilot: GithubCopilot,
-  cline: Cline,
-  deepseek: DeepSeek,
-  gemini: Gemini,
-  groq: Groq,
-  "lm-studio": LmStudio,
-  lmstudio: LmStudio,
-  mistral: Mistral,
-  ollama: Ollama,
-  opencode: OpenCode,
-  "open-code": OpenCode,
-  "roo-code": RooCode,
-  roocode: RooCode,
+type BrandIcon = ComponentType<{ size?: number | string; style?: CSSProperties; className?: string }> & {
+  Color?: ComponentType<{ size?: number | string; style?: CSSProperties; className?: string }>;
+  colorPrimary?: string;
 };
+
+const icons: Record<string, BrandIcon> = {
+  "chatgpt-codex": OpenAI as BrandIcon,
+  claude: ClaudeCode as BrandIcon,
+  cursor: Cursor as BrandIcon,
+  antigravity: Gemini as BrandIcon,
+  "github-copilot": GithubCopilot as BrandIcon,
+  copilot: GithubCopilot as BrandIcon,
+  cline: Cline as BrandIcon,
+  deepseek: DeepSeek as BrandIcon,
+  gemini: Gemini as BrandIcon,
+  groq: Groq as BrandIcon,
+  "lm-studio": LmStudio as BrandIcon,
+  lmstudio: LmStudio as BrandIcon,
+  mistral: Mistral as BrandIcon,
+  ollama: Ollama as BrandIcon,
+  opencode: OpenCode as BrandIcon,
+  "open-code": OpenCode as BrandIcon,
+  "roo-code": RooCode as BrandIcon,
+  roocode: RooCode as BrandIcon,
+};
+
+/** Brand fills when an icon has no `.Color` compound (ChatGPT, Cursor, Copilot, …). */
+export const TOOL_BRAND_COLORS: Record<string, string> = {
+  "chatgpt-codex": "#10A37F",
+  claude: "#D97757",
+  cursor: "#171717",
+  antigravity: "#4285F4",
+  "github-copilot": "#8250DF",
+  copilot: "#8250DF",
+  cline: "#0EA5E9",
+  deepseek: "#4D6BFE",
+  gemini: "#4285F4",
+  groq: "#F55036",
+  "lm-studio": "#4338CA",
+  lmstudio: "#4338CA",
+  mistral: "#FF7000",
+  ollama: "#16A34A",
+  opencode: "#2563EB",
+  "open-code": "#2563EB",
+  "roo-code": "#F97316",
+  roocode: "#F97316",
+};
+
+const FALLBACK_TOOL_COLORS = ["#08758a", "#c45c26", "#5b5bd6", "#0d9488", "#b45309", "#7c3aed"];
+
+export function toolBrandColor(tool: string, index = 0): string {
+  const key = canonicalToolKey(tool);
+  return TOOL_BRAND_COLORS[key] ?? FALLBACK_TOOL_COLORS[index % FALLBACK_TOOL_COLORS.length]!;
+}
 
 export function hasToolBrandIcon(tool: string) {
   return canonicalToolKey(tool) in icons;
@@ -47,12 +81,44 @@ export function ToolBrandIcon({
   tool,
   size = 22,
   className,
+  mono = false,
   ...props
-}: { tool: string; size?: number; className?: string } & Omit<SVGProps<SVGSVGElement>, "size">) {
+}: {
+  tool: string;
+  size?: number;
+  /** Force monochrome (inherits text color). Default is brand color. */
+  mono?: boolean;
+  className?: string;
+} & Omit<SVGProps<SVGSVGElement>, "size">) {
   const key = canonicalToolKey(tool);
-  const Icon = icons[key as keyof typeof icons] ?? Wrench;
+  const Icon = icons[key] ?? (Wrench as BrandIcon);
+
+  if (!mono && Icon.Color) {
+    return <Icon.Color aria-hidden="true" className={cn("shrink-0", className)} size={size} />;
+  }
+
+  if (!mono) {
+    const color = TOOL_BRAND_COLORS[key] ?? Icon.colorPrimary;
+    if (color) {
+      return (
+        <Icon
+          aria-hidden="true"
+          className={cn("shrink-0", className)}
+          size={size}
+          style={{ color }}
+          {...props}
+        />
+      );
+    }
+  }
+
   return (
-    <Icon aria-hidden="true" className={cn("text-foreground", className)} size={size} {...props} />
+    <Icon
+      aria-hidden="true"
+      className={cn("shrink-0 text-foreground", className)}
+      size={size}
+      {...props}
+    />
   );
 }
 

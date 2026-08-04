@@ -480,7 +480,9 @@ func collectProvider(ctx context.Context, p providers.Provider, refresh bool) pr
 			acc = mergeToolAccounts(acc, probeAcc)
 		}
 	case "claude":
-		// Merge plan/auth from quota probe even when HTTP fails (401 clears plan).
+		// Merge plan/auth from quota probe even when HTTP fails. Local
+		// subscriptionType is kept for seat sync; only quota windows require a
+		// live token (same pattern as Codex auth.json plan_type).
 		snaps, probeAcc, err := probe.ProbeClaudeQuota(ctx, claudeConfigDirForProbe())
 		acc = mergeToolAccounts(acc, probeAcc)
 		if err == nil {

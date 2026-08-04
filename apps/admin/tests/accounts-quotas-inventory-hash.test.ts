@@ -3,6 +3,7 @@ import { test } from "vitest";
 import {
   accountsInventoryCanonicalLine,
   accountsInventoryContentHash,
+  resolveStickyAccountPlan,
 } from "@/lib/sync/accounts-inventory";
 import {
   quotasInventoryCanonicalLine,
@@ -52,6 +53,21 @@ test("accountsInventoryContentHash matches agent fixture", () => {
       { toolName: "codex", email: "", plan: "plus", loginMethod: "chatgpt", authPresent: true },
     ]),
     "d995adfef41135b19db2c33c545519f5",
+  );
+});
+
+test("resolveStickyAccountPlan prefers incoming and clears on auth drop", () => {
+  assert.equal(
+    resolveStickyAccountPlan({ incomingPlan: "team-standard", existingPlan: "pro", authPresent: true }),
+    "team-standard",
+  );
+  assert.equal(
+    resolveStickyAccountPlan({ incomingPlan: "", existingPlan: "pro", authPresent: true }),
+    "pro",
+  );
+  assert.equal(
+    resolveStickyAccountPlan({ incomingPlan: "", existingPlan: "pro", authPresent: false }),
+    null,
   );
 });
 

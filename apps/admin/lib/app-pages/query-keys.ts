@@ -44,6 +44,14 @@ export function toolDetailKey(toolKey: string, queryString = "") {
   return ["app", "tools", toolKey, queryString] as const;
 }
 
+export function toolDetailShellKey(toolKey: string) {
+  return ["app", "tools", toolKey, "shell"] as const;
+}
+
+export function toolDetailMetricsKey(toolKey: string, queryString = "") {
+  return ["app", "tools", toolKey, "metrics", queryString] as const;
+}
+
 export function activityKey(queryString = "") {
   return ["app", "activity", queryString] as const;
 }

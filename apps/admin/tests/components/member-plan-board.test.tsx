@@ -23,7 +23,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-test("MemberPlanBoard renders vendor percentage, reset, expected marker, and utilization label", () => {
+test("MemberPlanBoard renders vendor percentage, billing cycle, expected marker, and utilization label", () => {
   const now = new Date();
   const cards = buildMemberPlanBoard({
     now,
@@ -38,14 +38,31 @@ test("MemberPlanBoard renders vendor percentage, reset, expected marker, and uti
         updatedAt: now,
       },
     ],
+    toolsUsage: [
+      {
+        toolName: "cursor",
+        requests: 12,
+        tokens: 1000,
+        cost: 42.5,
+        verifiedUsageCost: 0,
+        estimatedApiCost: 42.5,
+      },
+    ],
   });
 
   const { container } = render(<MemberPlanBoard cards={cards} />);
 
   expect(screen.getByText("10%")).toBeInTheDocument();
   expect(screen.getByText("Underutilized")).toBeInTheDocument();
-  expect(screen.getByText("Aug 1")).toBeInTheDocument();
+  expect(screen.getAllByText("Jul 1 – Aug 1").length).toBeGreaterThan(0);
+  expect(screen.getByText(/Monthly · Jul 1 – Aug 1/)).toBeInTheDocument();
+  expect(screen.getByText("Accounted")).toBeInTheDocument();
+  expect(screen.getByText("$0.00")).toBeInTheDocument();
+  expect(screen.getByText("Estimated")).toBeInTheDocument();
+  expect(screen.getByText("$42.50")).toBeInTheDocument();
   expect(screen.queryByText(/resets in/i)).toBeNull();
   expect(cards[0]?.quotaSyncedAt).toBeTruthy();
+  expect(cards[0]?.billingCycle?.cycleStart).toBe("2026-07-01");
+  expect(cards[0]?.billingCycle?.cycleEnd).toBe("2026-08-01");
   expect(container.querySelector('span[aria-hidden="true"][style*="left: 50%"]')).not.toBeNull();
 });

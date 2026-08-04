@@ -10,8 +10,8 @@ export const siteConfig = {
   promise:
     "See AI coding tool usage, plan utilization, and team insights—before you try to control it.",
   description:
-    "Open-source AI coding observability for teams. Track Cursor, Claude Code, and Copilot usage, cost, plan seat waste, and device health. Self-hosted.",
-  seoTitle: "UseJunction — AI Coding Observability for Teams",
+    "AI coding spend management for engineering teams. Track Cursor, Claude Code, Codex, and Copilot usage, cost, plan utilization, seat waste, and device health. Self-hosted.",
+  seoTitle: "AI Coding Spend Management for Teams — UseJunction",
   url: process.env.NEXTAUTH_URL ?? "https://usejunction.dev",
   githubUrl: "https://github.com/Dinuda/usejunction",
   docsUrl: "https://github.com/Dinuda/usejunction#readme",
@@ -36,7 +36,10 @@ export const navAnchors = [{ id: "pricing", label: "Pricing" }] as const;
 
 /** Primary page links (product lines, guides, etc.). */
 export const navLinks: ReadonlyArray<{ href: string; label: string }> = [
-  { href: "/", label: "For Coders" }
+  { href: "/", label: "Product" },
+  { href: "/solutions", label: "Solutions" },
+  { href: "/guides", label: "Guides" },
+  { href: "/compare", label: "Compare" },
 ];
 
 export const SUPPORTED_TOOLS = [

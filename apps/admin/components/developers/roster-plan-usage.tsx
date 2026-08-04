@@ -13,8 +13,8 @@ export type RosterPlanUsagePlan = {
 function barTone(ratio: number | null, code: PlanVerdictCode) {
   if (ratio == null) return "bg-muted";
   if (code === "LIMIT_EXCEEDED") return "bg-destructive";
-  if (code === "NEAR_LIMIT") return "bg-brand-yellow-dark";
-  if (code === "LIGHT_USE") return "bg-muted-foreground/35";
+  if (code === "NEAR_LIMIT") return "bg-warning";
+  if (code === "LIGHT_USE") return "bg-primary/50";
   return "bg-primary/80";
 }
 

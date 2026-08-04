@@ -10,6 +10,7 @@ export const privacyPage: ContentPage = {
   primaryKeyword: "UseJunction privacy",
   secondaryKeywords: ["AI coding observability privacy", "developer telemetry privacy"],
   updatedAt: "2026-07-20",
+  indexable: false,
   answer: `${siteConfig.name} ("UseJunction," "we," "our," or "us") takes privacy seriously. Your data is yours. We retain data as needed to provide the Service, resolve disputes, and meet legal obligations—but we do not sell your data, and we do not use your private product data or work content to train foundation models. Self-hosted deployments keep telemetry on infrastructure you control. Richer Signals work detail is optional and can be turned off.`,
   sections: [
     {
@@ -192,6 +193,7 @@ export const termsPage: ContentPage = {
   primaryKeyword: "UseJunction terms",
   secondaryKeywords: ["UseJunction terms of service", "AI coding observability terms"],
   updatedAt: "2026-07-20",
+  indexable: false,
   answer: `These Terms of Service govern your access to and use of the ${siteConfig.name} website, applications, APIs, open-source software, and related services (collectively, the Service). By using the Service, you agree to these Terms. Your data is yours. We retain data as described in our Privacy Policy, but we do not sell your data or use it to train foundation models. If you do not agree to these Terms, you must not use the Service.`,
   sections: [
     {

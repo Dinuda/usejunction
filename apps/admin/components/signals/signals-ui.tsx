@@ -132,23 +132,14 @@ export function SignalsKpi({
       className={cn(
         "relative flex h-full flex-col justify-start",
         compactMobile ? "min-h-24 py-3 sm:min-h-32 sm:py-5" : "min-h-32 py-5",
-        !accent && className,
+        accent ? (compactMobile ? "px-3 sm:px-5" : "px-5") : null,
+        className,
       )}
     >
       {accent ? (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 border-l-2 border-brand-yellow-dark bg-brand-yellow-pale"
-        />
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-brand-yellow-pale" />
       ) : null}
-      <div
-        className={cn(
-          "relative flex h-full flex-col justify-start",
-          accent && cn(compactMobile ? "px-3 sm:px-5" : "px-5", className),
-        )}
-      >
-        {content}
-      </div>
+      <div className="relative flex h-full flex-col justify-start">{content}</div>
     </div>
   );
 }

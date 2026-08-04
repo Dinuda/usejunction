@@ -34,6 +34,12 @@ export type OrgOverviewV1 = {
       deltaPercent: number | null;
       basis: "subscriptions" | "none";
     };
+    /** Purchased seat count across active subscriptions in this view. */
+    seats: {
+      value: number;
+      previousValue: number;
+      deltaPercent: number | null;
+    };
     verifiedUsageCost: { value: number; previousValue: number; deltaPercent: number | null };
     estimatedApiCost: { value: number; previousValue: number; deltaPercent: number | null };
     tokens: { value: number; previousValue: number; deltaPercent: number | null };
@@ -60,8 +66,10 @@ export type OrgOverviewV1 = {
     verdictCode: PlanVerdictCode | null;
     /** Projected date the plan allowance runs out at current burn (near-limit only). */
     expectedEndAt: string | null;
-    /** Soonest renewal among plans under this tool. */
+    /** Soonest renewal among plans under this tool — prefer longest seat cycle. */
     billingCycle: BillingCycleInfo;
+    /** Seat billing cadence for the primary cycle (monthly / weekly / …). */
+    billingCadence: string | null;
     usageWindow: UsageWindowMetadata | null;
     projectionState: "forming" | "reliable" | "unavailable";
   }>;
@@ -85,6 +93,31 @@ export type OrgOverviewV1 = {
   }>;
   attention: AttentionItem[];
   tools: Array<{ name: string; requests: number; cost: number; activeDevelopers: number }>;
+  /** Top models by request volume across the team (report window). */
+  models: Array<{
+    toolName: string;
+    model: string;
+    requests: number;
+    tokens: number;
+    cost: number;
+  }>;
+  providerCards: Array<{
+    provider: string;
+    product: string;
+    status: string;
+    activeSeats: number;
+    matchedSeats: number;
+    activeDevelopers: number;
+    unusedSeats: number;
+    requests: number;
+    spend: number;
+    lastSyncedAt: string | null;
+    dataThrough: string | null;
+    capabilities: Array<{ name: string; status: string; dataThrough: string | null }>;
+    actions: string[];
+  }>;
+  /** Top people by usage cost in the report window. */
+  people: Array<{ id: string; name: string; requests: number; cost: number }>;
   coverage: {
     developers: number;
     activeDevelopers: number;

@@ -48,6 +48,7 @@ import {
   quotaResetLabel,
   quotaWindowLabel,
 } from "@/lib/quotas/display";
+import { peopleKpiSubline } from "@/lib/queries/dashboard/tool-detail-kpi";
 import { USAGE_WINDOW_PREFERENCES, usageWindowPreferenceLabel, type UsageWindowPreference } from "@/lib/quotas/usage-window";
 
 type PlanRow = ToolDetailData["plans"][number] & {
@@ -83,8 +84,8 @@ function quotaStatus(percent: number | null) {
   }
   return {
     label: "Available",
-    badge: "border-success/30 bg-success/10 text-success",
-    bar: "bg-success",
+    badge: "border-primary/30 bg-primary/10 text-primary",
+    bar: "bg-primary",
   };
 }
 
@@ -211,6 +212,7 @@ export function ToolProviderDetail({
   // People with an assignment but no quota windows still appear so the assignment is visible.
   for (const person of data.people) {
     if (quotaGroupMap.has(person.developerId)) continue;
+    if (person.coverage === "install_only") continue;
     if (!person.assignment) continue;
     quotaGroupMap.set(person.developerId, {
       key: person.developerId,
@@ -220,10 +222,42 @@ export function ToolProviderDetail({
       windows: [],
     });
   }
+  // Detected installs / reported plans / usage-only people with no quota or seat yet —
+  // otherwise a second Claude user shows in Models ($0.016) and disappears here.
+  for (const person of data.people) {
+    if (quotaGroupMap.has(person.developerId)) continue;
+    if (person.coverage === "install_only") continue;
+    if (!person.detected && !person.vendorPlan && !person.assignment) {
+      const hasModelUsage = data.modelsByDeveloper.some(
+        (row) => row.developerId === person.developerId && (row.requests > 0 || row.cost > 0),
+      );
+      if (!hasModelUsage) continue;
+    }
+    quotaGroupMap.set(person.developerId, {
+      key: person.developerId,
+      developerId: person.developerId,
+      developerName: person.name,
+      deviceHostname: person.deviceHostname,
+      windows: [],
+    });
+  }
+  // Belt-and-suspenders: model rows whose developer never made it into people.
+  for (const row of data.modelsByDeveloper) {
+    if (!row.developerId || quotaGroupMap.has(row.developerId)) continue;
+    if (!(row.requests > 0 || row.cost > 0)) continue;
+    quotaGroupMap.set(row.developerId, {
+      key: row.developerId,
+      developerId: row.developerId,
+      developerName: row.developerName,
+      deviceHostname: peopleByDeveloperId.get(row.developerId)?.deviceHostname ?? null,
+      windows: [],
+    });
+  }
   const quotaGroups = Array.from(quotaGroupMap.values()).sort((a, b) =>
     a.developerName.localeCompare(b.developerName),
   );
   const peopleReporting = quotaGroups.filter((group) => group.windows.length > 0).length;
+  const peopleKpiSub = peopleKpiSubline(data.kpis.people, data.kpis.peopleInstallOnly);
 
   const modelTotals = data.modelsByDeveloper.reduce(
     (acc, row) => {
@@ -290,7 +324,7 @@ export function ToolProviderDetail({
             label="People"
             className="sm:border-l sm:border-border sm:pl-8"
             value={data.kpis.people}
-            sub="Detected or assigned"
+            sub={peopleKpiSub}
           />
         )}
         {isSelf ? (
@@ -378,7 +412,11 @@ export function ToolProviderDetail({
                         <Badge variant="outline" className="border-warning/30 bg-warning/10 text-[#9a5f0d]">
                           Plan unknown
                         </Badge>
-                      ) : null}
+                      ) : (
+                        <Badge variant="outline" className="bg-background text-muted-foreground">
+                          Usage only · no plan signal
+                        </Badge>
+                      )}
                     </div>
                     {person?.planMismatch && person?.mappedCatalogPlanKey && !isSelf ? (
                       <div className="mt-3 space-y-2">

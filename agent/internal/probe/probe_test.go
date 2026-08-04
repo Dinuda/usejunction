@@ -3,6 +3,8 @@ package probe
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -429,6 +431,332 @@ func TestCopilotResetAtDateOnly(t *testing.T) {
 	}
 }
 
+func TestClaudeKeychainHashedService(t *testing.T) {
+	dir := "/Users/example/.claude"
+	got := ClaudeKeychainHashedService(dir)
+	if !strings.HasPrefix(got, "Claude Code-credentials-") {
+		t.Fatalf("service = %q", got)
+	}
+	suffix := strings.TrimPrefix(got, "Claude Code-credentials-")
+	if len(suffix) != 8 {
+		t.Fatalf("suffix len = %d (%q)", len(suffix), suffix)
+	}
+	if ClaudeKeychainHashedService(dir) != got {
+		t.Fatal("hash should be stable")
+	}
+}
+
+func TestClaudePlanFromOAuthAccount(t *testing.T) {
+	if got := claudePlanFromOAuthAccount(claudeJSONOAuthAccount{SubscriptionType: "pro"}); got != "pro" {
+		t.Fatalf("subscriptionType = %q", got)
+	}
+	if got := claudePlanFromOAuthAccount(claudeJSONOAuthAccount{OrganizationType: "claude_team"}); got != "team-standard" {
+		t.Fatalf("team = %q", got)
+	}
+	if got := claudePlanFromOAuthAccount(claudeJSONOAuthAccount{SeatTier: "team_standard"}); got != "team-standard" {
+		t.Fatalf("seatTier team_standard = %q", got)
+	}
+	if got := claudePlanFromOAuthAccount(claudeJSONOAuthAccount{SeatTier: "team_premium"}); got != "team-premium" {
+		t.Fatalf("seatTier team_premium = %q", got)
+	}
+	if got := claudePlanFromOAuthAccount(claudeJSONOAuthAccount{BillingType: "stripe_subscription"}); got != "" {
+		t.Fatalf("consumer stripe = %q", got)
+	}
+}
+
+func TestPreferClaudePlan(t *testing.T) {
+	cases := []struct {
+		creds, json, want string
+	}{
+		{"pro", "team-standard", "team-standard"},
+		{"pro", "team_standard", "team-standard"},
+		{"pro", "", "pro"},
+		{"", "team-standard", "team-standard"},
+		{"max", "pro", "max"},
+		{"team-premium", "pro", "team-premium"},
+		{"pro", "enterprise", "enterprise"},
+		{"", "", ""},
+	}
+	for _, tc := range cases {
+		if got := preferClaudePlan(tc.creds, tc.json); got != tc.want {
+			t.Fatalf("preferClaudePlan(%q, %q) = %q, want %q", tc.creds, tc.json, got, tc.want)
+		}
+	}
+}
+
+func TestClaudeAccountIdentityMergesCredsWithJSON(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	creds := `{
+	  "access_token": "access-token",
+	  "refresh_token": "refresh-token",
+	  "email": "creds@example.com",
+	  "subscription_type": "pro",
+	  "expires_at_ms": 1999999999999
+	}`
+	if err := os.WriteFile(filepath.Join(claudeDir, ".credentials.json"), []byte(creds), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	jsonPayload := `{
+	  "oauthAccount": {
+	    "emailAddress": "json@example.com",
+	    "organizationType": "claude_team"
+	  }
+	}`
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(jsonPayload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prevHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Setenv("HOME", prevHome) })
+
+	account, err := ClaudeAccountIdentity(claudeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if account.Email != "creds@example.com" {
+		t.Fatalf("email = %q", account.Email)
+	}
+	if account.Plan != "team-standard" {
+		t.Fatalf("plan = %q, want team-standard", account.Plan)
+	}
+	if !account.AuthPresent {
+		t.Fatal("expected auth present")
+	}
+}
+
+func TestProbeClaudeQuotaMergesPlanWhenUsageFails(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	creds := `{
+	  "access_token": "invalid-token",
+	  "subscription_type": "pro",
+	  "expires_at_ms": 1999999999999
+	}`
+	if err := os.WriteFile(filepath.Join(claudeDir, ".credentials.json"), []byte(creds), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	jsonPayload := `{
+	  "oauthAccount": {
+	    "emailAddress": "user@example.com",
+	    "organizationType": "claude_team"
+	  }
+	}`
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(jsonPayload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prevHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Setenv("HOME", prevHome) })
+
+	_, account, err := ProbeClaudeQuota(context.Background(), claudeDir)
+	if account == nil {
+		t.Fatalf("account nil, err=%v", err)
+	}
+	if account.Plan != "team-standard" {
+		t.Fatalf("plan = %q, want team-standard", account.Plan)
+	}
+}
+
+// TestPasinduMachineStateJSONOnlyNoQuotas mirrors Desktop-only login on a real
+// machine: claude_team org + team_standard seat in ~/.claude.json, no Code OAuth.
+func TestPasinduMachineStateJSONOnlyNoQuotas(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{
+	  "oauthAccount": {
+	    "emailAddress": "pasindu.ratnayake@axio360ventures.io",
+	    "organizationType": "claude_team",
+	    "seatTier": "team_standard",
+	    "billingType": "stripe_subscription"
+	  }
+	}`
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(payload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prevHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Setenv("HOME", prevHome) })
+
+	identity, err := ClaudeAccountIdentity(claudeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.Plan != "team-standard" {
+		t.Fatalf("identity plan = %q, want team-standard from seatTier", identity.Plan)
+	}
+
+	snaps, probeAcc, probeErr := ProbeClaudeQuota(context.Background(), claudeDir)
+	if probeAcc == nil || probeAcc.Plan != "team-standard" {
+		t.Fatalf("probe account = %+v", probeAcc)
+	}
+	if len(snaps) != 0 {
+		t.Fatalf("expected no quota windows without Code OAuth, got %d", len(snaps))
+	}
+	if probeErr == nil {
+		t.Fatal("expected credentials-not-found error when usage API cannot run")
+	}
+}
+
+// TestPasinduMachineStateStaleProCredsMergedToTeam is the upgrade case: Code OAuth
+// still says pro while Desktop JSON already shows team.
+func TestPasinduMachineStateStaleProCredsMergedToTeam(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	creds := `{
+	  "access_token": "stale-access",
+	  "refresh_token": "stale-refresh",
+	  "email": "pasindu.ratnayake@axio360ventures.io",
+	  "subscription_type": "pro",
+	  "expires_at_ms": 1999999999999
+	}`
+	if err := os.WriteFile(filepath.Join(claudeDir, ".credentials.json"), []byte(creds), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	jsonPayload := `{
+	  "oauthAccount": {
+	    "emailAddress": "pasindu.ratnayake@axio360ventures.io",
+	    "organizationType": "claude_team",
+	    "seatTier": "team_standard"
+	  }
+	}`
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(jsonPayload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prevHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Setenv("HOME", prevHome) })
+
+	identity, err := ClaudeAccountIdentity(claudeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.Plan != "team-standard" {
+		t.Fatalf("merged plan = %q, want team-standard (json team beats stale pro creds)", identity.Plan)
+	}
+}
+
+func TestClaudeAccountFromClaudeJSON(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{
+	  "oauthAccount": {
+	    "emailAddress": "user@example.com",
+	    "organizationType": "claude_team",
+	    "billingType": "stripe_subscription"
+	  }
+	}`
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(payload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	account, err := ClaudeAccountFromClaudeJSON(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if account.Email != "user@example.com" || account.Plan != "team-standard" || !account.AuthPresent {
+		t.Fatalf("account = %+v", account)
+	}
+}
+
+func TestProbeClaudeQuotaJSONFallbackWithoutCredentials(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"oauthAccount":{"emailAddress":"fallback@example.com","organizationType":"claude_team"}}`
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(payload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prevHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Setenv("HOME", prevHome) })
+
+	snaps, account, err := ProbeClaudeQuota(context.Background(), claudeDir)
+	if account == nil || account.Email != "fallback@example.com" || !account.AuthPresent {
+		t.Fatalf("account = %+v err=%v", account, err)
+	}
+	if len(snaps) != 0 {
+		t.Fatalf("expected no quota snapshots without oauth, got %d", len(snaps))
+	}
+	if err == nil {
+		t.Fatal("expected credentials-not-found error")
+	}
+}
+
+func TestRefreshClaudeToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/oauth/token" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "new-access",
+			"refresh_token": "new-refresh",
+			"expires_in":    3600,
+		})
+	}))
+	defer srv.Close()
+
+	prevURL := claudeTokenEndpoint
+	claudeTokenEndpoint = srv.URL + "/v1/oauth/token"
+	t.Cleanup(func() { claudeTokenEndpoint = prevURL })
+
+	dir := t.TempDir()
+	bundle := &ClaudeCredentialBundle{
+		Creds: &claudeCredentials{
+			AccessToken:  "old-access",
+			RefreshToken: "old-refresh",
+		},
+		ConfigDir: dir,
+		Source:    claudeCredsSourceFile,
+	}
+	refreshed, err := refreshClaudeToken(context.Background(), bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Creds.AccessToken != "new-access" || refreshed.Creds.RefreshToken != "new-refresh" {
+		t.Fatalf("creds = %+v", refreshed.Creds)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".credentials.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "new-access") {
+		t.Fatalf("file = %s", data)
+	}
+}
+
 func TestClaudeCredentialsFromKeychainJSON(t *testing.T) {
 	raw := `{
 	  "claudeAiOauth": {
@@ -448,25 +776,123 @@ func TestClaudeCredentialsFromKeychainJSON(t *testing.T) {
 	}
 }
 
-func TestClaudeAccountOmitsPlanWhenTokenExpired(t *testing.T) {
-	creds := &claudeCredentials{
+func TestClaudeAccountKeepsPlanWhenTokenExpired(t *testing.T) {
+	now := time.UnixMilli(1_784_266_560_000) // 2026-07-17
+	// No refresh token: still report subscriptionType so seat sync can create
+	// a Pro seat even when live quota probe cannot run (Codex parity).
+	expired := claudeAccountFromCreds(&claudeCredentials{
 		AccessToken:      "access-token",
 		SubscriptionType: "pro",
-		ExpiresAtMs:      1_780_954_907_998, // mid-2026, before "now" below
-	}
-	now := time.UnixMilli(1_784_266_560_000) // 2026-07-17
-	account := claudeAccountFromCreds(creds, now)
-	if account == nil || account.Plan != "" || account.AuthPresent {
-		t.Fatalf("expired account = %+v", account)
+		ExpiresAtMs:      1_780_954_907_998,
+	}, now)
+	if expired == nil || expired.Plan != "pro" || !expired.AuthPresent {
+		t.Fatalf("expired account = %+v", expired)
 	}
 
 	fresh := claudeAccountFromCreds(&claudeCredentials{
 		AccessToken:      "access-token",
-		SubscriptionType: "pro",
+		SubscriptionType: "max",
 		ExpiresAtMs:      1_790_000_000_000,
 	}, now)
-	if fresh == nil || fresh.Plan != "pro" {
+	if fresh == nil || fresh.Plan != "max" {
 		t.Fatalf("fresh account = %+v", fresh)
+	}
+}
+
+func TestShouldRefreshClaudeToken(t *testing.T) {
+	now := time.UnixMilli(1_784_266_560_000)
+	if shouldRefreshClaudeToken(nil, now) {
+		t.Fatal("nil creds")
+	}
+	if shouldRefreshClaudeToken(&claudeCredentials{RefreshToken: "rt", ExpiresAtMs: now.Add(2 * time.Hour).UnixMilli()}, now) {
+		t.Fatal("fresh token should not refresh")
+	}
+	if !shouldRefreshClaudeToken(&claudeCredentials{RefreshToken: "rt", ExpiresAtMs: now.Add(-time.Minute).UnixMilli()}, now) {
+		t.Fatal("expired token should refresh")
+	}
+}
+
+func TestRevitalizeClaudeCredentialPlanWritesTeamPlan(t *testing.T) {
+	dir := t.TempDir()
+	credsPath := filepath.Join(dir, ".credentials.json")
+	initial := `{
+	  "access_token": "access-token",
+	  "refresh_token": "refresh-token",
+	  "email": "user@example.com",
+	  "subscription_type": "pro",
+	  "expires_at_ms": 1999999999999
+	}`
+	if err := os.WriteFile(credsPath, []byte(initial), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bundle := &ClaudeCredentialBundle{
+		Creds: &claudeCredentials{
+			AccessToken:      "access-token",
+			RefreshToken:     "refresh-token",
+			Email:            "user@example.com",
+			SubscriptionType: "pro",
+			ExpiresAtMs:      1999999999999,
+		},
+		ConfigDir: dir,
+		Source:    claudeCredsSourceFile,
+	}
+	if err := revitalizeClaudeCredentialPlan(bundle, "team-standard"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(credsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "team_standard") {
+		t.Fatalf("expected team_standard in creds file, got %s", data)
+	}
+	if bundle.Creds.SubscriptionType != "team_standard" {
+		t.Fatalf("bundle plan = %q", bundle.Creds.SubscriptionType)
+	}
+}
+
+func TestClaudePlanFromUsageRaw(t *testing.T) {
+	rawJSON := `{"subscription_type": "team_standard"}`
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(rawJSON), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if got := claudePlanFromUsageRaw(raw); got != "team-standard" {
+		t.Fatalf("plan = %q", got)
+	}
+}
+
+func TestRefreshClaudeTokenAppliesSubscriptionType(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":      "new-access",
+			"refresh_token":       "new-refresh",
+			"expires_in":          3600,
+			"subscription_type":   "team_standard",
+		})
+	}))
+	defer srv.Close()
+
+	prevURL := claudeTokenEndpoint
+	claudeTokenEndpoint = srv.URL + "/v1/oauth/token"
+	t.Cleanup(func() { claudeTokenEndpoint = prevURL })
+
+	dir := t.TempDir()
+	bundle := &ClaudeCredentialBundle{
+		Creds: &claudeCredentials{
+			AccessToken:      "old-access",
+			RefreshToken:     "old-refresh",
+			SubscriptionType: "pro",
+		},
+		ConfigDir: dir,
+		Source:    claudeCredsSourceFile,
+	}
+	refreshed, err := refreshClaudeToken(context.Background(), bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Creds.SubscriptionType != "team_standard" {
+		t.Fatalf("subscription_type = %q", refreshed.Creds.SubscriptionType)
 	}
 }
 

@@ -151,6 +151,7 @@ test("active cycle filter hides unused seats with no quota signal", () => {
       utilizationDisplayPercent: 1,
       verdictCode: "LIGHT_USE",
       expectedEndAt: null,
+      billingCadence: "monthly",
       billingCycle: cycle("2026-08-16"),
     },
     {
@@ -170,6 +171,7 @@ test("active cycle filter hides unused seats with no quota signal", () => {
       utilizationDisplayPercent: null,
       verdictCode: "UNKNOWN",
       expectedEndAt: null,
+      billingCadence: "monthly",
       billingCycle: cycle("2026-08-17"),
     },
     {
@@ -189,6 +191,7 @@ test("active cycle filter hides unused seats with no quota signal", () => {
       utilizationDisplayPercent: 0,
       verdictCode: "LIGHT_USE",
       expectedEndAt: null,
+      billingCadence: "monthly",
       billingCycle: cycle("2026-08-17"),
     },
   ]);
@@ -221,6 +224,7 @@ test("previous cycles enrichment ignores live quota pace", () => {
       utilizationDisplayPercent: null,
       verdictCode: null,
       expectedEndAt: null,
+      billingCadence: "monthly",
       billingCycle: cycle("2026-07-15"),
     },
   ];
@@ -298,6 +302,7 @@ test("live enrichment attaches expected end when plan is near limit", () => {
       utilizationDisplayPercent: null,
       verdictCode: null,
       expectedEndAt: null,
+      billingCadence: "monthly",
       billingCycle: cycle("2026-08-01"),
     },
   ];
@@ -372,6 +377,7 @@ test("live rollups mark inconsistent quota windows as mixed and use the earliest
       utilizationDisplayPercent: null,
       verdictCode: null,
       expectedEndAt: null,
+      billingCadence: "monthly",
       billingCycle: cycle("2026-08-01"),
     },
   ];
@@ -416,4 +422,178 @@ test("live rollups mark inconsistent quota windows as mixed and use the earliest
   assert.equal(row?.usageWindow?.label, "Mixed usage windows");
   assert.equal(row?.usageWindow?.resetAt, "2026-07-26T19:00:00.000Z");
   assert.equal(row?.projectionState, "forming");
+});
+
+test("utilization averages plans weighted by assigned seats", () => {
+  const cycles = [
+    {
+      id: "chatgpt",
+      toolName: "chatgpt",
+      toolKey: "chatgpt",
+      planNames: ["Plus", "Team"],
+      planCount: 2,
+      cycleSpend: 40,
+      verifiedUsageCost: 0,
+      estimatedApiCost: 0,
+      modelCalls: 10,
+      windowFrom: "2026-07-01",
+      windowTo: "2026-07-31",
+      spendSharePercent: 100,
+      utilizationPercent: null,
+      utilizationDisplayPercent: null,
+      verdictCode: null,
+      expectedEndAt: null,
+      billingCadence: "monthly",
+      billingCycle: cycle("2026-08-01"),
+      usageWindow: null,
+      projectionState: "unavailable" as const,
+    },
+  ];
+
+  const base = {
+    toolKey: "chatgpt",
+    toolName: "chatgpt",
+    tier: null,
+    availableSeats: 0,
+    billingCadence: "monthly",
+    usageWindowPreference: "auto",
+    usageWindow: null,
+    billingCycle: cycle("2026-08-01"),
+    cycleSeatMicros: "0",
+    includedCycleMicros: "0",
+    quotas: [],
+    included: null,
+    projectionState: "reliable" as const,
+    verdict: {
+      code: "HEALTHY" as const,
+      severity: "info" as const,
+      reasons: [],
+      policyVersion: "plan-utilization-v1",
+    },
+    billing: null,
+  };
+
+  const light: PlanUsageSubscriptionRow = {
+    ...base,
+    planTemplateId: "plus",
+    planName: "Plus",
+    seatCapacity: 1,
+    assignedSeats: 1,
+    primaryQuota: null,
+    primaryRatio: 0.1,
+  };
+  const heavy: PlanUsageSubscriptionRow = {
+    ...base,
+    planTemplateId: "team",
+    planName: "Team",
+    seatCapacity: 9,
+    assignedSeats: 9,
+    primaryQuota: null,
+    primaryRatio: 0.9,
+    verdict: {
+      code: "NEAR_LIMIT",
+      severity: "warn",
+      reasons: [],
+      policyVersion: "plan-utilization-v1",
+    },
+  };
+
+  const [row] = enrichSubscriptionCyclesWithUtilization(cycles, [light, heavy], {
+    includeLiveQuota: true,
+  });
+  // (0.1*1 + 0.9*9) / 10 = 0.82 → 82%
+  assert.equal(row?.utilizationPercent, 82);
+  assert.equal(row?.verdictCode, "NEAR_LIMIT");
+});
+
+test("rollup prefers billing cycle from the longest seat period", () => {
+  const weekly = {
+    cycleStart: "2026-08-01",
+    cycleEnd: "2026-08-08",
+    nextRenewalDate: "2026-08-08",
+    elapsedPercent: 0.2,
+    remainingDays: 5,
+    totalDays: 7,
+  };
+  const monthly = {
+    cycleStart: "2026-07-15",
+    cycleEnd: "2026-08-15",
+    nextRenewalDate: "2026-08-15",
+    elapsedPercent: 0.5,
+    remainingDays: 15,
+    totalDays: 30,
+  };
+  const rows = rollupSubscriptionCyclesByTool([
+    {
+      id: "weekly:2026-08-01",
+      subscriptionId: "weekly",
+      name: "Team weekly",
+      toolName: "claude",
+      toolKey: "claude",
+      cycleSpend: 20,
+      verifiedUsageCost: 0,
+      estimatedApiCost: 0,
+      modelCalls: 10,
+      windowFrom: "2026-08-01",
+      windowTo: "2026-08-08",
+      billingCycle: weekly,
+      billingCadence: "weekly",
+    },
+    {
+      id: "monthly:2026-07-15",
+      subscriptionId: "monthly",
+      name: "Pro monthly",
+      toolName: "claude",
+      toolKey: "claude",
+      cycleSpend: 40,
+      verifiedUsageCost: 0,
+      estimatedApiCost: 0,
+      modelCalls: 20,
+      windowFrom: "2026-07-15",
+      windowTo: "2026-08-15",
+      billingCycle: monthly,
+      billingCadence: "monthly",
+    },
+  ]);
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.billingCadence, "monthly");
+  assert.equal(rows[0]?.billingCycle.totalDays, 30);
+  assert.equal(rows[0]?.billingCycle.nextRenewalDate, "2026-08-15");
+
+  // Even when a weekly slice has higher seat spend, keep the longer monthly billed period.
+  const weeklyPrimary = rollupSubscriptionCyclesByTool([
+    {
+      id: "weekly:2026-08-01",
+      subscriptionId: "weekly",
+      name: "Team weekly",
+      toolName: "claude",
+      toolKey: "claude",
+      cycleSpend: 80,
+      verifiedUsageCost: 0,
+      estimatedApiCost: 0,
+      modelCalls: 10,
+      windowFrom: "2026-08-01",
+      windowTo: "2026-08-08",
+      billingCycle: weekly,
+      billingCadence: "weekly",
+    },
+    {
+      id: "monthly:2026-07-15",
+      subscriptionId: "monthly",
+      name: "Pro monthly",
+      toolName: "claude",
+      toolKey: "claude",
+      cycleSpend: 20,
+      verifiedUsageCost: 0,
+      estimatedApiCost: 0,
+      modelCalls: 20,
+      windowFrom: "2026-07-15",
+      windowTo: "2026-08-15",
+      billingCycle: monthly,
+      billingCadence: "monthly",
+    },
+  ]);
+  assert.equal(weeklyPrimary[0]?.billingCadence, "monthly");
+  assert.equal(weeklyPrimary[0]?.billingCycle.totalDays, 30);
 });

@@ -75,16 +75,16 @@ export function HeroSection() {
               variants={item}
               className="mt-4 max-w-xl text-[2.5rem] font-bold leading-[1.05] tracking-[-0.03em] text-[var(--public-fg)] sm:text-5xl lg:text-[3.25rem] xl:text-[3.5rem]"
             >
-              See how your team uses AI.
+              AI coding spend management
               <br />
-              <span className="font-semibold text-[#08a8c4]">Scale what works.</span>
+              <span className="font-semibold text-[#08a8c4]">for engineering teams.</span>
             </motion.h1>
 
             <motion.p
               variants={item}
               className="mt-3 max-w-md text-base italic leading-relaxed text-[#6b6d66] sm:text-lg sm:leading-8"
             >
-              Track usage, spend, and what works—across every AI coding tool.
+              See who uses Cursor, Claude Code, Codex, Copilot, and more—along with cost, plan usage, seat utilization, and device health.
             </motion.p>
 
             <motion.div variants={item} className="mt-8 flex w-full flex-col items-center lg:items-start">

@@ -2,6 +2,27 @@ import { DAY_MS, utcDateOnly } from "@/lib/metrics/date-range";
 
 export type BillingCadence = "weekly" | "monthly" | "annual" | "custom";
 
+/** Human label for seat billing cadence (not usage-window length). */
+export function billingCadenceLabel(
+  cadence: string | null | undefined,
+  totalDays?: number | null,
+): string {
+  const normalized = (cadence ?? "").trim().toLowerCase();
+  if (normalized === "monthly") return "Monthly";
+  if (normalized === "weekly") return "Weekly";
+  if (normalized === "annual" || normalized === "yearly") return "Annual";
+  if (normalized === "custom" && totalDays != null && totalDays > 0) {
+    return `${totalDays}-day`;
+  }
+  if (totalDays != null && Number.isFinite(totalDays)) {
+    if (totalDays >= 360) return "Annual";
+    if (totalDays >= 25) return "Monthly";
+    if (totalDays >= 6) return "Weekly";
+    if (totalDays >= 1) return `${Math.round(totalDays)}-day`;
+  }
+  return "Plan";
+}
+
 export type BillingCycle = {
   cycleStart: Date;
   cycleEnd: Date;

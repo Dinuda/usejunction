@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -60,9 +60,15 @@ vi.mock("@/components/ui/sidebar", () => {
     SidebarGroupContent: Container,
     SidebarHeader: Container,
     SidebarInset: Container,
-    SidebarMenu: Container,
+    SidebarMenu: ({
+      children,
+      ...props
+    }: React.HTMLAttributes<HTMLDivElement> & { children?: React.ReactNode }) => (
+      <div {...props}>{children}</div>
+    ),
     SidebarMenuButton: Container,
     SidebarMenuItem: Container,
+    SidebarMenuSkeleton: () => <div data-testid="sidebar-menu-skeleton">Skeleton</div>,
     SidebarProvider: Container,
     SidebarTrigger: () => null,
     useSidebar: () => ({ setOpenMobile: mocks.setOpenMobile }),
@@ -70,6 +76,7 @@ vi.mock("@/components/ui/sidebar", () => {
 });
 
 beforeEach(() => {
+  cleanup();
   vi.clearAllMocks();
   mocks.pathname = "/dashboard";
 });
@@ -104,4 +111,26 @@ test("sidebar clicks select the destination and show loading before the route co
   await waitFor(() => {
     expect(screen.getByText("Team page")).toBeTruthy();
   });
+});
+
+test("loading shell shows nav skeletons and page skeleton without role-specific links", async () => {
+  const { WorkspaceShell } = await import("@/components/workspace-shell");
+  render(
+    <WorkspaceShell
+      organizations={[]}
+      currentOrgId={null}
+      role={null}
+      billing={null}
+      loading
+    >
+      <div>Current page</div>
+    </WorkspaceShell>,
+  );
+
+  expect(screen.getByLabelText("Loading navigation")).toBeTruthy();
+  expect(screen.getAllByTestId("sidebar-menu-skeleton")).toHaveLength(6);
+  expect(screen.getByLabelText("Loading page")).toBeTruthy();
+  expect(screen.queryByText("Current page")).toBeNull();
+  expect(screen.queryByRole("link", { name: "My tools" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Team" })).toBeNull();
 });

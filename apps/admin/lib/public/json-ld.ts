@@ -25,6 +25,7 @@ function buildBreadcrumbs(page: ContentPage) {
     guide: { name: "Guides", path: "/guides" },
     compare: { name: "Compare", path: "/compare" },
     for: { name: "For tools", path: "/for" },
+    solution: { name: "Solutions", path: "/solutions" },
     blog: { name: "Blog", path: "/blog" },
     legal: null,
   };

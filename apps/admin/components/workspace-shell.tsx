@@ -37,6 +37,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSkeleton,
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
@@ -84,18 +85,23 @@ type WorkspaceShellProps = {
   email?: string | null;
   image?: string | null;
   billing: OrgBillingStatus | null;
+  loading?: boolean;
   children: React.ReactNode;
 };
+
+const SIDEBAR_SKELETON_ITEMS = 6;
 
 function AppSidebar({
   active,
   role,
   billing,
+  loading,
   onNavigateStart,
 }: {
   active: string;
   role: OrganizationRole | null;
   billing: OrgBillingStatus | null;
+  loading?: boolean;
   onNavigateStart: (href: string) => void;
 }) {
   const nav = navForRole(role);
@@ -134,47 +140,53 @@ function AppSidebar({
       <SidebarContent>
         <SidebarGroup className="pt-5">
           <SidebarGroupContent>
-            <SidebarMenu>
-              {nav.map(([href, label, Icon]) => {
-                const isActive =
-                  href === "/dashboard"
-                    ? active === href || active.startsWith(`${href}?`)
-                    : active === href || active.startsWith(`${href}/`) || active.startsWith(`${href}?`);
-                return (
-                <SidebarMenuItem key={href}>
-                  <SidebarMenuButton asChild isActive={isActive} tooltip={label}>
-                    <Link
-                      href={href}
-                      prefetch={false}
-                      aria-current={isActive ? "page" : undefined}
-                      onClick={(event) => {
-                        setOpenMobile(false);
-                        if (
-                          event.defaultPrevented ||
-                          event.button !== 0 ||
-                          event.metaKey ||
-                          event.ctrlKey ||
-                          event.shiftKey ||
-                          event.altKey
-                        ) {
-                          return;
-                        }
-                        onNavigateStart(href);
-                      }}
-                      onPointerEnter={() => warmNavCache(href)}
-                    >
-                      <Icon aria-hidden="true" />
-                      <span>{label}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                );
-              })}
+            <SidebarMenu aria-busy={loading || undefined} aria-label={loading ? "Loading navigation" : undefined}>
+              {loading
+                ? Array.from({ length: SIDEBAR_SKELETON_ITEMS }).map((_, index) => (
+                    <SidebarMenuItem key={index}>
+                      <SidebarMenuSkeleton showIcon />
+                    </SidebarMenuItem>
+                  ))
+                : nav.map(([href, label, Icon]) => {
+                    const isActive =
+                      href === "/dashboard"
+                        ? active === href || active.startsWith(`${href}?`)
+                        : active === href || active.startsWith(`${href}/`) || active.startsWith(`${href}?`);
+                    return (
+                    <SidebarMenuItem key={href}>
+                      <SidebarMenuButton asChild isActive={isActive} tooltip={label}>
+                        <Link
+                          href={href}
+                          prefetch={false}
+                          aria-current={isActive ? "page" : undefined}
+                          onClick={(event) => {
+                            setOpenMobile(false);
+                            if (
+                              event.defaultPrevented ||
+                              event.button !== 0 ||
+                              event.metaKey ||
+                              event.ctrlKey ||
+                              event.shiftKey ||
+                              event.altKey
+                            ) {
+                              return;
+                            }
+                            onNavigateStart(href);
+                          }}
+                          onPointerEnter={() => warmNavCache(href)}
+                        >
+                          <Icon aria-hidden="true" />
+                          <span>{label}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    );
+                  })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      {billing && (
+      {!loading && billing && (
         <SidebarFooter className="mt-auto shrink-0 border-t-0 p-2 pt-0">
           {shouldShowSidebarPlanCard(billing) ? (
             <PlanStatusCard billing={billing} />
@@ -195,6 +207,7 @@ export function WorkspaceShell({
   email,
   image,
   billing,
+  loading = false,
   children,
 }: WorkspaceShellProps) {
   const pathname = usePathname();
@@ -212,6 +225,7 @@ export function WorkspaceShell({
   }, [pendingHref]);
 
   const activePath = pendingHref ?? pathname;
+  const showContentSkeleton = loading || Boolean(pendingHref);
 
   return (
     <SidebarProvider
@@ -222,6 +236,7 @@ export function WorkspaceShell({
         active={activePath}
         role={role}
         billing={billing}
+        loading={loading}
         onNavigateStart={(href) => {
           if (href !== pathname) {
             setPendingHref(href);
@@ -244,8 +259,8 @@ export function WorkspaceShell({
           </div>
           <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-6">
             <WorkspaceSwitcher
-              organizations={organizations}
-              currentOrgId={currentOrgId}
+              organizations={loading ? [] : organizations}
+              currentOrgId={loading ? null : currentOrgId}
               role={role}
               className="h-11 min-w-0 w-[clamp(5.25rem,27vw,9rem)] px-2 sm:h-9 sm:w-auto sm:min-w-[12rem] sm:max-w-[18rem] sm:px-3"
             />
@@ -257,7 +272,7 @@ export function WorkspaceShell({
           className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none px-4 py-5 sm:px-6 sm:py-6 lg:px-8"
         >
           <div className="mx-auto w-full max-w-[1440px]">
-            {pendingHref ? <AppPageSkeleton /> : children}
+            {showContentSkeleton ? <AppPageSkeleton /> : children}
           </div>
         </div>
       </SidebarInset>

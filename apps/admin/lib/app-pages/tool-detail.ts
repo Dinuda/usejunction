@@ -41,10 +41,13 @@ export async function resolveToolDetailAccess(principal: AppPrincipal): Promise<
   return { ok: true, scope: "personal", developerId };
 }
 
+export type ToolDetailSlice = "full" | "shell" | "metrics";
+
 export async function loadToolDetailPage(
   principal: AppPrincipal,
   rawToolKey: string,
   search: ToolDetailSearch = {},
+  slice: ToolDetailSlice = "full",
 ) {
   const access = await resolveToolDetailAccess(principal);
   if (!access.ok) {
@@ -53,6 +56,19 @@ export async function loadToolDetailPage(
 
   const toolKey = canonicalToolKey(rawToolKey);
   if (!findCatalogTool(toolKey)) return null;
+  const syncScope = access.scope === "personal" ? "you" : "team";
+
+  if (slice === "shell") {
+    const syncContext = await getRemoteSyncPanelContext(principal.orgId, principal.userId, syncScope);
+    return jsonSafe({
+      kind: access.scope,
+      slice: "shell" as const,
+      rawToolKey,
+      toolKey,
+      syncContext,
+    });
+  }
+
   const cycleView = parseCycleView(search.view ?? undefined);
   const rollingPeriod = parseRollingPeriodFromSearch({
     days: search.days ?? undefined,
@@ -73,16 +89,29 @@ export async function loadToolDetailPage(
     now,
   );
   const cycleWindows = cycleViewWindows(subscriptions, now);
-  const [detail, syncContext] = await Promise.all([
-    getToolDetail(principal.orgId, toolKey, reportWindow, {
-      developerId: access.scope === "personal" ? access.developerId : undefined,
-      subscriptions,
-    }),
-    getRemoteSyncPanelContext(principal.orgId, principal.userId, access.scope === "personal" ? "you" : "team"),
-  ]);
+  const detail = await getToolDetail(principal.orgId, toolKey, reportWindow, {
+    developerId: access.scope === "personal" ? access.developerId : undefined,
+    subscriptions,
+  });
   if (!detail) return null;
+
+  if (slice === "metrics") {
+    return jsonSafe({
+      kind: access.scope,
+      slice: "metrics" as const,
+      rawToolKey,
+      toolKey,
+      cycleView,
+      rollingPeriod,
+      cycleWindows,
+      detail,
+    });
+  }
+
+  const syncContext = await getRemoteSyncPanelContext(principal.orgId, principal.userId, syncScope);
   return jsonSafe({
     kind: access.scope,
+    slice: "full" as const,
     rawToolKey,
     toolKey,
     cycleView,

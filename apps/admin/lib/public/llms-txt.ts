@@ -53,7 +53,7 @@ export function buildLlmsTxt(full = false): string {
       lines.push(`- Summary: ${post.answer}`);
       lines.push("");
     }
-    for (const page of ALL_CONTENT_PAGES) {
+    for (const page of ALL_CONTENT_PAGES.filter((item) => item.indexable !== false)) {
       lines.push(`### ${page.title}`);
       lines.push("");
       lines.push(`- URL: ${absoluteUrl(page.path)}`);

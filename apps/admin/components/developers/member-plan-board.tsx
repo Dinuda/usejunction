@@ -10,8 +10,10 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { billingCadenceLabel } from "@/lib/billing/cycles";
 import { paceVerdictLabel, type QuotaPaceCode } from "@/lib/quotas/pace";
 import type {
+  MemberPlanBillingCycle,
   MemberPlanBoardCard,
   MemberPlanWindow,
 } from "@/lib/quotas/plan-board";
@@ -45,6 +47,22 @@ function resetShortDate(window: MemberPlanWindow): string | null {
   if (!window.resetsAt) return null;
   const label = formatShortDate(window.resetsAt);
   return label === "unknown" ? null : label;
+}
+
+function billingCycleLabel(cycle: MemberPlanBillingCycle | null): string | null {
+  if (!cycle) return null;
+  const start = formatShortDate(cycle.cycleStart);
+  const end = formatShortDate(cycle.cycleEnd);
+  if (start === "unknown" || end === "unknown") return null;
+  return `${start} – ${end}`;
+}
+
+function billingCycleDetail(cycle: MemberPlanBillingCycle | null): string | null {
+  if (!cycle) return null;
+  const range = billingCycleLabel(cycle);
+  if (!range) return null;
+  const cadence = billingCadenceLabel(cycle.billingCadence, cycle.totalDays);
+  return `${cadence} · ${range}`;
 }
 
 function windowUsageLabel(window: MemberPlanWindow): string {
@@ -89,6 +107,26 @@ function TokenBreakdown({
   );
 }
 
+function AccountedUsageStats({
+  usage,
+}: {
+  usage: NonNullable<MemberPlanBoardCard["usage"]>;
+}) {
+  const verified = usage.verifiedUsageCost;
+  const estimated = usage.estimatedApiCost;
+  if (verified <= 0 && estimated <= 0) return null;
+
+  return (
+    <>
+      <Stat
+        label="Accounted"
+        value={verified > 0 ? formatUsd(verified) : "$0.00"}
+      />
+      {estimated > 0 ? <Stat label="Estimated" value={formatUsd(estimated)} /> : null}
+    </>
+  );
+}
+
 function WindowMeter({
   window,
   code,
@@ -130,9 +168,13 @@ function PlanCardButton({
   const expected = card.pace.expectedPercent;
   const width = used == null ? 0 : Math.min(100, Math.max(2, used));
   const mark = expected == null ? null : Math.min(100, Math.max(0, expected));
-  const primaryResetDate = card.primary ? resetShortDate(card.primary) : null;
+  const cycleRange = billingCycleLabel(card.billingCycle);
+  const cycleDetail = billingCycleDetail(card.billingCycle);
   const tokens = card.usage?.tokens ?? 0;
   const cacheTokens = (card.usage?.cacheReadTokens ?? 0) + (card.usage?.cacheWriteTokens ?? 0);
+  const hasAccounted =
+    card.usage != null &&
+    (card.usage.verifiedUsageCost > 0 || card.usage.estimatedApiCost > 0);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -149,14 +191,19 @@ function PlanCardButton({
               <p className="mt-0.5 truncate text-xs text-muted-foreground">
                 {card.planName || card.primary?.windowLabel || "Plan"}
               </p>
+              {cycleDetail ? (
+                <p className="mt-1 truncate text-xs tabular-nums text-muted-foreground">
+                  {cycleDetail}
+                </p>
+              ) : null}
             </div>
           </div>
           <div className="shrink-0 text-right">
             <p className={cn("text-2xl font-semibold tabular-nums", toneForPace(card.pace.code))}>
               {used != null ? `${Math.round(used)}%` : "—"}
             </p>
-            {primaryResetDate ? (
-              <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">{primaryResetDate}</p>
+            {cycleRange ? (
+              <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">{cycleRange}</p>
             ) : null}
             <p className={cn("mt-0.5 text-[0.7rem] font-medium", toneForPace(card.pace.code))}>
               {paceVerdictLabel(card.pace.code)}
@@ -188,9 +235,7 @@ function PlanCardButton({
               cache={cacheTokens}
             />
           ) : null}
-          {card.usage && card.usage.cost > 0 ? (
-            <Stat label="Usage" value={formatUsd(card.usage.cost)} />
-          ) : null}
+          {hasAccounted && card.usage ? <AccountedUsageStats usage={card.usage} /> : null}
           {card.promotions.map((promo) => (
             <Stat
               key={promo.quotaKey}
@@ -208,8 +253,9 @@ function PlanCardButton({
             <div>
               <DialogTitle className="text-lg">{card.toolLabel}</DialogTitle>
               <DialogDescription>
-                {[card.planName, card.primary?.windowLabel].filter(Boolean).join(" · ") ||
-                  "Plan usage and recent work"}
+                {[card.planName, card.primary?.windowLabel, cycleDetail]
+                  .filter(Boolean)
+                  .join(" · ") || "Plan usage and recent work"}
               </DialogDescription>
             </div>
           </div>
@@ -237,9 +283,7 @@ function PlanCardButton({
                 cache={cacheTokens}
               />
             ) : null}
-            {card.usage && card.usage.cost > 0 ? (
-              <Stat label="Usage" value={formatUsd(card.usage.cost)} />
-            ) : null}
+            {hasAccounted && card.usage ? <AccountedUsageStats usage={card.usage} /> : null}
             {card.usage && card.usage.requests > 0 ? (
               <Stat label="Calls" value={formatCompactNumber(card.usage.requests)} />
             ) : null}
