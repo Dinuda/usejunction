@@ -33,7 +33,7 @@ export function contentPageMetadata(page: ContentPage): Metadata {
       description: page.description,
       images: [siteOgImage.url],
     },
-    robots: { index: true, follow: true },
+    robots: { index: page.indexable !== false, follow: true },
   };
 }
 

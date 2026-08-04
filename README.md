@@ -1,8 +1,19 @@
 # UseJunction
 
-Open-source AI coding observability for teams. Track usage, cost, latency, plan/seat utilization, and configuration health across Codex, Claude Code, Cursor, Continue, local models, and more.
+AI coding spend management for engineering teams. UseJunction tracks usage, cost, latency, plan utilization, seat waste, and configuration health across Codex, Claude Code, Cursor, GitHub Copilot, local models, and more.
 
-**Site:** [usejunction.dev](https://usejunction.dev) · **Guides:** [Plan usage & waste](https://usejunction.dev/guides/see-plan-usage-and-waste) · [Team AI coding insights](https://usejunction.dev/guides/see-team-ai-coding-usage) · [llms.txt](https://usejunction.dev/llms.txt)
+**Site:** [usejunction.dev](https://usejunction.dev) · **Solutions:** [AI coding spend management](https://usejunction.dev/solutions/ai-coding-spend-management) · [Seat utilization](https://usejunction.dev/solutions/ai-coding-seat-utilization) · [Plan usage](https://usejunction.dev/solutions/ai-coding-plan-usage) · **Guides:** [Plan usage & waste](https://usejunction.dev/guides/see-plan-usage-and-waste) · [Team AI coding insights](https://usejunction.dev/guides/see-team-ai-coding-usage) · [llms.txt](https://usejunction.dev/llms.txt)
+
+## AI coding spend management for teams
+
+Engineering and platform teams use UseJunction to answer four operational questions:
+
+- Which AI coding tools and models are developers actually using?
+- What is the estimated cost by developer, team, tool, and model?
+- Which paid seats are idle, underused, or approaching plan limits?
+- Which devices are missing coverage or using personal keys?
+
+UseJunction is open source and self-hostable under the UseJunction Community License. It provides visibility across Cursor, Claude Code, Codex, GitHub Copilot, Continue, Cline, Roo Code, OpenCode, Ollama, LM Studio, and related runtimes without keystroke surveillance, browser capture, or full network interception. Start with the [team AI spend solutions](https://usejunction.dev/solutions), then read the [WakaTime comparison](https://usejunction.dev/compare/wakatime) if you are evaluating editor-time tracking versus AI tool observability.
 
 <!-- Architecture diagram: add PNG/SVG at docs/images/architecture.png -->
 ![UseJunction architecture](docs/images/readme-image.png)

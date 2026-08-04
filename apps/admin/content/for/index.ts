@@ -1,4 +1,4 @@
-import type { ContentPage } from "@/content/types";
+import type { ContentFaq, ContentPage, ContentSection } from "@/content/types";
 
 function toolPage(opts: {
   slug: string;
@@ -7,16 +7,20 @@ function toolPage(opts: {
   secondaryKeywords: string[];
   answer: string;
   extras: string[];
+  indexable?: boolean;
+  uniqueSections?: ContentSection[];
+  uniqueFaq?: ContentFaq[];
 }): ContentPage {
   return {
     kind: "for",
     slug: opts.slug,
     path: `/for/${opts.slug}`,
-    title: `${opts.name} Usage Tracking for Engineering Teams`,
+    title: `${opts.name} Usage Analytics for Engineering Teams`,
     description: `Track ${opts.name} usage, cost, and plan utilization across your org with UseJunction—open-source AI coding observability.`,
     primaryKeyword: opts.primaryKeyword,
     secondaryKeywords: opts.secondaryKeywords,
     updatedAt: "2026-07-19",
+    indexable: opts.indexable ?? false,
     answer: opts.answer,
     sections: [
       {
@@ -28,6 +32,7 @@ function toolPage(opts: {
           ...opts.extras,
         ],
       },
+      ...(opts.uniqueSections ?? []),
       {
         heading: "How teams roll it out",
         body: [
@@ -37,6 +42,7 @@ function toolPage(opts: {
       },
     ],
     faq: [
+      ...(opts.uniqueFaq ?? []),
       {
         question: `Can I see ${opts.name} cost per developer?`,
         answer: `Yes. UseJunction attributes estimated spend and usage so eng and finance leads can see where ${opts.name} activity concentrates.`,
@@ -47,6 +53,9 @@ function toolPage(opts: {
       },
     ],
     relatedPaths: [
+      "/solutions/ai-coding-spend-management",
+      "/solutions/ai-coding-seat-utilization",
+      "/solutions/ai-coding-plan-usage",
       "/guides/see-plan-usage-and-waste",
       "/guides/see-team-ai-coding-usage",
       "/compare/wakatime",
@@ -57,11 +66,28 @@ function toolPage(opts: {
 export const forCursor = toolPage({
   slug: "cursor",
   name: "Cursor",
-  primaryKeyword: "Cursor usage tracking for teams",
-  secondaryKeywords: ["Cursor plan usage team", "Cursor seat utilization", "Cursor cost per developer"],
+  primaryKeyword: "Cursor usage analytics for teams",
+  secondaryKeywords: ["Cursor plan usage team", "Cursor seat utilization", "Cursor cost per developer", "unused Cursor seats"],
+  indexable: true,
   answer:
     "UseJunction tracks Cursor usage across your engineering org: who is active, which models run, estimated cost and latency, and how seats and cycles are utilized—so you can see plan usage and waste with privacy-first controls.",
   extras: ["Personal vs company key signals on enrolled devices.", "Coverage gaps when Cursor is installed but the agent is unhealthy."],
+  uniqueSections: [
+    {
+      heading: "Cursor seat utilization before renewal",
+      body: [
+        "UseJunction combines Cursor activity, plan-cycle context, and device coverage so teams can distinguish an unused seat from a developer whose device is not reporting.",
+        "Review active users, model and token signals, estimated cost, and quota pressure alongside purchased seats instead of exporting separate reports.",
+      ],
+    },
+  ],
+  uniqueFaq: [
+    {
+      question: "Can I see which Cursor seats are idle?",
+      answer:
+        "Yes. Enrolled-device activity and last-seen coverage help you identify idle or uncovered Cursor seats before renewal.",
+    },
+  ],
 });
 
 export const forAntigravity = toolPage({
@@ -77,31 +103,82 @@ export const forAntigravity = toolPage({
 export const forClaudeCode = toolPage({
   slug: "claude-code",
   name: "Claude Code",
-  primaryKeyword: "Claude Code usage dashboard for teams",
-  secondaryKeywords: ["Claude Code plan usage", "Claude Code cost per developer"],
+  primaryKeyword: "Claude Code usage analytics for teams",
+  secondaryKeywords: ["Claude Code plan usage", "Claude Code cost per developer", "Claude Code team dashboard"],
+  indexable: true,
   answer:
     "UseJunction gives platform teams an org-wide view of Claude Code usage—adoption, models, cost, latency, and plan pressure—self-hosted and open source.",
   extras: ["Combine Claude Code with Cursor and Copilot in one operating picture."],
+  uniqueSections: [
+    {
+      heading: "Claude Code usage without prompt surveillance",
+      body: [
+        "UseJunction focuses on operational signals such as tool, model, tokens, latency, estimated cost, and status. Teams can keep richer work detail disabled while still measuring adoption and spend.",
+        "Compare Claude Code usage with Cursor, Codex, and Copilot so a team can understand tool sprawl and plan pressure across the whole fleet.",
+      ],
+    },
+  ],
+  uniqueFaq: [
+    {
+      question: "Can Claude Code usage be compared with Cursor?",
+      answer:
+        "Yes. UseJunction puts Claude Code and Cursor signals into the same organization view so teams can compare adoption, cost, latency, and coverage.",
+    },
+  ],
 });
 
 export const forCodex = toolPage({
   slug: "codex",
   name: "Codex",
-  primaryKeyword: "Codex usage tracking for teams",
-  secondaryKeywords: ["OpenAI Codex team analytics"],
+  primaryKeyword: "Codex usage analytics for teams",
+  secondaryKeywords: ["OpenAI Codex team analytics", "Codex cost per developer", "Codex plan usage team"],
+  indexable: true,
   answer:
     "UseJunction observes Codex usage on enrolled developer devices so you can attribute activity, cost, and health alongside your other AI coding tools.",
   extras: [],
+  uniqueSections: [
+    {
+      heading: "Codex usage in the context of the AI tool fleet",
+      body: [
+        "Codex usage is more useful when platform teams can compare it with the other tools developers use. UseJunction attributes available activity and cost signals to people, teams, devices, and models.",
+        "Use the same dashboard to find heavy usage, inactive coverage, personal-key drift, and renewal risk across Codex and the rest of the coding-tool fleet.",
+      ],
+    },
+  ],
+  uniqueFaq: [
+    {
+      question: "Is this a personal Codex limit meter?",
+      answer:
+        "No. UseJunction is designed for organization-level visibility into Codex usage, cost, plan context, and device health rather than a personal menu-bar meter.",
+    },
+  ],
 });
 
 export const forCopilot = toolPage({
   slug: "github-copilot",
   name: "GitHub Copilot",
-  primaryKeyword: "GitHub Copilot usage tracking for teams",
-  secondaryKeywords: ["Copilot seat utilization", "Copilot cost visibility"],
+  primaryKeyword: "GitHub Copilot usage analytics for teams",
+  secondaryKeywords: ["Copilot seat utilization", "Copilot cost visibility", "GitHub Copilot seat waste"],
+  indexable: true,
   answer:
     "UseJunction helps you see GitHub Copilot in context of the rest of your AI coding stack—usage signals, coverage, and cost attribution next to Cursor and Claude Code.",
   extras: [],
+  uniqueSections: [
+    {
+      heading: "Copilot seats alongside the rest of the stack",
+      body: [
+        "Copilot is often only one line item in an organization’s AI coding budget. UseJunction gives platform teams a shared view of Copilot adoption, coverage, cost signals, and tool overlap.",
+        "Use the same operating picture to compare Copilot with Cursor, Claude Code, Codex, and local runtimes before expanding or reclaiming seats.",
+      ],
+    },
+  ],
+  uniqueFaq: [
+    {
+      question: "Can Copilot seat usage be compared with Cursor?",
+      answer:
+        "Yes. UseJunction is designed to compare supported AI coding tools across developers and teams, including Copilot and Cursor.",
+    },
+  ],
 });
 
 export const forOllama = toolPage({

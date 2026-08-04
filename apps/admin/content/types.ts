@@ -14,7 +14,7 @@ export type HowToStep = {
 };
 
 export type ContentPage = {
-  kind: "guide" | "compare" | "for" | "blog" | "legal";
+  kind: "guide" | "compare" | "for" | "solution" | "blog" | "legal";
   slug: string;
   /** Path without leading domain, e.g. /guides/foo */
   path: string;
@@ -23,8 +23,11 @@ export type ContentPage = {
   primaryKeyword: string;
   secondaryKeywords: string[];
   updatedAt: string;
+  /** Whether search engines should index this page and include it in the sitemap. */
+  indexable?: boolean;
   /** First ~100 words — AEO answer block */
   answer: string;
+  images?: ContentImage[];
   sections: ContentSection[];
   faq: ContentFaq[];
   relatedPaths: string[];
@@ -61,6 +64,14 @@ export type BlogInline = {
 };
 
 export type BlogImage = {
+  src: string;
+  alt: string;
+  width: number;
+  height: number;
+  caption?: string;
+};
+
+export type ContentImage = {
   src: string;
   alt: string;
   width: number;

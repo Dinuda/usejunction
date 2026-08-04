@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import type { ContentPage } from "@/content/types";
 import { contentBreadcrumbs, getRelatedPages } from "@/content/registry";
 import { buildContentJsonLd } from "@/lib/public/json-ld";
@@ -26,7 +27,7 @@ export function ContentArticle({ page }: { page: ContentPage }) {
       <article className="mx-auto w-full max-w-3xl px-4 pb-16 pt-28 sm:px-5 lg:px-8 lg:pb-24 lg:pt-32">
         <Breadcrumbs items={contentBreadcrumbs(page)} />
         <p className="mt-6 font-mono text-xs uppercase tracking-[0.16em] text-primary">
-          {page.kind === "for" ? "Tool guide" : page.kind}
+          {page.kind === "for" ? "Tool guide" : page.kind === "solution" ? "Solution" : page.kind}
         </p>
         <h1 className="mt-4 text-3xl font-semibold tracking-tight md:text-4xl lg:text-[2.5rem] lg:leading-[1.1]">
           {page.title}
@@ -38,6 +39,13 @@ export function ContentArticle({ page }: { page: ContentPage }) {
         <div className="mt-8 rounded-lg border border-border bg-card p-5 text-base leading-7 text-foreground md:text-lg md:leading-8">
           {page.answer}
         </div>
+
+        {page.images?.map((image) => (
+          <figure key={image.src} className="mt-10 overflow-hidden border border-border bg-white p-2 shadow-[0_18px_42px_-34px_rgba(17,18,16,0.45)] sm:p-3">
+            <Image src={image.src} alt={image.alt} width={image.width} height={image.height} sizes="(max-width: 800px) 92vw, 760px" className="h-auto w-full" />
+            {image.caption ? <figcaption className="px-2 pb-1 pt-3 font-mono text-xs text-muted-foreground">{image.caption}</figcaption> : null}
+          </figure>
+        ))}
 
         {page.compareRows && page.compareOtherName ? (
           <div className="mt-12 overflow-x-auto overscroll-x-contain" role="region" aria-label="Feature comparison" tabIndex={0}>

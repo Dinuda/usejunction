@@ -6,6 +6,7 @@ import { buildHomeJsonLd } from "../lib/public/json-ld";
 import { AEO_FACTS } from "../content/aeo/facts";
 import { BLOG_POSTS } from "../content/blog";
 import { buildBlogPostJsonLd } from "../lib/public/json-ld";
+import { contentPageMetadata } from "../lib/public/seo-metadata";
 
 test("seo registry includes priority guides and compare pages", () => {
   const paths = new Set(ALL_CONTENT_PAGES.map((page) => page.path));
@@ -13,7 +14,11 @@ test("seo registry includes priority guides and compare pages", () => {
   assert.ok(paths.has("/guides/see-team-ai-coding-usage"));
   assert.ok(paths.has("/guides/open-source-wakatime-alternative-for-ai-coding"));
   assert.ok(paths.has("/compare/wakatime"));
+  assert.ok(paths.has("/compare/codexbar"));
   assert.ok(paths.has("/compare/engineering-intelligence"));
+  assert.ok(paths.has("/solutions/ai-coding-spend-management"));
+  assert.ok(paths.has("/solutions/ai-coding-seat-utilization"));
+  assert.ok(paths.has("/solutions/ai-coding-plan-usage"));
   assert.ok(paths.has("/for/cursor"));
   assert.ok(paths.has("/for/claude-code"));
   assert.ok(paths.has("/privacy"));
@@ -44,10 +49,25 @@ test("sitemap includes home and content hubs", () => {
   assert.ok(paths.includes("/blog/what-is-ai-coding-observability"));
   assert.ok(paths.includes("/blog/ai-coding-observability-vs-jellyfish-dx-linearb"));
   assert.ok(paths.includes("/compare/engineering-intelligence"));
+  assert.ok(paths.includes("/solutions/ai-coding-spend-management"));
+  assert.ok(paths.includes("/compare/codexbar"));
   assert.ok(paths.includes("/authors/dinuda-yaggahavita"));
   assert.ok(!paths.includes("/blog/visibility-before-control"));
   assert.ok(!paths.includes("/blog/stop-wasting-ai-coding-seats"));
+  assert.ok(!paths.includes("/privacy"));
+  assert.ok(!paths.includes("/terms"));
+  assert.ok(!paths.includes("/for/antigravity"));
   assert.equal(entries[0]?.priority, 1);
+});
+
+test("indexability metadata keeps legal and thin tool pages out of search", () => {
+  const privacy = ALL_CONTENT_PAGES.find((page) => page.path === "/privacy");
+  const cursor = ALL_CONTENT_PAGES.find((page) => page.path === "/for/cursor");
+  const antigravity = ALL_CONTENT_PAGES.find((page) => page.path === "/for/antigravity");
+  assert.ok(privacy && cursor && antigravity);
+  assert.deepEqual(contentPageMetadata(privacy!).robots, { index: false, follow: true });
+  assert.deepEqual(contentPageMetadata(cursor!).robots, { index: true, follow: true });
+  assert.deepEqual(contentPageMetadata(antigravity!).robots, { index: false, follow: true });
 });
 
 test("llms.txt includes cite paths and non-claims", () => {
