@@ -1,7 +1,6 @@
 "use client";
 
 import { ArrowRight, Check, Plus } from "lucide-react";
-import Link from "next/link";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { HeroSection } from "@/components/public/hero-section";
 import { HomeWorldClass } from "@/components/public/home-world-class";
@@ -25,51 +24,6 @@ export function UseJunctionHomeContent() {
       <HeroSection />
 
       <ToolLogosStrip />
-
-      <section className="border-y border-border bg-[#f7fbfc] py-16 sm:py-20" aria-labelledby="team-ai-spend-heading">
-        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-10">
-          <div className="max-w-3xl">
-            <p className="font-mono text-xs uppercase tracking-[0.16em] text-[#08758a]">For engineering and platform teams</p>
-            <h2 id="team-ai-spend-heading" className="mt-3 text-3xl font-semibold leading-[1.1] tracking-[-0.03em] sm:text-4xl">
-              Make AI coding spend, seats, and plans visible before renewal.
-            </h2>
-            <p className="mt-4 text-base leading-7 text-muted-foreground md:text-lg">
-              Start with the decision your team needs to make, then follow the evidence across tools, models, developers, and devices.
-            </p>
-          </div>
-          <div className="mt-10 grid gap-4 md:grid-cols-3">
-            {[
-              {
-                href: "/solutions/ai-coding-spend-management",
-                title: "AI coding spend management",
-                description: "Track cost by developer, tool, and model across the AI coding fleet.",
-              },
-              {
-                href: "/solutions/ai-coding-seat-utilization",
-                title: "Seat utilization and waste",
-                description: "Find idle seats, quota pressure, and missing device coverage before renewal.",
-              },
-              {
-                href: "/solutions/ai-coding-plan-usage",
-                title: "AI coding plan usage",
-                description: "Compare cycles, quotas, heavy users, and plan fit across vendors.",
-              },
-            ].map((item) => (
-              <Link key={item.href} href={item.href} className="group border border-border bg-white p-6 transition-colors hover:border-[#08a8c4]">
-                <h3 className="text-lg font-semibold tracking-tight group-hover:text-[#08758a]">{item.title}</h3>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.description}</p>
-                <span className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#08758a]">
-                  Explore the solution <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
-                </span>
-              </Link>
-            ))}
-          </div>
-          <div className="mt-7 flex flex-wrap gap-x-6 gap-y-3 text-sm font-medium">
-            <Link href="/guides/see-team-ai-coding-usage" className="text-[#08758a] hover:underline">See team AI coding usage</Link>
-            <Link href="/compare/wakatime" className="text-[#08758a] hover:underline">WakaTime alternative for AI coding teams</Link>
-          </div>
-        </div>
-      </section>
 
       <HomeWorldClass />
 
