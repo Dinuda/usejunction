@@ -1,0 +1,68 @@
+import type { ReportData, ReportAggregate } from "../types.js";
+
+function escapeHtml(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
+function formatNumber(value: number | null, digits = 0): string {
+  if (value === null || !Number.isFinite(value)) return "Not measured";
+  return value.toLocaleString(undefined, { maximumFractionDigits: digits });
+}
+
+function formatPercent(value: number | null): string {
+  return value === null ? "Not measured" : `${Math.round(value * 100)}%`;
+}
+
+function optionValues(data: ReportData, field: "taskCategory" | "harness" | "model" | "repository") {
+  const values = field === "taskCategory" ? data.coverage.taskCategories : field === "harness" ? data.coverage.harnesses : field === "model" ? data.coverage.models : data.coverage.repositories;
+  return values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("");
+}
+
+function metricCell(group: ReportAggregate, metric: "duration" | "iterations" | "tokensPerSession" | "failureRate") {
+  const summary = group[metric];
+  const value = metric === "failureRate" ? formatPercent(summary.p50) : formatNumber(summary.p50);
+  const width = group.compositeScore === null ? 0 : Math.max(4, Math.min(100, group.compositeScore));
+  return `<div class="metric"><span>${value}</span><span class="metric-track"><i style="width:${width}%"></i></span></div>`;
+}
+
+export function renderReport(data: ReportData): string {
+  const serialized = JSON.stringify(data).replaceAll("<", "\\u003c");
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Workflow Benchmark Lab</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0d10;--panel:#13171c;--panel2:#181e25;--line:#2a333d;--text:#edf2f7;--muted:#8b98a7;--accent:#d9ff4f;--blue:#7cc4ff;--red:#ff8e8e;--green:#8ff0bd}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 10% 0%,#1b2522 0,#0b0d10 36rem);color:var(--text);font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}main{max-width:1500px;margin:0 auto;padding:42px 26px 80px}.eyebrow{color:var(--accent);font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:700}h1{font-size:clamp(34px,5vw,64px);line-height:1;margin:10px 0 14px;letter-spacing:-.06em}h2{font-size:18px;margin:0 0 14px}h3{font-size:14px;margin:0 0 8px}.lede{max-width:780px;color:var(--muted);font-size:16px}.grid{display:grid;gap:14px}.cards{grid-template-columns:repeat(6,minmax(0,1fr));margin:30px 0 16px}.card,.panel{background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);border-radius:12px;padding:17px}.card label,.small{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}.card strong{display:block;font-size:25px;margin-top:6px;letter-spacing:-.03em}.verdict{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;border-color:#677d25;background:linear-gradient(120deg,#182018,#12171a)}.verdict h2{font-size:28px;margin:3px 0 4px;color:var(--accent)}.verdict p{margin:0;color:var(--muted);max-width:760px}.badge{border:1px solid var(--accent);color:var(--accent);padding:5px 10px;border-radius:999px;font-size:12px;white-space:nowrap}.filters{grid-template-columns:repeat(5,minmax(0,1fr));margin:16px 0}.filters label{color:var(--muted);font-size:12px}.filters select{display:block;width:100%;margin-top:5px;padding:9px;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:7px}.span-2{grid-column:span 2}.leaderboard{overflow:auto}.table{min-width:920px}.row{display:grid;grid-template-columns:1.55fr .9fr .9fr .9fr .9fr .7fr;gap:14px;align-items:center;border-bottom:1px solid var(--line);padding:13px 0}.row.header{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;padding-top:0}.rank{font-weight:700}.sub{display:block;color:var(--muted);font-size:12px;margin-top:2px}.metric{display:flex;flex-direction:column;gap:5px}.metric-track{display:block;height:4px;background:#27313b;border-radius:5px;overflow:hidden}.metric-track i{display:block;height:100%;background:var(--accent);border-radius:5px}.score{font-size:18px;font-weight:700}.not{color:var(--muted);font-size:12px}.charts{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:16px}.chart-wrap{min-height:190px}.chart-svg{width:100%;height:160px}.details{margin-top:16px}.details table{width:100%;border-collapse:collapse}.details td,.details th{text-align:left;padding:8px;border-bottom:1px solid var(--line)}.details th{color:var(--muted);font-size:11px;text-transform:uppercase}.method{margin-top:16px}.method li{margin:8px 0;color:var(--muted)}footer{color:var(--muted);font-size:12px;margin-top:30px}@media(max-width:1000px){.cards{grid-template-columns:repeat(3,1fr)}.filters{grid-template-columns:repeat(2,1fr)}.charts{grid-template-columns:1fr}}@media(max-width:580px){main{padding:28px 14px 60px}.cards{grid-template-columns:repeat(2,1fr)}.filters{grid-template-columns:1fr}.span-2{grid-column:span 1}.verdict{display:block}.badge{display:inline-block;margin-top:15px}}
+</style></head><body><main>
+<div class="eyebrow">UseJunction / local experiment</div><h1>Workflow Benchmark Lab</h1>
+<p class="lede">A private, retrospective comparison of the coding workflows already present on this machine. The question is not which model wins in the abstract, but whether model × harness differences are measurable enough to act on.</p>
+<section class="grid cards">
+<div class="card"><label>Verdict</label><strong>${escapeHtml(data.verdict.label)}</strong></div>
+<div class="card"><label>Sessions</label><strong>${formatNumber(data.coverage.sessions)}</strong></div>
+<div class="card"><label>Usage records</label><strong>${formatNumber(data.coverage.usageRecords)}</strong></div>
+<div class="card"><label>Harnesses</label><strong>${formatNumber(data.coverage.harnesses.length)}</strong></div>
+<div class="card"><label>Models</label><strong>${formatNumber(data.coverage.models.length)}</strong></div>
+<div class="card"><label>Date range</label><strong>${escapeHtml(data.dateRange.from ?? "—")}<span class="sub">to ${escapeHtml(data.dateRange.to ?? "—")}</span></strong></div>
+</section>
+<section class="panel"><h2>Outcome evidence</h2><p class="lede">User-outcome judgments are only counted when the conversation contains a measurable confirmation or correction signal.</p><div class="small">Measured: ${formatNumber(data.coverage.acceptance.measured)} · Accepted: ${formatNumber(data.coverage.acceptance.accepted)} · Rejected: ${formatNumber(data.coverage.acceptance.rejected)} · Unclear: ${formatNumber(data.coverage.acceptance.unclear)}</div></section>
+<section class="panel verdict"><div><div class="eyebrow">Evidence readout</div><h2>${escapeHtml(data.verdict.label)}</h2><p>${escapeHtml(data.verdict.explanation)} Eligible groups: ${data.verdict.eligibleGroups}; comparison cells: ${data.verdict.comparisonCells}; meaningful cells: ${data.verdict.stableCells}.</p></div><span class="badge">local only</span></section>
+<section class="grid filters panel"><label>Task category<select id="filter-task"><option value="all">All tasks</option>${optionValues(data,"taskCategory")}</select></label><label>Harness<select id="filter-harness"><option value="all">All harnesses</option>${optionValues(data,"harness")}</select></label><label>Model<select id="filter-model"><option value="all">All models</option>${optionValues(data,"model")}</select></label><label>Project<select id="filter-project"><option value="all">All projects</option>${optionValues(data,"repository")}</select></label><label>Metric<select id="filter-metric"><option value="composite">Composite score</option><option value="duration">Median duration</option><option value="iterations">Median iterations</option><option value="tokensPerSession">Median tokens/session</option><option value="failureRate">Tool-call failure rate</option></select></label></section>
+<section class="panel leaderboard"><h2>Model × harness leaderboard</h2><p class="small">Each row is a task-category slice. Scores appear only when the sample and metric coverage rules are met.</p><div id="leaderboard" class="table"></div></section>
+<section class="grid charts"><div class="panel chart-wrap"><h2>Activity over time</h2><div id="activity-chart"></div></div><div class="panel chart-wrap"><h2>Failure rate over time</h2><div id="failure-chart"></div></div></section>
+<section class="panel details"><h2>Selected evidence</h2><div id="details-content" class="not">Select a leaderboard row to inspect its p50/p90 metrics and caveats.</div></section>
+<section class="panel method"><h2>Methodology and privacy</h2><ul>${data.methodology.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul><p class="small">Missing data counts: ${Object.entries(data.coverage.missing).map(([key,value]) => `${escapeHtml(key)} ${value}`).join(" · ")}</p></section>
+<footer>Generated ${escapeHtml(data.generatedAt)} · This file is a local experiment artifact and is not a public benchmark.</footer>
+</main><script>window.BENCHMARK_DATA=${serialized};
+const DATA=window.BENCHMARK_DATA;
+const $=id=>document.getElementById(id);
+const fmt=(v,d=0)=>v==null?'Not measured':Number(v).toLocaleString(undefined,{maximumFractionDigits:d});
+const pct=v=>v==null?'Not measured':Math.round(v*100)+'%';
+const filtered=()=>DATA.aggregates.filter(g=>(($('filter-task').value==='all'||g.taskCategory===$('filter-task').value)&&($('filter-harness').value==='all'||g.harness===$('filter-harness').value)&&($('filter-model').value==='all'||g.model===$('filter-model').value)&&($('filter-project').value==='all'||g.repository===$('filter-project').value)));
+function metric(g,name){if(name==='composite')return g.compositeScore; if(name==='failureRate')return g.failureRate.p50; return g[name].p50;}
+function metricText(g,name){const v=metric(g,name); if(name==='failureRate')return pct(v); if(name==='composite')return v==null?'Not measured':fmt(v,1); return fmt(v);}
+function renderBoard(){const rows=filtered().sort((a,b)=>(metric(b,$('filter-metric').value)??-1)-(metric(a,$('filter-metric').value)??-1));const max=Math.max(...rows.map(g=>metric(g,$('filter-metric').value)??0),1);$('leaderboard').innerHTML='<div class="row header"><div>Model / harness</div><div>Score</div><div>Duration p50</div><div>Iterations p50</div><div>Tokens p50</div><div>Samples / accepted</div></div>'+rows.map((g,i)=>{const score=metric(g,$('filter-metric').value);const width=$('filter-metric').value==='composite'?(score??0):((score??0)/max*100);return '<div class="row" data-key="'+g.key.replaceAll('"','&quot;')+'"><div class="rank">#'+(i+1)+' '+g.model+'<span class="sub">'+g.harness+' · '+g.taskCategory+' · '+g.repository+'</span></div><div class="metric"><span class="score">'+metricText(g,$('filter-metric').value)+'</span><span class="metric-track"><i style="width:'+Math.max(4,width)+'%"></i></span></div><div>'+fmt(g.duration.p50)+'</div><div>'+fmt(g.iterations.p50)+'</div><div>'+fmt(g.tokensPerSession.p50)+'</div><div>'+g.sessions+'<span class="sub">'+pct(g.acceptanceRate)+'</span></div></div>';}).join('')||'<p class="not">No matching evidence.</p>';document.querySelectorAll('#leaderboard .row[data-key]').forEach(row=>row.addEventListener('click',()=>showDetails(row.dataset.key)));}
+function showDetails(key){const g=DATA.aggregates.find(item=>item.key===key);if(!g)return;const metricRow=(label,v)=>'<tr><td>'+label+'</td><td>'+fmt(v?.p50)+'</td><td>'+fmt(v?.p90)+'</td><td>'+fmt(v?.samples)+'</td></tr>';$('details-content').innerHTML='<h3>'+g.model+' / '+g.harness+' / '+g.taskCategory+'</h3><table><tr><th>Metric</th><th>p50</th><th>p90</th><th>Samples</th></tr>'+metricRow('Duration (ms)',g.duration)+metricRow('Iterations',g.iterations)+metricRow('Tokens/session',g.tokensPerSession)+metricRow('Cost (USD)',g.cost)+metricRow('Failure rate',g.failureRate)+metricRow('Recovery rate',g.recoveryRate)+'</table><p class="small">User acceptance: '+pct(g.acceptanceRate)+' ('+g.acceptedSessions+' accepted / '+g.rejectedSessions+' rejected / '+g.acceptanceMeasured+' measured) · Test pass: '+pct(g.testPassRate)+' · Build pass: '+pct(g.buildPassRate)+' · Coverage: '+Math.round(g.coverage*100)+'% · Composite: '+fmt(g.compositeScore,1)+'</p>';}
+function chart(target,field,color,formatter){const rows=DATA.trend.filter(x=>x[field]!=null);if(!rows.length){$(target).innerHTML='<p class="not">Not measured</p>';return}const w=680,h=150,p=18;const vals=rows.map(x=>x[field]);const max=Math.max(...vals,1);const points=rows.map((x,i)=>{const xx=p+(i/(Math.max(1,rows.length-1)))*(w-p*2);const yy=h-p-(x[field]/max)*(h-p*2);return [xx,yy]});const path=points.map((v,i)=>(i?'L':'M')+v[0].toFixed(1)+' '+v[1].toFixed(1)).join(' ');$(target).innerHTML='<svg class="chart-svg" viewBox="0 0 '+w+' '+h+'" role="img" aria-label="trend chart"><path d="'+path+'" fill="none" stroke="'+color+'" stroke-width="3" stroke-linecap="round"/><text x="'+p+'" y="'+(h-2)+'" fill="#8b98a7" font-size="11">'+rows[0].date+'</text><text x="'+(w-p)+'" y="'+(h-2)+'" text-anchor="end" fill="#8b98a7" font-size="11">'+rows.at(-1).date+'</text><text x="'+(w-p)+'" y="16" text-anchor="end" fill="#edf2f7" font-size="12">'+formatter(vals.at(-1))+'</text></svg>';}
+['filter-task','filter-harness','filter-model','filter-project','filter-metric'].forEach(id=>$(id).addEventListener('change',renderBoard));
+renderBoard();chart('activity-chart','tokens','#d9ff4f',v=>fmt(v));chart('failure-chart','failureRate','#ff8e8e',v=>pct(v));
+</script></body></html>`;
+}

@@ -4,6 +4,7 @@ import { prisma, type Prisma } from "@usejunction/db";
 import { findDeviceByTokenValue } from "@/lib/auth";
 import { hashOpaqueToken } from "@/lib/security";
 import { invalidateAnalyticsCache } from "@/lib/analytics/query";
+import { sanitizeExtractionPayload } from "@usejunction/usage-schema";
 
 type Row = Record<string, any>;
 const ALLOWED_METRICS = new Set([
@@ -47,7 +48,7 @@ function dateOnly(value: Date) {
 }
 
 function safeJson(value: unknown): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
+  return sanitizeExtractionPayload(value) as Prisma.InputJsonValue;
 }
 
 async function resolveOtelAuth(bearer: string) {
@@ -118,13 +119,20 @@ export async function POST(req: NextRequest) {
             pullRequests: metric.name === "claude_code.pull_request.count" ? Math.max(0, Math.round(metricValue)) : 0,
             costMicros: metric.name === "claude_code.cost.usage" ? BigInt(Math.max(0, Math.round(metricValue * 1_000_000))) : BigInt(0),
           };
+          const sourceMetadata = safeJson({
+            ...attributes,
+            sourceEndpoint: "/api/otel/v1/metrics",
+            sourceCapability: "otel_metrics",
+            evidence: "otel_observed",
+            metricName: metric.name,
+          });
           await prisma.usageDaily.upsert({
             where: { orgId_dedupeKey: { orgId: authContext.orgId, dedupeKey: `otel:${fingerprint}` } },
             update: { developerId, observedAt: observed, ...values },
             create: {
               orgId: authContext.orgId, developerId, date: dateOnly(observed), provider: "anthropic", product: "claude_code",
               toolName: "claude-code", model: String(attributes.model ?? ""), source: "otel_observed", sourceRef: fingerprint, verified: false,
-              dedupeKey: `otel:${fingerprint}`, observedAt: observed, metadata: safeJson(attributes), ...values,
+              dedupeKey: `otel:${fingerprint}`, observedAt: observed, metadata: sourceMetadata, ...values,
             },
           });
           accepted += 1;

@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatRelativeTime } from "@/lib/format";
 import { DEVICE_STALE_AFTER_MS } from "@/lib/devices/health";
 import { browserMutationInit, useInvalidateAppData } from "@/lib/api/client";
@@ -48,6 +50,8 @@ type SnapshotRefreshResult = {
   error?: string;
   message?: string;
 };
+
+const SYNC_TOAST_ID = "local-sync-progress";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -171,6 +175,44 @@ function SyncDetailLine({
   );
 }
 
+function showSyncToast(input: {
+  title: string;
+  description?: string | null;
+  tone: "loading" | "success" | "error";
+  onDismiss?: () => void;
+  onCancel?: () => void;
+}) {
+  const description = input.description ?? undefined;
+  const cancelAction = input.onCancel
+    ? { label: "Cancel", onClick: input.onCancel }
+    : undefined;
+  if (input.tone === "loading") {
+    toast.loading(input.title, {
+      id: SYNC_TOAST_ID,
+      description,
+      duration: Infinity,
+      onDismiss: input.onDismiss,
+      action: cancelAction,
+    });
+    return;
+  }
+  if (input.tone === "success") {
+    toast.success(input.title, {
+      id: SYNC_TOAST_ID,
+      description,
+      duration: 4_000,
+      onDismiss: input.onDismiss,
+    });
+    return;
+  }
+  toast.error(input.title, {
+    id: SYNC_TOAST_ID,
+    description,
+    duration: 6_000,
+    onDismiss: input.onDismiss,
+  });
+}
+
 export function LocalSyncPanel({
   scope = "you",
   lastSeenAt,
@@ -179,6 +221,7 @@ export function LocalSyncPanel({
   dashboardReady,
   dirtyDayCount,
   staleDeviceCount,
+  compact = false,
 }: {
   scope?: SyncScope;
   lastSeenAt?: string | null;
@@ -187,6 +230,8 @@ export function LocalSyncPanel({
   dashboardReady?: boolean;
   dirtyDayCount?: number;
   staleDeviceCount?: number;
+  /** Compact control next to period filters; progress shows as a sonner toast. */
+  compact?: boolean;
 }) {
   const router = useRouter();
   const invalidateAppData = useInvalidateAppData();
@@ -199,6 +244,8 @@ export function LocalSyncPanel({
   const lastSucceededRef = useRef(0);
   const drainingRef = useRef(false);
   const healthReconcileRef = useRef(false);
+  const toastVisibleRef = useRef(false);
+  const toastDismissedRef = useRef(false);
   const storageKey = useMemo(() => `usejunction:last-sync-request:${scope}`, [scope]);
   const uploadedAt = latestTimestamp(lastUsageSyncAt, lastAccountSyncAt) ?? lastSeenAt;
   const staleCount = staleDeviceCount ?? (
@@ -259,8 +306,6 @@ export function LocalSyncPanel({
     setPendingDays(dirtyDayCount ?? 0);
   }, [dirtyDayCount]);
 
-  // Keep "updating history" off the status line unless dirty days persist past a short debounce.
-  // Matches navigate-away behavior: remounts with clean server state show nothing.
   useEffect(() => {
     if (!historyPending) {
       setHistoryStatusVisible(false);
@@ -325,7 +370,6 @@ export function LocalSyncPanel({
 
   useEffect(() => {
     if (!historyPending || status === "syncing" || drainingRef.current) return;
-    // Same debounce as status visibility: settle often clears dirty days before we drain.
     const timer = window.setTimeout(() => {
       if (!drainingRef.current) void refreshAppData();
     }, HISTORY_STATUS_DEBOUNCE_MS);
@@ -333,6 +377,7 @@ export function LocalSyncPanel({
   }, [historyPending, refreshAppData, status]);
 
   async function syncNow() {
+    toastDismissedRef.current = false;
     setStatus("syncing");
     setDetail(scope === "team" ? "Requesting team sync..." : "Requesting sync for your devices...");
     try {
@@ -358,9 +403,34 @@ export function LocalSyncPanel({
     }
   }
 
-  // Prefer day-count while history is draining. Without this, dirtyDayCount > 0 always
-  // sets dashboardReady=false, so the "updating dashboard" branch hid progress forever and
-  // the only place the day count appeared was a stale detail line (the prod ghost).
+  const cancelSync = useCallback(async () => {
+    const activeId = request?.id ?? localStorage.getItem(storageKey);
+    toastDismissedRef.current = true;
+    if (!activeId) {
+      setStatus("idle");
+      setDetail(null);
+      toast.dismiss(SYNC_TOAST_ID);
+      toastVisibleRef.current = false;
+      return;
+    }
+    try {
+      const cancelled = await appJson<RemoteSyncRequest>(
+        `/api/app/sync-requests/${encodeURIComponent(activeId)}`,
+        browserMutationInit("DELETE"),
+      );
+      localStorage.removeItem(storageKey);
+      setRequest(cancelled);
+      setStatus("idle");
+      setDetail("Sync cancelled.");
+      toast.dismiss(SYNC_TOAST_ID);
+      toastVisibleRef.current = false;
+      toast.message("Sync cancelled", { duration: 3_000 });
+    } catch (error) {
+      setStatus("error");
+      setDetail(error instanceof Error ? error.message : "Could not cancel sync.");
+    }
+  }, [request?.id, storageKey]);
+
   const statusLabel = historyStatusVisible
     ? `Uploaded ${formatRelativeTime(uploadedAt)} - ${historyProgressLabel(pendingDays)}`
     : !ready
@@ -368,6 +438,131 @@ export function LocalSyncPanel({
       : `Last synced ${formatRelativeTime(uploadedAt)}`;
   const visibleDetail = detail ?? syncDetail(request, scope);
   const buttonText = status === "syncing" ? "Syncing..." : scope === "team" ? "Sync team" : "Sync now";
+  const syncing = pending || status === "syncing";
+  const busy = syncing || historyStatusVisible || !ready;
+
+  // Sonner toast only in compact (dashboard header) — full panel keeps inline status.
+  useEffect(() => {
+    if (!compact) return;
+    if (!busy && status === "idle") return;
+    if (toastDismissedRef.current && busy) return;
+
+    const markDismissed = () => {
+      toastDismissedRef.current = true;
+      toastVisibleRef.current = false;
+    };
+
+    if (busy) {
+      const title = historyStatusVisible
+        ? `Uploaded ${formatRelativeTime(uploadedAt)} — ${historyProgressLabel(pendingDays)}`
+        : !ready
+          ? `Uploaded ${formatRelativeTime(uploadedAt)} — updating dashboard`
+          : scope === "team"
+            ? "Syncing team devices…"
+            : "Syncing your devices…";
+      showSyncToast({
+        title,
+        description: visibleDetail,
+        tone: "loading",
+        onDismiss: markDismissed,
+        onCancel: syncing ? () => void cancelSync() : undefined,
+      });
+      toastVisibleRef.current = true;
+      return;
+    }
+
+    if (status === "ok" && toastVisibleRef.current) {
+      showSyncToast({
+        title: "Sync complete",
+        description: visibleDetail,
+        tone: "success",
+        onDismiss: markDismissed,
+      });
+      toastVisibleRef.current = false;
+      return;
+    }
+
+    if ((status === "error" || status === "unreachable") && toastVisibleRef.current) {
+      showSyncToast({
+        title: "Sync failed",
+        description: visibleDetail,
+        tone: "error",
+        onDismiss: markDismissed,
+      });
+      toastVisibleRef.current = false;
+    }
+  }, [
+    busy,
+    cancelSync,
+    compact,
+    historyStatusVisible,
+    pendingDays,
+    ready,
+    scope,
+    status,
+    syncing,
+    uploadedAt,
+    visibleDetail,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      // Don't leave a stuck loading toast if the panel unmounts mid-sync.
+      if (toastVisibleRef.current) toast.dismiss(SYNC_TOAST_ID);
+    };
+  }, []);
+
+  if (compact) {
+    const syncTooltip = syncing
+      ? (visibleDetail ?? "Sync in progress — hover to cancel")
+      : statusLabel;
+
+    return (
+      <div className="group relative inline-flex items-center">
+        <Tooltip delayDuration={300}>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-9 shrink-0 gap-1.5 px-2.5"
+              aria-busy={syncing}
+              onClick={() => {
+                if (!syncing) void syncNow();
+              }}
+            >
+              {syncing ? (
+                <Loader2 className="size-3.5 animate-spin text-muted-foreground transition-opacity group-hover:opacity-0" />
+              ) : (
+                <RefreshCw className="size-3.5" />
+              )}
+              <span className={cn(syncing && "text-muted-foreground")}>
+                {scope === "team" ? "Sync team" : "Sync now"}
+              </span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-72 text-xs">
+            {syncTooltip}
+          </TooltipContent>
+        </Tooltip>
+        {syncing ? (
+          <button
+            type="button"
+            aria-label="Cancel sync"
+            title="Cancel sync"
+            className="absolute left-2.5 top-1/2 z-10 flex size-3.5 -translate-y-1/2 items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void cancelSync();
+            }}
+          >
+            <X className="size-3.5 text-destructive" strokeWidth={2.5} />
+          </button>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center justify-between gap-2 sm:gap-4">
@@ -375,21 +570,44 @@ export function LocalSyncPanel({
         <p className="text-xs leading-5 text-muted-foreground sm:text-sm">{statusLabel}</p>
         {visibleDetail ? <SyncDetailLine detail={visibleDetail} status={status} /> : null}
       </div>
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        className="min-h-11 shrink-0 px-2 sm:min-h-0 sm:px-3"
-        disabled={pending || status === "syncing"}
-        onClick={syncNow}
-      >
+      <div className="group relative inline-flex items-center">
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="min-h-11 shrink-0 px-2 sm:min-h-0 sm:px-3"
+          aria-busy={syncing}
+          onClick={() => {
+            if (!syncing) void syncNow();
+          }}
+        >
+          {status === "syncing" ? (
+            <Loader2 className="size-3.5 animate-spin text-muted-foreground transition-opacity group-hover:opacity-0" />
+          ) : (
+            <RefreshCw className="size-3.5" />
+          )}
+          {status === "syncing" ? (
+            <span className="shimmer text-muted-foreground">{buttonText}</span>
+          ) : (
+            buttonText
+          )}
+        </Button>
         {status === "syncing" ? (
-          <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
-        ) : (
-          <RefreshCw className="size-3.5" />
-        )}
-        {status === "syncing" ? <span className="shimmer text-muted-foreground">{buttonText}</span> : buttonText}
-      </Button>
+          <button
+            type="button"
+            aria-label="Cancel sync"
+            title="Cancel sync"
+            className="absolute left-2 top-1/2 z-10 flex size-3.5 -translate-y-1/2 items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 sm:left-3"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void cancelSync();
+            }}
+          >
+            <X className="size-3.5 text-destructive" strokeWidth={2.5} />
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -30,6 +30,18 @@ export function accountsInventoryCanonicalLine(item: AccountInventoryItem): stri
   return `${toolName}|${email}|${plan}|${loginMethod}|${authPresent}`;
 }
 
+/** Plan merge: non-empty incoming always wins; sticky last-known only while authPresent. */
+export function resolveStickyAccountPlan(params: {
+  incomingPlan: string;
+  existingPlan: string | null | undefined;
+  authPresent: boolean;
+}): string | null {
+  const incoming = params.incomingPlan.trim();
+  if (incoming !== "") return incoming;
+  if (params.authPresent) return params.existingPlan?.trim() || null;
+  return null;
+}
+
 export function accountsInventoryContentHash(items: AccountInventoryItem[]): string {
   const lines = items
     .filter((item) => String(item.toolName ?? "").trim())
@@ -69,9 +81,13 @@ export async function applyDeviceAccountInventory(params: {
 
     const incomingPlan = typeof acct.plan === "string" ? acct.plan.trim() : "";
     const incomingEmail = typeof acct.email === "string" ? acct.email.trim() : "";
-    const plan = incomingPlan || existing?.plan || null;
-    const email = incomingEmail || existing?.email || null;
     const authPresent = Boolean(acct.authPresent);
+    const plan = resolveStickyAccountPlan({
+      incomingPlan,
+      existingPlan: existing?.plan,
+      authPresent,
+    });
+    const email = incomingEmail || existing?.email || null;
 
     await prisma.toolAccount.upsert({
       where: { deviceId_toolName: { deviceId: params.deviceId, toolName } },

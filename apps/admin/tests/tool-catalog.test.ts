@@ -167,6 +167,9 @@ test("vendor plan strings map onto catalog plan keys with safe defaults", () => 
   assert.equal(mapVendorPlanToCatalog("chatgpt-codex", "plus"), "plus");
   assert.equal(mapVendorPlanToCatalog("chatgpt-codex", undefined), "free");
   assert.equal(mapVendorPlanToCatalog("claude", "max"), "max-5x");
+  assert.equal(mapVendorPlanToCatalog("claude", "team"), "team-standard");
+  assert.equal(mapVendorPlanToCatalog("claude", "team-standard"), "team-standard");
+  assert.equal(mapVendorPlanToCatalog("claude", "team_standard"), "team-standard");
   assert.equal(mapVendorPlanToCatalog("github-copilot", "Pro Plus"), "pro-plus");
   assert.equal(mapVendorPlanToCatalog("github-copilot", "individual/free_educational_quota"), "student");
   assert.equal(mapVendorPlanToCatalog("github-copilot", "free_educational_quota"), "student");

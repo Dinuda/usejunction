@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
 import { requireAppPrincipal } from "@/lib/api/app-auth";
 import { appData, appError } from "@/lib/api/app-response";
-import { getRemoteSyncRequest } from "@/lib/sync/remote-sync";
+import { cancelRemoteSyncRequest, getRemoteSyncRequest } from "@/lib/sync/remote-sync";
 import { rolesFor } from "@/lib/rbac/permissions";
+import { browserMutationGuard } from "@/lib/security/http";
 
 export async function GET(
   request: NextRequest,
@@ -16,4 +17,20 @@ export async function GET(
     return appError("NOT_FOUND", "Sync request not found.", 404);
   }
   return appData(syncRequest);
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const rejected = browserMutationGuard(request);
+  if (rejected) return rejected;
+  const principal = await requireAppPrincipal(request, rolesFor("self_view"));
+  if (principal instanceof Response) return principal;
+  const { id } = await params;
+  const cancelled = await cancelRemoteSyncRequest(principal, id);
+  if (!cancelled) {
+    return appError("NOT_FOUND", "Sync request not found.", 404);
+  }
+  return appData(cancelled);
 }

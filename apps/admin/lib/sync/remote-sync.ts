@@ -574,6 +574,38 @@ export async function getRemoteSyncRequest(principal: AppPrincipal, requestId: s
   return serializeSyncRequest(request);
 }
 
+/** Stop an in-flight sync: expire the request and mark unfinished targets expired. */
+export async function cancelRemoteSyncRequest(
+  principal: AppPrincipal,
+  requestId: string,
+): Promise<SyncRequestView | null> {
+  const existing = await getRemoteSyncRequest(principal, requestId);
+  if (!existing) return null;
+
+  const now = new Date();
+  await prisma.$transaction([
+    prisma.syncRequest.update({
+      where: { id: requestId },
+      data: { expiresAt: now, dispatchError: existing.dispatchError ?? "Cancelled by user" },
+    }),
+    prisma.deviceSyncRequestTarget.updateMany({
+      where: {
+        requestId,
+        orgId: principal.orgId,
+        status: { in: ["queued", "claimed", "running"] },
+      },
+      data: {
+        status: "expired",
+        completedAt: now,
+        leaseToken: null,
+        leaseExpiresAt: null,
+      },
+    }),
+  ]);
+
+  return getRemoteSyncRequest(principal, requestId);
+}
+
 export async function createDeviceRealtimeTokenRequest(device: {
   id: string;
   orgId: string;

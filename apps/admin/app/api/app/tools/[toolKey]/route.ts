@@ -11,12 +11,19 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   const rawToolKey = (await params).toolKey;
   const query = request.nextUrl.searchParams;
-  const data = await loadToolDetailPage(principal, rawToolKey, {
-    view: query.get("view"),
-    days: query.get("days"),
-    from: query.get("from"),
-    to: query.get("to"),
-  });
+  const sliceParam = query.get("slice");
+  const slice = sliceParam === "shell" || sliceParam === "metrics" ? sliceParam : "full";
+  const data = await loadToolDetailPage(
+    principal,
+    rawToolKey,
+    {
+      view: query.get("view"),
+      days: query.get("days"),
+      from: query.get("from"),
+      to: query.get("to"),
+    },
+    slice,
+  );
   if (data && "error" in data) {
     return appError(
       "FORBIDDEN",

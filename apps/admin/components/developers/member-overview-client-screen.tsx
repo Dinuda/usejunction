@@ -14,7 +14,8 @@ import { canonicalToolKey } from "@/lib/tools/catalog";
 
 export default function MemberOverviewClientScreen() {
   const searchParams = useSearchParams();
-  const { developerId, personal, selectedPeriodLabel, work, workExtractionEnabled } = useMemberClientData();
+  const { developerId, personal, selectedPeriodLabel, cycleView, work, workExtractionEnabled } =
+    useMemberClientData();
   const workData = work ?? { enabled: false, sessions: [] };
   const recentWorkSessions = workData.sessions.slice(0, 4);
   const queryString = searchParams.toString();
@@ -47,6 +48,8 @@ export default function MemberOverviewClientScreen() {
     accounts,
     vendorSeats: personal.developer.vendorSeats,
     toolsUsage: personal.toolsUsage30d,
+    planSeats: personal.planSeats,
+    cycleView,
   });
   const planKpi = planBoardLeadLabel(planCards);
 
@@ -92,7 +95,7 @@ export default function MemberOverviewClientScreen() {
         <div className="mb-4">
           <h2 className="text-lg font-semibold tracking-tight">Plans.</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Used % and burn pace by product · {selectedPeriodLabel}.
+            Billing cycle, accounted usage, and burn pace by product · {selectedPeriodLabel}.
           </p>
         </div>
         {planCards.length ? (

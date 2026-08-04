@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
 import { workspaceContextKey } from "@/lib/app-pages/query-keys";
@@ -47,8 +47,16 @@ vi.mock("@tanstack/react-query", async () => {
 });
 
 vi.mock("@/components/workspace-shell", () => ({
-  WorkspaceShell: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="workspace-shell">{children}</div>
+  WorkspaceShell: ({
+    children,
+    loading,
+  }: {
+    children: React.ReactNode;
+    loading?: boolean;
+  }) => (
+    <div data-testid="workspace-shell" data-loading={loading ? "true" : "false"}>
+      {loading ? <div aria-label="Loading page">Loading shell</div> : children}
+    </div>
   ),
 }));
 
@@ -78,13 +86,14 @@ type WorkspaceContextData = {
   sessionWorkspaceSyncRequired: boolean;
 };
 
-function mockWorkspaceContext(data: WorkspaceContextData | undefined) {
-  mocks.useAppQuery.mockImplementation((queryKey: readonly unknown[], _url: string, options?: { refetchInterval?: unknown }) => {
-    void options;
+function mockWorkspaceContext(data: WorkspaceContextData | undefined, options: { isPending?: boolean } = {}) {
+  const isPending = options.isPending ?? data === undefined;
+  mocks.useAppQuery.mockImplementation((queryKey: readonly unknown[], _url: string, queryOptions?: { refetchInterval?: unknown }) => {
+    void queryOptions;
     if (queryKey[0] === "app" && queryKey[1] === "workspace-context") {
-      return { data, error: null, refetch: vi.fn() };
+      return { data, error: null, refetch: vi.fn(), isPending };
     }
-    return { data: undefined, error: null, refetch: vi.fn() };
+    return { data: undefined, error: null, refetch: vi.fn(), isPending: true };
   });
 }
 
@@ -125,6 +134,7 @@ const readyContext = (dataWatermark: string, overrides: Partial<WorkspaceContext
 
 describe("WorkspaceClientLayout", () => {
   beforeEach(() => {
+    cleanup();
     vi.clearAllMocks();
     vi.resetModules();
     mocks.updateSession.mockResolvedValue({});
@@ -139,6 +149,7 @@ describe("WorkspaceClientLayout", () => {
     await renderLayout();
 
     expect(screen.getByTestId("workspace-shell")).toBeTruthy();
+    expect(screen.getByTestId("workspace-shell").getAttribute("data-loading")).toBe("false");
     expect(screen.getByText("Dashboard screen")).toBeTruthy();
     expect(mocks.useAppQuery).toHaveBeenCalledTimes(1);
     expect(mocks.useAppQuery).toHaveBeenCalledWith(
@@ -147,6 +158,16 @@ describe("WorkspaceClientLayout", () => {
       expect.objectContaining({ refetchInterval: expect.any(Function) }),
     );
     expect(mocks.replace).not.toHaveBeenCalled();
+  });
+
+  it("shows a loading shell while workspace context is pending", async () => {
+    mockWorkspaceContext(undefined, { isPending: true });
+
+    await renderLayout();
+
+    expect(screen.getByTestId("workspace-shell").getAttribute("data-loading")).toBe("true");
+    expect(screen.getByLabelText("Loading page")).toBeTruthy();
+    expect(screen.queryByText("Dashboard screen")).toBeNull();
   });
 
   it("redirects to onboarding when the user has no workspace", async () => {
@@ -290,9 +311,9 @@ describe("WorkspaceClientLayout", () => {
     });
     mocks.useAppQuery.mockImplementation((queryKey: readonly unknown[]) => {
       if (queryKey[0] === "app" && queryKey[1] === "workspace-context") {
-        return { data: sync, error: null, refetch: vi.fn() };
+        return { data: sync, error: null, refetch: vi.fn(), isPending: false };
       }
-      return { data: undefined, error: null, refetch: vi.fn() };
+      return { data: undefined, error: null, refetch: vi.fn(), isPending: true };
     });
 
     const { WorkspaceClientLayout } = await import("@/components/workspace-client-layout");
@@ -338,9 +359,9 @@ describe("WorkspaceClientLayout", () => {
     });
     mocks.useAppQuery.mockImplementation((queryKey: readonly unknown[]) => {
       if (queryKey[0] === "app" && queryKey[1] === "workspace-context") {
-        return { data: context, error: null, refetch: vi.fn() };
+        return { data: context, error: null, refetch: vi.fn(), isPending: false };
       }
-      return { data: undefined, error: null, refetch: vi.fn() };
+      return { data: undefined, error: null, refetch: vi.fn(), isPending: true };
     });
 
     const { WorkspaceClientLayout } = await import("@/components/workspace-client-layout");

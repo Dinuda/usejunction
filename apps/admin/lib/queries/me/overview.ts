@@ -10,6 +10,7 @@ import type { OrganizationRole } from "@/lib/workspace-context";
 import { rollupPersonalToolsUsage } from "@/lib/queries/me/tools-usage-rollup";
 import {
   computePersonalSeatCommitment,
+  microsToDollars,
   type SubscriptionSeatRow,
 } from "@/lib/billing/actual-spend";
 import type { CycleView } from "@/lib/dashboard/cycle-view";
@@ -123,6 +124,8 @@ export interface MeOverviewData {
   /** Personal spend KPIs aligned with the team dashboard strip. */
   kpis: {
     subscriptionCommitment: number;
+    /** Purchased seats assigned to this person. */
+    seats: number;
     verifiedUsageCost: number;
     estimatedApiCost: number;
     tokens: number;
@@ -139,6 +142,17 @@ export interface MeOverviewData {
     cacheReadTokens: number;
     cacheWriteTokens: number;
     cost: number;
+    verifiedUsageCost: number;
+    estimatedApiCost: number;
+  }>;
+  /** Active seat assignments — used to resolve billing cycle windows on plan cards. */
+  planSeats: Array<{
+    toolName: string;
+    billingCadence: string;
+    billingCycleAnchorDate: string | null;
+    billingCycleDays: number | null;
+    /** Full-cycle seat dollars for this assignment (seatCount × cycle seat price). */
+    cycleSeatCost: number;
   }>;
   aiCoding30d: AiCodingMetrics;
   modelUsage30d: ModelUsageRow[];
@@ -332,6 +346,7 @@ async function buildMeOverview(
     from: usage30d.from,
     to: usage30d.to,
   });
+  const seatCount = seatRows.reduce((sum, row) => sum + Math.max(0, row.seatCount), 0);
 
   const detectedToolNames = developer.devices.flatMap((device) =>
     device.toolInstallations.map((tool) => tool.toolName),
@@ -346,9 +361,20 @@ async function buildMeOverview(
       cacheReadTokens: row.cacheReadTokens,
       cacheWriteTokens: row.cacheWriteTokens,
       cost: row.cost,
+      verifiedUsageCost: row.verifiedUsageCost,
+      estimatedApiCost: row.estimatedApiCost,
     })),
     detectedToolNames,
   );
+  const planSeats = planAssignments.map((row) => ({
+    toolName: row.toolName,
+    billingCadence: row.billingCadence,
+    billingCycleAnchorDate: row.billingCycleAnchorDate
+      ? row.billingCycleAnchorDate.toISOString().slice(0, 10)
+      : null,
+    billingCycleDays: row.billingCycleDays ?? null,
+    cycleSeatCost: microsToDollars(row.cycleSeatMicros * BigInt(Math.max(0, row.seatCount))),
+  }));
 
   const modelUsageRows: ModelUsageRow[] = snapshotUsage.models.flatMap((row) => {
     const cost = row.verifiedUsageCost + row.estimatedApiCost;
@@ -509,6 +535,7 @@ async function buildMeOverview(
     },
     kpis: {
       subscriptionCommitment,
+      seats: seatCount,
       verifiedUsageCost,
       estimatedApiCost,
       tokens,
@@ -517,6 +544,7 @@ async function buildMeOverview(
       rangeDays,
     },
     toolsUsage30d,
+    planSeats,
     aiCoding30d,
     modelUsage30d: modelUsageRows,
     sync: {

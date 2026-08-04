@@ -9,6 +9,7 @@ import {
 import { findCatalogTool, subscriptionToolKeys, toolUsageNames } from "@/lib/tools/catalog";
 import { mapVendorPlanToCatalog } from "@/lib/tools/sync-detected";
 import { listSubscriptions, type listSubscriptions as ListSubscriptions } from "@/lib/tools/subscriptions";
+import { isPersonCovered } from "@/lib/queries/dashboard/tool-detail-kpi";
 
 export type ToolDetailData = {
   toolKey: string;
@@ -22,6 +23,7 @@ export type ToolDetailData = {
   kpis: {
     devices: number;
     people: number;
+    peopleInstallOnly: number;
     seatsFree: number;
     seatsPurchased: number;
     seatsAssigned: number;
@@ -34,6 +36,7 @@ export type ToolDetailData = {
     name: string;
     email: string;
     detected: boolean;
+    coverage: "covered" | "install_only";
     deviceHostname: string | null;
     vendorPlan: string | null;
     vendorEmail: string | null;
@@ -227,6 +230,15 @@ export async function getToolDetail(
     }
   >();
 
+  const usageByDeveloper = new Set<string>();
+  for (const row of modelRows) {
+    if (!row.developerId) continue;
+    const cost = row.verifiedUsageCost + row.estimatedApiCost;
+    if (row.requests > 0 || row.inputTokens > 0 || row.outputTokens > 0 || cost > 0) {
+      usageByDeveloper.add(row.developerId);
+    }
+  }
+
   for (const installation of installations) {
     const existing = peopleMap.get(installation.user.id);
     peopleMap.set(installation.user.id, {
@@ -246,15 +258,16 @@ export async function getToolDetail(
   for (const account of accounts) {
     const existing = peopleMap.get(account.user.id);
     const mapped = account.plan ? mapVendorPlanToCatalog(tool.key, account.plan) : null;
+    // Accounts are ordered updatedAt desc — keep the freshest non-null vendor plan.
     peopleMap.set(account.user.id, {
       developerId: account.user.id,
       name: account.user.name,
       email: account.user.email,
       detected: true,
       deviceHostname: existing?.deviceHostname ?? account.device?.hostname ?? null,
-      vendorPlan: account.plan ?? existing?.vendorPlan ?? null,
-      vendorEmail: account.email ?? existing?.vendorEmail ?? null,
-      mappedCatalogPlanKey: mapped ?? existing?.mappedCatalogPlanKey ?? null,
+      vendorPlan: existing?.vendorPlan ?? account.plan ?? null,
+      vendorEmail: existing?.vendorEmail ?? account.email ?? null,
+      mappedCatalogPlanKey: existing?.mappedCatalogPlanKey ?? mapped ?? null,
       assignment: existing?.assignment ?? null,
       planMismatch: false,
     });
@@ -290,7 +303,52 @@ export async function getToolDetail(
     });
   }
 
-  const people = Array.from(peopleMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  // Usage can land (OTEL / local JSONL) before install+account inventory. Fold those
+  // developers into people so Live quotas can surface them instead of Models-only ghosts.
+  const usageDeveloperIds = [
+    ...new Set(
+      modelRows
+        .map((row) => row.developerId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ].filter((id) => !peopleMap.has(id));
+  if (usageDeveloperIds.length) {
+    const usageDevelopers = await prisma.developer.findMany({
+      where: { orgId, id: { in: usageDeveloperIds } },
+      select: { id: true, name: true, email: true },
+    });
+    for (const developer of usageDevelopers) {
+      peopleMap.set(developer.id, {
+        developerId: developer.id,
+        name: developer.name,
+        email: developer.email,
+        detected: false,
+        deviceHostname: null,
+        vendorPlan: null,
+        vendorEmail: null,
+        mappedCatalogPlanKey: null,
+        assignment: null,
+        planMismatch: false,
+      });
+    }
+  }
+
+  const people = Array.from(peopleMap.values())
+    .map((person) => {
+      const covered = isPersonCovered({
+        assignment: person.assignment,
+        vendorPlan: person.vendorPlan,
+        hasUsage: usageByDeveloper.has(person.developerId),
+      });
+      return {
+        ...person,
+        coverage: covered ? "covered" : "install_only",
+      } as ToolDetailData["people"][number];
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const peopleCovered = people.filter((person) => person.coverage === "covered").length;
+  const peopleInstallOnly = people.filter((person) => person.coverage === "install_only").length;
 
   const quotaRows: ToolDetailData["quotas"] = [];
   for (const quota of quotas) {
@@ -349,7 +407,8 @@ export async function getToolDetail(
     sourceUrl: tool.sourceUrl,
     kpis: {
       devices: deviceIds.size,
-      people: people.length,
+      people: peopleCovered,
+      peopleInstallOnly,
       seatsFree: Math.max(0, seatsPurchased - seatsAssigned),
       seatsPurchased,
       seatsAssigned,

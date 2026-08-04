@@ -1,7 +1,8 @@
-import { prisma } from "@usejunction/db";
+import { prisma, Prisma } from "@usejunction/db";
 import type { MetricWindow } from "@/lib/analytics/contracts/time-window";
 import { UTC_TIMEZONE } from "@/lib/analytics/contracts/time-window";
 import {
+  readDeveloperActivityFromSnapshots,
   readOrgUsageFromSnapshots,
   type SnapshotToolDay,
 } from "@/lib/analytics/snapshots";
@@ -29,6 +30,7 @@ import type { OrgOverviewV1, OverviewInput } from "@/lib/insights/contracts/over
 import { buildAttentionItems } from "@/lib/insights/policies/attention";
 import { getPlanUsage } from "@/lib/insights/queries/get-plan-usage";
 import { rollupSubscriptionCyclesByTool, enrichSubscriptionCyclesWithUtilization, filterActiveSubscriptionCycles } from "@/lib/insights/queries/rollup-subscription-cycles";
+import { seatBillingCadenceForTool } from "@/lib/tools/detected-cycle";
 import { mergeUsageBackedCycleSources } from "@/lib/insights/queries/usage-backed-cycle-sources";
 import { readDeviceCoverage } from "@/lib/insights/readers/devices";
 import { getDashboardConfigHealth } from "@/lib/queries/dashboard/config-health";
@@ -65,17 +67,137 @@ function toMetricWindow(from: Date, to: Date): MetricWindow {
   return { from, to, timezone: UTC_TIMEZONE, grain: "day" };
 }
 
+/** Cached — avoids Prisma P2021 log spam when extraction_contract migration isn't applied yet. */
+let providerCapabilitiesTableExists: boolean | null = null;
+
+async function hasProviderCapabilitiesTable() {
+  if (providerCapabilitiesTableExists !== null) return providerCapabilitiesTableExists;
+  const rows = await prisma.$queryRaw<Array<{ exists: boolean }>>(Prisma.sql`
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = 'provider_connection_capabilities'
+    ) AS "exists"
+  `);
+  providerCapabilitiesTableExists = Boolean(rows[0]?.exists);
+  return providerCapabilitiesTableExists;
+}
+
+async function loadProviderConnections(orgId: string) {
+  if (await hasProviderCapabilitiesTable()) {
+    return prisma.providerConnection.findMany({
+      where: { orgId },
+      select: {
+        provider: true,
+        product: true,
+        status: true,
+        lastSyncedAt: true,
+        capabilities: {
+          select: { capability: true, status: true, dataThrough: true },
+          orderBy: { capability: "asc" },
+        },
+      },
+    });
+  }
+  const rows = await prisma.providerConnection.findMany({
+    where: { orgId },
+    select: { provider: true, product: true, status: true, lastSyncedAt: true },
+  });
+  return rows.map((row) => ({ ...row, capabilities: [] }));
+}
+
+async function readProviderAnalytics(orgId: string, from: Date, to: Date): Promise<OrgOverviewV1["providerCards"]> {
+  const [usage, seats, connections] = await Promise.all([
+    prisma.$queryRaw<Array<{ provider: string; product: string; requests: bigint; spendMicros: bigint; activeDevelopers: number }>>(Prisma.sql`
+      SELECT provider, product,
+        COALESCE(SUM(requests), 0)::bigint AS requests,
+        COALESCE(SUM(cost_micros), 0)::bigint AS "spendMicros",
+        COUNT(DISTINCT developer_id)::int AS "activeDevelopers"
+      FROM usage_daily
+      WHERE org_id = ${orgId} AND date >= ${from}::date AND date <= ${to}::date
+      GROUP BY provider, product
+    `),
+    prisma.$queryRaw<Array<{ provider: string; product: string; activeSeats: number; matchedSeats: number }>>(Prisma.sql`
+      SELECT provider, product,
+        COUNT(*) FILTER (WHERE status = 'active')::int AS "activeSeats",
+        COUNT(*) FILTER (WHERE status = 'active' AND developer_id IS NOT NULL)::int AS "matchedSeats"
+      FROM seat_assignments
+      WHERE org_id = ${orgId}
+      GROUP BY provider, product
+    `),
+    loadProviderConnections(orgId),
+  ]);
+
+  const keys = new Set([...usage, ...seats, ...connections].map((row) => `${row.provider}:${row.product}`));
+  return [...keys].sort().map((key) => {
+    const [provider, product] = key.split(":");
+    const usageRow = usage.find((row) => row.provider === provider && row.product === product);
+    const seatRow = seats.find((row) => row.provider === provider && row.product === product);
+    const connection = connections.find((row) => row.provider === provider && row.product === product);
+    const activeSeats = seatRow?.activeSeats ?? 0;
+    const activeDevelopers = usageRow?.activeDevelopers ?? 0;
+    const unusedSeats = Math.max(0, activeSeats - activeDevelopers);
+    const capabilities = (connection?.capabilities ?? []).map((capability) => ({
+      name: capability.capability,
+      status: capability.status,
+      dataThrough: capability.dataThrough?.toISOString() ?? null,
+    }));
+    const actions: string[] = [];
+    if (unusedSeats > 0) actions.push(`${unusedSeats} active seats have no activity in this window`);
+    if ((seatRow?.activeSeats ?? 0) > 0 && (seatRow?.matchedSeats ?? 0) < (seatRow?.activeSeats ?? 0)) actions.push("Review unmatched provider identities");
+    if (connection?.status === "degraded" || connection?.status === "error") actions.push("Repair provider connection");
+    if (capabilities.some((capability) => capability.status !== "available")) actions.push("Review unavailable provider capabilities");
+    return {
+      provider,
+      product,
+      status: connection?.status ?? "unconnected",
+      activeSeats,
+      matchedSeats: seatRow?.matchedSeats ?? 0,
+      activeDevelopers,
+      unusedSeats,
+      requests: Number(usageRow?.requests ?? 0),
+      spend: Number(usageRow?.spendMicros ?? 0) / 1_000_000,
+      lastSyncedAt: connection?.lastSyncedAt?.toISOString() ?? null,
+      dataThrough: capabilities.reduce<string | null>((latest, capability) => capability.dataThrough && (!latest || capability.dataThrough > latest) ? capability.dataThrough : latest, null),
+      capabilities,
+      actions,
+    };
+  });
+}
+
 async function readOverviewUsage(
   orgId: string,
   window: MetricWindow,
   includeTools: boolean,
-  filters: { toolNames?: string[]; ensure?: boolean } = {},
+  filters: { toolNames?: string[]; ensure?: boolean; includeModels?: boolean } = {},
 ) {
   const snapshot = await readOrgUsageFromSnapshots(orgId, window, {
     includeTools,
+    includeModels: filters.includeModels,
     toolNames: filters.toolNames,
     ensure: filters.ensure,
   });
+  const models = snapshot.models
+    .filter((row) => row.developerId === "")
+    .map((row) => {
+      const cost = row.verifiedUsageCost + row.estimatedApiCost;
+      return {
+        toolName: row.toolName || "unknown",
+        model: row.modelName || "unknown",
+        requests: row.requests,
+        tokens: row.inputTokens + row.outputTokens,
+        cost,
+      };
+    })
+    .filter((row) => row.requests > 0 || row.tokens > 0 || row.cost > 0)
+    .sort(
+      (a, b) =>
+        b.requests - a.requests ||
+        b.tokens - a.tokens ||
+        b.cost - a.cost ||
+        a.model.localeCompare(b.model),
+    );
   return {
     dataThrough: snapshot.dataThrough,
     kpis: snapshot.kpis,
@@ -86,6 +208,7 @@ async function readOverviewUsage(
       cost: tool.cost,
       activeDevelopers: tool.activeDevelopers,
     })),
+    models,
     activeDevelopers: snapshot.activeDevelopers,
     toolDays: snapshot.toolDays,
   };
@@ -115,6 +238,7 @@ type SubscriptionSlice = {
   toolName: string;
   toolKey: string | null;
   usageToolNames: string[];
+  billingCadence: string;
   cycle: BillingCycle;
   windowFrom: Date;
   windowTo: Date;
@@ -152,23 +276,28 @@ function buildSubscriptionSlices(input: {
 }) {
   const slices: SubscriptionSlice[] = [];
   for (const subscription of input.subscriptions) {
+    const billingCadence = seatBillingCadenceForTool(
+      subscription.toolKey ?? subscription.toolName,
+      subscription.billingCadence,
+    );
+    const cycleSource = { ...subscription, billingCadence };
     const baseCycle =
       input.view === "previous_cycles"
-        ? resolveBillingCycleOffset(subscription, input.now, -1)
-        : resolveBillingCycleOffset(subscription, input.now, 0);
+        ? resolveBillingCycleOffset(cycleSource, input.now, -1)
+        : resolveBillingCycleOffset(cycleSource, input.now, 0);
 
     const cycles =
       input.view !== "last_30_days"
         ? [baseCycle]
         : (() => {
             const rows: BillingCycle[] = [];
-            let cursor = resolveBillingCycleOffset(subscription, input.last30.from, 0);
+            let cursor = resolveBillingCycleOffset(cycleSource, input.last30.from, 0);
             while (cursor.cycleStart < input.last30.toExclusive) {
               if (overlapDays(cursor.cycleStart, cursor.cycleEnd, input.last30.from, input.last30.toExclusive) > 0) {
                 rows.push(cursor);
               }
               const nextStart = cursor.cycleEnd;
-              const nextEnd = addCycles(nextStart, subscription.billingCadence, 1, subscription.billingCycleDays);
+              const nextEnd = addCycles(nextStart, billingCadence, 1, subscription.billingCycleDays);
               cursor = {
                 cycleStart: nextStart,
                 cycleEnd: nextEnd,
@@ -197,6 +326,7 @@ function buildSubscriptionSlices(input: {
         toolName: subscription.toolName,
         toolKey: subscription.toolKey,
         usageToolNames: subscription.usageToolNames,
+        billingCadence,
         cycle,
         windowFrom: window.from,
         windowTo: new Date(window.toExclusive.getTime() - DAY_MS),
@@ -416,10 +546,11 @@ export async function getOrgOverviewMetrics(
     previousTo: usageInclusiveEnd(previousWindow.to),
     previousToExclusive: usageExclusiveEnd(previousWindow.to),
   };
+  const providerCards = await readProviderAnalytics(orgId, dates.from, dates.to);
 
   // Page reads never ensure/rematerialize — sync commit + cron own freshness.
   const [currentUsage, previousUsage, failures, planUsage] = await Promise.all([
-    readOverviewUsage(orgId, reportWindow, true, { ensure: false }),
+    readOverviewUsage(orgId, reportWindow, true, { ensure: false, includeModels: true }),
     readOverviewUsage(orgId, previousWindow, false, { ensure: false }),
     prisma.$queryRaw<
       Array<{
@@ -490,8 +621,34 @@ export async function getOrgOverviewMetrics(
     (sum, slice) => sum + microsToDollars(slice.spendMicros),
     0,
   );
+  const seatsBySubscription = new Map<string, number>();
+  for (const slice of subscriptionSlices) {
+    seatsBySubscription.set(slice.subscriptionId, Math.max(0, slice.seatCount));
+  }
+  const seatCount = Array.from(seatsBySubscription.values()).reduce((sum, n) => sum + n, 0);
 
   const daysWithActivity = currentTrend.filter((row) => row.modelCalls > 0).length;
+  const [peopleActivity, developerNames] = await Promise.all([
+    readDeveloperActivityFromSnapshots(orgId, reportWindow, { ensure: false }),
+    prisma.developer.findMany({
+      where: { orgId, removedAt: null },
+      select: { id: true, name: true, email: true },
+    }),
+  ]);
+  const nameById = new Map(
+    developerNames.map((row) => [row.id, row.name?.trim() || row.email || "Unknown"]),
+  );
+  const people = peopleActivity
+    .map((row) => ({
+      id: row.developerId,
+      name: nameById.get(row.developerId) ?? "Unknown",
+      requests: row.requests,
+      cost: row.cost,
+    }))
+    .filter((row) => row.cost > 0 || row.requests > 0)
+    .sort((a, b) => b.cost - a.cost || b.requests - a.requests)
+    .slice(0, 8);
+
   const firstActivityDate = currentTrend.find((row) => row.modelCalls > 0)?.date ?? null;
   const observation = observationCoverage({
     rangeDays: range,
@@ -547,6 +704,11 @@ export async function getOrgOverviewMetrics(
         deltaPercent: null,
         basis: subscriptionSlices.length ? ("subscriptions" as const) : ("none" as const),
       },
+      seats: {
+        value: seatCount,
+        previousValue: 0,
+        deltaPercent: null,
+      },
       verifiedUsageCost: {
         value: usageKpis.verifiedUsageCost,
         previousValue: previousKpis.verifiedUsageCost,
@@ -581,6 +743,7 @@ export async function getOrgOverviewMetrics(
               windowFrom: isoDay(slice.windowFrom),
               windowTo: isoDay(slice.windowTo),
               billingCycle: cycleToJson(slice.cycle),
+              billingCadence: slice.billingCadence,
             };
           }),
         ).map((row) => {
@@ -606,6 +769,7 @@ export async function getOrgOverviewMetrics(
         windowFrom: isoDay(slice.windowFrom),
         windowTo: isoDay(slice.windowTo),
         billingCycle: cycleToJson(slice.cycle),
+        billingCadence: slice.billingCadence,
       })),
     )
       .map((row) => ({
@@ -625,6 +789,9 @@ export async function getOrgOverviewMetrics(
     }),
     attention,
     tools: mergedTools,
+    models: currentUsage.models,
+    providerCards,
+    people,
     coverage: {
       activeDevelopers: currentUsage.activeDevelopers,
     },

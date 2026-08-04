@@ -1,5 +1,5 @@
 import type { BillingCadence } from "@/lib/tools/catalog";
-import { catalogPrice, findCatalogPlan, toolUsageNames } from "@/lib/tools/catalog";
+import { canonicalToolKey, catalogPrice, findCatalogPlan, toolUsageNames } from "@/lib/tools/catalog";
 import { isSecondaryQuotaWindow } from "@/lib/quotas/display";
 import { utcDateOnly } from "@/lib/metrics/date-range";
 
@@ -37,16 +37,46 @@ export function cadenceFromQuotaWindow(windowType: string): BillingCadence {
   return "monthly";
 }
 
+/** Tools whose seats are billed monthly — weekly/5h vendor windows are usage caps only. */
+const MONTHLY_SEAT_BILLING_TOOLS = new Set([
+  "chatgpt-codex",
+  "claude",
+  "antigravity",
+  "cursor",
+  "github-copilot",
+]);
+
+export function usesMonthlySeatBilling(toolKey: string): boolean {
+  return MONTHLY_SEAT_BILLING_TOOLS.has(canonicalToolKey(toolKey));
+}
+
 /**
  * Subscription billing cadence for detected plans.
- * ChatGPT/Codex is billed monthly even though vendor quotas are often weekly.
+ * Claude / Antigravity / Cursor / Copilot / ChatGPT bill seats monthly even when
+ * vendor quotas reset weekly.
  */
 export function subscriptionBillingCadence(
   toolKey: string,
   quotaWindowType: string | null = null,
 ): BillingCadence {
-  if (toolKey === "chatgpt-codex") return "monthly";
+  if (usesMonthlySeatBilling(toolKey)) return "monthly";
   if (quotaWindowType) return cadenceFromQuotaWindow(quotaWindowType);
+  return "monthly";
+}
+
+/**
+ * Prefer stored cadence only when the tool is not a known monthly-seat vendor.
+ * Fixes overview bars that were wrongly weekly from usage-window sync.
+ */
+export function seatBillingCadenceForTool(
+  toolKey: string | null | undefined,
+  storedCadence: string | null | undefined,
+): BillingCadence {
+  if (usesMonthlySeatBilling(toolKey ?? "")) return "monthly";
+  const stored = (storedCadence ?? "").trim().toLowerCase();
+  if (stored === "weekly" || stored === "monthly" || stored === "annual" || stored === "custom") {
+    return stored;
+  }
   return "monthly";
 }
 
@@ -76,9 +106,9 @@ export function detectedCycleFromQuotas(
   options: { toolKey?: string } = {},
 ): DetectedCycleHint {
   const toolKey = options.toolKey ?? "";
-  const forceMonthlyBilling = toolKey === "chatgpt-codex";
+  const forceMonthlyBilling = usesMonthlySeatBilling(toolKey);
 
-  // Weekly Codex quotas are usage windows only — never treat them as Plus renewal.
+  // Weekly/5h quotas are usage windows only — never treat them as seat renewal.
   const billingRows = forceMonthlyBilling
     ? rows.filter((row) => row.resetAt && isBillingGradeQuotaWindow(row.windowType))
     : rows;

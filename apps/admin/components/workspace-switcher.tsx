@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { WorkspaceColorSwatches, WorkspaceIcon } from "@/components/workspace-icon";
+import { Skeleton } from "@/components/ui/skeleton";
 import { userFacingError } from "@/lib/errors/user-facing";
 import { activateWorkspace } from "@/lib/api/client";
 import { canManageSettings } from "@/lib/rbac/permissions";
@@ -160,7 +161,12 @@ export function WorkspaceSwitcher({
   }
 
   if (!organizations.length || !value || !current) {
-    return <span className="text-sm font-medium text-foreground">UseJunction</span>;
+    return (
+      <Skeleton
+        className={cn("h-9 w-[clamp(5.25rem,27vw,9rem)] sm:h-9 sm:w-48", className)}
+        aria-hidden
+      />
+    );
   }
 
   return (

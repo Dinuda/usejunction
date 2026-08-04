@@ -28,6 +28,51 @@ test("buildMemberPlanBoard uses vendorSeats when account plan is missing", () =>
   assert.equal(cards.length, 1);
   assert.equal(cards[0]?.planName, "Pro");
   assert.equal(cards[0]?.accountEmail, "dev@example.com");
+  assert.equal(cards[0]?.billingCycle?.cycleStart, "2026-07-01");
+  assert.equal(cards[0]?.billingCycle?.cycleEnd, "2026-08-01");
+  assert.equal(cards[0]?.usage?.verifiedUsageCost, 0);
+  assert.equal(cards[0]?.usage?.estimatedApiCost, 5);
+});
+
+test("buildMemberPlanBoard prefers seat assignment cycle anchors", () => {
+  const now = new Date("2026-08-03T12:00:00.000Z");
+  const cards = buildMemberPlanBoard({
+    now,
+    planSeats: [
+      {
+        toolName: "claude",
+        billingCadence: "monthly",
+        billingCycleAnchorDate: "2026-07-08",
+        billingCycleDays: null,
+      },
+    ],
+    toolsUsage: [
+      {
+        toolName: "claude",
+        requests: 10,
+        tokens: 1000,
+        cost: 621.62,
+        verifiedUsageCost: 0,
+        estimatedApiCost: 621.62,
+      },
+    ],
+    snapshots: [
+      {
+        toolName: "claude",
+        windowType: "plan",
+        usedPercent: 9,
+        creditsRemaining: null,
+        resetAt: new Date("2026-08-08T00:00:00.000Z"),
+        source: "cli_rpc",
+        updatedAt: now,
+      },
+    ],
+  });
+
+  assert.equal(cards[0]?.billingCycle?.cycleStart, "2026-07-08");
+  assert.equal(cards[0]?.billingCycle?.cycleEnd, "2026-08-08");
+  assert.equal(cards[0]?.usage?.verifiedUsageCost, 0);
+  assert.equal(cards[0]?.usage?.estimatedApiCost, 621.62);
 });
 
 test("buildMemberPlanBoard maps Copilot educational vendor plan to Student", () => {

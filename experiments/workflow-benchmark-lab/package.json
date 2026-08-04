@@ -1,0 +1,11 @@
+{
+  "name": "workflow-benchmark-lab",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "run": "pnpm --filter @usejunction/admin exec tsx ../../experiments/workflow-benchmark-lab/scripts/run.ts",
+    "manual-report": "pnpm --filter @usejunction/admin exec tsx ../../experiments/workflow-benchmark-lab/scripts/manual-report.ts",
+    "manual-chart": "pnpm --filter @usejunction/admin exec tsx ../../experiments/workflow-benchmark-lab/scripts/manual-chart.ts",
+    "test": "pnpm --filter @usejunction/admin exec tsx --test ../../experiments/workflow-benchmark-lab/test/normalize.test.ts ../../experiments/workflow-benchmark-lab/test/metrics.test.ts ../../experiments/workflow-benchmark-lab/test/files.test.ts"
+  }
+}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { cycleFromNextRenewal, resolveBillingCycle } from "../lib/billing/cycles";
+import { cycleFromNextRenewal, resolveBillingCycle, billingCadenceLabel } from "../lib/billing/cycles";
 import {
   cadenceFromQuotaWindow,
   detectedCycleFromQuotas,
@@ -10,6 +10,19 @@ import {
 } from "../lib/tools/detected-cycle";
 import { deriveSubscription } from "../lib/tools/subscriptions";
 
+test("billingCadenceLabel maps cadence and totalDays to display labels", () => {
+  assert.equal(billingCadenceLabel("monthly"), "Monthly");
+  assert.equal(billingCadenceLabel("weekly"), "Weekly");
+  assert.equal(billingCadenceLabel("annual"), "Annual");
+  assert.equal(billingCadenceLabel("yearly"), "Annual");
+  assert.equal(billingCadenceLabel("custom", 14), "14-day");
+  assert.equal(billingCadenceLabel(null, 365), "Annual");
+  assert.equal(billingCadenceLabel(null, 31), "Monthly");
+  assert.equal(billingCadenceLabel(null, 7), "Weekly");
+  assert.equal(billingCadenceLabel(null, 3), "3-day");
+  assert.equal(billingCadenceLabel(null), "Plan");
+});
+
 test("cadenceFromQuotaWindow maps weekly and cursor monthly family", () => {
   assert.equal(cadenceFromQuotaWindow("weekly"), "weekly");
   assert.equal(cadenceFromQuotaWindow("plan"), "monthly");
@@ -17,10 +30,13 @@ test("cadenceFromQuotaWindow maps weekly and cursor monthly family", () => {
   assert.equal(cadenceFromQuotaWindow("auto"), "monthly");
 });
 
-test("ChatGPT/Codex subscription billing is always monthly", () => {
+test("major coding tools bill seats monthly even when quotas are weekly", () => {
   assert.equal(subscriptionBillingCadence("chatgpt-codex", "weekly"), "monthly");
+  assert.equal(subscriptionBillingCadence("claude", "weekly"), "monthly");
+  assert.equal(subscriptionBillingCadence("antigravity", "seven_day"), "monthly");
+  assert.equal(subscriptionBillingCadence("cursor", "weekly"), "monthly");
   assert.equal(subscriptionBillingCadence("cursor", "plan"), "monthly");
-  assert.equal(subscriptionBillingCadence("cursor", "weekly"), "weekly");
+  assert.equal(subscriptionBillingCadence("github-copilot", "weekly"), "monthly");
 });
 
 test("selectCycleQuota prefers newest reset among same-rank windows", () => {
@@ -95,6 +111,40 @@ test("detectedCycleFromQuotas: ChatGPT weekly quota does not become Plus renewal
   assert.equal(hint.billingCadence, "monthly");
   assert.equal(hint.nextRenewalDate, null);
   assert.equal(hint.windowType, null);
+});
+
+test("detectedCycleFromQuotas: Claude weekly quota does not become seat billing", () => {
+  const hint = detectedCycleFromQuotas(
+    [
+      {
+        toolName: "claude",
+        windowType: "weekly",
+        usedPercent: 40,
+        resetAt: new Date("2026-08-08T00:00:00.000Z"),
+        updatedAt: new Date("2026-08-03T12:00:00.000Z"),
+      },
+    ],
+    { toolKey: "claude" },
+  );
+  assert.equal(hint.billingCadence, "monthly");
+  assert.equal(hint.nextRenewalDate, null);
+});
+
+test("detectedCycleFromQuotas: Antigravity weekly quota does not become seat billing", () => {
+  const hint = detectedCycleFromQuotas(
+    [
+      {
+        toolName: "antigravity",
+        windowType: "seven_day",
+        usedPercent: 10,
+        resetAt: new Date("2026-08-10T00:00:00.000Z"),
+        updatedAt: new Date("2026-08-03T12:00:00.000Z"),
+      },
+    ],
+    { toolKey: "antigravity" },
+  );
+  assert.equal(hint.billingCadence, "monthly");
+  assert.equal(hint.nextRenewalDate, null);
 });
 
 test("deriveSubscription prices ChatGPT Plus monthly from catalog", () => {

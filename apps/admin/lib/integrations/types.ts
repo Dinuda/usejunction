@@ -78,6 +78,16 @@ export type ProviderUsage = {
   pullRequests?: number;
   costMicros?: bigint;
   metadata?: Record<string, unknown>;
+  /** Extraction-contract provenance. Kept separate from provider metadata. */
+  sourceEndpoint?: string;
+  sourceCapability?: string;
+  sourceRecordId?: string | null;
+  evidence?: EvidenceSource;
+  metricKind?: "usage" | "productivity";
+  costKind?: "actual_spend" | "subscription_committed" | "vendor_reported" | "included_usage" | "overage" | "estimated_api" | null;
+  surface?: string | null;
+  repository?: { host: string; owner: string; name: string } | null;
+  temporality?: "delta" | "cumulative" | "gauge";
 };
 
 export type ProviderSyncData = {

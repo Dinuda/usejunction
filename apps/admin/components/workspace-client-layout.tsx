@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { WorkspaceShell } from "@/components/workspace-shell";
-import { AppPageError, AppPageSkeleton, isBlockingAppQueryError } from "@/components/app-data-state";
+import { AppPageError, isBlockingAppQueryError } from "@/components/app-data-state";
 import { TimezoneReporter } from "@/components/timezone-reporter";
 import { activateWorkspace, AppApiError, useAppQuery } from "@/lib/api/client";
 import { workspaceContextKey } from "@/lib/app-pages/query-keys";
@@ -167,11 +167,14 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
   const migrationPending = Boolean(
     syncInFlight || (context?.sessionWorkspaceSyncRequired && current && !syncFailed),
   );
+  const contextLoading =
+    sessionStatus === "loading" || (contextQuery.isPending && !context);
 
   const contextError = contextQuery.error ?? (syncFailed
     ? new AppApiError(500, "WORKSPACE_SESSION_SYNC_FAILED", "Could not sync your workspace session.")
     : null);
   const blockingContextError = isBlockingAppQueryError(contextError, Boolean(context));
+  const shellLoading = contextLoading || migrationPending;
 
   return (
     <WorkspaceShell
@@ -182,9 +185,10 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
       email={session?.user?.email}
       image={session?.user?.image}
       billing={context?.billing ?? null}
+      loading={shellLoading}
     >
       <TimezoneReporter />
-      {migrationPending ? <AppPageSkeleton /> : blockingContextError ? (
+      {shellLoading ? null : blockingContextError ? (
         <AppPageError
           error={contextError}
           retry={() => {

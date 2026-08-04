@@ -1,0 +1,4 @@
+{"timestamp":"2026-08-01T10:00:00.000Z","role":"user","message":"Fix the failing auth test"}
+{"timestamp":"2026-08-01T10:01:00.000Z","role":"assistant","model":"test-model","tool_call":{"name":"exec_command"}}
+{"timestamp":"2026-08-01T10:02:00.000Z","role":"tool","status":"failed","output":"test failed"}
+{"timestamp":"2026-08-01T10:03:00.000Z","role":"tool","status":"success","output":"tests passed","input_tokens":100,"output_tokens":50}

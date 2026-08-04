@@ -17,6 +17,8 @@ export type SubscriptionCycleSliceRow = {
   windowFrom: string;
   windowTo: string;
   billingCycle: BillingCycleInfo;
+  /** Seat billing cadence for this slice (monthly / weekly / …). */
+  billingCadence?: string | null;
 };
 
 export type ToolSubscriptionCycleRow = {
@@ -37,7 +39,10 @@ export type ToolSubscriptionCycleRow = {
   verdictCode: PlanVerdictCode | null;
   /** Earliest projected allowance exhaustion among near-limit plans. */
   expectedEndAt: string | null;
+  /** Primary seat billing cycle (longest among plans under this tool). */
   billingCycle: BillingCycleInfo;
+  /** Seat billing cadence for the primary cycle (monthly / weekly / …). */
+  billingCadence: string | null;
   usageWindow: UsageWindowMetadata | null;
   projectionState: "forming" | "reliable" | "unavailable";
 };
@@ -76,25 +81,41 @@ function planExpectedEndAt(
   return projectQuotaPace(plan.primaryQuota, now).exhaustAt;
 }
 
+function seatWeight(plan: PlanUsageSubscriptionRow) {
+  return Math.max(1, plan.assignedSeats || plan.seatCapacity || 1);
+}
+
+/** Seat-weighted average of plan ratios (0–1). */
+function weightedAverageRatio(
+  plans: PlanUsageSubscriptionRow[],
+  ratioFor: (plan: PlanUsageSubscriptionRow) => number | null,
+) {
+  let weightedSum = 0;
+  let weightTotal = 0;
+  for (const plan of plans) {
+    const ratio = ratioFor(plan);
+    if (ratio == null) continue;
+    const weight = seatWeight(plan);
+    weightedSum += ratio * weight;
+    weightTotal += weight;
+  }
+  if (weightTotal <= 0) return null;
+  return weightedSum / weightTotal;
+}
+
 function aggregateUtilization(
   plans: PlanUsageSubscriptionRow[],
   includeLiveQuota: boolean,
   now: Date,
 ) {
-  const withSignal = plans.filter((plan) => planPrimaryRatio(plan, includeLiveQuota) != null);
-  const withDisplay = plans
-    .map((plan) => planDisplayRatio(plan, includeLiveQuota))
-    .filter((ratio): ratio is number => ratio != null);
-  const utilizationPercent =
-    withSignal.length > 0
-      ? (withSignal.reduce((sum, plan) => sum + (planPrimaryRatio(plan, includeLiveQuota) ?? 0), 0) /
-          withSignal.length) *
-        100
-      : null;
-  const utilizationDisplayPercent =
-    withDisplay.length > 0
-      ? (withDisplay.reduce((sum, ratio) => sum + ratio, 0) / withDisplay.length) * 100
-      : null;
+  const utilizationRatio = weightedAverageRatio(plans, (plan) =>
+    planPrimaryRatio(plan, includeLiveQuota),
+  );
+  const displayRatio = weightedAverageRatio(plans, (plan) =>
+    planDisplayRatio(plan, includeLiveQuota),
+  );
+  const utilizationPercent = utilizationRatio == null ? null : utilizationRatio * 100;
+  const utilizationDisplayPercent = displayRatio == null ? null : displayRatio * 100;
 
   // Previous cycles must not reuse live quota pace verdicts.
   if (!includeLiveQuota) {
@@ -213,12 +234,15 @@ export function rollupSubscriptionCyclesByTool(slices: SubscriptionCycleSliceRow
     toolKey: string | null;
     plans: Map<string, string>;
     cycleSpend: number;
+    /** Seat spend of the plan that owns billingCycle / billingCadence. */
+    primarySpend: number;
     verifiedUsageCost: number;
     estimatedApiCost: number;
     modelCalls: number;
     windowFrom: string;
     windowTo: string;
     billingCycle: BillingCycleInfo;
+    billingCadence: string | null;
   };
 
   const groups = new Map<string, Acc>();
@@ -226,6 +250,7 @@ export function rollupSubscriptionCyclesByTool(slices: SubscriptionCycleSliceRow
   for (const slice of slices) {
     const key = toolGroupKey(slice.toolKey, slice.toolName);
     const existing = groups.get(key);
+    const sliceCadence = slice.billingCadence ?? null;
     if (!existing) {
       groups.set(key, {
         id: key,
@@ -233,12 +258,14 @@ export function rollupSubscriptionCyclesByTool(slices: SubscriptionCycleSliceRow
         toolKey: slice.toolKey,
         plans: new Map([[slice.subscriptionId, slice.name]]),
         cycleSpend: slice.cycleSpend,
+        primarySpend: slice.cycleSpend,
         verifiedUsageCost: slice.verifiedUsageCost,
         estimatedApiCost: slice.estimatedApiCost,
         modelCalls: slice.modelCalls,
         windowFrom: slice.windowFrom,
         windowTo: slice.windowTo,
         billingCycle: slice.billingCycle,
+        billingCadence: sliceCadence,
       });
       continue;
     }
@@ -250,8 +277,20 @@ export function rollupSubscriptionCyclesByTool(slices: SubscriptionCycleSliceRow
     existing.modelCalls += slice.modelCalls;
     if (slice.windowFrom < existing.windowFrom) existing.windowFrom = slice.windowFrom;
     if (slice.windowTo > existing.windowTo) existing.windowTo = slice.windowTo;
-    if (slice.billingCycle.nextRenewalDate < existing.billingCycle.nextRenewalDate) {
+    // Prefer the longest seat billing period (monthly over weekly usage-derived cycles).
+    // Tie-break: higher seat spend, then sooner renewal.
+    const longer = slice.billingCycle.totalDays > existing.billingCycle.totalDays;
+    const sameLengthHigherSpend =
+      slice.billingCycle.totalDays === existing.billingCycle.totalDays &&
+      slice.cycleSpend > existing.primarySpend;
+    const sameLengthSameSpendSooner =
+      slice.billingCycle.totalDays === existing.billingCycle.totalDays &&
+      slice.cycleSpend === existing.primarySpend &&
+      slice.billingCycle.nextRenewalDate < existing.billingCycle.nextRenewalDate;
+    if (longer || sameLengthHigherSpend || sameLengthSameSpendSooner) {
       existing.billingCycle = slice.billingCycle;
+      existing.billingCadence = sliceCadence ?? existing.billingCadence;
+      existing.primarySpend = slice.cycleSpend;
     }
     if (!existing.toolKey && slice.toolKey) existing.toolKey = slice.toolKey;
     if (slice.toolName && existing.toolName.length < slice.toolName.length) {
@@ -282,6 +321,7 @@ export function rollupSubscriptionCyclesByTool(slices: SubscriptionCycleSliceRow
         verdictCode: null,
         expectedEndAt: null,
         billingCycle: row.billingCycle,
+        billingCadence: row.billingCadence,
         usageWindow: null,
         projectionState: "unavailable" as const,
       };

@@ -23,52 +23,54 @@ model Organization {
   currentPeriodEnd           DateTime? @map("current_period_end")
   createdAt                  DateTime  @default(now()) @map("created_at")
 
-  developers             Developer[]
-  memberships            OrganizationMembership[]
-  devices                Device[]
-  toolInstallations      ToolInstallation[]
-  localModels            LocalModel[]
-  requestMetadata        RequestMetadata[]
-  enrollmentTokens       EnrollmentToken[]
-  toolAccounts           ToolAccount[]
-  quotaSnapshots         QuotaSnapshot[]
-  quotaObservations      QuotaObservation[]
-  planInterests          PlanInterest[]
-  domains                OrganizationDomain[]
-  invites                OrganizationInvite[]
-  teamInviteLinks        TeamInviteLink[]
-  providerConnections    ProviderConnection[]
-  providerSyncRuns       ProviderSyncRun[]
-  apiCreditPools         ApiCreditPool[]
-  providerApiKeys        ProviderApiKey[]
-  externalIdentities     ExternalIdentity[]
-  seatAssignments        SeatAssignment[]
-  repositories           Repository[]
-  usageDaily             UsageDaily[]
-  orgUsageDaySnapshots   OrgUsageDaySnapshot[]
-  analyticsDirtyDays     AnalyticsDirtyDay[]
-  analyticsWatermarks    AnalyticsWatermark[]
-  syncRuns               SyncRun[]
-  syncRequests           SyncRequest[]
-  deviceSyncRequestTargets DeviceSyncRequestTarget[]
-  deviceUsageFingerprints DeviceUsageFingerprint[]
-  toolClaims             DeveloperToolClaim[]
-  billingPlanTemplates   BillingPlanTemplate[]
-  planAssignments        DeveloperPlanAssignment[]
-  telemetryEndpoint      TelemetryEndpoint?
-  signalsPolicies        SignalsPolicy[]
-  signalsActivityEvents  SignalsActivityEvent[]
-  signalsSessions        SignalsSession[]
-  localWorkSessions      LocalWorkSession[]
-  auditLogs              AuditLog[]
-  agentUpdateDeployments AgentUpdateDeployment[]
-  agentUpdateEvents      AgentUpdateEvent[]
-  activitySettings       ActivitySettings?
-  deviceActivityEvents   DeviceActivityEvent[]
-  notificationPreferences UserNotificationPreference[]
-  dailyReportDeliveries      DailyReportDelivery[]
-  dailyReportUsageSnapshots  DailyReportUsageSnapshot[]
-  deviceRecoveryNotices      DeviceRecoveryNotice[]
+  developers                Developer[]
+  memberships               OrganizationMembership[]
+  devices                   Device[]
+  toolInstallations         ToolInstallation[]
+  localModels               LocalModel[]
+  requestMetadata           RequestMetadata[]
+  enrollmentTokens          EnrollmentToken[]
+  toolAccounts              ToolAccount[]
+  quotaSnapshots            QuotaSnapshot[]
+  quotaObservations         QuotaObservation[]
+  planInterests             PlanInterest[]
+  domains                   OrganizationDomain[]
+  invites                   OrganizationInvite[]
+  teamInviteLinks           TeamInviteLink[]
+  providerConnections       ProviderConnection[]
+  providerSyncRuns          ProviderSyncRun[]
+  providerCapabilities      ProviderConnectionCapability[]
+  providerSourceRecords     ProviderSourceRecord[]
+  apiCreditPools            ApiCreditPool[]
+  providerApiKeys           ProviderApiKey[]
+  externalIdentities        ExternalIdentity[]
+  seatAssignments           SeatAssignment[]
+  repositories              Repository[]
+  usageDaily                UsageDaily[]
+  orgUsageDaySnapshots      OrgUsageDaySnapshot[]
+  analyticsDirtyDays        AnalyticsDirtyDay[]
+  analyticsWatermarks       AnalyticsWatermark[]
+  syncRuns                  SyncRun[]
+  syncRequests              SyncRequest[]
+  deviceSyncRequestTargets  DeviceSyncRequestTarget[]
+  deviceUsageFingerprints   DeviceUsageFingerprint[]
+  toolClaims                DeveloperToolClaim[]
+  billingPlanTemplates      BillingPlanTemplate[]
+  planAssignments           DeveloperPlanAssignment[]
+  telemetryEndpoint         TelemetryEndpoint?
+  signalsPolicies           SignalsPolicy[]
+  signalsActivityEvents     SignalsActivityEvent[]
+  signalsSessions           SignalsSession[]
+  localWorkSessions         LocalWorkSession[]
+  auditLogs                 AuditLog[]
+  agentUpdateDeployments    AgentUpdateDeployment[]
+  agentUpdateEvents         AgentUpdateEvent[]
+  activitySettings          ActivitySettings?
+  deviceActivityEvents      DeviceActivityEvent[]
+  notificationPreferences   UserNotificationPreference[]
+  dailyReportDeliveries     DailyReportDelivery[]
+  dailyReportUsageSnapshots DailyReportUsageSnapshot[]
+  deviceRecoveryNotices     DeviceRecoveryNotice[]
 
   @@map("organizations")
 }
@@ -110,70 +112,70 @@ model Developer {
 }
 
 model Device {
-  id                 String    @id @default(cuid())
-  orgId              String    @map("org_id")
-  userId             String    @map("user_id")
-  hostname           String
-  os                 String
-  architecture       String
-  agentVersion       String    @map("agent_version")
-  lastSeenAt         DateTime  @default(now()) @map("last_seen_at")
-  deviceToken        String    @unique @map("device_token")
-  deviceTokenHash    String?   @unique @map("device_token_hash")
-  localEndpoint      String?   @map("local_endpoint")
-  localSyncTokenHash String?   @map("local_sync_token_hash")
-  localSyncTokenEnc  String?   @map("local_sync_token_enc")
-  remoteSyncProtocol Int       @default(0) @map("remote_sync_protocol")
-  lastUsageSyncAt    DateTime? @map("last_usage_sync_at")
-  lastAccountSyncAt  DateTime? @map("last_account_sync_at")
-  lastToolsSyncAt    DateTime? @map("last_tools_sync_at")
-  lastQuotasSyncAt   DateTime? @map("last_quotas_sync_at")
-  toolsContentHash   String?   @map("tools_content_hash")
-  accountsContentHash String?  @map("accounts_content_hash")
-  quotasContentHash  String?   @map("quotas_content_hash")
-  decommissionedAt   DateTime? @map("decommissioned_at")
-  createdAt          DateTime  @default(now()) @map("created_at")
+  id                  String    @id @default(cuid())
+  orgId               String    @map("org_id")
+  userId              String    @map("user_id")
+  hostname            String
+  os                  String
+  architecture        String
+  agentVersion        String    @map("agent_version")
+  lastSeenAt          DateTime  @default(now()) @map("last_seen_at")
+  deviceToken         String    @unique @map("device_token")
+  deviceTokenHash     String?   @unique @map("device_token_hash")
+  localEndpoint       String?   @map("local_endpoint")
+  localSyncTokenHash  String?   @map("local_sync_token_hash")
+  localSyncTokenEnc   String?   @map("local_sync_token_enc")
+  remoteSyncProtocol  Int       @default(0) @map("remote_sync_protocol")
+  lastUsageSyncAt     DateTime? @map("last_usage_sync_at")
+  lastAccountSyncAt   DateTime? @map("last_account_sync_at")
+  lastToolsSyncAt     DateTime? @map("last_tools_sync_at")
+  lastQuotasSyncAt    DateTime? @map("last_quotas_sync_at")
+  toolsContentHash    String?   @map("tools_content_hash")
+  accountsContentHash String?   @map("accounts_content_hash")
+  quotasContentHash   String?   @map("quotas_content_hash")
+  decommissionedAt    DateTime? @map("decommissioned_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
 
-  organization           Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  user                   Developer               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  toolInstallations      ToolInstallation[]
-  localModels            LocalModel[]
-  requestMetadata        RequestMetadata[]
-  toolAccounts           ToolAccount[]
-  quotaSnapshots         QuotaSnapshot[]
-  quotaObservations      QuotaObservation[]
-  usageDaily             UsageDaily[]
-  syncRuns               SyncRun[]
-  syncChunks             SyncChunk[]
+  organization            Organization              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user                    Developer                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  toolInstallations       ToolInstallation[]
+  localModels             LocalModel[]
+  requestMetadata         RequestMetadata[]
+  toolAccounts            ToolAccount[]
+  quotaSnapshots          QuotaSnapshot[]
+  quotaObservations       QuotaObservation[]
+  usageDaily              UsageDaily[]
+  syncRuns                SyncRun[]
+  syncChunks              SyncChunk[]
   deviceUsageFingerprints DeviceUsageFingerprint[]
-  signalsActivityEvents  SignalsActivityEvent[]
-  signalsSessions        SignalsSession[]
-  localWorkSessions      LocalWorkSession[]
-  agentUpdateDeployments AgentUpdateDeployment[]
-  agentUpdateEvents      AgentUpdateEvent[]
-  deviceActivityEvents   DeviceActivityEvent[]
-  syncRequestTargets     DeviceSyncRequestTarget[]
-  recoveryNotices        DeviceRecoveryNotice[]
+  signalsActivityEvents   SignalsActivityEvent[]
+  signalsSessions         SignalsSession[]
+  localWorkSessions       LocalWorkSession[]
+  agentUpdateDeployments  AgentUpdateDeployment[]
+  agentUpdateEvents       AgentUpdateEvent[]
+  deviceActivityEvents    DeviceActivityEvent[]
+  syncRequestTargets      DeviceSyncRequestTarget[]
+  recoveryNotices         DeviceRecoveryNotice[]
 
   @@map("devices")
 }
 
 model SyncRequest {
-  id                  String   @id @default(cuid())
-  orgId               String   @map("org_id")
-  requesterUserId     String?  @map("requester_user_id")
-  scope               String
-  trigger             String   @default("manual")
-  automationKey       String?  @unique @map("automation_key")
-  developerId         String?  @map("developer_id")
-  idempotencyKey      String?  @map("idempotency_key")
-  realtimeChannel     String?  @map("realtime_channel")
-  dispatchStatus      String   @default("pending") @map("dispatch_status")
-  dispatchError       String?  @map("dispatch_error") @db.Text
-  publishedAt         DateTime? @map("published_at")
-  expiresAt           DateTime @map("expires_at")
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  id              String    @id @default(cuid())
+  orgId           String    @map("org_id")
+  requesterUserId String?   @map("requester_user_id")
+  scope           String
+  trigger         String    @default("manual")
+  automationKey   String?   @unique @map("automation_key")
+  developerId     String?   @map("developer_id")
+  idempotencyKey  String?   @map("idempotency_key")
+  realtimeChannel String?   @map("realtime_channel")
+  dispatchStatus  String    @default("pending") @map("dispatch_status")
+  dispatchError   String?   @map("dispatch_error") @db.Text
+  publishedAt     DateTime? @map("published_at")
+  expiresAt       DateTime  @map("expires_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   organization Organization              @relation(fields: [orgId], references: [id], onDelete: Cascade)
   developer    Developer?                @relation(fields: [developerId], references: [id], onDelete: SetNull)
@@ -209,26 +211,26 @@ model DeviceRecoveryNotice {
 }
 
 model DeviceSyncRequestTarget {
-  id              String    @id @default(cuid())
-  requestId       String    @map("request_id")
-  orgId           String    @map("org_id")
-  deviceId        String    @map("device_id")
-  status          String    @default("queued")
-  leaseToken      String?   @map("lease_token")
-  leaseExpiresAt  DateTime? @map("lease_expires_at")
-  attemptCount    Int       @default(0) @map("attempt_count")
-  claimedAt       DateTime? @map("claimed_at")
-  runningAt       DateTime? @map("running_at")
-  completedAt     DateTime? @map("completed_at")
-  toolsCount      Int?      @map("tools_count")
-  accountsCount   Int?      @map("accounts_count")
-  quotasCount     Int?      @map("quotas_count")
-  usageRowsCount  Int?      @map("usage_rows_count")
-  warnings        Json?
-  errorCode       String?   @map("error_code")
-  errorMessage    String?   @map("error_message") @db.Text
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  id             String    @id @default(cuid())
+  requestId      String    @map("request_id")
+  orgId          String    @map("org_id")
+  deviceId       String    @map("device_id")
+  status         String    @default("queued")
+  leaseToken     String?   @map("lease_token")
+  leaseExpiresAt DateTime? @map("lease_expires_at")
+  attemptCount   Int       @default(0) @map("attempt_count")
+  claimedAt      DateTime? @map("claimed_at")
+  runningAt      DateTime? @map("running_at")
+  completedAt    DateTime? @map("completed_at")
+  toolsCount     Int?      @map("tools_count")
+  accountsCount  Int?      @map("accounts_count")
+  quotasCount    Int?      @map("quotas_count")
+  usageRowsCount Int?      @map("usage_rows_count")
+  warnings       Json?
+  errorCode      String?   @map("error_code")
+  errorMessage   String?   @map("error_message") @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   syncRequest  SyncRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -478,26 +480,26 @@ model QuotaObservation {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String    @unique
-  emailVerified DateTime?
-  image         String?
-  passwordHash  String?
+  id             String    @id @default(cuid())
+  name           String?
+  email          String    @unique
+  emailVerified  DateTime?
+  image          String?
+  passwordHash   String?
   /// IANA timezone (e.g. Asia/Colombo). Used for 19:00 local daily reports.
-  timeZone       String?  @map("time_zone")
-  timeZoneSource String?  @map("time_zone_source")
-  timeZoneManual Boolean  @default(false) @map("time_zone_manual")
-  createdAt     DateTime  @default(now()) @map("created_at")
+  timeZone       String?   @map("time_zone")
+  timeZoneSource String?   @map("time_zone_source")
+  timeZoneManual Boolean   @default(false) @map("time_zone_manual")
+  createdAt      DateTime  @default(now()) @map("created_at")
 
-  accounts                 Account[]
-  sessions                 Session[]
-  memberships              OrganizationMembership[]
-  actionTokens             AuthActionToken[]
-  planInterests            PlanInterest[]
-  developerProfiles        Developer[]
-  notificationPreferences  UserNotificationPreference[]
-  dailyReportDeliveries    DailyReportDelivery[]
+  accounts                Account[]
+  sessions                Session[]
+  memberships             OrganizationMembership[]
+  actionTokens            AuthActionToken[]
+  planInterests           PlanInterest[]
+  developerProfiles       Developer[]
+  notificationPreferences UserNotificationPreference[]
+  dailyReportDeliveries   DailyReportDelivery[]
 
   @@map("auth_users")
 }
@@ -677,8 +679,10 @@ model ProviderConnection {
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
-  organization       Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  organization       Organization                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   syncRuns           ProviderSyncRun[]
+  capabilities       ProviderConnectionCapability[]
+  sourceRecords      ProviderSourceRecord[]
   externalIdentities ExternalIdentity[]
   seatAssignments    SeatAssignment[]
   usageDaily         UsageDaily[]
@@ -716,6 +720,58 @@ model ApiCreditPool {
   @@index([orgId, active])
   @@index([orgId, provider, product])
   @@map("api_credit_pools")
+}
+
+/// Per-capability checkpoint. A single provider key can expose multiple
+/// independent feeds with different permissions and freshness guarantees.
+model ProviderConnectionCapability {
+  id            String    @id @default(cuid())
+  orgId         String    @map("org_id")
+  connectionId  String    @map("connection_id")
+  capability    String
+  endpoint      String?
+  status        String    @default("unknown")
+  permission    String?
+  schemaVersion String?   @map("schema_version")
+  cursor        String?
+  dataThrough   DateTime? @map("data_through")
+  lastCheckedAt DateTime? @map("last_checked_at")
+  lastSuccessAt DateTime? @map("last_success_at")
+  lastError     String?   @map("last_error") @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  organization Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  connection   ProviderConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, capability])
+  @@index([orgId, status])
+  @@map("provider_connection_capabilities")
+}
+
+/// Short-lived, sanitized source evidence used for audit and replay.
+model ProviderSourceRecord {
+  id               String    @id @default(cuid())
+  orgId            String    @map("org_id")
+  connectionId     String    @map("connection_id")
+  syncRunId        String?   @map("sync_run_id")
+  capability       String
+  externalRecordId String?   @map("external_record_id")
+  fingerprint      String
+  schemaVersion    String    @map("schema_version")
+  occurredAt       DateTime? @map("occurred_at")
+  payload          Json
+  expiresAt        DateTime  @map("expires_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  organization Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  connection   ProviderConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  syncRun      ProviderSyncRun?   @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
+
+  @@unique([connectionId, capability, fingerprint])
+  @@index([orgId, expiresAt])
+  @@index([connectionId, capability, occurredAt])
+  @@map("provider_source_records")
 }
 
 model ProviderApiKey {
@@ -760,8 +816,9 @@ model ProviderSyncRun {
   counts       Json?
   error        String?   @db.Text
 
-  organization Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  connection   ProviderConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  organization  Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  connection    ProviderConnection     @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  sourceRecords ProviderSourceRecord[]
 
   @@index([connectionId, startedAt])
   @@map("provider_sync_runs")
@@ -885,32 +942,32 @@ model UsageDaily {
 /// `toolName = ""` is the day total for that developer (or org); other rows are per-tool.
 /// `modelName = ""` is the tool/day rollup; non-empty is per-model within a tool.
 model OrgUsageDaySnapshot {
-  id                        String   @id @default(cuid())
-  orgId                     String   @map("org_id")
-  date                      DateTime @db.Date
-  toolName                  String   @default("") @map("tool_name")
-  developerId               String   @default("") @map("developer_id")
-  modelName                 String   @default("") @map("model_name")
-  metricVersion             String   @map("metric_version")
-  requests                  Int      @default(0)
-  sessions                  Int      @default(0)
-  inputTokens               BigInt   @default(0) @map("input_tokens")
-  outputTokens              BigInt   @default(0) @map("output_tokens")
-  cacheReadTokens           BigInt   @default(0) @map("cache_read_tokens")
-  cacheWriteTokens          BigInt   @default(0) @map("cache_write_tokens")
-  reasoningTokens           BigInt   @default(0) @map("reasoning_tokens")
-  suggestedLines            Int      @default(0) @map("suggested_lines")
-  acceptedLines             Int      @default(0) @map("accepted_lines")
-  addedLines                Int      @default(0) @map("added_lines")
-  deletedLines              Int      @default(0) @map("deleted_lines")
-  commits                   Int      @default(0)
-  verifiedUsageCostMicros   BigInt   @default(0) @map("verified_usage_cost_micros")
-  estimatedApiCostMicros    BigInt   @default(0) @map("estimated_api_cost_micros")
-  actualSpendCostMicros     BigInt   @default(0) @map("actual_spend_cost_micros")
-  activeDevelopers          Int      @default(0) @map("active_developers")
-  activeDeveloperIds        Json     @default("[]") @map("active_developer_ids")
-  computedAt                DateTime @map("computed_at")
-  sourceObservedThrough     DateTime? @map("source_observed_through")
+  id                      String    @id @default(cuid())
+  orgId                   String    @map("org_id")
+  date                    DateTime  @db.Date
+  toolName                String    @default("") @map("tool_name")
+  developerId             String    @default("") @map("developer_id")
+  modelName               String    @default("") @map("model_name")
+  metricVersion           String    @map("metric_version")
+  requests                Int       @default(0)
+  sessions                Int       @default(0)
+  inputTokens             BigInt    @default(0) @map("input_tokens")
+  outputTokens            BigInt    @default(0) @map("output_tokens")
+  cacheReadTokens         BigInt    @default(0) @map("cache_read_tokens")
+  cacheWriteTokens        BigInt    @default(0) @map("cache_write_tokens")
+  reasoningTokens         BigInt    @default(0) @map("reasoning_tokens")
+  suggestedLines          Int       @default(0) @map("suggested_lines")
+  acceptedLines           Int       @default(0) @map("accepted_lines")
+  addedLines              Int       @default(0) @map("added_lines")
+  deletedLines            Int       @default(0) @map("deleted_lines")
+  commits                 Int       @default(0)
+  verifiedUsageCostMicros BigInt    @default(0) @map("verified_usage_cost_micros")
+  estimatedApiCostMicros  BigInt    @default(0) @map("estimated_api_cost_micros")
+  actualSpendCostMicros   BigInt    @default(0) @map("actual_spend_cost_micros")
+  activeDevelopers        Int       @default(0) @map("active_developers")
+  activeDeveloperIds      Json      @default("[]") @map("active_developer_ids")
+  computedAt              DateTime  @map("computed_at")
+  sourceObservedThrough   DateTime? @map("source_observed_through")
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
@@ -935,15 +992,15 @@ model AnalyticsDirtyDay {
 }
 
 model AnalyticsWatermark {
-  id               String    @id @default(cuid())
-  orgId            String    @map("org_id")
-  kind             String
-  metricVersion    String    @map("metric_version")
-  cursorDate       DateTime? @map("cursor_date") @db.Date
-  status           String    @default("idle")
-  lastError        String?   @map("last_error")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
-  createdAt        DateTime  @default(now()) @map("created_at")
+  id            String    @id @default(cuid())
+  orgId         String    @map("org_id")
+  kind          String
+  metricVersion String    @map("metric_version")
+  cursorDate    DateTime? @map("cursor_date") @db.Date
+  status        String    @default("idle")
+  lastError     String?   @map("last_error")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
@@ -953,26 +1010,26 @@ model AnalyticsWatermark {
 
 /// Server-tracked usage sync session (replaces client-only fingerprint drain).
 model SyncRun {
-  id              String    @id @default(cuid())
-  orgId           String    @map("org_id")
-  deviceId        String    @map("device_id")
-  kind            String    @default("usage")
-  status          String    @default("open") // open | receiving | committed | failed
-  expectedChunks  Int       @default(0) @map("expected_chunks")
-  receivedChunks  Int       @default(0) @map("received_chunks")
-  expectedRows    Int       @default(0) @map("expected_rows")
-  receivedRows    Int       @default(0) @map("received_rows")
-  manifestHash    String?   @map("manifest_hash")
+  id                 String    @id @default(cuid())
+  orgId              String    @map("org_id")
+  deviceId           String    @map("device_id")
+  kind               String    @default("usage")
+  status             String    @default("open") // open | receiving | committed | failed
+  expectedChunks     Int       @default(0) @map("expected_chunks")
+  receivedChunks     Int       @default(0) @map("received_chunks")
+  expectedRows       Int       @default(0) @map("expected_rows")
+  receivedRows       Int       @default(0) @map("received_rows")
+  manifestHash       String?   @map("manifest_hash")
   /// JSON array of partition keys expected in this run (delta set).
-  deltaPartitions Json      @default("[]") @map("delta_partitions")
+  deltaPartitions    Json      @default("[]") @map("delta_partitions")
   /// JSON array of all partition keys in the lookback manifest (authoritative for reconciliation).
-  manifestPartitions Json   @default("[]") @map("manifest_partitions")
-  windowFrom      DateTime? @map("window_from") @db.Date
-  windowTo        DateTime? @map("window_to") @db.Date
-  error           String?
-  startedAt       DateTime  @default(now()) @map("started_at")
-  committedAt     DateTime? @map("committed_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  manifestPartitions Json      @default("[]") @map("manifest_partitions")
+  windowFrom         DateTime? @map("window_from") @db.Date
+  windowTo           DateTime? @map("window_to") @db.Date
+  error              String?
+  startedAt          DateTime  @default(now()) @map("started_at")
+  committedAt        DateTime? @map("committed_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
@@ -1037,7 +1094,6 @@ model DeveloperToolClaim {
   @@map("developer_tool_claims")
 }
 
-
 model TelemetryEndpoint {
   id        String   @id @default(cuid())
   orgId     String   @unique @map("org_id")
@@ -1053,20 +1109,20 @@ model TelemetryEndpoint {
 }
 
 model SignalsPolicy {
-  id                    String   @id @default(cuid())
-  orgId                 String   @map("org_id")
-  enabled               Boolean  @default(false)
-  retentionDays         Int      @default(90) @map("retention_days")
-  collectionMode        String   @default("app_domain") @map("collection_mode")
-  excludedApps          String[] @default([]) @map("excluded_apps")
-  excludedDomains       String[] @default([]) @map("excluded_domains")
-  storeEvents           Boolean  @default(false) @map("store_events")
-  workExtractionEnabled Boolean  @default(false) @map("work_extraction_enabled")
-  rawWorkTextEnabled    Boolean  @default(false) @map("raw_work_text_enabled")
+  id                      String    @id @default(cuid())
+  orgId                   String    @map("org_id")
+  enabled                 Boolean   @default(false)
+  retentionDays           Int       @default(90) @map("retention_days")
+  collectionMode          String    @default("app_domain") @map("collection_mode")
+  excludedApps            String[]  @default([]) @map("excluded_apps")
+  excludedDomains         String[]  @default([]) @map("excluded_domains")
+  storeEvents             Boolean   @default(false) @map("store_events")
+  workExtractionEnabled   Boolean   @default(false) @map("work_extraction_enabled")
+  rawWorkTextEnabled      Boolean   @default(false) @map("raw_work_text_enabled")
   workExtractionStartedAt DateTime? @map("work_extraction_started_at")
-  updatedByUserId       String?  @map("updated_by_user_id")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  updatedByUserId         String?   @map("updated_by_user_id")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
@@ -1075,14 +1131,14 @@ model SignalsPolicy {
 }
 
 model ActivitySettings {
-  id                         String   @id @default(cuid())
-  orgId                      String   @unique @map("org_id")
-  teamPeriodControlsEnabled  Boolean  @default(false) @map("team_period_controls_enabled")
-  teamDeviceActivityEnabled  Boolean  @default(true) @map("team_device_activity_enabled")
-  teamToolsBrowseEnabled     Boolean  @default(true) @map("team_tools_browse_enabled")
-  updatedByUserId            String?  @map("updated_by_user_id")
-  createdAt                  DateTime @default(now()) @map("created_at")
-  updatedAt                  DateTime @updatedAt @map("updated_at")
+  id                        String   @id @default(cuid())
+  orgId                     String   @unique @map("org_id")
+  teamPeriodControlsEnabled Boolean  @default(false) @map("team_period_controls_enabled")
+  teamDeviceActivityEnabled Boolean  @default(true) @map("team_device_activity_enabled")
+  teamToolsBrowseEnabled    Boolean  @default(true) @map("team_tools_browse_enabled")
+  updatedByUserId           String?  @map("updated_by_user_id")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
@@ -1317,13 +1373,13 @@ model AppRuntimeSetting {
 
 /// Per-user, per-workspace email digest preferences (defaults on when missing).
 model UserNotificationPreference {
-  id                    String   @id @default(cuid())
-  userId                String   @map("user_id")
-  orgId                 String   @map("org_id")
-  dailyPersonalEnabled  Boolean  @default(true) @map("daily_personal_enabled")
-  dailyOrgEnabled       Boolean  @default(true) @map("daily_org_enabled")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  id                   String   @id @default(cuid())
+  userId               String   @map("user_id")
+  orgId                String   @map("org_id")
+  dailyPersonalEnabled Boolean  @default(true) @map("daily_personal_enabled")
+  dailyOrgEnabled      Boolean  @default(true) @map("daily_org_enabled")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
