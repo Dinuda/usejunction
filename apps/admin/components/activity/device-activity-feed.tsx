@@ -263,7 +263,7 @@ export function DeviceActivityFeed({
       <Panel as="section" className="mt-10">
         <SignalsSectionHeader
           title="Device activity."
-          description="Requests Junction made to connected machines, what came back, and observed activity on those machines."
+          description="Requests UseJunction made to connected machines, what came back, and observed activity on those machines."
           bordered={false}
           action={
             feed.items.length ? (
@@ -298,7 +298,7 @@ export function DeviceActivityFeed({
           <SheetHeader className="border-b border-border/70 p-5 text-left">
             <SheetTitle className="text-lg font-semibold tracking-tight">Device activity</SheetTitle>
             <SheetDescription>
-              Machine exchanges Junction requested and what was returned, plus gateway requests, work
+              Machine exchanges UseJunction requested and what was returned, plus gateway requests, work
               sessions, and Signals journeys when available. Open a row for details and Inspect for the
               sanitized payload.
             </SheetDescription>

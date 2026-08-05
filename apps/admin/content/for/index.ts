@@ -68,7 +68,7 @@ export const forCursor = toolPage({
   name: "Cursor",
   primaryKeyword: "Cursor usage analytics for teams",
   secondaryKeywords: ["Cursor plan usage team", "Cursor seat utilization", "Cursor cost per developer", "unused Cursor seats"],
-  indexable: true,
+  indexable: false,
   answer:
     "UseJunction tracks Cursor usage across your engineering org: who is active, which models run, estimated cost and latency, and how seats and cycles are utilized—so you can see plan usage and waste with privacy-first controls.",
   extras: ["Personal vs company key signals on enrolled devices.", "Coverage gaps when Cursor is installed but the agent is unhealthy."],
@@ -105,7 +105,7 @@ export const forClaudeCode = toolPage({
   name: "Claude Code",
   primaryKeyword: "Claude Code usage analytics for teams",
   secondaryKeywords: ["Claude Code plan usage", "Claude Code cost per developer", "Claude Code team dashboard"],
-  indexable: true,
+  indexable: false,
   answer:
     "UseJunction gives platform teams an org-wide view of Claude Code usage—adoption, models, cost, latency, and plan pressure—self-hosted and open source.",
   extras: ["Combine Claude Code with Cursor and Copilot in one operating picture."],
@@ -132,7 +132,7 @@ export const forCodex = toolPage({
   name: "Codex",
   primaryKeyword: "Codex usage analytics for teams",
   secondaryKeywords: ["OpenAI Codex team analytics", "Codex cost per developer", "Codex plan usage team"],
-  indexable: true,
+  indexable: false,
   answer:
     "UseJunction observes Codex usage on enrolled developer devices so you can attribute activity, cost, and health alongside your other AI coding tools.",
   extras: [],
@@ -159,7 +159,7 @@ export const forCopilot = toolPage({
   name: "GitHub Copilot",
   primaryKeyword: "GitHub Copilot usage analytics for teams",
   secondaryKeywords: ["Copilot seat utilization", "Copilot cost visibility", "GitHub Copilot seat waste"],
-  indexable: true,
+  indexable: false,
   answer:
     "UseJunction helps you see GitHub Copilot in context of the rest of your AI coding stack—usage signals, coverage, and cost attribution next to Cursor and Claude Code.",
   extras: [],

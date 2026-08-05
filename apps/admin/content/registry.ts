@@ -51,15 +51,15 @@ export function contentBreadcrumbs(page: ContentPage): { label: string; href?: s
 export function buildSitemapEntries(): SitemapEntry[] {
   const home: SitemapEntry = {
     path: "/",
-    lastModified: "2026-07-19",
+    lastModified: "2026-08-05",
     changeFrequency: "weekly",
     priority: 1,
   };
 
   const hubs: SitemapEntry[] = [
     { path: "/guides", lastModified: "2026-07-19", changeFrequency: "weekly", priority: 0.8 },
-    { path: "/compare", lastModified: "2026-07-19", changeFrequency: "weekly", priority: 0.8 },
-    { path: "/for", lastModified: "2026-07-19", changeFrequency: "weekly", priority: 0.8 },
+    { path: "/compare", lastModified: "2026-08-05", changeFrequency: "weekly", priority: 0.8 },
+    // /for hub omitted — all /for/* pages are noindex to keep brand signals focused on home + solutions
     { path: "/solutions", lastModified: "2026-08-04", changeFrequency: "weekly", priority: 0.9 },
     { path: "/blog", lastModified: "2026-07-19", changeFrequency: "weekly", priority: 0.7 },
     { path: "/contact", lastModified: "2026-07-19", changeFrequency: "monthly", priority: 0.5 },
@@ -83,21 +83,12 @@ export function buildSitemapEntries(): SitemapEntry[] {
   return [home, ...hubs, ...blogPages, ...pages];
 }
 
-/** Priority cite URLs for answer engines */
+/** Priority cite URLs for answer engines — keep short so brand entity stays clear. */
 export const AEO_CITE_PATHS = [
   "/",
-  "/solutions/ai-coding-observability-for-teams",
+  "/compare/junction-panel",
   "/solutions/ai-coding-spend-management",
   "/solutions/ai-coding-seat-utilization",
-  "/solutions/ai-coding-plan-usage",
   "/guides/see-plan-usage-and-waste",
-  "/guides/see-team-ai-coding-usage",
-  "/guides/open-source-wakatime-alternative-for-ai-coding",
-  "/blog/ai-coding-observability-vs-jellyfish-dx-linearb",
-  "/compare/engineering-intelligence",
   "/blog/what-is-ai-coding-observability",
-  "/compare/wakatime",
-  "/compare/codexbar",
-  "/for/cursor",
-  "/for/claude-code",
 ] as const;

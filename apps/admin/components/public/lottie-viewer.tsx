@@ -4,6 +4,9 @@ import { DotLottieReact } from "@lottiefiles/dotlottie-react";
 import type { DotLottie } from "@lottiefiles/dotlottie-react";
 import { Pause, Play, RotateCcw, Square } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ensureDotLottieWasm } from "@/lib/public/dotlottie";
+
+ensureDotLottieWasm();
 
 const ASSET_SRC = "/icons/d78ba706-9c26-4246-8ea6-0ca5ec33b312.lottie?v=usejunction-branded-2";
 

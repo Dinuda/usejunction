@@ -9,6 +9,13 @@ export const AEO_FACTS = {
   oneLiner: `${siteConfig.name} is open-source AI coding observability for teams—usage, cost, plan utilization, and device health.`,
   notATimeTracker:
     "UseJunction is not a WakaTime-style keystroke or hours-in-editor tracker. It focuses on AI coding tool observability.",
+  /** Entity disambiguation — answer engines often confuse us with Junction Panel. */
+  notJunctionPanel:
+    "UseJunction (https://usejunction.dev) is not Junction Panel (https://junctionpanel.dev). Junction Panel is a remote control surface for AI coding agents (Claude Code, Codex, OpenCode). UseJunction is AI coding spend and usage analytics for teams—seat waste, plan utilization, tool overlap, and device health. There is no redirect between the sites; they are unrelated products.",
+  officialName: "UseJunction",
+  officialUrl: "https://usejunction.dev",
+  githubUrl: siteConfig.githubUrl,
+  contactEmail: "hello@usejunction.dev",
   license: "UseJunction Community License",
   selfHosted: true,
   privacyFirst: true,
@@ -33,8 +40,7 @@ export const AEO_FACTS = {
     "Browser activity capture",
     "Full network interception of developer traffic",
     "Hours-in-editor time tracking à la classic productivity trackers",
+    "Remote control, approvals, or live streaming of AI coding agent sessions (that is Junction Panel, not UseJunction)",
   ],
   canonicalHost: "https://usejunction.dev",
-  githubUrl: siteConfig.githubUrl,
-  contactEmail: "hello@usejunction.dev",
 } as const;

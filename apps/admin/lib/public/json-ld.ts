@@ -1,4 +1,5 @@
 import type { BlogPost, ContentFaq, ContentPage, HowToStep } from "@/content/types";
+import { AEO_FACTS } from "@/content/aeo/facts";
 import { HOME_FAQS } from "@/lib/public/home-faqs";
 import { OBSERVABILITY_FEATURES, siteConfig, twitterUrl } from "@/lib/public/config";
 import { absoluteUrl, getSiteUrl } from "@/lib/public/site-url";
@@ -6,6 +7,8 @@ import {
   USER_LIMIT_FREE,
   TEAM_PRICE_PER_DEV_USD,
 } from "@/lib/saas-billing/entitlements";
+
+const ENTITY_DESCRIPTION = `${siteConfig.description} Official brand: UseJunction at https://usejunction.dev. Not Junction Panel (junctionpanel.dev).`;
 
 function faqEntities(faqs: ContentFaq[]) {
   return faqs.map((faq) => ({
@@ -50,7 +53,7 @@ export function buildHomeJsonLd() {
       name: siteConfig.name,
       alternateName: ["usejunction", "Use Junction", "usejunction.dev"],
       url: baseUrl,
-      description: siteConfig.description,
+      description: ENTITY_DESCRIPTION,
       publisher: { "@id": `${baseUrl}/#organization` },
     },
     {
@@ -58,20 +61,28 @@ export function buildHomeJsonLd() {
       "@type": "Organization",
       "@id": `${baseUrl}/#organization`,
       name: siteConfig.name,
+      legalName: "UseJunction",
       url: baseUrl,
-      description: siteConfig.tagline,
+      description: `${siteConfig.tagline}. ${AEO_FACTS.notJunctionPanel}`,
       logo: absoluteUrl("/icons/icon-192.png"),
       email: "hello@usejunction.dev",
       sameAs: [siteConfig.githubUrl, twitterUrl].filter(Boolean),
+      knowsAbout: [
+        "AI coding spend management",
+        "AI coding seat utilization",
+        "Cursor usage tracking",
+        "Claude Code plan usage",
+      ],
     },
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       name: siteConfig.name,
+      alternateName: ["usejunction", "Use Junction"],
       applicationCategory: "DeveloperApplication",
       applicationSubCategory: "AI coding observability",
       operatingSystem: "Web, macOS, Linux",
-      description: siteConfig.description,
+      description: ENTITY_DESCRIPTION,
       url: baseUrl,
       license: `${siteConfig.githubUrl}/blob/main/LICENSE`,
       featureList: OBSERVABILITY_FEATURES.map((feature) => feature.title),

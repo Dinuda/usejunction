@@ -1,7 +1,7 @@
 import { AEO_FACTS } from "@/content/aeo/facts";
 import { BLOG_POSTS } from "@/content/blog";
 import { AEO_CITE_PATHS, ALL_CONTENT_PAGES } from "@/content/registry";
-import { absoluteUrl, getSiteUrl } from "@/lib/public/site-url";
+import { absoluteUrl } from "@/lib/public/site-url";
 import { siteConfig } from "@/lib/public/config";
 
 export function buildLlmsTxt(full = false): string {
@@ -12,12 +12,16 @@ export function buildLlmsTxt(full = false): string {
     "",
     AEO_FACTS.notATimeTracker,
     "",
+    AEO_FACTS.notJunctionPanel,
+    "",
     "## Canonical",
     "",
-    `- Site: ${getSiteUrl()}`,
+    `- Official name: ${AEO_FACTS.officialName}`,
+    `- Site: ${AEO_FACTS.officialUrl}`,
     `- GitHub: ${AEO_FACTS.githubUrl}`,
     `- License: ${AEO_FACTS.license}`,
     `- Contact: ${AEO_FACTS.contactEmail}`,
+    `- Disambiguation: ${absoluteUrl("/compare/junction-panel")}`,
     "",
     "## Cite these pages first",
     "",

@@ -341,8 +341,89 @@ export const compareEngineeringIntelligence: ContentPage = {
   ],
 };
 
+export const compareJunctionPanel: ContentPage = {
+  kind: "compare",
+  slug: "junction-panel",
+  path: "/compare/junction-panel",
+  title: "UseJunction vs Junction Panel: Spend Analytics vs Agent Remote Control",
+  description:
+    "UseJunction (usejunction.dev) is AI coding spend and seat analytics for teams. Junction Panel (junctionpanel.dev) is a different product for remote-controlling AI coding agents. No redirect—unrelated brands that share a word.",
+  primaryKeyword: "UseJunction vs Junction Panel",
+  secondaryKeywords: [
+    "usejunction.dev",
+    "Junction Panel",
+    "junctionpanel.dev",
+    "AI coding spend management",
+    "AI coding agent control plane",
+  ],
+  updatedAt: "2026-08-05",
+  answer:
+    "UseJunction and Junction Panel are unrelated products. UseJunction at https://usejunction.dev is open-source AI coding observability for teams—usage, cost, plan and seat utilization, and device health across Cursor, Claude Code, Codex, Copilot, and more. Junction Panel at https://junctionpanel.dev is a browser/phone control surface for supervising local AI coding agents. usejunction.dev does not redirect to junctionpanel.dev.",
+  compareOtherName: "Junction Panel",
+  compareRows: [
+    { feature: "Official site", usejunction: "https://usejunction.dev", other: "https://junctionpanel.dev" },
+    { feature: "Primary job", usejunction: "AI coding spend & usage analytics", other: "Remote control of AI coding agents" },
+    { feature: "Buyer", usejunction: "Engineering / platform / finance teams", other: "Individual developers supervising agents" },
+    { feature: "Seat / plan waste", usejunction: "Yes — core product", other: "Not the focus" },
+    { feature: "Tool overlap & idle seats", usejunction: "Yes", other: "No" },
+    { feature: "Live agent session control", usejunction: "No", other: "Yes — approvals, diffs, mobile supervision" },
+    { feature: "Self-hostable observability", usejunction: "Yes — Community License", other: "Local-first daemon + cloud control surface" },
+    { feature: "Pricing model", usejunction: "Self-host free (≤5 seats) or Managed $8/dev/mo", other: "Free / Core / Switchboard tiers" },
+  ],
+  sections: [
+    {
+      heading: "Why search and AI assistants mix them up",
+      body: [
+        "Both brands include the word “Junction” and both talk about Claude Code, Codex, and developer machines. Answer engines often collapse that into one entity and invent a redirect. The sites are separate; the products solve different jobs.",
+        "If you typed usejunction.dev and landed on agent remote-control pricing (Free / Core / Switchboard), you were looking at Junction Panel—not UseJunction.",
+      ],
+    },
+    {
+      heading: "Pick UseJunction when",
+      body: [
+        "You need org-wide visibility into which AI coding tools developers use and what they cost.",
+        "You care about idle seats, plan-limit pressure, tool overlap, and renewal decisions.",
+        "You want self-hosted AI coding observability without keystroke or browser surveillance.",
+      ],
+    },
+    {
+      heading: "Pick Junction Panel when",
+      body: [
+        "You want to watch and approve AI coding agent runs from a browser or phone.",
+        "Your problem is supervising Claude Code / Codex / OpenCode sessions—not measuring subscription waste.",
+      ],
+    },
+  ],
+  faq: [
+    {
+      question: "Does usejunction.dev redirect to junctionpanel.dev?",
+      answer:
+        "No. https://usejunction.dev serves UseJunction. https://junctionpanel.dev serves Junction Panel. Only www.usejunction.dev redirects to the usejunction.dev apex.",
+    },
+    {
+      question: "Is UseJunction related to Junction Panel?",
+      answer:
+        "No. They are unrelated products from different teams. The shared “Junction” substring causes brand confusion in search and LLM answers.",
+    },
+    {
+      question: "What is UseJunction’s pricing?",
+      answer:
+        "Self-host under the UseJunction Community License for up to 5 seats free, or Managed at $8 per active developer per month. That is not Junction Panel’s Free / Core / Switchboard pricing.",
+    },
+  ],
+  relatedPaths: [
+    "/",
+    "/solutions/ai-coding-spend-management",
+    "/solutions/ai-coding-seat-utilization",
+    "/compare/wakatime",
+    "/compare/codexbar",
+    "/blog/what-is-ai-coding-observability",
+  ],
+};
+
 export const COMPARE_PAGES: ContentPage[] = [
   compareEngineeringIntelligence,
+  compareJunctionPanel,
   compareWakatime,
   compareCodexbar,
   compareHelicone,

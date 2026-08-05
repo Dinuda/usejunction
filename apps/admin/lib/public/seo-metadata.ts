@@ -41,6 +41,7 @@ export function hubMetadata(opts: {
   title: string;
   description: string;
   path: string;
+  indexable?: boolean;
 }): Metadata {
   const url = absoluteUrl(opts.path);
   return {
@@ -61,6 +62,7 @@ export function hubMetadata(opts: {
       description: opts.description,
       images: [siteOgImage.url],
     },
+    robots: { index: opts.indexable !== false, follow: true },
   };
 }
 

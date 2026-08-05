@@ -5,7 +5,8 @@
   "license": "LicenseRef-UseJunction-Community-1.0",
   "scripts": {
     "dev": "NEXT_DIST_DIR=.next-dev next dev --turbopack --port 3001",
-    "build": "pnpm --filter @usejunction/db generate && pnpm check:client-boundaries && pnpm check:snapshot-page-reads && next build && pnpm check:client-build",
+    "build": "pnpm --filter @usejunction/db generate && pnpm sync:dotlottie-wasm && pnpm check:client-boundaries && pnpm check:snapshot-page-reads && next build && pnpm check:client-build",
+    "sync:dotlottie-wasm": "node scripts/sync-dotlottie-wasm.mjs",
     "check:client-boundaries": "node scripts/check-client-boundaries.mjs",
     "check:snapshot-page-reads": "node scripts/check-snapshot-page-reads.mjs",
     "check:client-build": "node scripts/assert-client-build.mjs",

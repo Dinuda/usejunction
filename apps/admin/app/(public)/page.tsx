@@ -34,5 +34,19 @@ export default async function HomePage() {
     redirect("/dashboard");
   }
 
-  return <UseJunctionHomeContent />;
+  return (
+    <>
+      {/* Same-origin preloads — DotLottie previously fetched WASM from jsDelivr. */}
+      <link
+        rel="preload"
+        href="/animations/dotlottie-player.wasm"
+        as="fetch"
+        type="application/wasm"
+        crossOrigin="anonymous"
+      />
+      <link rel="preload" href="/animations/hero.lottie" as="fetch" crossOrigin="anonymous" />
+      <link rel="preload" href="/animations/hero.gif" as="image" />
+      <UseJunctionHomeContent />
+    </>
+  );
 }

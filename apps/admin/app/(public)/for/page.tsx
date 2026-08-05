@@ -7,6 +7,7 @@ export const metadata = hubMetadata({
   description:
     "Track Cursor, Claude Code, Codex, Copilot, and Ollama usage across your engineering team with UseJunction.",
   path: "/for",
+  indexable: false,
 });
 
 export default function ForIndexPage() {

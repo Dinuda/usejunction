@@ -1,15 +1,42 @@
 "use client";
 
-import { DotLottieReact } from "@lottiefiles/dotlottie-react";
+import { DotLottieReact, type DotLottie } from "@lottiefiles/dotlottie-react";
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { siteConfig } from "@/lib/public/config";
+import { ensureDotLottieWasm } from "@/lib/public/dotlottie";
 
 /** Display aspect for the hero Lottie (width / height). */
 const LOTTIE_AR = 850 / 950;
+const HERO_LOTTIE_SRC = "/animations/hero.lottie";
+const HERO_POSTER_SRC = "/animations/hero.gif";
+
+ensureDotLottieWasm();
 
 function HeroLottie({ reduceMotion }: { reduceMotion: boolean }) {
+  const [player, setPlayer] = useState<DotLottie | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    if (!player) return;
+
+    const onLoad = () => setStatus("ready");
+    const onError = () => setStatus("error");
+
+    if (player.isLoaded) onLoad();
+    player.addEventListener("load", onLoad);
+    player.addEventListener("loadError", onError);
+
+    return () => {
+      player.removeEventListener("load", onLoad);
+      player.removeEventListener("loadError", onError);
+    };
+  }, [player]);
+
+  const showPoster = status !== "ready";
+
   return (
     <div
       className="relative w-full overflow-hidden"
@@ -18,19 +45,34 @@ function HeroLottie({ reduceMotion }: { reduceMotion: boolean }) {
       data-asset-height="950"
     >
       <div
-        className="w-full"
+        className="relative w-full"
         style={{ aspectRatio: "var(--ar)" }}
         role="img"
         aria-label="UseJunction AI coding observability overview"
       >
-        <DotLottieReact
-          src="/animations/hero.lottie"
-          autoplay={!reduceMotion}
-          loop
-          renderConfig={{ autoResize: true }}
-          className="h-full w-full"
-          style={{ width: "100%", height: "100%" }}
-        />
+        {showPoster ? (
+          // eslint-disable-next-line @next/next/no-img-element -- static GIF poster; not a responsive photo
+          <img
+            src={HERO_POSTER_SRC}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 h-full w-full object-contain"
+            decoding="async"
+            fetchPriority="high"
+          />
+        ) : null}
+
+        {status !== "error" ? (
+          <DotLottieReact
+            src={HERO_LOTTIE_SRC}
+            autoplay={!reduceMotion}
+            loop
+            renderConfig={{ autoResize: true }}
+            dotLottieRefCallback={setPlayer}
+            className={`h-full w-full transition-opacity duration-300 ${status === "ready" ? "opacity-100" : "opacity-0"}`}
+            style={{ width: "100%", height: "100%" }}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -105,28 +147,17 @@ export function HeroSection() {
                 Start with one developer. Add your team when the signal is clear.
               </p>
             </motion.div>
-
-            {/* Mobile: animation below CTA */}
-            <motion.div
-              variants={item}
-              className="mt-10 w-full max-w-[min(100%,340px)] lg:hidden"
-              aria-hidden
-            >
-              <HeroLottie reduceMotion={reduceMotion === true} />
-            </motion.div>
           </motion.div>
 
-          {/* Desktop: animation beside copy */}
+          {/* Single instance — never display:none (DotLottie blank-canvas pitfall) */}
           <motion.div
             initial={reduceMotion ? false : { opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1, ease: EASE }}
-            className="relative hidden items-center justify-center lg:flex lg:justify-end lg:self-center"
+            className="relative mx-auto flex w-full max-w-[min(100%,340px)] items-center justify-center lg:mx-0 lg:max-w-[min(48vw,calc(72svh*0.9),720px)] lg:justify-end lg:self-center"
             aria-hidden
           >
-            <div className="relative w-full max-w-[min(48vw,calc(72svh*0.9),720px)]">
-              <HeroLottie reduceMotion={reduceMotion === true} />
-            </div>
+            <HeroLottie reduceMotion={reduceMotion === true} />
           </motion.div>
         </div>
       </div>

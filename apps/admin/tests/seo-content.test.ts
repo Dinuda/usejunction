@@ -15,6 +15,7 @@ test("seo registry includes priority guides and compare pages", () => {
   assert.ok(paths.has("/guides/open-source-wakatime-alternative-for-ai-coding"));
   assert.ok(paths.has("/compare/wakatime"));
   assert.ok(paths.has("/compare/codexbar"));
+  assert.ok(paths.has("/compare/junction-panel"));
   assert.ok(paths.has("/compare/engineering-intelligence"));
   assert.ok(paths.has("/solutions/ai-coding-observability-for-teams"));
   assert.ok(paths.has("/solutions/ai-coding-spend-management"));
@@ -50,6 +51,7 @@ test("sitemap includes home and content hubs", () => {
   assert.ok(paths.includes("/blog/what-is-ai-coding-observability"));
   assert.ok(paths.includes("/blog/ai-coding-observability-vs-jellyfish-dx-linearb"));
   assert.ok(paths.includes("/compare/engineering-intelligence"));
+  assert.ok(paths.includes("/compare/junction-panel"));
   assert.ok(paths.includes("/solutions/ai-coding-observability-for-teams"));
   assert.ok(paths.includes("/solutions/ai-coding-spend-management"));
   assert.ok(paths.includes("/compare/codexbar"));
@@ -59,6 +61,8 @@ test("sitemap includes home and content hubs", () => {
   assert.ok(!paths.includes("/privacy"));
   assert.ok(!paths.includes("/terms"));
   assert.ok(!paths.includes("/for/antigravity"));
+  assert.ok(!paths.includes("/for/cursor"));
+  assert.ok(!paths.includes("/for/claude-code"));
   assert.equal(entries[0]?.priority, 1);
 });
 
@@ -68,7 +72,7 @@ test("indexability metadata keeps legal and thin tool pages out of search", () =
   const antigravity = ALL_CONTENT_PAGES.find((page) => page.path === "/for/antigravity");
   assert.ok(privacy && cursor && antigravity);
   assert.deepEqual(contentPageMetadata(privacy!).robots, { index: false, follow: true });
-  assert.deepEqual(contentPageMetadata(cursor!).robots, { index: true, follow: true });
+  assert.deepEqual(contentPageMetadata(cursor!).robots, { index: false, follow: true });
   assert.deepEqual(contentPageMetadata(antigravity!).robots, { index: false, follow: true });
 });
 
@@ -76,6 +80,9 @@ test("llms.txt includes cite paths and non-claims", () => {
   const text = buildLlmsTxt(false);
   assert.match(text, /UseJunction/);
   assert.match(text, /not a WakaTime-style/i);
+  assert.match(text, /not Junction Panel/i);
+  assert.match(text, /junctionpanel\.dev/);
+  assert.match(text, /compare\/junction-panel/);
   for (const path of AEO_CITE_PATHS) {
     assert.match(text, new RegExp(path.replace(/\//g, "\\/")));
   }
@@ -115,11 +122,31 @@ test("home JSON-LD includes FAQPage and unambiguous brand identity", () => {
   const types = graph.map((node) => node["@type"]);
   const website = graph.find((node) => node["@type"] === "WebSite");
   const organization = graph.find((node) => node["@type"] === "Organization");
+  const software = graph.find((node) => node["@type"] === "SoftwareApplication");
+  const faq = graph.find((node) => node["@type"] === "FAQPage");
   assert.ok(types.includes("FAQPage"));
   assert.ok(types.includes("Organization"));
   assert.ok(types.includes("SoftwareApplication"));
   assert.deepEqual(website?.alternateName, ["usejunction", "Use Junction", "usejunction.dev"]);
   assert.deepEqual(organization?.sameAs, ["https://github.com/Dinuda/usejunction"]);
+  assert.match(String(website?.description), /Not Junction Panel/i);
+  assert.match(String(software?.description), /usejunction\.dev/);
+  assert.match(String(organization?.description), /not Junction Panel/i);
+  const faqJson = JSON.stringify(faq);
+  assert.match(faqJson, /Junction Panel/);
+  assert.match(faqJson, /usejunction\.dev/);
   assert.equal(AEO_FACTS.privacyFirst, true);
   assert.equal(AEO_FACTS.workDetailOptional, true);
+  assert.match(AEO_FACTS.notJunctionPanel, /usejunction\.dev/);
+});
+
+test("llms.txt cites a short brand-first path list", () => {
+  assert.deepEqual([...AEO_CITE_PATHS], [
+    "/",
+    "/compare/junction-panel",
+    "/solutions/ai-coding-spend-management",
+    "/solutions/ai-coding-seat-utilization",
+    "/guides/see-plan-usage-and-waste",
+    "/blog/what-is-ai-coding-observability",
+  ]);
 });

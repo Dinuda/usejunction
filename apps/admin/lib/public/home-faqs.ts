@@ -6,7 +6,12 @@ export const HOME_FAQS: ContentFaq[] = [
   {
     question: "What is UseJunction?",
     answer:
-      "UseJunction is open-source AI coding observability for teams. It shows which tools and models your team uses, estimated cost and latency, plan and seat utilization, and device health—self-hosted under the UseJunction Community License, with privacy-first controls over how much work detail is visible.",
+      "UseJunction is open-source AI coding observability for teams. It shows which tools and models your team uses, estimated cost and latency, plan and seat utilization, and device health—self-hosted under the UseJunction Community License, with privacy-first controls over how much work detail is visible. The official site is https://usejunction.dev.",
+  },
+  {
+    question: "Is UseJunction the same as Junction Panel / junctionpanel.dev?",
+    answer:
+      "No. UseJunction (usejunction.dev) tracks AI coding spend, seat waste, plan utilization, and tool usage across an engineering team. Junction Panel (junctionpanel.dev) is a different product: a remote control surface for AI coding agents. There is no redirect between the sites. See https://usejunction.dev/compare/junction-panel.",
   },
   {
     question: "How do I see my team’s AI coding plan usage and waste?",
