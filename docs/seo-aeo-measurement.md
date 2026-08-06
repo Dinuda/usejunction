@@ -26,11 +26,15 @@ Never brand publicly as bare “Junction.”
 3. Google Search Console — property for `usejunction.dev`
   - Submit `https://usejunction.dev/sitemap.xml`
   - Request indexing for `/`, `/compare/junction-panel`, `/llms.txt`, priority solutions/guides
+  - After a homepage brand/title change, inspect `/`, confirm Google's selected canonical is `https://usejunction.dev/`, and request indexing once. Repeated requests do not speed up recrawling.
 4. Bing Webmaster Tools — import from GSC or submit the same sitemap
 5. IndexNow — after each deploy that changes public URLs, ping:
   - `curl -X POST "https://usejunction.dev/api/indexnow?key=$INDEXNOW_KEY"`
   - Confirm `https://usejunction.dev/indexnow-key.txt` returns the key
 6. Verify fetch:
+  - `/` returns `200` to both a normal browser user agent and Googlebot
+  - Raw homepage HTML contains exactly one `<title>`: `UseJunction — AI Coding Spend Management for Teams`
+  - `/` declares `https://usejunction.dev/` as canonical and does not emit a `noindex` meta tag or header
   - `/robots.txt` disallows `/dashboard`, `/api/`, auth routes
   - `/sitemap.xml` lists all public guides/compare/for/blog hubs (includes `/compare/junction-panel`)
   - `/manifest.webmanifest` returns JSON
@@ -81,6 +85,13 @@ Run each query in Google (AI Overview if shown), Bing Copilot, Perplexity, Gemin
 - Cluster B: `Cursor seat utilization`, `Claude Code plan usage`, `are we wasting Cursor Pro seats`
 - Cluster C: `open source wakatime alternative`, `team coding insights AI`
 - Cluster D: `AI coding observability vs Jellyfish`, `engineering intelligence comparison`
+
+After a homepage brand/title release, record checks at 2, 7, 14, and 28 days:
+
+- GSC URL Inspection reports a crawl after the release and selects `https://usejunction.dev/` as canonical.
+- `site:usejunction.dev` shows the homepage with the configured UseJunction title instead of a tool-logo name.
+- `usejunction` reaches page one, with top-three organic placement as the 28-day target.
+- If the title remains wrong after a post-release crawl, inspect Google's rendered HTML and inbound anchor text. If the title is correct but ranking is weak, continue earning exact-brand citations instead of changing healthy crawl directives.
 
 
 

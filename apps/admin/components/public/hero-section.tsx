@@ -117,7 +117,7 @@ export function HeroSection() {
               variants={item}
               className="mt-4 max-w-xl text-[2.5rem] font-bold leading-[1.05] tracking-[-0.03em] text-[var(--public-fg)] sm:text-5xl lg:text-[3.25rem] xl:text-[3.5rem]"
             >
-              Find wasted AI coding subscriptions
+              UseJunction finds wasted AI coding subscriptions
               <br />
               <span className="font-semibold text-[#08a8c4]">before your next renewal.</span>
             </motion.h1>

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { SUPPORTED_TOOLS } from "../lib/public/config";
 
 const teamInviteToken = process.env.E2E_TEAM_INVITE_TOKEN ?? "uj_team_e2e_calculation_invite";
 const orgInviteToken = process.env.E2E_ORG_INVITE_TOKEN ?? "uj_invite_e2e_calculation_member";
@@ -34,10 +35,23 @@ test("unknown routes redirect unauthenticated visitors to sign in", async ({ pag
 
 test("landing page shows brand and primary CTA", async ({ page }) => {
   await page.goto("/");
+  await expect(page).toHaveTitle("UseJunction — AI Coding Spend Management for Teams");
+  await expect(page.locator("title")).toHaveCount(1);
   await expect(page.getByRole("link", { name: "UseJunction home" }).first()).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: /Find wasted AI coding subscriptions/i, level: 1 }),
+    page.getByRole("heading", {
+      name: /UseJunction finds wasted AI coding subscriptions before your next renewal\./i,
+      level: 1,
+    }),
   ).toBeVisible();
+
+  const toolStrip = page.getByRole("region", { name: "Supported AI coding tools" });
+  await expect(toolStrip).toBeVisible();
+  await expect(toolStrip.getByRole("img")).toHaveCount(0);
+  for (const tool of SUPPORTED_TOOLS) {
+    await expect(toolStrip.getByText(tool.name, { exact: true }).first()).toBeVisible();
+  }
+
   await expect(page.getByRole("link", { name: /Analyze my own usage/i }).first()).toBeVisible();
   await expect(page.getByText(/Start with one developer/i)).toBeVisible();
 });
