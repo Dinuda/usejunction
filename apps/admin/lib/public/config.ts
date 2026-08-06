@@ -14,6 +14,14 @@ export const siteConfig = {
   description:
     "UseJunction is AI coding spend management for engineering teams. Track Cursor, Claude Code, Codex, and Copilot usage, cost, plan utilization, seat waste, and device health. Self-hosted at usejunction.dev — not Junction Panel.",
   seoTitle: "UseJunction — AI Coding Spend Management for Teams",
+  /** Homepage meta keywords only — not shown in visible hero copy. */
+  homeSeoKeywords: [
+    "CodexBar for Windows",
+    "Codex Bar for Windows",
+    "Win-CodexBar alternative for teams",
+    "Codex usage dashboard for Windows teams",
+    "AI coding spend management for teams",
+  ],
   url: process.env.NEXTAUTH_URL ?? "https://usejunction.dev",
   githubUrl: "https://github.com/Dinuda/usejunction",
   docsUrl: "https://github.com/Dinuda/usejunction#readme",

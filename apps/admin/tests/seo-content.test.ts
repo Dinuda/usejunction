@@ -7,7 +7,6 @@ import { AEO_FACTS } from "../content/aeo/facts";
 import { BLOG_POSTS } from "../content/blog";
 import { buildBlogPostJsonLd } from "../lib/public/json-ld";
 import { contentPageMetadata } from "../lib/public/seo-metadata";
-import { metadata as homeMetadata } from "../app/(public)/page";
 import manifest from "../app/manifest";
 import { siteConfig } from "../lib/public/config";
 import { HOME_FAQS } from "../lib/public/home-faqs";
@@ -36,18 +35,23 @@ test("homepage keeps brand messaging while CodexBar for Windows stays in SEO sur
   assert.match(siteConfig.description, /AI coding spend management for engineering teams/i);
   assert.doesNotMatch(siteConfig.description, /CodexBar for Windows/);
 
-  const keywords = homeMetadata.keywords;
-  assert.ok(Array.isArray(keywords));
-  assert.ok(keywords.some((keyword) => /CodexBar for Windows/.test(String(keyword))));
+  const keywords = siteConfig.homeSeoKeywords;
+  assert.ok(keywords.some((keyword) => /CodexBar for Windows/.test(keyword)));
 
   const faq = HOME_FAQS.find((item) => /CodexBar for Windows/.test(item.question));
   assert.ok(faq);
   assert.match(faq!.answer, /supports Windows/i);
   assert.match(faq!.answer, /team-focused alternative/i);
 
-  const software = buildHomeJsonLd().find((node) => node["@type"] === "SoftwareApplication");
+  const graph = buildHomeJsonLd();
+  const software = graph.find((node) => node["@type"] === "SoftwareApplication");
+  const organization = graph.find((node) => node["@type"] === "Organization");
   assert.match(String(software?.operatingSystem), /Windows/);
-  assert.match(JSON.stringify(software), /CodexBar for Windows/);
+  assert.ok(
+    (organization?.knowsAbout as string[] | undefined)?.some((topic) =>
+      /CodexBar for Windows/.test(topic),
+    ),
+  );
 
   const homeSitemapEntry = buildSitemapEntries().find((entry) => entry.path === "/");
   assert.equal(homeSitemapEntry?.lastModified, "2026-08-06");
