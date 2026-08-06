@@ -505,7 +505,11 @@ export function ToolProviderDetail({
                     </div>
                   ) : (
                     <Empty className="min-h-24 gap-1 border bg-background p-4 md:p-4">
-                      <EmptyDescription className="text-xs">No quota windows reported yet.</EmptyDescription>
+                      <EmptyDescription className="text-xs">
+                        {person?.vendorPlan || person?.assignment
+                          ? "Plan detected, but no live quota windows yet. Sign in with Claude Code on this machine so the agent can read usage windows."
+                          : "No quota windows reported yet."}
+                      </EmptyDescription>
                     </Empty>
                   )}
                 </div>

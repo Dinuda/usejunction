@@ -51,8 +51,42 @@ type ClaudeCredentialBundle struct {
 }
 
 type claudeUsageWindow struct {
-	Utilization float64 `json:"utilization"`
-	ResetsAt    string  `json:"resets_at"`
+	Utilization    *float64        `json:"utilization"`
+	UsedPercentage *float64        `json:"used_percentage"`
+	ResetsAt       json.RawMessage `json:"resets_at"`
+}
+
+func (w claudeUsageWindow) usedPercent() (float64, bool) {
+	if w.Utilization != nil {
+		return *w.Utilization, true
+	}
+	if w.UsedPercentage != nil {
+		return *w.UsedPercentage, true
+	}
+	return 0, false
+}
+
+func (w claudeUsageWindow) resetsAtRFC3339() string {
+	if len(w.ResetsAt) == 0 || string(w.ResetsAt) == "null" {
+		return ""
+	}
+	var asString string
+	if json.Unmarshal(w.ResetsAt, &asString) == nil {
+		t := parseUnixOrRFC3339(asString)
+		if t.IsZero() {
+			return ""
+		}
+		return t.UTC().Format(time.RFC3339)
+	}
+	var asNumber float64
+	if json.Unmarshal(w.ResetsAt, &asNumber) == nil {
+		sec := int64(asNumber)
+		if sec > 1_000_000_000_000 {
+			return time.UnixMilli(sec).UTC().Format(time.RFC3339)
+		}
+		return time.Unix(sec, 0).UTC().Format(time.RFC3339)
+	}
+	return ""
 }
 
 type claudeKeychainOAuth struct {
@@ -202,7 +236,7 @@ func claudeAccountFromCreds(creds *claudeCredentials, now time.Time) *types.Tool
 	account := &types.ToolAccount{
 		ToolName:    "claude",
 		Email:       strings.TrimSpace(creds.Email),
-		Plan:        strings.TrimSpace(creds.SubscriptionType),
+		Plan:        normalizeClaudePlan(creds.SubscriptionType),
 		LoginMethod: "oauth",
 		AuthPresent: true,
 	}
@@ -391,8 +425,9 @@ func ClaudeAccountFromClaudeJSON(home string) (*types.ToolAccount, error) {
 		ToolName:    "claude",
 		Email:       email,
 		Plan:        claudePlanFromOAuthAccount(*doc.OAuthAccount),
-		LoginMethod: "oauth",
-		AuthPresent: true,
+		// Plan metadata only — live quota windows still need Code OAuth tokens.
+		LoginMethod: "desktop",
+		AuthPresent: false,
 	}, nil
 }
 
@@ -654,13 +689,20 @@ func claudeUsageSnapshots(raw map[string]json.RawMessage) []types.QuotaSnapshot 
 		if json.Unmarshal(msg, &window) != nil {
 			return
 		}
-		snapshots = append(snapshots, types.QuotaSnapshot{
+		used, ok := window.usedPercent()
+		if !ok {
+			return
+		}
+		snap := types.QuotaSnapshot{
 			ToolName:    "claude",
 			WindowType:  windowType,
-			UsedPercent: floatPtr(window.Utilization),
-			ResetAt:     strPtr(parseUnixOrRFC3339(window.ResetsAt).UTC().Format(time.RFC3339)),
+			UsedPercent: floatPtr(used),
 			Source:      "oauth_api",
-		})
+		}
+		if reset := window.resetsAtRFC3339(); reset != "" {
+			snap.ResetAt = strPtr(reset)
+		}
+		snapshots = append(snapshots, snap)
 	}
 
 	appendWindow("session_5h", "five_hour")

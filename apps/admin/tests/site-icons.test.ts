@@ -15,6 +15,12 @@ test("site icons use absolute canonical URLs for crawlers", () => {
     assert.match(String(url), /^https:\/\/usejunction\.dev\//);
   }
 
+  const iconSizes = (Array.isArray(siteIcons.icon) ? siteIcons.icon : [siteIcons.icon])
+    .filter((entry): entry is { sizes?: string } => typeof entry === "object" && entry !== null)
+    .map((entry) => entry.sizes);
+  assert.ok(iconSizes.includes("16x16"));
+  assert.ok(iconSizes.includes("32x32"));
+
   for (const icon of manifestIcons) {
     assert.match(icon.src, /^https:\/\/usejunction\.dev\//);
     assert.doesNotMatch(icon.src, /\.svg$/);

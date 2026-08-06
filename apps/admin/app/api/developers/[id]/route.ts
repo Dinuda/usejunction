@@ -64,9 +64,20 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       where: { developerId: developer.id, usedAt: null },
     });
 
+    // End seats so Live quotas / detected plans stop showing the removed member.
+    await tx.developerPlanAssignment.updateMany({
+      where: { orgId: auth.orgId, developerId: developer.id, active: true },
+      data: { active: false, endDate: removedAt, seatStatus: "ended" },
+    });
+
     // Keep device tokens valid so the next heartbeat can deliver an uninstall
     // directive; coverage drops immediately via decommissionedAt.
     await decommissionDevices(tx, deviceIds, removedAt);
+
+    // Drop quota snapshots so decommissioned devices cannot ghost Live quotas.
+    if (deviceIds.length) {
+      await tx.quotaSnapshot.deleteMany({ where: { deviceId: { in: deviceIds } } });
+    }
   });
 
   await audit({

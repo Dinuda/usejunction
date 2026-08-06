@@ -6,6 +6,7 @@ import {
   readOrgUsageFromSnapshots,
   readDeveloperUsageFromSnapshots,
 } from "@/lib/analytics/snapshots";
+import { activeDeviceWhere } from "@/lib/devices/decommission";
 import { findCatalogTool, subscriptionToolKeys, toolUsageNames } from "@/lib/tools/catalog";
 import { mapVendorPlanToCatalog } from "@/lib/tools/sync-detected";
 import { listSubscriptions, type listSubscriptions as ListSubscriptions } from "@/lib/tools/subscriptions";
@@ -124,17 +125,33 @@ export async function getToolDetail(
       ? Promise.resolve(options.subscriptions)
       : listSubscriptions(orgId);
 
+  const activeDeveloperWhere = { removedAt: null };
+  const activeDeviceFilter = { ...activeDeviceWhere, user: activeDeveloperWhere };
+
   const [installations, accounts, quotas, usageSnapshot, subscriptions, assignments, modelRows] =
     await Promise.all([
       prisma.toolInstallation.findMany({
-        where: { orgId, detected: true, toolName: { in: inventoryNames }, ...developerFilter },
+        where: {
+          orgId,
+          detected: true,
+          toolName: { in: inventoryNames },
+          ...developerFilter,
+          user: activeDeveloperWhere,
+          device: activeDeviceFilter,
+        },
         include: {
           user: { select: { id: true, name: true, email: true } },
           device: { select: { hostname: true } },
         },
       }),
       prisma.toolAccount.findMany({
-        where: { orgId, toolName: { in: inventoryNames }, ...developerFilter },
+        where: {
+          orgId,
+          toolName: { in: inventoryNames },
+          ...developerFilter,
+          user: activeDeveloperWhere,
+          device: activeDeviceFilter,
+        },
         include: {
           user: { select: { id: true, name: true, email: true } },
           device: { select: { hostname: true } },
@@ -145,7 +162,10 @@ export async function getToolDetail(
         where: {
           orgId,
           toolName: { in: inventoryNames },
-          ...(developerId ? { device: { userId: developerId } } : {}),
+          device: {
+            ...activeDeviceFilter,
+            ...(developerId ? { userId: developerId } : {}),
+          },
         },
         include: {
           device: {
@@ -165,6 +185,7 @@ export async function getToolDetail(
           active: true,
           seatStatus: "active",
           ...assignmentDeveloperFilter,
+          developer: activeDeveloperWhere,
           OR: [
             { toolName: { in: inventoryNames } },
             { template: { toolKey: { in: templateKeys } } },
@@ -314,7 +335,7 @@ export async function getToolDetail(
   ].filter((id) => !peopleMap.has(id));
   if (usageDeveloperIds.length) {
     const usageDevelopers = await prisma.developer.findMany({
-      where: { orgId, id: { in: usageDeveloperIds } },
+      where: { orgId, id: { in: usageDeveloperIds }, removedAt: null },
       select: { id: true, name: true, email: true },
     });
     for (const developer of usageDevelopers) {
@@ -352,10 +373,13 @@ export async function getToolDetail(
 
   const quotaRows: ToolDetailData["quotas"] = [];
   for (const quota of quotas) {
+    const developerIdForRow = quota.device?.user?.id ?? null;
+    const hostname = quota.device?.hostname ?? null;
     const already = quotaRows.some(
       (item) =>
         item.windowType === quota.windowType &&
-        item.deviceHostname === (quota.device?.hostname ?? null),
+        item.deviceHostname === hostname &&
+        item.developerId === developerIdForRow,
     );
     if (already) continue;
     quotaRows.push({
@@ -364,8 +388,8 @@ export async function getToolDetail(
       usedPercent: quota.usedPercent,
       creditsRemaining: quota.creditsRemaining,
       resetAt: quota.resetAt,
-      deviceHostname: quota.device?.hostname ?? null,
-      developerId: quota.device?.user?.id ?? null,
+      deviceHostname: hostname,
+      developerId: developerIdForRow,
       developerName: quota.device?.user?.name ?? null,
     });
   }

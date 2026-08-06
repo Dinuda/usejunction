@@ -24,6 +24,7 @@ import {
 } from "@/lib/sync/accounts-inventory";
 import {
   applyDeviceQuotaInventory,
+  pruneQuotaToolsMissingWindows,
   recordQuotaObservations,
   quotasInventoryContentHash,
   type QuotaInventoryItem,
@@ -334,6 +335,13 @@ export async function startUsageSync(params: {
           data: { lastAccountSyncAt: now, lastSeenAt: now },
         });
         accountsApplied = "unchanged";
+        // Still surface tools for quota prune even when account hash is unchanged.
+        accountsReported = items.map((item) => ({
+          toolName: String(item.toolName ?? "").trim(),
+          plan: typeof item.plan === "string" ? item.plan.trim() || null : null,
+          email: typeof item.email === "string" ? item.email.trim() || null : null,
+          authPresent: Boolean(item.authPresent),
+        })).filter((item) => item.toolName);
       } else {
         const applied = await applyDeviceAccountInventory({
           orgId: params.orgId,
@@ -388,6 +396,15 @@ export async function startUsageSync(params: {
         });
         quotasApplied = "updated";
         inventoryChanged = true;
+      }
+
+      // Claude Desktop can report a plan with zero windows; clear stale OAuth snapshots.
+      if (accountsReported.length > 0 && (quotasApplied === "updated" || quotasApplied === "unchanged")) {
+        await pruneQuotaToolsMissingWindows({
+          deviceId: params.deviceId,
+          accountTools: accountsReported.map((row) => row.toolName),
+          quotaTools: items.map((item) => String(item.toolName ?? "").trim()).filter(Boolean),
+        });
       }
     } catch (error) {
       quotasApplied = "failed";

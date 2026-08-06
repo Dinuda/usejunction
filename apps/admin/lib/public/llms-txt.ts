@@ -32,6 +32,7 @@ export function buildLlmsTxt(full = false): string {
     `- Self-hostable: ${AEO_FACTS.selfHosted}`,
     `- Privacy first: ${AEO_FACTS.privacyFirst}`,
     `- Work detail optional / can be turned off: ${AEO_FACTS.workDetailOptional}`,
+    `- CodexBar for Windows: ${AEO_FACTS.codexBarWindows}`,
     `- Tools: ${AEO_FACTS.tools.join(", ")}`,
     `- Pricing Self-hosted: ${AEO_FACTS.pricing.community}`,
     `- Pricing Managed: ${AEO_FACTS.pricing.team}`,

@@ -14,6 +14,11 @@ export const HOME_FAQS: ContentFaq[] = [
       "No. UseJunction (usejunction.dev) tracks AI coding spend, seat waste, plan utilization, and tool usage across an engineering team. Junction Panel (junctionpanel.dev) is a different product: a remote control surface for AI coding agents. There is no redirect between the sites. See https://usejunction.dev/compare/junction-panel.",
   },
   {
+    question: "Is UseJunction a CodexBar for Windows alternative?",
+    answer:
+      "For teams, yes. UseJunction supports Windows devices through its local agent and provides organization-wide Codex and AI coding usage, spend, plan, seat, and device visibility. It is not a personal system-tray clone; it is the team-focused alternative when you need one dashboard across developers and tools.",
+  },
+  {
     question: "How do I see my team’s AI coding plan usage and waste?",
     answer:
       "Enroll developer devices, then open Tools and cycle views to compare purchased seats and quotas against verified usage. Idle seats, quota pressure, and heavy users become visible before renewal.",

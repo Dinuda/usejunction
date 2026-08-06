@@ -75,7 +75,7 @@ export function DashboardPageLoading({
 }) {
   return (
     <>
-      <PageHeader title={title} description={description} actions={actions} mobileActionsInline>
+      <PageHeader title={title} description={description} actions={actions}>
         {children}
       </PageHeader>
       {showSyncPlaceholder ? (

@@ -24,7 +24,7 @@ export function AudienceScopeSwitcher({ className }: { className?: string }) {
     <div
       role="tablist"
       aria-label="Audience"
-      className={cn("flex w-full max-w-full flex-nowrap items-stretch justify-end gap-0 overflow-x-auto overscroll-x-contain border-b border-border", className)}
+      className={cn("flex w-full max-w-full flex-nowrap items-stretch justify-end gap-0 border-b border-border", className)}
     >
       {ITEMS.map(({ id, label }) => {
         const active = value === id;

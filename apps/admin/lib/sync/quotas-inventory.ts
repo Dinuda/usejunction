@@ -174,15 +174,23 @@ export async function applyDeviceQuotaInventory(params: {
     upserted += 1;
   }
 
-  for (const [toolName, windowTypes] of windowsByTool) {
+  // Authoritative inventory: empty payload means no live windows on this device.
+  if (params.items.length === 0) {
     const result = await prisma.quotaSnapshot.deleteMany({
-      where: {
-        deviceId: params.deviceId,
-        toolName,
-        windowType: { notIn: [...windowTypes] },
-      },
+      where: { deviceId: params.deviceId },
     });
     pruned += result.count;
+  } else {
+    for (const [toolName, windowTypes] of windowsByTool) {
+      const result = await prisma.quotaSnapshot.deleteMany({
+        where: {
+          deviceId: params.deviceId,
+          toolName,
+          windowType: { notIn: [...windowTypes] },
+        },
+      });
+      pruned += result.count;
+    }
   }
 
   await recordQuotaObservations({ deviceId: params.deviceId, items: params.items });
@@ -211,4 +219,27 @@ export async function applyDeviceQuotaInventory(params: {
   });
 
   return { upserted, pruned };
+}
+
+/** Drop snapshots for tools that reported an account but no quota windows. */
+export async function pruneQuotaToolsMissingWindows(params: {
+  deviceId: string;
+  accountTools: string[];
+  quotaTools: string[];
+}): Promise<number> {
+  const withWindows = new Set(
+    params.quotaTools.map((tool) => tool.trim()).filter(Boolean),
+  );
+  const missing = [
+    ...new Set(
+      params.accountTools
+        .map((tool) => tool.trim())
+        .filter((tool) => tool && !withWindows.has(tool)),
+    ),
+  ];
+  if (!missing.length) return 0;
+  const result = await prisma.quotaSnapshot.deleteMany({
+    where: { deviceId: params.deviceId, toolName: { in: missing } },
+  });
+  return result.count;
 }

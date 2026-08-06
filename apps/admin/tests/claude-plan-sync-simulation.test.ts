@@ -16,7 +16,7 @@ test("simulation: Desktop-only machine reports team-standard plan, zero quota wi
     toolName: "claude",
     email: PASINDU_EMAIL,
     plan: "team-standard",
-    authPresent: true,
+    authPresent: false,
   };
 
   const catalogKey = mapVendorPlanToCatalog("claude", agentReport.plan);

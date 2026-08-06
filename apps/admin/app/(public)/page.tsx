@@ -9,6 +9,13 @@ import { absoluteUrl } from "@/lib/public/site-url";
 export const metadata: Metadata = {
   title: { absolute: siteConfig.seoTitle },
   description: siteConfig.description,
+  keywords: [
+    "CodexBar for Windows",
+    "Codex Bar for Windows",
+    "Win-CodexBar alternative for teams",
+    "Codex usage dashboard for Windows teams",
+    "AI coding spend management for teams",
+  ],
   alternates: {
     canonical: absoluteUrl("/"),
   },

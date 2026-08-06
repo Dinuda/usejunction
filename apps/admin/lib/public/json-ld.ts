@@ -70,6 +70,7 @@ export function buildHomeJsonLd() {
       knowsAbout: [
         "AI coding spend management",
         "AI coding seat utilization",
+        "CodexBar for Windows teams",
         "Cursor usage tracking",
         "Claude Code plan usage",
       ],
@@ -81,7 +82,7 @@ export function buildHomeJsonLd() {
       alternateName: ["usejunction", "Use Junction"],
       applicationCategory: "DeveloperApplication",
       applicationSubCategory: "AI coding observability",
-      operatingSystem: "Web, macOS, Linux",
+      operatingSystem: "Web, Windows, macOS, Linux",
       description: ENTITY_DESCRIPTION,
       url: baseUrl,
       license: `${siteConfig.githubUrl}/blob/main/LICENSE`,

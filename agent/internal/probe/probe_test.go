@@ -212,8 +212,30 @@ func TestParseClaudeUsageResponse(t *testing.T) {
 	if err := json.Unmarshal(windows["five_hour"], &session); err != nil {
 		t.Fatalf("session: %v", err)
 	}
-	if session.Utilization != 55 {
-		t.Fatalf("utilization = %v", session.Utilization)
+	used, ok := session.usedPercent()
+	if !ok || used != 55 {
+		t.Fatalf("utilization = %v ok=%v", used, ok)
+	}
+}
+
+func TestParseClaudeUsageResponseUsedPercentageAlias(t *testing.T) {
+	raw := `{
+	  "five_hour": {"used_percentage": 12.5, "resets_at": 1775325600},
+	  "seven_day": {"used_percentage": 3, "resets_at": 1775808000}
+	}`
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		t.Fatal(err)
+	}
+	snaps := claudeUsageSnapshots(body)
+	if len(snaps) != 2 {
+		t.Fatalf("got %d snaps", len(snaps))
+	}
+	if snaps[0].UsedPercent == nil || *snaps[0].UsedPercent != 12.5 {
+		t.Fatalf("five_hour = %+v", snaps[0])
+	}
+	if snaps[0].ResetAt == nil || *snaps[0].ResetAt == "" {
+		t.Fatalf("expected unix resets_at parsed, got %+v", snaps[0])
 	}
 }
 
@@ -672,7 +694,7 @@ func TestClaudeAccountFromClaudeJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if account.Email != "user@example.com" || account.Plan != "team-standard" || !account.AuthPresent {
+	if account.Email != "user@example.com" || account.Plan != "team-standard" || account.AuthPresent || account.LoginMethod != "desktop" {
 		t.Fatalf("account = %+v", account)
 	}
 }
@@ -691,8 +713,8 @@ func TestProbeClaudeQuotaJSONFallbackWithoutCredentials(t *testing.T) {
 	setTestUserHome(t, home)
 
 	snaps, account, err := ProbeClaudeQuota(context.Background(), claudeDir)
-	if account == nil || account.Email != "fallback@example.com" || !account.AuthPresent {
-		t.Fatalf("account = %+v err=%v", account, err)
+	if account == nil || account.Email != "fallback@example.com" || account.AuthPresent {
+		t.Fatalf("account = %+v err=%v (desktop JSON should not claim oauth auth)", account, err)
 	}
 	if len(snaps) != 0 {
 		t.Fatalf("expected no quota snapshots without oauth, got %d", len(snaps))

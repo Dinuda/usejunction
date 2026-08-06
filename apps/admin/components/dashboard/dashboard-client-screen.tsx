@@ -415,7 +415,6 @@ function PersonalHome({
             </div>
           ) : null
         }
-        mobileActionsInline
       >
         {audienceSwitcher}
       </PageHeader>
@@ -810,7 +809,6 @@ export default function DashboardPage() {
             </div>
           ) : null
         }
-        mobileActionsInline
       >
         {switcher}
       </PageHeader>

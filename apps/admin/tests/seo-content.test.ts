@@ -7,6 +7,10 @@ import { AEO_FACTS } from "../content/aeo/facts";
 import { BLOG_POSTS } from "../content/blog";
 import { buildBlogPostJsonLd } from "../lib/public/json-ld";
 import { contentPageMetadata } from "../lib/public/seo-metadata";
+import { metadata as homeMetadata } from "../app/(public)/page";
+import manifest from "../app/manifest";
+import { siteConfig } from "../lib/public/config";
+import { HOME_FAQS } from "../lib/public/home-faqs";
 
 test("seo registry includes priority guides and compare pages", () => {
   const paths = new Set(ALL_CONTENT_PAGES.map((page) => page.path));
@@ -25,6 +29,33 @@ test("seo registry includes priority guides and compare pages", () => {
   assert.ok(paths.has("/for/claude-code"));
   assert.ok(paths.has("/privacy"));
   assert.ok(paths.has("/terms"));
+});
+
+test("homepage keeps brand messaging while CodexBar for Windows stays in SEO surfaces", () => {
+  assert.equal(siteConfig.seoTitle, "UseJunction — AI Coding Spend Management for Teams");
+  assert.match(siteConfig.description, /AI coding spend management for engineering teams/i);
+  assert.doesNotMatch(siteConfig.description, /CodexBar for Windows/);
+
+  const keywords = homeMetadata.keywords;
+  assert.ok(Array.isArray(keywords));
+  assert.ok(keywords.some((keyword) => /CodexBar for Windows/.test(String(keyword))));
+
+  const faq = HOME_FAQS.find((item) => /CodexBar for Windows/.test(item.question));
+  assert.ok(faq);
+  assert.match(faq!.answer, /supports Windows/i);
+  assert.match(faq!.answer, /team-focused alternative/i);
+
+  const software = buildHomeJsonLd().find((node) => node["@type"] === "SoftwareApplication");
+  assert.match(String(software?.operatingSystem), /Windows/);
+  assert.match(JSON.stringify(software), /CodexBar for Windows/);
+
+  const homeSitemapEntry = buildSitemapEntries().find((entry) => entry.path === "/");
+  assert.equal(homeSitemapEntry?.lastModified, "2026-08-06");
+
+  const appManifest = manifest();
+  assert.equal(appManifest.start_url, "/");
+  assert.doesNotMatch(String(appManifest.description), /CodexBar for Windows/);
+  assert.ok(!(appManifest.shortcuts ?? []).some((shortcut) => shortcut.url === "/compare/codexbar"));
 });
 
 test("all SUPPORTED_TOOLS-adjacent /for pages are published", () => {
@@ -83,6 +114,8 @@ test("llms.txt includes cite paths and non-claims", () => {
   assert.match(text, /not Junction Panel/i);
   assert.match(text, /junctionpanel\.dev/);
   assert.match(text, /compare\/junction-panel/);
+  assert.match(text, /CodexBar for Windows/);
+  assert.match(text, /canonical page.*https:\/\/usejunction\.dev\//i);
   for (const path of AEO_CITE_PATHS) {
     assert.match(text, new RegExp(path.replace(/\//g, "\\/")));
   }
