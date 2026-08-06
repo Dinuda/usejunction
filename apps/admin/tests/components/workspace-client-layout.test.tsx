@@ -72,6 +72,7 @@ type WorkspaceContextData = {
   billing: null;
   sync: {
     deviceCount: number;
+    activeDeviceCount: number;
     toolCount: number;
     lastSeenAt: string | null;
     lastUsageSyncAt: string | null;
@@ -119,6 +120,7 @@ const readyContext = (dataWatermark: string, overrides: Partial<WorkspaceContext
   billing: null,
   sync: {
     deviceCount: 1,
+    activeDeviceCount: 1,
     toolCount: 2,
     lastSeenAt: "2026-07-21T12:00:00.000Z",
     lastUsageSyncAt: "2026-07-21T12:05:00.000Z",
@@ -126,7 +128,7 @@ const readyContext = (dataWatermark: string, overrides: Partial<WorkspaceContext
     lastToolsSyncAt: null,
     lastQuotasSyncAt: null,
     dataWatermark,
-    presenceWatermark: "1|2026-07-21T12:00:00.000Z",
+    presenceWatermark: "1|1|2026-07-21T12:00:00.000Z",
     ...overrides,
   },
   sessionWorkspaceSyncRequired: false,
@@ -177,6 +179,7 @@ describe("WorkspaceClientLayout", () => {
       billing: null,
       sync: {
         deviceCount: 0,
+        activeDeviceCount: 0,
         toolCount: 0,
         lastSeenAt: null,
         lastUsageSyncAt: null,
@@ -184,7 +187,7 @@ describe("WorkspaceClientLayout", () => {
         lastToolsSyncAt: null,
         lastQuotasSyncAt: null,
         dataWatermark: "0|0|||||0|1",
-        presenceWatermark: "0|",
+        presenceWatermark: "0|0|",
       },
       sessionWorkspaceSyncRequired: false,
     });
@@ -210,6 +213,7 @@ describe("WorkspaceClientLayout", () => {
       billing: null,
       sync: {
         deviceCount: 0,
+        activeDeviceCount: 0,
         toolCount: 0,
         lastSeenAt: null,
         lastUsageSyncAt: null,
@@ -217,7 +221,7 @@ describe("WorkspaceClientLayout", () => {
         lastToolsSyncAt: null,
         lastQuotasSyncAt: null,
         dataWatermark: "0|0|||||0|1",
-        presenceWatermark: "0|",
+        presenceWatermark: "0|0|",
       },
       sessionWorkspaceSyncRequired: false,
     });
@@ -355,7 +359,7 @@ describe("WorkspaceClientLayout", () => {
     let context = readyContext("1|0|||||0|1", {
       toolCount: 0,
       lastUsageSyncAt: null,
-      presenceWatermark: "1|2026-07-21T12:00:00.000Z",
+      presenceWatermark: "1|1|2026-07-21T12:00:00.000Z",
     });
     mocks.useAppQuery.mockImplementation((queryKey: readonly unknown[]) => {
       if (queryKey[0] === "app" && queryKey[1] === "workspace-context") {
@@ -376,7 +380,7 @@ describe("WorkspaceClientLayout", () => {
       toolCount: 0,
       lastUsageSyncAt: null,
       lastSeenAt: "2026-07-21T12:15:00.000Z",
-      presenceWatermark: "1|2026-07-21T12:15:00.000Z",
+      presenceWatermark: "1|1|2026-07-21T12:15:00.000Z",
     });
     view.rerender(
       <QueryClientProvider client={queryClient}>
@@ -394,8 +398,10 @@ describe("WorkspaceClientLayout", () => {
       predicate: (query: { queryKey: readonly unknown[] }) => boolean;
     };
     expect(predicate({ queryKey: ["app", "dashboard", ""] })).toBe(false);
-    expect(predicate({ queryKey: ["app", "team", ""] })).toBe(false);
+    expect(predicate({ queryKey: ["app", "team", ""] })).toBe(true);
     expect(predicate({ queryKey: ["app", "team", "syncs"] })).toBe(true);
+    expect(predicate({ queryKey: ["app", "team", "usage", ""] })).toBe(false);
+    expect(predicate({ queryKey: ["app", "team", "invites"] })).toBe(false);
     expect(predicate({ queryKey: ["app", "activity", ""] })).toBe(true);
   });
 });

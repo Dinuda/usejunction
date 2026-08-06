@@ -1,0 +1,14 @@
+[
+  {
+    "name": "fractional micros round down",
+    "estimatedCost": 0.0000014,
+    "expectedMicros": 1,
+    "expectedFingerprint": "in:0,out:0,cr:0,cw:0,r:0,req:0,cost:1,sug:0,acc:0,add:0,del:0,com:0,ai:,v:0,mk:usage"
+  },
+  {
+    "name": "fractional micros round up",
+    "estimatedCost": 0.0000016,
+    "expectedMicros": 2,
+    "expectedFingerprint": "in:0,out:0,cr:0,cw:0,r:0,req:0,cost:2,sug:0,acc:0,add:0,del:0,com:0,ai:,v:0,mk:usage"
+  }
+]

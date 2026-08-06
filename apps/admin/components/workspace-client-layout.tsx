@@ -14,6 +14,7 @@ import { canSeeOrgOverview, type OrganizationRole } from "@/lib/rbac/permissions
 
 type WorkspaceSyncState = {
   deviceCount: number;
+  activeDeviceCount: number;
   toolCount: number;
   lastSeenAt: string | null;
   lastUsageSyncAt: string | null;
@@ -150,7 +151,13 @@ function WorkspaceClientLayoutInner({ children }: { children: React.ReactNode })
             query.queryKey[0] === "app" &&
             (
               query.queryKey[1] === "activity" ||
-              (query.queryKey[1] === "team" && query.queryKey[2] === "syncs")
+              (
+                query.queryKey[1] === "team" &&
+                (
+                  query.queryKey[2] === "syncs" ||
+                  (query.queryKey.length === 3 && query.queryKey[2] !== "invites")
+                )
+              )
             ),
         },
         { cancelRefetch: false },

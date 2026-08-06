@@ -158,9 +158,10 @@ describe("workspace context API", () => {
     expect(payload.data.sessionWorkspaceSyncRequired).toBe(false);
     expect(payload.data.sync).toMatchObject({
       deviceCount: 0,
+      activeDeviceCount: 0,
       toolCount: 0,
       dataWatermark: "0|0|||||0|1",
-      presenceWatermark: "0|",
+      presenceWatermark: "0|0|",
       dashboardReady: true,
       dirtyDayCount: 0,
     });
@@ -174,7 +175,9 @@ describe("workspace context API", () => {
 
   it("exposes a sync watermark from device and tool facts", async () => {
     mocks.membershipFindMany.mockResolvedValue([org("org-1", "One")]);
-    mocks.deviceCount.mockResolvedValue(1);
+    mocks.deviceCount
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(1);
     mocks.deviceAggregate.mockResolvedValue({
       _count: { id: 1 },
       _max: {
@@ -192,6 +195,7 @@ describe("workspace context API", () => {
 
     expect(payload.data.sync).toEqual({
       deviceCount: 1,
+      activeDeviceCount: 1,
       toolCount: 3,
       lastSeenAt: "2026-07-21T12:00:00.000Z",
       lastUsageSyncAt: "2026-07-21T12:05:00.000Z",
@@ -199,10 +203,18 @@ describe("workspace context API", () => {
       lastToolsSyncAt: "2026-07-21T12:06:00.000Z",
       lastQuotasSyncAt: "2026-07-21T12:07:00.000Z",
       dataWatermark: "1|3|2026-07-21T12:05:00.000Z||2026-07-21T12:06:00.000Z|2026-07-21T12:07:00.000Z|0|1",
-      presenceWatermark: "1|2026-07-21T12:00:00.000Z",
+      presenceWatermark: "1|1|2026-07-21T12:00:00.000Z",
       dashboardReady: true,
       dirtyDayCount: 0,
       snapshotLagSeconds: null,
+    });
+    expect(mocks.deviceCount).toHaveBeenCalledTimes(2);
+    expect(mocks.deviceCount.mock.calls[1]?.[0]).toEqual({
+      where: {
+        orgId: "org-1",
+        decommissionedAt: null,
+        lastSeenAt: { gte: expect.any(Date) },
+      },
     });
     expect(mocks.toolInstallationCount).toHaveBeenCalledTimes(1);
   });

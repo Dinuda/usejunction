@@ -24,7 +24,8 @@ export function buildDataSyncWatermark(input: {
 /** Advances for liveness/presence UI without expiring analytics page caches. */
 export function buildPresenceSyncWatermark(input: {
   deviceCount: number;
+  activeDeviceCount: number;
   lastSeenAt: string | null;
 }): string {
-  return [input.deviceCount, input.lastSeenAt ?? ""].join("|");
+  return [input.deviceCount, input.activeDeviceCount, input.lastSeenAt ?? ""].join("|");
 }

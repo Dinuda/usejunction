@@ -30,6 +30,10 @@ import {
 } from "@/lib/sync/quotas-inventory";
 import { repairDetectedPlanCycles, syncDetectedPlansForDevice } from "@/lib/tools/sync-detected";
 import { bulkUpsertDeviceUsageFingerprints } from "@/lib/sync/device-usage-fingerprints";
+import {
+  allowsLegacyCostFingerprint,
+  usageFingerprintsEquivalent,
+} from "@/lib/sync/usage-fingerprint";
 
 /** Soft time budget for settle so daemon sync returns before serverless 60s cap. */
 export const SYNC_SETTLE_BUDGET_MS = 12_000;
@@ -50,7 +54,10 @@ export async function settleSyncProjections(
 ): Promise<{ dirtyRemaining: number; materializeMs: number; claimed?: boolean }> {
   const materializeStart = performance.now();
   const result = await materializeOrgNow(orgId, {
-    includeToday: true,
+    // Ingest/reconciliation explicitly marks every changed date dirty. Do not
+    // manufacture today/yesterday work for an unchanged sync; cron owns the
+    // rolling-day maintenance refresh.
+    includeToday: false,
     maxDurationMs: options.maxDurationMs ?? SYNC_SETTLE_BUDGET_MS,
     entryPoint: options.entryPoint ?? "commit",
   });
@@ -321,6 +328,11 @@ export async function startUsageSync(params: {
         select: { accountsContentHash: true },
       });
       if (device?.accountsContentHash && device.accountsContentHash === contentHash) {
+        const now = new Date();
+        await prisma.device.update({
+          where: { id: params.deviceId },
+          data: { lastAccountSyncAt: now, lastSeenAt: now },
+        });
         accountsApplied = "unchanged";
       } else {
         const applied = await applyDeviceAccountInventory({
@@ -361,6 +373,11 @@ export async function startUsageSync(params: {
       if (device?.quotasContentHash && device.quotasContentHash === contentHash) {
         quotasApplied = "unchanged";
         await recordQuotaObservations({ deviceId: params.deviceId, items });
+        const now = new Date();
+        await prisma.device.update({
+          where: { id: params.deviceId },
+          data: { lastQuotasSyncAt: now, lastSeenAt: now },
+        });
       } else {
         await applyDeviceQuotaInventory({
           orgId: params.orgId,
@@ -391,15 +408,29 @@ export async function startUsageSync(params: {
   const partitions = params.partitions.filter((p) => p.partitionKey && p.date && p.contentHash);
   const keys = partitions.map((p) => p.partitionKey);
   const fingerprintStart = performance.now();
-  const existing = keys.length
-    ? await prisma.deviceUsageFingerprint.findMany({
-        where: { deviceId: params.deviceId, partitionKey: { in: keys } },
-        select: { partitionKey: true, contentHash: true },
-      })
-    : [];
+  const [existing, fingerprintDevice] = await Promise.all([
+    keys.length
+      ? prisma.deviceUsageFingerprint.findMany({
+          where: { deviceId: params.deviceId, partitionKey: { in: keys } },
+          select: { partitionKey: true, contentHash: true },
+        })
+      : Promise.resolve([]),
+    prisma.device.findFirst({
+      where: { id: params.deviceId, orgId: params.orgId },
+      select: { agentVersion: true },
+    }),
+  ]);
   const fingerprintMs = performance.now() - fingerprintStart;
   const byKey = new Map(existing.map((row) => [row.partitionKey, row.contentHash]));
-  const delta = partitions.filter((p) => byKey.get(p.partitionKey) !== p.contentHash);
+  const allowLegacyCost = allowsLegacyCostFingerprint(fingerprintDevice?.agentVersion);
+  const delta = partitions.filter(
+    (partition) =>
+      !usageFingerprintsEquivalent(
+        byKey.get(partition.partitionKey),
+        partition.contentHash,
+        allowLegacyCost,
+      ),
+  );
   const expectedRows = delta.reduce((sum, p) => sum + Math.max(1, p.rowCount ?? 1), 0);
   const dates = partitions.map((p) => p.date).sort();
   const windowFrom = dates[0] ? utcDate(dates[0]) : null;

@@ -106,6 +106,107 @@ test("usage sync session start/chunk/commit is idempotent", { skip: !runDb }, as
   }
 });
 
+test("legacy Cursor cost fingerprints produce zero delta on an unchanged second sync", { skip: !runDb }, async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const org = await prisma.organization.create({
+    data: { name: `Legacy Fingerprint Org ${suffix}`, slug: `legacy-fp-${suffix}` },
+  });
+  const user = await prisma.developer.create({
+    data: {
+      orgId: org.id,
+      email: `legacy-fp-${suffix}@example.com`,
+      name: "Legacy Fingerprint Dev",
+      role: "owner",
+    },
+  });
+  const device = await prisma.device.create({
+    data: {
+      orgId: org.id,
+      userId: user.id,
+      hostname: "legacy-fingerprint-host",
+      os: "windows",
+      architecture: "arm64",
+      agentVersion: "0.4.8",
+      deviceToken: `legacy-fp-tok-${suffix}`,
+    },
+  });
+  const partitionKey = "2026-07-21|cursor|composer|cursor_usage_events|";
+  const legacyHash = "in:0,out:0,cr:0,cw:0,r:0,req:0,cost:100,sug:0,acc:0,add:0,del:0,com:0,ai:,v:0,mk:usage";
+  const roundedHash = legacyHash.replace("cost:100", "cost:101");
+  const partition = {
+    partitionKey,
+    date: "2026-07-21",
+    tool: "cursor",
+    model: "composer",
+    source: "cursor_usage_events",
+    contentHash: legacyHash,
+    rowCount: 1,
+  };
+
+  try {
+    const first = await startUsageSync({
+      orgId: org.id,
+      userId: user.id,
+      deviceId: device.id,
+      partitions: [partition],
+    });
+    assert.deepEqual(first.deltaPartitions, [partitionKey]);
+
+    await ingestUsageSyncChunk({
+      orgId: org.id,
+      userId: user.id,
+      deviceId: device.id,
+      syncRunId: first.syncRunId,
+      chunkId: "legacy-cursor-chunk",
+      rows: [{
+        date: "2026-07-21",
+        toolName: "cursor",
+        model: "composer",
+        source: "cursor_usage_events",
+        estimatedCost: 0.0001006,
+        costKind: "estimated_api",
+        metricKind: "usage",
+      }],
+    });
+    const committed = await commitUsageSync({
+      orgId: org.id,
+      deviceId: device.id,
+      syncRunId: first.syncRunId,
+      expectedChunks: 1,
+    });
+    assert.equal(committed.status, "committed");
+    assert.equal(committed.dirtyRemaining, 0);
+
+    const stored = await prisma.deviceUsageFingerprint.findUniqueOrThrow({
+      where: { deviceId_partitionKey: { deviceId: device.id, partitionKey } },
+    });
+    assert.equal(stored.contentHash, roundedHash);
+
+    const second = await startUsageSync({
+      orgId: org.id,
+      userId: user.id,
+      deviceId: device.id,
+      partitions: [partition],
+    });
+    assert.deepEqual(second.deltaPartitions, []);
+    assert.equal(await prisma.analyticsDirtyDay.count({ where: { orgId: org.id } }), 0);
+
+    await prisma.device.update({
+      where: { id: device.id },
+      data: { agentVersion: "0.4.9" },
+    });
+    const fixedAgent = await startUsageSync({
+      orgId: org.id,
+      userId: user.id,
+      deviceId: device.id,
+      partitions: [partition],
+    });
+    assert.deepEqual(fixedAgent.deltaPartitions, [partitionKey]);
+  } finally {
+    await prisma.organization.delete({ where: { id: org.id } });
+  }
+});
+
 test("usage sync chunks defer rematerialize; commit settles projections", { skip: !runDb }, async () => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const org = await prisma.organization.create({
@@ -648,6 +749,16 @@ test("usage sync start applies accounts+quotas and creates billing templates", {
     });
     assert.ok(assignments.length >= 1, "expected detected plan assignment");
 
+    const oldWatermark = new Date("2020-01-01T00:00:00.000Z");
+    await prisma.device.update({
+      where: { id: device.id },
+      data: {
+        lastSeenAt: oldWatermark,
+        lastAccountSyncAt: oldWatermark,
+        lastQuotasSyncAt: oldWatermark,
+      },
+    });
+
     const again = await startUsageSync({
       orgId: org.id,
       userId: user.id,
@@ -658,6 +769,10 @@ test("usage sync start applies accounts+quotas and creates billing templates", {
     });
     assert.equal(again.accountsApplied, "unchanged");
     assert.equal(again.quotasApplied, "unchanged");
+    const refreshedDevice = await prisma.device.findUniqueOrThrow({ where: { id: device.id } });
+    assert.ok(refreshedDevice.lastAccountSyncAt && refreshedDevice.lastAccountSyncAt > oldWatermark);
+    assert.ok(refreshedDevice.lastQuotasSyncAt && refreshedDevice.lastQuotasSyncAt > oldWatermark);
+    assert.ok(refreshedDevice.lastSeenAt > oldWatermark);
 
     const templatesAgain = await prisma.billingPlanTemplate.findMany({
       where: { orgId: org.id, priceSource: "detected" },

@@ -115,7 +115,7 @@ async function appJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 function historyProgressLabel(days: number) {
-  return `updating history (${days} day${days === 1 ? "" : "s"} remaining)`;
+  return `updating dashboard · ${days} day${days === 1 ? "" : "s"} queued`;
 }
 
 /** Avoid flashing history status for sub-second dirty spikes from in-flight agent sync. */
@@ -431,11 +431,15 @@ export function LocalSyncPanel({
     }
   }, [request?.id, storageKey]);
 
-  const statusLabel = historyStatusVisible
-    ? `Uploaded ${formatRelativeTime(uploadedAt)} - ${historyProgressLabel(pendingDays)}`
-    : !ready
-      ? `Uploaded ${formatRelativeTime(uploadedAt)} - updating dashboard`
-      : `Last synced ${formatRelativeTime(uploadedAt)}`;
+  const statusLabel = status === "syncing"
+    ? scope === "team"
+      ? "Syncing team devices…"
+      : "Syncing your devices…"
+    : historyStatusVisible
+      ? `Uploaded ${formatRelativeTime(uploadedAt)} - ${historyProgressLabel(pendingDays)}`
+      : !ready
+        ? `Uploaded ${formatRelativeTime(uploadedAt)} - updating dashboard`
+        : `Last synced ${formatRelativeTime(uploadedAt)}`;
   const visibleDetail = detail ?? syncDetail(request, scope);
   const buttonText = status === "syncing" ? "Syncing..." : scope === "team" ? "Sync team" : "Sync now";
   const syncing = pending || status === "syncing";
@@ -453,13 +457,13 @@ export function LocalSyncPanel({
     };
 
     if (busy) {
-      const title = historyStatusVisible
-        ? `Uploaded ${formatRelativeTime(uploadedAt)} — ${historyProgressLabel(pendingDays)}`
-        : !ready
-          ? `Uploaded ${formatRelativeTime(uploadedAt)} — updating dashboard`
-          : scope === "team"
-            ? "Syncing team devices…"
-            : "Syncing your devices…";
+      const title = status === "syncing"
+        ? scope === "team"
+          ? "Syncing team devices…"
+          : "Syncing your devices…"
+        : historyStatusVisible
+          ? `Uploaded ${formatRelativeTime(uploadedAt)} — ${historyProgressLabel(pendingDays)}`
+          : `Uploaded ${formatRelativeTime(uploadedAt)} — updating dashboard`;
       showSyncToast({
         title,
         description: visibleDetail,

@@ -29,36 +29,36 @@ type Cost struct {
 // Record is a UUS v1 aggregate-first daily usage row.
 // CamelCase aliases are kept for wire compatibility with existing ingest.
 type Record struct {
-	SchemaVersion string         `json:"schemaVersion"`
-	Date          string         `json:"date"`
-	GenAISystem   string         `json:"gen_ai.system,omitempty"`
-	Tool          string         `json:"tool"`
-	ToolName      string         `json:"toolName,omitempty"` // legacy
-	Model         string         `json:"model"`
-	GenAIModel    string         `json:"gen_ai.request.model,omitempty"`
-	Source        string         `json:"source"`
-	Repository    *Repository    `json:"repository,omitempty"`
-	InputTokens   int            `json:"inputTokens"`
-	OutputTokens  int            `json:"outputTokens"`
-	CacheRead     int            `json:"cacheReadTokens"`
-	CacheWrite    int            `json:"cacheWriteTokens,omitempty"`
-	Reasoning     int            `json:"reasoningTokens,omitempty"`
-	Requests      int            `json:"requests,omitempty"`
-	Cost          *Cost          `json:"cost,omitempty"`
-	EstimatedCost float64        `json:"estimatedCost,omitempty"`
-	Verified      bool           `json:"verified,omitempty"`
-	MetricKind    string         `json:"metricKind,omitempty"`
-	CostKind      string         `json:"costKind,omitempty"`
-	TokenSemantics string        `json:"tokenSemantics,omitempty"`
-	CalculationVersion string    `json:"calculationVersion,omitempty"`
-	Extensions    map[string]any `json:"extensions,omitempty"`
-	SuggestedLines int           `json:"suggestedLines,omitempty"`
-	AcceptedLines  int           `json:"acceptedLines,omitempty"`
-	AddedLines     int           `json:"addedLines,omitempty"`
-	DeletedLines   int           `json:"deletedLines,omitempty"`
-	Commits        int           `json:"commits,omitempty"`
-	AiPercent      *float64      `json:"aiPercent,omitempty"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
+	SchemaVersion      string         `json:"schemaVersion"`
+	Date               string         `json:"date"`
+	GenAISystem        string         `json:"gen_ai.system,omitempty"`
+	Tool               string         `json:"tool"`
+	ToolName           string         `json:"toolName,omitempty"` // legacy
+	Model              string         `json:"model"`
+	GenAIModel         string         `json:"gen_ai.request.model,omitempty"`
+	Source             string         `json:"source"`
+	Repository         *Repository    `json:"repository,omitempty"`
+	InputTokens        int            `json:"inputTokens"`
+	OutputTokens       int            `json:"outputTokens"`
+	CacheRead          int            `json:"cacheReadTokens"`
+	CacheWrite         int            `json:"cacheWriteTokens,omitempty"`
+	Reasoning          int            `json:"reasoningTokens,omitempty"`
+	Requests           int            `json:"requests,omitempty"`
+	Cost               *Cost          `json:"cost,omitempty"`
+	EstimatedCost      float64        `json:"estimatedCost,omitempty"`
+	Verified           bool           `json:"verified,omitempty"`
+	MetricKind         string         `json:"metricKind,omitempty"`
+	CostKind           string         `json:"costKind,omitempty"`
+	TokenSemantics     string         `json:"tokenSemantics,omitempty"`
+	CalculationVersion string         `json:"calculationVersion,omitempty"`
+	Extensions         map[string]any `json:"extensions,omitempty"`
+	SuggestedLines     int            `json:"suggestedLines,omitempty"`
+	AcceptedLines      int            `json:"acceptedLines,omitempty"`
+	AddedLines         int            `json:"addedLines,omitempty"`
+	DeletedLines       int            `json:"deletedLines,omitempty"`
+	Commits            int            `json:"commits,omitempty"`
+	AiPercent          *float64       `json:"aiPercent,omitempty"`
+	Metadata           map[string]any `json:"metadata,omitempty"`
 }
 
 // PartitionKey returns the UUS grain key for manifests / fingerprints.
@@ -117,8 +117,11 @@ func FromDailyUsage(row types.DailyUsage) Record {
 	var cost *Cost
 	if row.EstimatedCost > 0 || row.CostKind != "" {
 		cost = &Cost{
-			AmountUsd:    row.EstimatedCost,
-			AmountMicros: int64(row.EstimatedCost * 1_000_000),
+			AmountUsd: row.EstimatedCost,
+			// Keep byte-compatible with TypeScript's Math.round conversion in
+			// packages/usage-schema. Truncating here made unchanged estimated-cost
+			// partitions differ from the fingerprint persisted by the server.
+			AmountMicros: int64(math.Round(row.EstimatedCost * 1_000_000)),
 			Kind:         string(row.CostKind),
 		}
 	}
@@ -179,14 +182,14 @@ func FromDailyUsage(row types.DailyUsage) Record {
 
 // ManifestEntry is one partition in a sync-start lookback manifest.
 type ManifestEntry struct {
-	PartitionKey string `json:"partitionKey"`
-	Date         string `json:"date"`
-	Tool         string `json:"tool"`
-	Model        string `json:"model"`
-	Source       string `json:"source"`
+	PartitionKey string      `json:"partitionKey"`
+	Date         string      `json:"date"`
+	Tool         string      `json:"tool"`
+	Model        string      `json:"model"`
+	Source       string      `json:"source"`
 	Repository   *Repository `json:"repository,omitempty"`
-	ContentHash  string `json:"contentHash"`
-	RowCount     int    `json:"rowCount"`
+	ContentHash  string      `json:"contentHash"`
+	RowCount     int         `json:"rowCount"`
 }
 
 // BuildManifest collapses DailyUsage rows into unique partition entries.

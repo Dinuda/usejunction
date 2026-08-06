@@ -58,7 +58,7 @@ test("sync-now refresh-snapshots rematerializes dirty days for the session org",
   assert.equal(mocks.materializeOrgNow.mock.calls.length, 1);
   assert.deepEqual(mocks.materializeOrgNow.mock.calls[0], [
     "org-sync-1",
-    { includeToday: true, maxDurationMs: 240_000, entryPoint: "sync_now" },
+    { includeToday: false, maxDurationMs: 240_000, entryPoint: "sync_now" },
   ]);
 });
 

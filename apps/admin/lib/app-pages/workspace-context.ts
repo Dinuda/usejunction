@@ -5,6 +5,7 @@ import { getWorkspaceSyncReadiness } from "@/lib/analytics/snapshots/readiness";
 import { ACTIVE_ORG_COOKIE } from "@/lib/require-organization";
 import type { OrganizationRole } from "@/lib/rbac/permissions";
 import { computeOrgBillingStatus } from "@/lib/saas-billing/status";
+import { DEVICE_ACTIVE_WITHIN_MS } from "@/lib/devices/presence";
 import {
   buildDataSyncWatermark,
   buildPresenceSyncWatermark,
@@ -31,6 +32,7 @@ export type WorkspaceContextPayload = {
   billing: ReturnType<typeof computeOrgBillingStatus> | null;
   sync: {
     deviceCount: number;
+    activeDeviceCount: number;
     toolCount: number;
     lastSeenAt: string | null;
     lastUsageSyncAt: string | null;
@@ -104,6 +106,7 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
 
   let sync = {
     deviceCount: 0,
+    activeDeviceCount: 0,
     toolCount: 0,
     lastSeenAt: null as string | null,
     lastUsageSyncAt: null as string | null,
@@ -111,7 +114,7 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
     lastToolsSyncAt: null as string | null,
     lastQuotasSyncAt: null as string | null,
     dataWatermark: "0|0|||||0|1",
-    presenceWatermark: "0|",
+    presenceWatermark: "0|0|",
     dashboardReady: true,
     dirtyDayCount: 0,
     snapshotLagSeconds: null as number | null,
@@ -123,7 +126,7 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
     });
 
     if (deviceCount > 0) {
-      const [deviceAgg, toolCount, readiness] = await Promise.all([
+      const [deviceAgg, activeDeviceCount, toolCount, readiness] = await Promise.all([
         prisma.device.aggregate({
           where: { orgId: current.orgId, decommissionedAt: null },
           _count: { id: true },
@@ -133,6 +136,13 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
             lastAccountSyncAt: true,
             lastToolsSyncAt: true,
             lastQuotasSyncAt: true,
+          },
+        }),
+        prisma.device.count({
+          where: {
+            orgId: current.orgId,
+            decommissionedAt: null,
+            lastSeenAt: { gte: new Date(Date.now() - DEVICE_ACTIVE_WITHIN_MS) },
           },
         }),
         prisma.toolInstallation.count({
@@ -147,6 +157,7 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
       const lastQuotasSyncAt = latestIso(deviceAgg._max.lastQuotasSyncAt);
       sync = {
         deviceCount: deviceAgg._count.id,
+        activeDeviceCount,
         toolCount,
         lastSeenAt,
         lastUsageSyncAt,
@@ -165,6 +176,7 @@ export async function loadWorkspaceContextPage(userId: string, sessionOrgId: str
         }),
         presenceWatermark: buildPresenceSyncWatermark({
           deviceCount: deviceAgg._count.id,
+          activeDeviceCount,
           lastSeenAt,
         }),
         dashboardReady: readiness.dashboardReady,

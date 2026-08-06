@@ -1,10 +1,20 @@
 package uus
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/usejunction/agent/internal/types"
 )
+
+type fingerprintConformanceCase struct {
+	Name                string  `json:"name"`
+	EstimatedCost       float64 `json:"estimatedCost"`
+	ExpectedMicros      int64   `json:"expectedMicros"`
+	ExpectedFingerprint string  `json:"expectedFingerprint"`
+}
 
 func TestFromDailyUsageAndManifest(t *testing.T) {
 	rows := []types.DailyUsage{
@@ -29,6 +39,33 @@ func TestFromDailyUsageAndManifest(t *testing.T) {
 	}
 	if manifest[0].ContentHash == "" || !contains(manifest[0].PartitionKey, "codex") {
 		t.Fatalf("bad manifest entry: %+v", manifest[0])
+	}
+}
+
+func TestEstimatedCostFingerprintConformance(t *testing.T) {
+	fixturePath := filepath.Join("..", "..", "..", "packages", "usage-schema", "schema", "uus-fingerprint-conformance.json")
+	data, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []fingerprintConformanceCase
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range cases {
+		t.Run(tc.Name, func(t *testing.T) {
+			rec := FromDailyUsage(types.DailyUsage{
+				Date: "2026-08-06", ToolName: "cursor", Model: "composer",
+				Source: "cursor_usage_events", EstimatedCost: tc.EstimatedCost,
+				CostKind: types.CostKindEstimatedAPI, MetricKind: types.MetricKindUsage,
+			})
+			if rec.Cost == nil || rec.Cost.AmountMicros != tc.ExpectedMicros {
+				t.Fatalf("amountMicros = %v, want %d", rec.Cost, tc.ExpectedMicros)
+			}
+			if got := ContentFingerprint(rec); got != tc.ExpectedFingerprint {
+				t.Fatalf("fingerprint = %q, want %q", got, tc.ExpectedFingerprint)
+			}
+		})
 	}
 }
 

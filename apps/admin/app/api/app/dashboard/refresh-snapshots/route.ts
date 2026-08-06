@@ -19,7 +19,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await materializeOrgNow(principal.orgId, {
-      includeToday: true,
+      // This endpoint drains work created by ingest. It must not create new
+      // today/yesterday work when the requested sync had no data changes.
+      includeToday: false,
       maxDurationMs: 240_000,
       entryPoint: "sync_now",
     });
