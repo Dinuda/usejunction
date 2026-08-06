@@ -7,7 +7,7 @@ import { AEO_FACTS } from "../content/aeo/facts";
 import { BLOG_POSTS } from "../content/blog";
 import { buildBlogPostJsonLd } from "../lib/public/json-ld";
 import { contentPageMetadata } from "../lib/public/seo-metadata";
-import manifest from "../app/manifest";
+import { buildWebAppManifest } from "../lib/public/web-app-manifest";
 import { siteConfig } from "../lib/public/config";
 import { HOME_FAQS } from "../lib/public/home-faqs";
 
@@ -56,7 +56,7 @@ test("homepage keeps brand messaging while CodexBar for Windows stays in SEO sur
   const homeSitemapEntry = buildSitemapEntries().find((entry) => entry.path === "/");
   assert.equal(homeSitemapEntry?.lastModified, "2026-08-06");
 
-  const appManifest = manifest();
+  const appManifest = buildWebAppManifest();
   assert.equal(appManifest.start_url, "/");
   assert.doesNotMatch(String(appManifest.description), /CodexBar for Windows/);
   assert.ok(!(appManifest.shortcuts ?? []).some((shortcut) => shortcut.url === "/compare/codexbar"));
