@@ -484,6 +484,14 @@ func TestPreferClaudePlan(t *testing.T) {
 	}
 }
 
+func setTestUserHome(t *testing.T, home string) {
+	t.Helper()
+	// os.UserHomeDir reads HOME on Unix and USERPROFILE on Windows. Set both so
+	// Claude's sibling ~/.claude.json fixture never leaks into the runner profile.
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+}
+
 func TestClaudeAccountIdentityMergesCredsWithJSON(t *testing.T) {
 	dir := t.TempDir()
 	home := filepath.Join(dir, "home")
@@ -510,11 +518,7 @@ func TestClaudeAccountIdentityMergesCredsWithJSON(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(jsonPayload), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	prevHome := os.Getenv("HOME")
-	if err := os.Setenv("HOME", home); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Setenv("HOME", prevHome) })
+	setTestUserHome(t, home)
 
 	account, err := ClaudeAccountIdentity(claudeDir)
 	if err != nil {
@@ -555,11 +559,7 @@ func TestProbeClaudeQuotaMergesPlanWhenUsageFails(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(jsonPayload), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	prevHome := os.Getenv("HOME")
-	if err := os.Setenv("HOME", home); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Setenv("HOME", prevHome) })
+	setTestUserHome(t, home)
 
 	_, account, err := ProbeClaudeQuota(context.Background(), claudeDir)
 	if account == nil {
@@ -590,11 +590,7 @@ func TestPasinduMachineStateJSONOnlyNoQuotas(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(payload), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	prevHome := os.Getenv("HOME")
-	if err := os.Setenv("HOME", home); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Setenv("HOME", prevHome) })
+	setTestUserHome(t, home)
 
 	identity, err := ClaudeAccountIdentity(claudeDir)
 	if err != nil {
@@ -645,11 +641,7 @@ func TestPasinduMachineStateStaleProCredsMergedToTeam(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(jsonPayload), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	prevHome := os.Getenv("HOME")
-	if err := os.Setenv("HOME", home); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Setenv("HOME", prevHome) })
+	setTestUserHome(t, home)
 
 	identity, err := ClaudeAccountIdentity(claudeDir)
 	if err != nil {
@@ -696,11 +688,7 @@ func TestProbeClaudeQuotaJSONFallbackWithoutCredentials(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(payload), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	prevHome := os.Getenv("HOME")
-	if err := os.Setenv("HOME", home); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Setenv("HOME", prevHome) })
+	setTestUserHome(t, home)
 
 	snaps, account, err := ProbeClaudeQuota(context.Background(), claudeDir)
 	if account == nil || account.Email != "fallback@example.com" || !account.AuthPresent {
@@ -866,9 +854,9 @@ func TestRefreshClaudeTokenAppliesSubscriptionType(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":      "new-access",
-			"refresh_token":       "new-refresh",
-			"expires_in":          3600,
-			"subscription_type":   "team_standard",
+			"refresh_token":     "new-refresh",
+			"expires_in":        3600,
+			"subscription_type": "team_standard",
 		})
 	}))
 	defer srv.Close()
