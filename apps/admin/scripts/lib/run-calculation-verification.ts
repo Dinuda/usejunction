@@ -620,8 +620,8 @@ export async function runCalculationVerification(
     });
   }
 
-  const me = await getMeOverview(org.id, developer.authUserId!, "user", { reportWindow: meWindow });
   const meWindow = reportWindowForCycleView("last_30_days", { kind: "preset", days: 30 }, plans, now);
+  const me = await getMeOverview(org.id, developer.authUserId!, "user", { reportWindow: meWindow });
   const meIndep = independentDeveloperUsage(rawRows, developerId, meWindow.from, meWindow.to);
   checks.push(
     check("/dashboard (developer)", "last_30_days", "requests", meIndep.requests, me.usage30d.requests),
