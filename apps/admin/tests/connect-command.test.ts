@@ -31,6 +31,13 @@ test("platform resume commands retry setup without an enrollment token", () => {
   assert.doesNotMatch(commands.windows, /-Token/);
 });
 
+test("repair install commands include a one-time enrollment token", () => {
+  const commands = buildPlatformInstallCommands("uj_enroll_repair_token", "https://usejunction.dev/");
+  assert.match(commands.macosLinux, /--token uj_enroll_repair_token/);
+  assert.doesNotMatch(commands.macosLinux, /--resume/);
+  assert.match(commands.windows, /uj_enroll_repair_token/);
+});
+
 test("PowerShell command literals escape single quotes", () => {
   const command = buildWindowsInstallCommand("token'value", "https://example.com/o'rg");
   assert.match(command, /token''value/);

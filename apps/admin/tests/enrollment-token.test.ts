@@ -87,6 +87,7 @@ test("issueEnrollmentToken rotates when rotate is true", async () => {
   assert.deepEqual(mocks.enrollmentTokenCreate.mock.calls[0][0].data, {
     orgId: "org_1",
     developerId: "dev_1",
+    repairDeviceId: null,
     tokenHash: "hash:uj_enroll_new",
     tokenReveal: "uj_enroll_new",
     expiresAt: mocks.enrollmentTokenCreate.mock.calls[0][0].data.expiresAt,
@@ -107,4 +108,24 @@ test("issueEnrollmentToken creates a new token when none is reusable", async () 
   assert.equal(issued.token, "uj_enroll_new");
   assert.equal(mocks.enrollmentTokenDeleteMany.mock.calls.length, 1);
   assert.equal(mocks.enrollmentTokenCreate.mock.calls.length, 1);
+});
+
+test("issueRepairEnrollmentToken binds the token to a device", async () => {
+  const { issueRepairEnrollmentToken } = await import("../lib/enrollment-token");
+  const issued = await issueRepairEnrollmentToken({
+    orgId: "org_1",
+    developerId: "dev_1",
+    deviceId: "device_1",
+  });
+
+  assert.equal(issued.id, "enroll_new");
+  assert.equal(issued.token, "uj_enroll_new");
+  assert.deepEqual(mocks.enrollmentTokenDeleteMany.mock.calls[0]?.[0], {
+    where: {
+      developerId: "dev_1",
+      usedAt: null,
+      repairDeviceId: "device_1",
+    },
+  });
+  assert.equal(mocks.enrollmentTokenCreate.mock.calls[0]?.[0].data.repairDeviceId, "device_1");
 });

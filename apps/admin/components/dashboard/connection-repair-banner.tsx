@@ -2,14 +2,23 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PlatformCommand } from "@/components/onboarding/platform-command";
-import { buildPlatformResumeCommands } from "@/lib/connect-command";
+import type { PlatformCommands } from "@/lib/connect-command";
 import type { DeviceRecoverySummary } from "@/lib/sync/remote-sync-context";
 
 const HIDE_KEY_PREFIX = "uj:hide-repair-banner:";
+
+type RepairCommandResponse = {
+  token: string;
+  expiresAt: string;
+  controlPlaneUrl: string;
+  commands: PlatformCommands;
+  deviceId: string;
+  hostname: string;
+};
 
 type Props = {
   recoveryDevices?: DeviceRecoverySummary[];
@@ -21,6 +30,9 @@ export function ConnectionRepairBanner({ recoveryDevices = [], scope = "you" }: 
   const searchParams = useSearchParams();
   const [hidden, setHidden] = useState(true);
   const [repairDevice, setRepairDevice] = useState<DeviceRecoverySummary | null>(null);
+  const [repairCommands, setRepairCommands] = useState<PlatformCommands | null>(null);
+  const [repairLoading, setRepairLoading] = useState(false);
+  const [repairError, setRepairError] = useState<string | null>(null);
 
   const ownedRecoveryDevice = recoveryDevices.find((device) => device.isCurrentUser) ?? null;
   const canRepairFromHere = scope === "you" || Boolean(ownedRecoveryDevice);
@@ -45,6 +57,52 @@ export function ConnectionRepairBanner({ recoveryDevices = [], scope = "you" }: 
     const requested = recoveryDevices.find((device) => device.id === requestedId);
     if (requested) setRepairDevice(requested);
   }, [recoveryDevices, repairDevice, searchParams]);
+
+  useEffect(() => {
+    if (!repairDevice) {
+      setRepairCommands(null);
+      setRepairError(null);
+      setRepairLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRepairLoading(true);
+    setRepairError(null);
+    setRepairCommands(null);
+
+    void (async () => {
+      try {
+        const response = await fetch(`/api/me/devices/${repairDevice.id}/repair`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+        });
+        const payload = (await response.json().catch(() => null)) as RepairCommandResponse | { error?: string } | null;
+        if (cancelled) return;
+        if (!response.ok) {
+          setRepairError(
+            payload && typeof payload === "object" && "error" in payload && payload.error
+              ? String(payload.error)
+              : "Could not generate a repair command.",
+          );
+          return;
+        }
+        if (!payload || !("commands" in payload) || !payload.commands) {
+          setRepairError("Could not generate a repair command.");
+          return;
+        }
+        setRepairCommands(payload.commands);
+      } catch {
+        if (!cancelled) setRepairError("Could not generate a repair command.");
+      } finally {
+        if (!cancelled) setRepairLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [repairDevice]);
 
   if (recoveryDevices.length === 0 || hidden) return null;
 
@@ -103,19 +161,33 @@ export function ConnectionRepairBanner({ recoveryDevices = [], scope = "you" }: 
         </div>
       </div>
 
-      <Dialog open={Boolean(repairDevice)} onOpenChange={(open) => !open && setRepairDevice(null)}>
+      <Dialog
+        open={Boolean(repairDevice)}
+        onOpenChange={(open) => {
+          if (!open) setRepairDevice(null);
+        }}
+      >
         <DialogContent className="max-w-xl gap-5 sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Repair connection.</DialogTitle>
             <DialogDescription>
-              Run this command on {repairDevice?.hostname ?? "the affected machine"}. It preserves the existing enrollment and restarts the agent.
+              Run this command on {repairDevice?.hostname ?? "the affected machine"}. It reissues credentials for this device and restarts the agent.
             </DialogDescription>
           </DialogHeader>
           {repairDevice ? (
-            <PlatformCommand
-              commands={buildPlatformResumeCommands(typeof window !== "undefined" ? window.location.origin : "")}
-              footerDescription="Your device history stays attached to this machine. The command does not create another device."
-            />
+            repairLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+                Generating repair command…
+              </div>
+            ) : repairError ? (
+              <p className="text-sm text-destructive">{repairError}</p>
+            ) : repairCommands ? (
+              <PlatformCommand
+                commands={repairCommands}
+                footerDescription="Your device history stays attached to this machine. The command includes a one-time repair token."
+              />
+            ) : null
           ) : null}
         </DialogContent>
       </Dialog>

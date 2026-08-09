@@ -729,13 +729,21 @@ if [[ "$UPGRADE_ONLY" == true ]]; then
 fi
 
 RESUME_FAILED=false
+RESUME_AUTH_FAILED=false
 ONBOARD_FAILED=false
 if [[ "$RESUME_ONLY" == true ]]; then
   echo "Resuming UseJunction setup from the existing enrollment…"
   # shellcheck disable=SC2046
-  if ! "$BINARY" $(agent_profile_args) setup; then
-    RESUME_FAILED=true
-    echo "Initial sync is still incomplete; the background agent will keep retrying." >&2
+  SETUP_OUTPUT="$("$BINARY" $(agent_profile_args) setup 2>&1)" || RESUME_FAILED=true
+  printf '%s\n' "$SETUP_OUTPUT"
+  if [[ "$RESUME_FAILED" == true ]]; then
+    if printf '%s' "$SETUP_OUTPUT" | grep -qi 'unauthorized\|credentials were revoked'; then
+      RESUME_AUTH_FAILED=true
+      echo "This device was removed or decommissioned on the control plane." >&2
+      echo "Remove ${HOME_DIR} and enroll again with a fresh token from the dashboard (do not use --resume)." >&2
+    else
+      echo "Initial sync is still incomplete; the background agent will keep retrying." >&2
+    fi
   fi
 else
   # shellcheck disable=SC2046
@@ -844,7 +852,11 @@ if [[ "$RESUME_ONLY" == true ]]; then
   # shellcheck disable=SC2046
   "$BINARY" $(agent_profile_args) status
   if [[ "$RESUME_FAILED" == true ]]; then
-    echo "UseJunction setup recovery did not complete. Re-run this resume command after checking your network." >&2
+    if [[ "$RESUME_AUTH_FAILED" == true ]]; then
+      echo "UseJunction setup recovery cannot continue with revoked credentials." >&2
+    else
+      echo "UseJunction setup recovery did not complete. Re-run this resume command after checking your network." >&2
+    fi
     exit 1
   fi
   echo "UseJunction setup resumed successfully."

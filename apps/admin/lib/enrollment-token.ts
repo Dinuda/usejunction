@@ -13,7 +13,14 @@ type IssueEnrollmentTokenInput = {
   orgId: string;
   developerId: string;
   rotate?: boolean;
+  repairDeviceId?: string;
   tx?: Prisma.TransactionClient;
+};
+
+type IssueRepairEnrollmentTokenInput = {
+  orgId: string;
+  developerId: string;
+  deviceId: string;
 };
 
 function findReusableEnrollmentToken(
@@ -24,6 +31,7 @@ function findReusableEnrollmentToken(
   return tx.enrollmentToken.findFirst({
     where: {
       developerId,
+      repairDeviceId: null,
       usedAt: null,
       expiresAt: { gt: now },
       tokenReveal: { not: null },
@@ -39,11 +47,15 @@ function findReusableEnrollmentToken(
 
 async function createEnrollmentToken(
   tx: Prisma.TransactionClient,
-  input: { orgId: string; developerId: string },
+  input: { orgId: string; developerId: string; repairDeviceId?: string },
   now: Date,
 ): Promise<IssuedEnrollmentToken> {
   await tx.enrollmentToken.deleteMany({
-    where: { developerId: input.developerId, usedAt: null },
+    where: {
+      developerId: input.developerId,
+      usedAt: null,
+      ...(input.repairDeviceId ? { repairDeviceId: input.repairDeviceId } : { repairDeviceId: null }),
+    },
   });
 
   const token = generateOpaqueToken("uj_enroll", 32);
@@ -52,6 +64,7 @@ async function createEnrollmentToken(
     data: {
       orgId: input.orgId,
       developerId: input.developerId,
+      repairDeviceId: input.repairDeviceId ?? null,
       tokenHash: hashOpaqueToken(token),
       tokenReveal: token,
       expiresAt,
@@ -85,4 +98,21 @@ export async function issueEnrollmentToken(
 
   if (input.tx) return run(input.tx);
   return prisma.$transaction(run);
+}
+
+export async function issueRepairEnrollmentToken(
+  input: IssueRepairEnrollmentTokenInput,
+): Promise<IssuedEnrollmentToken> {
+  const now = new Date();
+  return prisma.$transaction(async (tx) =>
+    createEnrollmentToken(
+      tx,
+      {
+        orgId: input.orgId,
+        developerId: input.developerId,
+        repairDeviceId: input.deviceId,
+      },
+      now,
+    ),
+  );
 }

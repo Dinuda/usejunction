@@ -10,6 +10,14 @@ import { limitedJson } from "@/lib/security/http";
 import { enforceRateLimit } from "@/lib/security/rate-limit";
 import { logServerError } from "@/lib/errors/public";
 
+async function consumeEnrollmentToken(tx: Prisma.TransactionClient, enrollmentId: string) {
+  const consumed = await tx.enrollmentToken.updateMany({
+    where: { id: enrollmentId, usedAt: null, expiresAt: { gt: new Date() } },
+    data: { usedAt: new Date(), tokenReveal: null },
+  });
+  if (consumed.count !== 1) throw new Error("TOKEN_CONSUMED");
+}
+
 export async function POST(req: NextRequest) {
   try {
     const limited = await enforceRateLimit(req, { key: "enroll", limit: 20, windowSeconds: 60 });
@@ -50,10 +58,13 @@ export async function POST(req: NextRequest) {
     }
 
     const orgId = enrollment.orgId;
+    const isRepair = Boolean(enrollment.repairDeviceId);
 
-    const enrollmentCheck = await assertCanEnrollDevice(orgId, enrollment.developer.id);
-    if (!enrollmentCheck.allowed) {
-      return NextResponse.json({ error: enrollmentCheck.message }, { status: 403 });
+    if (!isRepair) {
+      const enrollmentCheck = await assertCanEnrollDevice(orgId, enrollment.developer.id);
+      if (!enrollmentCheck.allowed) {
+        return NextResponse.json({ error: enrollmentCheck.message }, { status: 403 });
+      }
     }
 
     const telemetryPromise = prisma.telemetryEndpoint.findUnique({
@@ -66,11 +77,37 @@ export async function POST(req: NextRequest) {
     let device;
     try {
       device = await prisma.$transaction(async (tx) => {
-        const consumed = await tx.enrollmentToken.updateMany({
-          where: { id: enrollment.id, usedAt: null, expiresAt: { gt: new Date() } },
-          data: { usedAt: new Date(), tokenReveal: null },
-        });
-        if (consumed.count !== 1) throw new Error("TOKEN_CONSUMED");
+        if (isRepair) {
+          const repairTarget = await tx.device.findFirst({
+            where: {
+              id: enrollment.repairDeviceId!,
+              orgId,
+              userId: enrollment.developer!.id,
+              decommissionedAt: null,
+            },
+          });
+          if (!repairTarget) {
+            throw new Error("REPAIR_DEVICE_UNAVAILABLE");
+          }
+
+          await consumeEnrollmentToken(tx, enrollment.id);
+          return tx.device.update({
+            where: { id: repairTarget.id },
+            data: {
+              hostname: String(hostname || repairTarget.hostname).slice(0, 255),
+              os: String(os || repairTarget.os).slice(0, 64),
+              architecture: String(architecture || repairTarget.architecture).slice(0, 64),
+              agentVersion: normalizeAgentVersion(agentVersion, repairTarget.agentVersion),
+              deviceToken: `rotated:repair:${randomUUID()}`,
+              deviceTokenHash,
+              localEndpoint: null,
+              localSyncTokenHash: null,
+              localSyncTokenEnc: null,
+            },
+          });
+        }
+
+        await consumeEnrollmentToken(tx, enrollment.id);
         return tx.device.create({
           data: {
             orgId,
@@ -87,6 +124,9 @@ export async function POST(req: NextRequest) {
     } catch (error) {
       if (error instanceof Error && error.message === "TOKEN_CONSUMED") {
         return NextResponse.json({ error: "token already used" }, { status: 401 });
+      }
+      if (error instanceof Error && error.message === "REPAIR_DEVICE_UNAVAILABLE") {
+        return NextResponse.json({ error: "repair device unavailable" }, { status: 410 });
       }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         return NextResponse.json({ error: "This user already has a device enrolled." }, { status: 409 });

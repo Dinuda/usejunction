@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 
 	"github.com/spf13/cobra"
+	"github.com/usejunction/agent/internal/client"
 	"github.com/usejunction/agent/internal/configure"
 )
 
@@ -26,6 +28,11 @@ and push the first telemetry report.`,
 		}
 
 		if err := runReport(cmd, args); err != nil {
+			if errors.Is(err, client.ErrUnauthorized) {
+				return fmt.Errorf(
+					"initial report: device credentials were revoked on the control plane; remove ~/.usejunction and enroll again with a fresh token (do not use --resume)",
+				)
+			}
 			return fmt.Errorf("initial report: %w", err)
 		}
 
