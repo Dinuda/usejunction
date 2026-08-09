@@ -15,6 +15,7 @@ import {
 } from "./lib/run-calculation-verification";
 
 async function main() {
+  process.env.E2E_AS_OF = DEFAULT_AS_OF.toISOString();
   const outPath = path.join(__dirname, "calculation-verification-report.json");
   const { failed, report } = await runCalculationVerification({
     orgSlug: DEFAULT_ORG_SLUG,

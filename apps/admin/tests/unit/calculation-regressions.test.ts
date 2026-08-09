@@ -59,6 +59,17 @@ import type { SignalsSessionRow } from "../../lib/signals/readers/sessions";
 
 const day = (value: string) => new Date(`${value}T00:00:00.000Z`);
 
+test("usageWindowDays shifts with reportNow and excludes seeded July 10 outside a later wall clock", () => {
+  const fixtureNow = day("2026-07-16");
+  const ciNow = day("2026-08-09");
+  const fixtureWindow = usageWindowDays(30, fixtureNow);
+  const ciWindow = usageWindowDays(30, ciNow);
+  assert.equal(fixtureWindow.from.toISOString().slice(0, 10), "2026-06-17");
+  assert.equal(ciWindow.from.toISOString().slice(0, 10), "2026-07-11");
+  assert.ok(fixtureWindow.from.getTime() < day("2026-07-10").getTime());
+  assert.ok(ciWindow.from.getTime() > day("2026-07-10").getTime());
+});
+
 test("billing cadence helpers cover defaults, custom lengths, month ends, and offsets", () => {
   assert.equal(normalizeBillingCadence("unknown"), "monthly");
   assert.equal(cadenceCycleDays("weekly"), 7);
