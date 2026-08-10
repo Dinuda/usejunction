@@ -4,6 +4,11 @@ import { logServerError } from "@/lib/errors/public";
 import { buildDailyReportEmailDocument } from "@/lib/email/daily-report-html";
 import { buildDailyReportPdfHtml } from "@/lib/email/daily-report-pdf";
 import { renderHtmlToPdf } from "@/lib/email/render-pdf";
+import {
+  UndeliverableEmailRecipientError,
+  isResendUndeliverableToError,
+  isUndeliverableEmailRecipient,
+} from "@/lib/email/recipient";
 import type { DailyReportPayload } from "@/lib/reports/daily-report";
 import { getPublicAppUrl } from "@/lib/public-url";
 
@@ -56,6 +61,11 @@ export async function sendDailyReportEmail(input: {
   report: DailyReportPayload;
   recipientName?: string | null;
 }) {
+  if (isUndeliverableEmailRecipient(input.to)) {
+    console.info(`[daily report email] skipped undeliverable recipient to=${input.to}`);
+    throw new UndeliverableEmailRecipientError(input.to);
+  }
+
   const appOrigin = getPublicAppUrl();
   const pdfDoc = buildDailyReportPdfHtml({
     report: input.report,
@@ -93,6 +103,10 @@ export async function sendDailyReportEmail(input: {
   });
 
   if (error) {
+    if (isResendUndeliverableToError(error)) {
+      console.info(`[daily report email] skipped undeliverable recipient to=${input.to}`);
+      throw new UndeliverableEmailRecipientError(input.to);
+    }
     logServerError("daily report email", error);
     throw new Error("Unable to send daily report email");
   }

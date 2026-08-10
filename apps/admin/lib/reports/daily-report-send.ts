@@ -1,6 +1,10 @@
 import { prisma } from "@usejunction/db";
 import { sendDailyReportEmail } from "@/lib/email/daily-report";
 import {
+  UndeliverableEmailRecipientError,
+  isUndeliverableEmailRecipient,
+} from "@/lib/email/recipient";
+import {
   getDailyReportPayload,
   type DailyReportKind,
   type DailyReportPeriod,
@@ -105,6 +109,12 @@ async function sendOne(input: {
   resend?: boolean;
 }) {
   if (!input.resend && (await alreadyDelivered(input))) return "skipped" as const;
+  if (isUndeliverableEmailRecipient(input.email)) {
+    console.info(
+      `[daily-report-send] skipped undeliverable recipient userId=${input.userId} orgId=${input.orgId} kind=${input.kind} to=${input.email}`,
+    );
+    return "skipped" as const;
+  }
   try {
     const report = await getDailyReportPayload({
       orgId: input.orgId,
@@ -129,6 +139,12 @@ async function sendOne(input: {
     });
     return "sent" as const;
   } catch (error) {
+    if (error instanceof UndeliverableEmailRecipientError) {
+      console.info(
+        `[daily-report-send] skipped undeliverable recipient userId=${input.userId} orgId=${input.orgId} kind=${input.kind} to=${input.email}`,
+      );
+      return "skipped" as const;
+    }
     logServerError("daily-report-send", error, {
       userId: input.userId,
       orgId: input.orgId,
