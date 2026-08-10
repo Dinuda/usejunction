@@ -335,7 +335,7 @@ export async function getToolDetail(
   ].filter((id) => !peopleMap.has(id));
   if (usageDeveloperIds.length) {
     const usageDevelopers = await prisma.developer.findMany({
-      where: { orgId, id: { in: usageDeveloperIds }, removedAt: null },
+      where: { orgId, id: { in: usageDeveloperIds } },
       select: { id: true, name: true, email: true },
     });
     for (const developer of usageDevelopers) {

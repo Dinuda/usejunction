@@ -5,6 +5,14 @@ import { getWorkspaceContext } from "@/lib/workspace-context";
 import { logServerError } from "@/lib/errors/public";
 import { browserMutationGuard } from "@/lib/security/http";
 
+export {
+  findActiveDeviceForIngest,
+  findActiveIngestDeviceContext,
+  requireActiveDeviceForIngest,
+  resolveUsageIngestContext,
+  type ActiveIngestDevice,
+} from "@/lib/ingest/device-context";
+
 export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }

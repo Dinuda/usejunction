@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@usejunction/db";
 import { requireIngestAuth, getDefaultOrgId } from "@/lib/auth";
+import { findActiveIngestDeviceContext } from "@/lib/ingest/device-context";
+import { activeDeviceWhere } from "@/lib/devices/decommission";
 import { invalidateAnalyticsCache } from "@/lib/analytics/query";
 import { estimateCost } from "@/lib/metrics/estimate-cost";
 import { logServerError } from "@/lib/errors/public";
@@ -32,11 +34,23 @@ export async function POST(req: NextRequest) {
     const organization = await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true } });
     if (!organization) return NextResponse.json({ error: "invalid organization" }, { status: 403 });
     if (body.userId) {
-      const user = await prisma.developer.findFirst({ where: { id: body.userId, orgId }, select: { id: true } });
+      const user = await prisma.developer.findFirst({
+        where: { id: body.userId, orgId, removedAt: null },
+        select: { id: true },
+      });
       if (!user) return NextResponse.json({ error: "invalid user context" }, { status: 403 });
     }
     if (body.deviceId) {
-      const device = await prisma.device.findFirst({ where: { id: body.deviceId, orgId, ...(body.userId ? { userId: body.userId } : {}) }, select: { id: true } });
+      const device = body.userId
+        ? await findActiveIngestDeviceContext({
+            orgId,
+            userId: body.userId,
+            deviceId: body.deviceId,
+          })
+        : await prisma.device.findFirst({
+            where: { id: body.deviceId, orgId, ...activeDeviceWhere, user: { removedAt: null } },
+            select: { id: true },
+          });
       if (!device) return NextResponse.json({ error: "invalid device context" }, { status: 403 });
     }
 

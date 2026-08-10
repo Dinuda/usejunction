@@ -4,7 +4,7 @@ import {
   recordDeviceActivityEvent,
   uniqueStrings,
 } from "@/lib/activity/record-device-activity-event";
-import { findDeviceByBearerToken } from "@/lib/auth";
+import { requireActiveDeviceForIngest } from "@/lib/ingest/device-context";
 import { limitedJson } from "@/lib/security/http";
 import {
   containsForbiddenSignalsField,
@@ -81,8 +81,8 @@ function sessionTouchesExcluded(
 export async function POST(req: NextRequest) {
   const started = Date.now();
   try {
-    const device = await findDeviceByBearerToken(req, {});
-    if (!device) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    const device = await requireActiveDeviceForIngest(req);
+    if (device instanceof NextResponse) return device;
 
     const policy = await getEffectiveSignalsPolicy(device.orgId);
     if (!policy.enabled) return NextResponse.json({ error: "signals disabled" }, { status: 403 });

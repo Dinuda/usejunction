@@ -628,13 +628,14 @@ export async function getOrgOverviewMetrics(
   const seatCount = Array.from(seatsBySubscription.values()).reduce((sum, n) => sum + n, 0);
 
   const daysWithActivity = currentTrend.filter((row) => row.modelCalls > 0).length;
-  const [peopleActivity, developerNames] = await Promise.all([
-    readDeveloperActivityFromSnapshots(orgId, reportWindow, { ensure: false }),
-    prisma.developer.findMany({
-      where: { orgId, removedAt: null },
-      select: { id: true, name: true, email: true },
-    }),
-  ]);
+  const peopleActivity = await readDeveloperActivityFromSnapshots(orgId, reportWindow, { ensure: false });
+  const activityDeveloperIds = [...new Set(peopleActivity.map((row) => row.developerId).filter(Boolean))];
+  const developerNames = activityDeveloperIds.length
+    ? await prisma.developer.findMany({
+        where: { orgId, id: { in: activityDeveloperIds } },
+        select: { id: true, name: true, email: true },
+      })
+    : [];
   const nameById = new Map(
     developerNames.map((row) => [row.id, row.name?.trim() || row.email || "Unknown"]),
   );

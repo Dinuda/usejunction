@@ -27,9 +27,8 @@ vi.mock("@usejunction/db", () => ({
   },
 }));
 
-vi.mock("@/lib/auth", () => ({
-  bearerToken: () => "device-token",
-  findDeviceByBearerToken: () => mocks.deviceFindUnique(),
+vi.mock("@/lib/ingest/device-context", () => ({
+  requireActiveDeviceForIngest: () => mocks.deviceFindUnique(),
 }));
 
 vi.mock("@/lib/signals/service", () => ({
@@ -94,6 +93,7 @@ beforeEach(() => {
     orgId: "org_1",
     userId: "developer_1",
     hostname: "mac.local",
+    user: { removedAt: null },
   });
   mocks.getEffectiveSignalsPolicy.mockResolvedValue({
     enabled: true,

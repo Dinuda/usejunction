@@ -5,7 +5,7 @@ import {
   uniqueStrings,
 } from "@/lib/activity/record-device-activity-event";
 import { isAgentCompatibleForWorkExtraction } from "@/lib/agent-updates/contracts";
-import { findDeviceByBearerToken } from "@/lib/auth";
+import { requireActiveDeviceForIngest } from "@/lib/ingest/device-context";
 import { limitedJson } from "@/lib/security/http";
 import {
   containsForbiddenWorkExtractionField,
@@ -401,8 +401,8 @@ function cleanSession(row: WorkSessionInput, allowRawWorkText: boolean) {
 export async function POST(req: NextRequest) {
   const started = Date.now();
   try {
-    const device = await findDeviceByBearerToken(req, {});
-    if (!device) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    const device = await requireActiveDeviceForIngest(req);
+    if (device instanceof NextResponse) return device;
 
     const policy = await getEffectiveSignalsPolicy(device.orgId);
     if (!policy.workExtractionEnabled) {
