@@ -11,6 +11,10 @@ import {
 } from "@/lib/devices/health";
 import { isDeviceActivelyReporting } from "@/lib/devices/presence";
 import { sendDeviceRecoveryEmail } from "@/lib/email/device-recovery";
+import {
+  UndeliverableEmailRecipientError,
+  isUndeliverableEmailRecipient,
+} from "@/lib/email/recipient";
 import { notifyServerIssue } from "@/lib/notifications/slack";
 import { hasCapability } from "@/lib/rbac/permissions";
 import { REMOTE_SYNC_PROTOCOL } from "@/lib/sync/protocol";
@@ -26,6 +30,8 @@ const REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
 const IDEMPOTENCY_WINDOW_MS = 30 * 1000;
 const CLAIM_LEASE_MS = 10 * 60 * 1000;
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_RECOVERY_EMAIL_ATTEMPTS = 5;
+const TERMINAL_RECOVERY_NOTICE_STATUSES = new Set(["sent", "skipped"]);
 
 type SyncRequestWithTargets = Prisma.SyncRequestGetPayload<{
   include: {
@@ -368,14 +374,26 @@ export async function reconcileDeviceHealth(input: {
         status: "pending",
       },
       update: {},
-      select: { id: true, status: true },
+      select: { id: true, status: true, attemptCount: true },
     });
-    if (notice.status === "sent") continue;
+    if (TERMINAL_RECOVERY_NOTICE_STATUSES.has(notice.status)) continue;
+
+    if (isUndeliverableEmailRecipient(device.user.email)) {
+      await prisma.deviceRecoveryNotice.update({
+        where: { id: notice.id },
+        data: {
+          status: "skipped",
+          lastError: "undeliverable recipient",
+        },
+      });
+      continue;
+    }
 
     await prisma.deviceRecoveryNotice.update({
       where: { id: notice.id },
       data: { status: "sending", attemptCount: { increment: 1 } },
     });
+    const attemptCount = notice.attemptCount + 1;
     try {
       await sendDeviceRecoveryEmail({
         to: device.user.email,
@@ -391,20 +409,34 @@ export async function reconcileDeviceHealth(input: {
       });
       noticesSent += 1;
     } catch (error) {
+      if (error instanceof UndeliverableEmailRecipientError) {
+        await prisma.deviceRecoveryNotice.update({
+          where: { id: notice.id },
+          data: {
+            status: "skipped",
+            lastError: error.message.slice(0, 1000),
+          },
+        });
+        continue;
+      }
+
+      const exhausted = attemptCount >= MAX_RECOVERY_EMAIL_ATTEMPTS;
       await prisma.deviceRecoveryNotice.update({
         where: { id: notice.id },
         data: {
-          status: "failed",
+          status: exhausted ? "skipped" : "failed",
           lastError: (error instanceof Error ? error.message : "recovery email failed").slice(0, 1000),
         },
       });
       noticesFailed += 1;
-      notifyServerIssue({
-        severity: "warning",
-        scope: "device-health/recovery-email",
-        error,
-        details: { deviceId: device.id, orgId: device.orgId },
-      });
+      if (!exhausted) {
+        notifyServerIssue({
+          severity: "warning",
+          scope: "device-health/recovery-email",
+          error,
+          details: { deviceId: device.id, orgId: device.orgId },
+        });
+      }
     }
   }
 

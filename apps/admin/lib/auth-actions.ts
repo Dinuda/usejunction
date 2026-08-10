@@ -9,6 +9,11 @@ import {
 } from "@/lib/email/team-invite-html";
 import { getPublicAppUrl } from "@/lib/public-url";
 import { credentialFingerprint } from "@/lib/security";
+import {
+  UndeliverableEmailRecipientError,
+  isResendUndeliverableToError,
+  isUndeliverableEmailRecipient,
+} from "@/lib/email/recipient";
 import { logServerError } from "@/lib/errors/public";
 
 export function hashActionToken(token: string) {
@@ -76,6 +81,11 @@ export async function sendAuthEmail({
     return;
   }
 
+  if (isUndeliverableEmailRecipient(to)) {
+    console.info(`[auth email] skipped undeliverable recipient to=${to} subject=${subject}`);
+    throw new UndeliverableEmailRecipientError(to);
+  }
+
   const sender = from ?? authEmailFrom();
   const resend = new Resend(key);
   const { data, error } = await resend.emails.send({
@@ -88,6 +98,10 @@ export async function sendAuthEmail({
   });
 
   if (error) {
+    if (isResendUndeliverableToError(error)) {
+      console.info(`[auth email] skipped undeliverable recipient to=${to} subject=${subject}`);
+      throw new UndeliverableEmailRecipientError(to);
+    }
     logServerError("auth email", error);
     throw new Error("Unable to send email");
   }

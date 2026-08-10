@@ -27,6 +27,8 @@ vi.mock("@/lib/email/device-recovery", () => ({
   sendDeviceRecoveryEmail: mocks.sendDeviceRecoveryEmail,
 }));
 
+import { notifyServerIssue } from "@/lib/notifications/slack";
+
 const now = new Date("2026-07-28T12:00:00.000Z");
 
 beforeEach(() => {
@@ -54,7 +56,7 @@ describe("reconcileDeviceHealth", () => {
         agentVersion: "0.3.5",
         lastSeenAt,
         remoteSyncProtocol: 1,
-        user: { name: "Ada", email: "ada@example.test" },
+        user: { name: "Ada", email: "ada@acme.co" },
       },
       {
         id: "device-old",
@@ -66,7 +68,7 @@ describe("reconcileDeviceHealth", () => {
         agentVersion: "0.2.0",
         lastSeenAt,
         remoteSyncProtocol: 0,
-        user: { name: "Bob", email: "bob@example.test" },
+        user: { name: "Bob", email: "bob@acme.co" },
       },
     ]);
     mocks.prisma.syncRequest.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "auto-1" });
@@ -100,11 +102,11 @@ describe("reconcileDeviceHealth", () => {
       agentVersion: "0.3.5",
       lastSeenAt,
       remoteSyncProtocol: 1,
-      user: { name: "Ada", email: "ada@example.test" },
+      user: { name: "Ada", email: "ada@acme.co" },
     }]);
     mocks.prisma.deviceRecoveryNotice.upsert
-      .mockResolvedValueOnce({ id: "notice-1", status: "pending" })
-      .mockResolvedValueOnce({ id: "notice-1", status: "sent" });
+      .mockResolvedValueOnce({ id: "notice-1", status: "pending", attemptCount: 0 })
+      .mockResolvedValueOnce({ id: "notice-1", status: "sent", attemptCount: 1 });
 
     const { reconcileDeviceHealth } = await import("@/lib/sync/remote-sync");
     const first = await reconcileDeviceHealth({ orgId: "org-1", now, sendNotifications: true });
@@ -117,5 +119,68 @@ describe("reconcileDeviceHealth", () => {
       deviceId: "device-repair",
       hostname: "macbook",
     }));
+  });
+
+  it("skips reserved-domain recipients without sending or alerting", async () => {
+    const lastSeenAt = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    mocks.prisma.device.findMany.mockResolvedValue([{
+      id: "device-repair",
+      orgId: "org-1",
+      userId: "dev-1",
+      hostname: "macbook",
+      os: "darwin",
+      architecture: "arm64",
+      agentVersion: "0.3.5",
+      lastSeenAt,
+      remoteSyncProtocol: 1,
+      user: { name: "Ada", email: "developer@example.com" },
+    }]);
+    mocks.prisma.deviceRecoveryNotice.upsert.mockResolvedValue({
+      id: "notice-1",
+      status: "pending",
+      attemptCount: 0,
+    });
+
+    const { reconcileDeviceHealth } = await import("@/lib/sync/remote-sync");
+    const result = await reconcileDeviceHealth({ orgId: "org-1", now, sendNotifications: true });
+
+    expect(result.noticesSent).toBe(0);
+    expect(mocks.sendDeviceRecoveryEmail).not.toHaveBeenCalled();
+    expect(mocks.prisma.deviceRecoveryNotice.update).toHaveBeenCalledWith({
+      where: { id: "notice-1" },
+      data: {
+        status: "skipped",
+        lastError: "undeliverable recipient",
+      },
+    });
+    expect(notifyServerIssue).not.toHaveBeenCalled();
+  });
+
+  it("does not resend when the notice is already skipped", async () => {
+    const lastSeenAt = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    mocks.prisma.device.findMany.mockResolvedValue([{
+      id: "device-repair",
+      orgId: "org-1",
+      userId: "dev-1",
+      hostname: "macbook",
+      os: "darwin",
+      architecture: "arm64",
+      agentVersion: "0.3.5",
+      lastSeenAt,
+      remoteSyncProtocol: 1,
+      user: { name: "Ada", email: "ada@acme.co" },
+    }]);
+    mocks.prisma.deviceRecoveryNotice.upsert.mockResolvedValue({
+      id: "notice-1",
+      status: "skipped",
+      attemptCount: 0,
+    });
+
+    const { reconcileDeviceHealth } = await import("@/lib/sync/remote-sync");
+    const result = await reconcileDeviceHealth({ orgId: "org-1", now, sendNotifications: true });
+
+    expect(result.noticesSent).toBe(0);
+    expect(mocks.sendDeviceRecoveryEmail).not.toHaveBeenCalled();
+    expect(mocks.prisma.deviceRecoveryNotice.update).not.toHaveBeenCalled();
   });
 });

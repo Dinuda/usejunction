@@ -110,6 +110,41 @@ Hobby Vercel only allows **once-per-day** native crons. The hourly report fan-ou
 | `POST /api/cron/daily-report-send` | Email daily report teasers at 19:00 in each user’s timezone | GitHub Actions | `5 * * * *` |
 | `POST /api/cron/device-health` | Queue silent stale-device resyncs and send one 48-hour repair notice per outage | GitHub Actions | `*/15 * * * *` |
 
+#### Recovery email alerts for reserved domains
+
+Resend rejects reserved domains such as `@example.com`. If a stale device is tied to a developer with one of these addresses, the cron used to retry every 15 minutes and emit duplicate Slack alerts (`auth email` + `device-health/recovery-email`). The app now marks those notices as `skipped` instead of retrying.
+
+After deploying the skip logic, inspect and clean up affected production rows:
+
+```sql
+SELECT d.id, d.hostname, d.last_seen_at, dev.email, drn.status, drn.attempt_count, drn.last_error
+FROM devices d
+JOIN developers dev ON dev.id = d.user_id
+LEFT JOIN device_recovery_notices drn ON drn.device_id = d.id AND drn.recovered_at IS NULL
+WHERE d.id = 'cmshr9tc900059a9k4p8vobyv'
+   OR d.org_id = 'cmshr9sh800009a9k2bygsao0';
+```
+
+Then update the developer to a real email, decommission the stale device, or mark open notices as skipped:
+
+```sql
+UPDATE device_recovery_notices
+SET status = 'skipped', last_error = 'undeliverable recipient (manual cleanup)'
+WHERE device_id = 'cmshr9tc900059a9k4p8vobyv'
+  AND recovered_at IS NULL
+  AND status IN ('pending', 'failed', 'sending');
+```
+
+Also scan for other reserved-domain developers with stale devices:
+
+```sql
+SELECT d.id, d.org_id, d.hostname, dev.email
+FROM devices d
+JOIN developers dev ON dev.id = d.user_id
+WHERE dev.email ~* '@(example\\.com|example\\.org|example\\.net|localhost)$'
+   OR dev.email ~* '\\.(test|invalid)$';
+```
+
 ### GitHub Environment `agent-production` (required for hourly report send)
 
 `.github/workflows/production-crons.yml` runs with `environment: agent-production` (same as agent release workflows — **not** repository secrets).
