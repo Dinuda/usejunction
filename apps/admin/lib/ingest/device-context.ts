@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@usejunction/db";
+import { Prisma, prisma } from "@usejunction/db";
 import { findDeviceByBearerToken, requireIngestAuth } from "@/lib/auth";
 import { activeDeviceWhere } from "@/lib/devices/decommission";
 
@@ -7,12 +7,9 @@ const activeDeviceIngestInclude = {
   user: { select: { removedAt: true } },
 } as const;
 
-export type ActiveIngestDevice = {
-  id: string;
-  orgId: string;
-  userId: string;
-  user: { removedAt: Date | null };
-};
+export type ActiveIngestDevice = Prisma.DeviceGetPayload<{
+  include: typeof activeDeviceIngestInclude;
+}>;
 
 export async function findActiveDeviceForIngest(req: NextRequest): Promise<ActiveIngestDevice | null> {
   const device = await findDeviceByBearerToken(req, {
