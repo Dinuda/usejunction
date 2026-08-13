@@ -194,6 +194,7 @@ export function OnboardingExperience({
     if ((!response.ok || !next?.configured) && mode === "poll") {
       return refresh("bootstrap");
     }
+    
     if (next) {
       const role = next.role as OrganizationRole | null;
       const canLeave = Boolean(next.onboardingCompletedAt);

@@ -124,17 +124,17 @@ describe("usage chunk route", () => {
 });
 
 describe("removed developer spend names", () => {
-  it("loads developer names for snapshot activity ids without active-only filter", () => {
+  it("excludes soft-removed developers from org overview spend-by-person", () => {
     const source = readFileSync(
       join(process.cwd(), "lib/insights/queries/get-org-overview.ts"),
       "utf8",
     );
     assert.match(source, /activityDeveloperIds/);
-    assert.match(source, /id: \{ in: activityDeveloperIds \}/);
-    assert.doesNotMatch(
+    assert.match(
       source,
       /id: \{ in: activityDeveloperIds \}[\s\S]{0,80}removedAt: null/,
     );
+    assert.match(source, /nameById\.has\(row\.developerId\)/);
   });
 
   it("loads usage developers for tool detail without active-only filter", () => {

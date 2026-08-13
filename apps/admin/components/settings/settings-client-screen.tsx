@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { BillingSettingsCard } from "@/components/settings/billing-settings-card";
 import { EmailReportsSettingsCard, type EmailReportsPrefs } from "@/components/settings/email-reports-settings-card";
 import { SignalsSettingsCard } from "@/components/settings/signals-settings-card";
+import { MachineConnectionSettingsCard } from "@/components/settings/machine-connection-settings-card";
 import { WorkspaceSettingsCard } from "@/components/settings/workspace-settings-card";
 import type { getOrgActivitySettings } from "@/lib/activity/service";
 import type { getOrgSignalsPolicy } from "@/lib/signals/service";
@@ -60,6 +61,8 @@ export default function SettingsClientScreen() {
       />
 
       <div className="space-y-6">
+        <MachineConnectionSettingsCard />
+
         {canManageOrg && orgQuery.data ? (
           <>
             <WorkspaceSettingsCard

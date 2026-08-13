@@ -630,9 +630,11 @@ export async function getOrgOverviewMetrics(
   const daysWithActivity = currentTrend.filter((row) => row.modelCalls > 0).length;
   const peopleActivity = await readDeveloperActivityFromSnapshots(orgId, reportWindow, { ensure: false });
   const activityDeveloperIds = [...new Set(peopleActivity.map((row) => row.developerId).filter(Boolean))];
+  // Soft-removed members retain historical usage rows, but should not appear in the live
+  // "Spend by person" ranking (they are already hidden from /team).
   const developerNames = activityDeveloperIds.length
     ? await prisma.developer.findMany({
-        where: { orgId, id: { in: activityDeveloperIds } },
+        where: { orgId, id: { in: activityDeveloperIds }, removedAt: null },
         select: { id: true, name: true, email: true },
       })
     : [];
@@ -640,6 +642,7 @@ export async function getOrgOverviewMetrics(
     developerNames.map((row) => [row.id, row.name?.trim() || row.email || "Unknown"]),
   );
   const people = peopleActivity
+    .filter((row) => nameById.has(row.developerId))
     .map((row) => ({
       id: row.developerId,
       name: nameById.get(row.developerId) ?? "Unknown",

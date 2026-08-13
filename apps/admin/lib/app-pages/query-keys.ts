@@ -76,4 +76,6 @@ export function signalsWorkKey(sessionId: string) {
 
 export const notificationPreferencesKey = ["app", "notification-preferences"] as const;
 
+export const meDevicesKey = ["app", "me", "devices"] as const;
+
 export const settingsKey = ["app", "settings"] as const;
