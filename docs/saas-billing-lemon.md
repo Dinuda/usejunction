@@ -21,7 +21,7 @@ migration.
 **Billed unit on Team:** each active developer (`Developer.removedAt IS NULL`).
 Invitations do not count until accepted. The minimum checkout quantity is one.
 
-Marketing copy uses `TEAM_PRICE_PER_DEV_USD` ($8 / active developer / month) from
+Marketing copy uses `TEAM_PRICE_PER_DEV_USD` ($1 / active developer / month) from
 `apps/admin/lib/saas-billing/entitlements.ts`. The configured Lemon variant is the
 source of truth for the amount charged and must use **quantity-based**, not
 usage-based, billing.

@@ -52,7 +52,7 @@ test("blocks duplicate checkout only for active-like statuses", () => {
 
 test("exports single-source developer pricing constants", () => {
   assert.equal(USER_LIMIT_FREE, 5);
-  assert.equal(TEAM_PRICE_PER_DEV_USD, 8);
+  assert.equal(TEAM_PRICE_PER_DEV_USD, 1);
 });
 
 test("lemon webhook signature digests differ for wrong secrets", () => {

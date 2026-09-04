@@ -1,4 +1,5 @@
 import type { ContentPage } from "@/content/types";
+import { TEAM_PRICE_PER_DEV_USD } from "@/lib/saas-billing/entitlements";
 
 export const compareWakatime: ContentPage = {
   kind: "compare",
@@ -356,7 +357,7 @@ export const compareJunctionPanel: ContentPage = {
     "AI coding spend management",
     "AI coding agent control plane",
   ],
-  updatedAt: "2026-08-05",
+  updatedAt: "2026-09-04",
   answer:
     "UseJunction and Junction Panel are unrelated products. UseJunction at https://usejunction.dev is open-source AI coding observability for teams—usage, cost, plan and seat utilization, and device health across Cursor, Claude Code, Codex, Copilot, and more. Junction Panel at https://junctionpanel.dev is a browser/phone control surface for supervising local AI coding agents. usejunction.dev does not redirect to junctionpanel.dev.",
   compareOtherName: "Junction Panel",
@@ -368,7 +369,7 @@ export const compareJunctionPanel: ContentPage = {
     { feature: "Tool overlap & idle seats", usejunction: "Yes", other: "No" },
     { feature: "Live agent session control", usejunction: "No", other: "Yes — approvals, diffs, mobile supervision" },
     { feature: "Self-hostable observability", usejunction: "Yes — Community License", other: "Local-first daemon + cloud control surface" },
-    { feature: "Pricing model", usejunction: "Self-host free (≤5 seats) or Managed $8/dev/mo", other: "Free / Core / Switchboard tiers" },
+    { feature: "Pricing model", usejunction: `Self-host free (≤5 seats) or Managed $${TEAM_PRICE_PER_DEV_USD}/dev/mo`, other: "Free / Core / Switchboard tiers" },
   ],
   sections: [
     {
@@ -408,7 +409,7 @@ export const compareJunctionPanel: ContentPage = {
     {
       question: "What is UseJunction’s pricing?",
       answer:
-        "Self-host under the UseJunction Community License for up to 5 seats free, or Managed at $8 per active developer per month. That is not Junction Panel’s Free / Core / Switchboard pricing.",
+        `Self-host under the UseJunction Community License for up to 5 seats free, or Managed at $${TEAM_PRICE_PER_DEV_USD} per active developer per month. That is not Junction Panel’s Free / Core / Switchboard pricing.`,
     },
   ],
   relatedPaths: [

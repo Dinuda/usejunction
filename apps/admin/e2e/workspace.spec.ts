@@ -263,10 +263,10 @@ test("Settings shows workspace, billing, Signals, and team visibility controls",
   const billing = page.getByRole("region", { name: "Billing" });
   await expect(billing).toBeVisible();
   await expect(billing.getByText("Team", { exact: true }).first()).toBeVisible();
-  await expect(billing.getByText("2 active users billed at $8 per user per month.", { exact: true })).toBeVisible();
-  await expect(billing.getByText("$16 / month", { exact: true })).toBeVisible();
+  await expect(billing.getByText("2 active users billed at $1 per user per month.", { exact: true })).toBeVisible();
+  await expect(billing.getByText("$2 / month", { exact: true })).toBeVisible();
   await expect(billing.getByRole("heading", { name: /Billed users/ })).toBeVisible();
-  await expect(billing.getByText("$8 / month", { exact: true })).toHaveCount(2);
+  await expect(billing.getByText("$1 / month", { exact: true })).toHaveCount(2);
   await expect(billing.getByText("E2E Owner", { exact: true })).toBeVisible();
   await expect(billing.getByText("owner@example.com", { exact: true })).toBeVisible();
   await expect(billing.getByText("E2E Developer", { exact: true })).toBeVisible();

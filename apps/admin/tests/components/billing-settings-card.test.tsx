@@ -75,10 +75,10 @@ test("Team billing shows a simple plan summary, billed users, total, and seat sy
 
   expect(screen.getByRole("region", { name: "Billing" })).toBeTruthy();
   expect(screen.getByText("Active subscription")).toBeTruthy();
-  expect(screen.getByText("$16 / month")).toBeTruthy();
-  expect(screen.getByText("2 active users billed at $8 per user per month.")).toBeTruthy();
+  expect(screen.getByText("$2 / month")).toBeTruthy();
+  expect(screen.getByText("2 active users billed at $1 per user per month.")).toBeTruthy();
   expect(screen.getByRole("heading", { name: /Billed users/ })).toBeTruthy();
-  expect(screen.getAllByText("$8 / month")).toHaveLength(2);
+  expect(screen.getAllByText("$1 / month")).toHaveLength(2);
   expect(screen.queryByText(/estimat/i)).toBeNull();
   expect(screen.getByText("Alice Admin")).toBeTruthy();
   expect(screen.getByText("alice@example.com")).toBeTruthy();
@@ -93,7 +93,7 @@ test.each([
     name: "Community",
     state: baseBilling,
     total: "$0 / month",
-    detail: "Community is free. Team costs $8 per active user per month.",
+    detail: "Community is free. Team costs $1 per active user per month.",
     status: "Free tier",
   },
   {

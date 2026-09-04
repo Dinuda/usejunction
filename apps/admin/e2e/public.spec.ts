@@ -85,7 +85,7 @@ test("homepage shows current pricing", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /AI spend is data/i })).toBeVisible();
   await expect(page.getByText("Free", { exact: true })).toBeVisible();
-  await expect(page.getByText("$8", { exact: true })).toBeVisible();
+  await expect(page.getByText("$1", { exact: true })).toBeVisible();
   await expect(page.getByText("Custom", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Community" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Managed", exact: true })).toBeVisible();
