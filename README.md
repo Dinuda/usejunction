@@ -2,8 +2,6 @@
 
 AI coding spend management for engineering teams. UseJunction tracks usage, cost, latency, plan utilization, seat waste, and configuration health across Codex, Claude Code, Cursor, GitHub Copilot, local models, and more.
 
-**Not Junction Panel:** UseJunction ([usejunction.dev](https://usejunction.dev)) is spend/usage analytics. [Junction Panel](https://junctionpanel.dev) is a separate agent remote-control product. They do not redirect to each other — see [UseJunction vs Junction Panel](https://usejunction.dev/compare/junction-panel).
-
 **Site:** [usejunction.dev](https://usejunction.dev) · **Solutions:** [AI coding spend management](https://usejunction.dev/solutions/ai-coding-spend-management) · [Seat utilization](https://usejunction.dev/solutions/ai-coding-seat-utilization) · [Plan usage](https://usejunction.dev/solutions/ai-coding-plan-usage) · **Guides:** [Plan usage & waste](https://usejunction.dev/guides/see-plan-usage-and-waste) · [Team AI coding insights](https://usejunction.dev/guides/see-team-ai-coding-usage) · [llms.txt](https://usejunction.dev/llms.txt)
 
 ## AI coding spend management for teams

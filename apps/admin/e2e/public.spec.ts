@@ -40,7 +40,7 @@ test("landing page shows brand and primary CTA", async ({ page }) => {
   await expect(page.getByRole("link", { name: "UseJunction home" }).first()).toBeVisible();
   await expect(
     page.getByRole("heading", {
-      name: /UseJunction finds wasted AI coding subscriptions before your next renewal\./i,
+      name: /Cut wasted AI coding spend before renewal\./i,
       level: 1,
     }),
   ).toBeVisible();
@@ -52,7 +52,7 @@ test("landing page shows brand and primary CTA", async ({ page }) => {
     await expect(toolStrip.getByText(tool.name, { exact: true }).first()).toBeVisible();
   }
 
-  await expect(page.getByRole("link", { name: /Analyze my own usage/i }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: /Analyze my usage/i }).first()).toBeVisible();
   await expect(page.getByText(/Start with one developer/i)).toBeVisible();
 });
 

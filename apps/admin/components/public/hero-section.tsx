@@ -117,16 +117,16 @@ export function HeroSection() {
               variants={item}
               className="mt-4 max-w-xl text-[2.5rem] font-bold leading-[1.05] tracking-[-0.03em] text-[var(--public-fg)] sm:text-5xl lg:text-[3.25rem] xl:text-[3.5rem]"
             >
-              UseJunction finds wasted AI coding subscriptions
+              Cut wasted AI coding spend
               <br />
-              <span className="font-semibold text-[#08a8c4]">before your next renewal.</span>
+              <span className="font-semibold text-[#08a8c4]">before renewal.</span>
             </motion.h1>
 
             <motion.p
               variants={item}
-              className="mt-3 max-w-md text-base italic leading-relaxed text-[#6b6d66] sm:text-lg sm:leading-8"
+              className="mt-3 max-w-lg text-base leading-relaxed text-[#6b6d66] sm:text-lg sm:leading-8"
             >
-              UseJunction connects Cursor, Claude Code, and Codex usage so you can see idle seats, plan-limit pressure, and tool overlap across your team.
+              See unused seats, plan-limit pressure, and overlapping usage across Cursor, Claude Code, and Codex.
             </motion.p>
 
             <motion.div variants={item} className="mt-8 flex w-full flex-col items-center lg:items-start">
@@ -139,7 +139,7 @@ export function HeroSection() {
                   href={`${siteConfig.signupUrl}?from=${encodeURIComponent("/onboarding?mode=solo")}`}
                   className="public-btn public-btn-teal rounded-none px-8 py-3 text-base font-semibold"
                 >
-                  Analyze my own usage
+                  Analyze my usage
                   <ArrowRight className="h-5 w-5" />
                 </Link>
               </motion.div>
